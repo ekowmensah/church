@@ -1,15 +1,15 @@
 <?php
 // Base URL for the application
 if (!defined('BASE_URL')) {
-    define('BASE_URL', 'http://localhost/myfreemanchurchgit/church');
+    define('BASE_URL', 'https://myfreeman.mensweb.xyz');
 }
 // Database configuration
 // Ensure $conn is global for all includes
 if (!isset($GLOBALS['conn'])) {
     $host = 'localhost';
-    $db   = 'myfreemangit';
-    $user = 'root';
-    $pass = '';
+    $db   = 'menswebg_myfreeman';
+    $user = 'menswebg_myfreeman';
+    $pass = '$Norbert3600$';
     $GLOBALS['conn'] = new mysqli($host, $user, $pass, $db);
     if ($GLOBALS['conn']->connect_error) {
         die('Connection failed: ' . $GLOBALS['conn']->connect_error);
