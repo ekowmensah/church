@@ -114,20 +114,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member) {
             }
             $ec_stmt->close();
         }
-        // Update organizations (delete old, insert new)
+        // Handle organization membership requests (pending approval workflow)
         $safe_member_id = isset($member['id']) ? intval($member['id']) : 0;
 if ($safe_member_id > 0) {
-    $conn->query("DELETE FROM member_organizations WHERE member_id=" . $safe_member_id);
+    // Clear any existing pending requests for this member
+    $conn->query("DELETE FROM organization_membership_approvals WHERE member_id=" . $safe_member_id);
 } else {
     throw new Exception('Invalid member_id for organization update.');
 }
         if (!empty($organizations)) {
-            $org_stmt = $conn->prepare("INSERT INTO member_organizations (member_id, organization_id) VALUES (?, ?)");
+            // Insert organization selections as pending approval requests
+            $approval_stmt = $conn->prepare("INSERT INTO organization_membership_approvals (member_id, organization_id, status) VALUES (?, ?, 'pending')");
             foreach ($organizations as $org_id) {
-                $org_stmt->bind_param('ii', $member['id'], $org_id);
-                $org_stmt->execute();
+                $approval_stmt->bind_param('ii', $member['id'], $org_id);
+                $approval_stmt->execute();
             }
-            $org_stmt->close();
+            $approval_stmt->close();
         }
         // Update roles of serving (delete old, insert new)
         if ($safe_member_id > 0) {
@@ -481,20 +483,21 @@ ob_start();
         <input type="date" class="form-control" name="date_of_enrollment" id="date_of_enrollment" value="<?=htmlspecialchars($member['date_of_enrollment'])?>">
       </div>
       <div class="form-group col-md-4">
-        <label for="organizations">Organization(s)</label>
+        <label for="organizations">Organization(s) <span class="badge badge-info">Requires Approval</span></label>
         <select class="form-control" name="organizations[]" id="organizations" multiple>
           <?php
           $orgs = $conn->query("SELECT id, name FROM organizations ORDER BY name ASC");
           $member_orgs = [];
           if (isset($member['id'])) {
-            $orgq = $conn->query("SELECT organization_id FROM member_organizations WHERE member_id=".intval($member['id']));
+            // Load pending approval requests instead of current memberships
+            $orgq = $conn->query("SELECT organization_id FROM organization_membership_approvals WHERE member_id=".intval($member['id'])." AND status='pending'");
             while($oo = $orgq->fetch_assoc()) $member_orgs[] = $oo['organization_id'];
           }
           while($org = $orgs->fetch_assoc()): ?>
             <option value="<?=$org['id']?>" <?=in_array($org['id'], $member_orgs)?'selected':''?>><?=htmlspecialchars($org['name'])?></option>
           <?php endwhile; ?>
         </select>
-        <small class="form-text text-muted">Hold Ctrl or use search to select multiple organizations.</small>
+        <small class="form-text text-muted">Selected organizations will require approval from Organization Leaders before membership is confirmed.</small>
       </div>
       <div class="form-group col-md-4">
         <label for="roles_of_serving">Roles of Serving</label>
