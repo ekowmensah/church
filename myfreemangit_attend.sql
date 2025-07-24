@@ -2,10 +2,10 @@
 -- version 5.2.1
 -- https://www.phpmyadmin.net/
 --
--- Host: localhost:3306
--- Generation Time: Jul 24, 2025 at 07:18 AM
--- Server version: 10.6.18-MariaDB
--- PHP Version: 8.1.28
+-- Host: 127.0.0.1
+-- Generation Time: Jul 24, 2025 at 07:02 PM
+-- Server version: 10.4.32-MariaDB
+-- PHP Version: 8.2.12
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
@@ -18,7 +18,7 @@ SET time_zone = "+00:00";
 /*!40101 SET NAMES utf8mb4 */;
 
 --
--- Database: `menswebg_myfreeman`
+-- Database: `myfreeman`
 --
 
 -- --------------------------------------------------------
@@ -33,30 +33,34 @@ CREATE TABLE `attendance_records` (
   `member_id` int(11) DEFAULT NULL,
   `status` enum('present','absent') DEFAULT 'present',
   `marked_by` int(11) DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `zkteco_raw_log_id` int(11) DEFAULT NULL,
+  `sync_source` enum('manual','zkteco','hybrid') DEFAULT 'manual',
+  `verification_type` varchar(20) DEFAULT NULL,
+  `device_timestamp` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Dumping data for table `attendance_records`
 --
 
-INSERT INTO `attendance_records` (`id`, `session_id`, `member_id`, `status`, `marked_by`, `created_at`) VALUES
-(27, 11, 79, 'absent', 3, '2025-07-19 20:27:50'),
-(28, 11, 91, 'present', 3, '2025-07-19 20:27:50'),
-(29, 11, 84, 'absent', 3, '2025-07-19 20:27:50'),
-(30, 11, 80, 'absent', 3, '2025-07-19 20:27:50'),
-(31, 11, 73, 'present', 3, '2025-07-19 20:27:50'),
-(32, 11, 90, 'absent', 3, '2025-07-19 20:27:50'),
-(33, 11, 85, 'absent', 3, '2025-07-19 20:27:50'),
-(34, 11, 82, 'present', 3, '2025-07-19 20:27:50'),
-(35, 11, 88, 'absent', 3, '2025-07-19 20:27:50'),
-(36, 11, 72, 'absent', 3, '2025-07-19 20:27:50'),
-(37, 11, 86, 'absent', 3, '2025-07-19 20:27:50'),
-(38, 11, 81, 'absent', 3, '2025-07-19 20:27:50'),
-(39, 11, 92, 'present', 3, '2025-07-19 20:27:50'),
-(40, 11, 87, 'absent', 3, '2025-07-19 20:27:50'),
-(41, 11, 89, 'absent', 3, '2025-07-19 20:27:50'),
-(42, 11, 83, 'absent', 3, '2025-07-19 20:27:50');
+INSERT INTO `attendance_records` (`id`, `session_id`, `member_id`, `status`, `marked_by`, `created_at`, `zkteco_raw_log_id`, `sync_source`, `verification_type`, `device_timestamp`) VALUES
+(27, 11, 79, 'absent', 3, '2025-07-19 20:27:50', NULL, 'manual', NULL, NULL),
+(28, 11, 91, 'present', 3, '2025-07-19 20:27:50', NULL, 'manual', NULL, NULL),
+(29, 11, 84, 'absent', 3, '2025-07-19 20:27:50', NULL, 'manual', NULL, NULL),
+(30, 11, 80, 'absent', 3, '2025-07-19 20:27:50', NULL, 'manual', NULL, NULL),
+(31, 11, 73, 'present', 3, '2025-07-19 20:27:50', NULL, 'manual', NULL, NULL),
+(32, 11, 90, 'absent', 3, '2025-07-19 20:27:50', NULL, 'manual', NULL, NULL),
+(33, 11, 85, 'absent', 3, '2025-07-19 20:27:50', NULL, 'manual', NULL, NULL),
+(34, 11, 82, 'present', 3, '2025-07-19 20:27:50', NULL, 'manual', NULL, NULL),
+(35, 11, 88, 'absent', 3, '2025-07-19 20:27:50', NULL, 'manual', NULL, NULL),
+(36, 11, 72, 'absent', 3, '2025-07-19 20:27:50', NULL, 'manual', NULL, NULL),
+(37, 11, 86, 'absent', 3, '2025-07-19 20:27:50', NULL, 'manual', NULL, NULL),
+(38, 11, 81, 'absent', 3, '2025-07-19 20:27:50', NULL, 'manual', NULL, NULL),
+(39, 11, 92, 'present', 3, '2025-07-19 20:27:50', NULL, 'manual', NULL, NULL),
+(40, 11, 87, 'absent', 3, '2025-07-19 20:27:50', NULL, 'manual', NULL, NULL),
+(41, 11, 89, 'absent', 3, '2025-07-19 20:27:50', NULL, 'manual', NULL, NULL),
+(42, 11, 83, 'absent', 3, '2025-07-19 20:27:50', NULL, 'manual', NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -83,6 +87,32 @@ CREATE TABLE `attendance_sessions` (
 
 INSERT INTO `attendance_sessions` (`id`, `church_id`, `title`, `service_date`, `is_recurring`, `recurrence_type`, `recurrence_day`, `parent_recurring_id`, `notes`, `created_at`) VALUES
 (11, 7, 'Sunday Service', '0000-00-00', 1, 'weekly', 0, NULL, NULL, '2025-07-16 18:51:07');
+
+-- --------------------------------------------------------
+
+--
+-- Stand-in structure for view `attendance_with_zkteco`
+-- (See below for the actual view)
+--
+CREATE TABLE `attendance_with_zkteco` (
+`id` int(11)
+,`session_id` int(11)
+,`member_id` int(11)
+,`status` enum('present','absent')
+,`marked_by` int(11)
+,`created_at` timestamp
+,`sync_source` enum('manual','zkteco','hybrid')
+,`verification_type` varchar(20)
+,`device_timestamp` datetime
+,`device_id` int(11)
+,`device_name` varchar(100)
+,`device_location` varchar(255)
+,`first_name` varchar(100)
+,`last_name` varchar(100)
+,`crn` varchar(50)
+,`session_title` varchar(255)
+,`service_date` date
+);
 
 -- --------------------------------------------------------
 
@@ -400,7 +430,19 @@ INSERT INTO `audit_log` (`id`, `user_id`, `action`, `entity_type`, `entity_id`, 
 (318, 39, 'login_success', 'user', 39, '{\"username\":\"barnasco4uallgh@gmail.com\",\"ip\":\"154.160.90.118\"}', '154.160.90.118', '2025-07-24 10:14:58'),
 (319, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"154.160.90.118\"}', '154.160.90.118', '2025-07-24 10:15:18'),
 (320, 3, 'logout', 'user', 3, '{\"ip\":\"154.160.90.118\",\"time\":\"2025-07-14T16:56:25Z\"}', '154.160.90.118', '2025-07-24 10:29:52'),
-(321, 50, 'logout', 'user', 50, '{\"ip\":\"154.160.90.118\",\"time\":\"2025-07-14T16:56:25Z\"}', '154.160.90.118', '2025-07-24 10:29:54');
+(321, 50, 'logout', 'user', 50, '{\"ip\":\"154.160.90.118\",\"time\":\"2025-07-14T16:56:25Z\"}', '154.160.90.118', '2025-07-24 10:29:54'),
+(322, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-24 11:22:29'),
+(323, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-24 11:28:43'),
+(324, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-24 11:28:48'),
+(325, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-24 11:39:27'),
+(326, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-24 12:04:28'),
+(327, NULL, 'update', 'role', 6, '{\"name\":\"Organizational Leader\",\"permissions\":[77]}', NULL, '2025-07-24 12:13:21'),
+(328, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-24 13:58:06'),
+(329, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-24 13:58:20'),
+(330, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-24 14:14:34'),
+(331, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-24 14:33:42'),
+(332, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-24 14:50:00'),
+(333, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-24 14:50:03');
 
 -- --------------------------------------------------------
 
@@ -723,7 +765,39 @@ INSERT INTO `members` (`id`, `first_name`, `middle_name`, `last_name`, `church_i
 (93, 'TOM', 'BAIDOO', 'DAN', 7, 20, 'FMC-A0703-KM', NULL, '2016-03-10', 'WINDO', 'Thursday', 'Male', '0500124587', '', 'barnasco4uallgh@gmail.com', 'KWESIMINTSIM', 'WS-509-5874', 'Married', 'Cape Coast', 'Central', 'member_68816b3eb8545.png', 'active', '', '$2y$10$oSp5mUdcbk0Rl0ilTxzZZOyCNgIUeLcobyvmfQGew8Anvtqk/DUsG', '2025-07-20 16:19:03', NULL, 'Informal', 'WELFARE', 'Yes', 'Yes', '2025-05-24', '2004-02-24', '', '0000-00-00', 0),
 (94, 'ABRAHAM', 'BAIDOO', 'KOOMSON', 7, 18, 'FMC-A0202-KM', NULL, '1991-11-07', 'takoradi', 'Thursday', 'Male', '0245740544', '', 'abrahambaidookoomson@gmail.com', '', '', 'Married', 'Cape Coast', 'Central', '', 'active', '', '$2y$10$kDDUgUTAwiyWryY0E.SU0O71A9VqY6x0cEqvcl0oGofQaohrTJjjC', '2025-07-23 18:56:51', NULL, 'Informal', 'instrator', 'Yes', 'Yes', '0000-00-00', '0000-00-00', '', '0000-00-00', 0),
 (95, 'DANIEL', '', 'ANTWI', 7, 22, 'FMC-0101-KM', NULL, '1999-11-04', 'Takoradi', 'Thursday', 'Male', '0553143607', '', 'danielantwi512@gmail.com', '', '', 'Single', 'Assin Edubiase', 'Central', '', 'active', '', '$2y$10$fuqpJ25x9ZGJBBxlc.89juEuHC9ItVOvkhwHMnYunR/4BmaEeekz6', '2025-07-23 19:37:41', NULL, 'Formal', 'Accountant', 'Yes', 'Yes', '0000-00-00', '0000-00-00', '', '2013-07-21', 0),
-(96, 'DAN OTU', '', '', 7, 17, 'FMC-A0102-KM', NULL, NULL, NULL, NULL, NULL, '0277384201', NULL, 'barnasco4vallgh@gmail.com', NULL, NULL, NULL, NULL, NULL, NULL, 'pending', '', '', '2025-07-23 23:11:08', '4a1d712640822603150c71cedc7d1bc2', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0);
+(96, 'DAN OTU', '', '', 7, 17, 'FMC-A0102-KM', NULL, NULL, NULL, NULL, NULL, '0277384201', NULL, 'barnasco4vallgh@gmail.com', NULL, NULL, NULL, NULL, NULL, NULL, 'pending', '', '', '2025-07-23 23:11:08', '4a1d712640822603150c71cedc7d1bc2', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0),
+(97, 'James', '', 'Evens', 7, 20, 'FMC-A0704-KM', NULL, '2025-07-23', 'dfafds', 'Wednesday', 'Male', '0555456712', '', '', '12800 cadle rd', '', 'Married', 'Licking', 'Upper East', 'member_68823ae7aa392.jpg', 'active', '', '$2y$10$ceelckCBKdx8FzGTyQkv9.nZjsHLwUZxb0Lqmx8eIlQxDXrdbQD5q', '2025-07-24 13:51:54', NULL, 'Formal', 'dkdkdk', 'Yes', 'No', '0000-00-00', '0000-00-00', '', '2025-07-23', 0);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `member_biometric_data`
+--
+
+CREATE TABLE `member_biometric_data` (
+  `id` int(11) NOT NULL,
+  `member_id` int(11) NOT NULL,
+  `device_id` int(11) NOT NULL,
+  `zk_user_id` varchar(50) NOT NULL,
+  `fingerprint_enrolled` tinyint(1) DEFAULT 0,
+  `face_enrolled` tinyint(1) DEFAULT 0,
+  `card_number` varchar(50) DEFAULT NULL,
+  `enrollment_date` timestamp NOT NULL DEFAULT current_timestamp(),
+  `last_updated` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `is_active` tinyint(1) DEFAULT 1,
+  `notes` text DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Maps church members to their biometric data on ZKTeco devices';
+
+--
+-- Dumping data for table `member_biometric_data`
+--
+
+INSERT INTO `member_biometric_data` (`id`, `member_id`, `device_id`, `zk_user_id`, `fingerprint_enrolled`, `face_enrolled`, `card_number`, `enrollment_date`, `last_updated`, `is_active`, `notes`) VALUES
+(1, 73, 13, '73', 1, 0, NULL, '2025-07-24 16:30:25', '2025-07-24 16:30:25', 1, NULL),
+(2, 79, 12, '1', 1, 0, NULL, '2025-07-24 16:53:20', '2025-07-24 16:53:20', 1, NULL),
+(3, 95, 13, '95', 1, 0, NULL, '2025-07-24 16:53:51', '2025-07-24 16:53:51', 1, NULL),
+(4, 79, 13, '79', 1, 0, NULL, '2025-07-24 16:54:25', '2025-07-24 16:54:25', 1, NULL),
+(5, 84, 12, '84', 1, 0, NULL, '2025-07-24 16:55:04', '2025-07-24 16:55:04', 1, NULL);
 
 -- --------------------------------------------------------
 
@@ -764,7 +838,8 @@ INSERT INTO `member_emergency_contacts` (`id`, `member_id`, `name`, `mobile`, `r
 (98, 88, 'Tito Nash', '0545644749', 'Brother'),
 (99, 94, 'tabitha', '0547257213', 'wife'),
 (100, 95, 'Barnabas ', '0243456574', 'Brother '),
-(101, 93, 'BARNABAS QUAYSON-OTOO', '0242363905', 'BRO');
+(101, 93, 'BARNABAS QUAYSON-OTOO', '0242363905', 'BRO'),
+(102, 97, 'James Evens', '7162381865', 'bro');
 
 -- --------------------------------------------------------
 
@@ -845,7 +920,8 @@ INSERT INTO `member_organizations` (`id`, `organization_id`, `member_id`, `role`
 (105, 4, 90, NULL, NULL),
 (106, 2, 88, NULL, NULL),
 (107, 1, 88, NULL, NULL),
-(108, 8, 93, NULL, NULL);
+(108, 8, 93, NULL, NULL),
+(109, 8, 97, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -891,7 +967,10 @@ INSERT INTO `member_roles_of_serving` (`member_id`, `role_id`) VALUES
 (90, 6),
 (90, 7),
 (90, 8),
-(92, 2);
+(92, 2),
+(97, 2),
+(97, 7),
+(97, 9);
 
 -- --------------------------------------------------------
 
@@ -1009,7 +1088,9 @@ INSERT INTO `menu_items` (`id`, `permission_name`, `label`, `icon`, `url`, `menu
 (74, 'submit_bulk_payment', 'Bulk Payment', 'fas fa-credit-card', '/views/payment_bulk.php', 'Payments', 32, 1),
 (75, '', 'Payment Statistics', 'fas fa-coins', 'views/payments_statistics.php', 'Payments', 0, 1),
 (76, '', 'Class Group', '', 'views/classgroup_list.php', 'Class Group', 0, 1),
-(77, 'pending_members_list', 'Add Payment Types', 'fas fa-money', 'views/paymenttype_list.php', 'Payments', 50, 1);
+(77, 'pending_members_list', 'Add Payment Types', 'fas fa-money', 'views/paymenttype_list.php', 'Payments', 50, 1),
+(78, 'approve_organization_memberships', 'Approve Member Organizations', '', 'views/organization_membership_approvals.php', 'Members', 0, 1),
+(79, '', 'Biometric Device', '', 'views/zkteco_devices.php', 'System', 0, 1);
 
 -- --------------------------------------------------------
 
@@ -1021,22 +1102,52 @@ CREATE TABLE `organizations` (
   `id` int(11) NOT NULL,
   `church_id` int(11) DEFAULT NULL,
   `name` varchar(100) DEFAULT NULL,
-  `description` text DEFAULT NULL
+  `description` text DEFAULT NULL,
+  `leader_id` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Dumping data for table `organizations`
 --
 
-INSERT INTO `organizations` (`id`, `church_id`, `name`, `description`) VALUES
-(1, 7, 'Girls Guild', 'Girls Guild Group'),
-(2, 7, 'choir', ''),
-(3, 7, 'SUWMA', ''),
-(4, 7, 'MYF', 'YOUTH'),
-(5, 7, 'singing band', 'SINGING GROUP'),
-(6, 7, 'SUWMA', ''),
-(7, 7, 'GIRLS FF', ''),
-(8, 7, 'ddkdsk', 'dksdlkd');
+INSERT INTO `organizations` (`id`, `church_id`, `name`, `description`, `leader_id`) VALUES
+(1, 7, 'Girls Guild', 'Girls Guild Group', NULL),
+(2, 7, 'choir', '', NULL),
+(3, 7, 'SUWMA', '', NULL),
+(4, 7, 'MYF', 'YOUTH', 44),
+(5, 7, 'singing band', 'SINGING GROUP', NULL),
+(6, 7, 'SUWMA', '', NULL),
+(7, 7, 'GIRLS FF', '', NULL),
+(8, 7, 'ddkdsk', 'dksdlkd', NULL);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `organization_membership_approvals`
+--
+
+CREATE TABLE `organization_membership_approvals` (
+  `id` int(11) NOT NULL,
+  `member_id` int(11) NOT NULL,
+  `organization_id` int(11) NOT NULL,
+  `requested_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `status` enum('pending','approved','rejected') DEFAULT 'pending',
+  `approved_by` int(11) DEFAULT NULL,
+  `approved_at` timestamp NULL DEFAULT NULL,
+  `rejection_reason` text DEFAULT NULL,
+  `notes` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Stores pending organization membership requests that require approval from Organization Leaders with proper permission checks';
+
+--
+-- Dumping data for table `organization_membership_approvals`
+--
+
+INSERT INTO `organization_membership_approvals` (`id`, `member_id`, `organization_id`, `requested_at`, `status`, `approved_by`, `approved_at`, `rejection_reason`, `notes`, `created_at`, `updated_at`) VALUES
+(1, 97, 8, '2025-07-24 13:53:43', 'approved', 3, '2025-07-24 13:57:00', NULL, '', '2025-07-24 13:53:43', '2025-07-24 13:57:00'),
+(2, 97, 7, '2025-07-24 13:53:43', 'pending', NULL, NULL, NULL, NULL, '2025-07-24 13:53:43', '2025-07-24 13:53:43'),
+(3, 97, 1, '2025-07-24 13:53:43', 'rejected', 3, '2025-07-24 14:02:58', NULL, 'wrong name', '2025-07-24 13:53:43', '2025-07-24 14:02:58');
 
 -- --------------------------------------------------------
 
@@ -1468,7 +1579,10 @@ INSERT INTO `permissions` (`id`, `name`, `group`, `description`) VALUES
 (313, 'manage_templates', 'System', 'Manage templates'),
 (314, 'manage_settings', 'System', 'Manage settings'),
 (315, 'manage_menu_items', NULL, 'Manage menu items (create, edit, delete, reorder)'),
-(316, 'pending_members_list', NULL, NULL);
+(316, 'pending_members_list', NULL, NULL),
+(317, 'view_organization_membership_approvals', NULL, 'View pending organization membership approval requests'),
+(318, 'approve_organization_memberships', NULL, 'Approve organization membership requests from members'),
+(319, 'reject_organization_memberships', NULL, 'Reject organization membership requests from members');
 
 -- --------------------------------------------------------
 
@@ -2829,7 +2943,7 @@ INSERT INTO `roles` (`id`, `name`) VALUES
 (3, 'Steward'),
 (4, 'Rev. Ministers'),
 (5, 'Class Leader'),
-(6, 'Organisational Leader'),
+(6, 'Organizational Leader'),
 (7, 'Cashier'),
 (8, 'Health'),
 (10, 'STEWARDS'),
@@ -3120,6 +3234,9 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES
 (1, 313),
 (1, 314),
 (1, 315),
+(1, 317),
+(1, 318),
+(1, 319),
 (2, 77),
 (2, 310),
 (5, 77),
@@ -3232,6 +3349,10 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES
 (5, 298),
 (5, 310),
 (5, 316),
+(6, 77),
+(6, 317),
+(6, 318),
+(6, 319),
 (10, 77),
 (10, 78),
 (10, 79),
@@ -3764,7 +3885,8 @@ INSERT INTO `sms_logs` (`id`, `member_id`, `phone`, `message`, `template_name`, 
 (129, NULL, '0242363905', 'Dear ROSEZALIN ama duntu, your payment of â‚µ20.00 has been received by Freeman Methodist Church - KM. Thank you.', NULL, 'payment', 'success', 'arkesel', '2025-07-21 09:39:12', '{\n    \"data\": [\n        {\n            \"id\": \"46e2aa7d-10eb-4222-a9ad-13c84d7312a7\",\n            \"recipient\": \"233242363905\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
 (130, NULL, '0242363905', 'Dear BARNABAS  QUAYSON-OTOO, your payment of â‚µ1.00 has been received by Freeman Methodist Church - KM. Thank you.', NULL, 'payment', 'success', 'arkesel', '2025-07-21 12:20:11', '{\n    \"data\": [\n        {\n            \"id\": \"cc721240-4584-462a-b78a-a10e1acdc150\",\n            \"recipient\": \"233242363905\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
 (131, NULL, '0245740544', 'Hello freeman Network', NULL, 'manual', 'success', 'arkesel', '2025-07-23 19:32:29', '{\n    \"data\": [\n        {\n            \"id\": \"b24d735a-0388-4831-9e48-a9ce06fc88a8\",\n            \"recipient\": \"233245740544\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
-(132, NULL, '0553143607', 'Hi DANIEL, click on the link to complete your registration: https://myfreeman.mensweb.xyz/views/complete_registration.php?token=a73a5bf0378e0796ac7b2977f6e7a0db', NULL, 'registration', 'success', 'arkesel', '2025-07-23 19:37:41', '{\n    \"data\": [\n        {\n            \"id\": \"975763a3-edb5-4c14-b760-0dec35eecd33\",\n            \"recipient\": \"233553143607\"\n        }\n    ],\n    \"status\": \"success\"\n}');
+(132, NULL, '0553143607', 'Hi DANIEL, click on the link to complete your registration: https://myfreeman.mensweb.xyz/views/complete_registration.php?token=a73a5bf0378e0796ac7b2977f6e7a0db', NULL, 'registration', 'success', 'arkesel', '2025-07-23 19:37:41', '{\n    \"data\": [\n        {\n            \"id\": \"975763a3-edb5-4c14-b760-0dec35eecd33\",\n            \"recipient\": \"233553143607\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(133, NULL, '7162381865', 'Hi James, click on the link to complete your registration: http://localhost/myfreemanchurchgit/church/views/complete_registration.php?token=40baa3aacb4197153aa9d40b859090aa', NULL, 'registration', 'fail', 'arkesel', '2025-07-24 13:51:56', '{\n    \"status\": \"error\",\n    \"message\": \"HTTP Error: 422\",\n    \"http_code\": 422,\n    \"debug\": {\n        \"time\": \"2025-07-24 15:51:56\",\n        \"url\": \"https:\\/\\/sms.arkesel.com\\/api\\/v2\\/sms\\/send\",\n        \"payload\": {\n            \"sender\": \"MyFreeman\",\n            \"message\": \"Hi James, click on the link to complete your registration: http:\\/\\/localhost\\/myfreemanchurchgit\\/church\\/views\\/complete_registration.php?token=40baa3aacb4197153aa9d40b859090aa\",\n            \"recipients\": [\n                \"7162381865\"\n            ]\n        },\n        \"request_headers\": [\n            \"api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\",\n            \"Content-Type: application\\/json\",\n            \"Accept: application\\/json\"\n        ],\n        \"http_status\": 422,\n        \"response_headers\": \"HTTP\\/1.1 422 Unprocessable Content\\r\\nServer: nginx\\r\\nContent-Type: application\\/json\\r\\nTransfer-Encoding: chunked\\r\\nConnection: keep-alive\\r\\nCache-Control: no-cache, private\\r\\nDate: Thu, 24 Jul 2025 13:51:57 GMT\\r\\nX-RateLimit-Limit: 1500\\r\\nX-RateLimit-Remaining: 1498\\r\\nAccess-Control-Allow-Origin: *\\r\\nSet-Cookie: arkesel_sms_messenger_session=nBnMNsKEkdpQZTz26Zd7sBE0BR8PCgnQoKKoQuvX; expires=Thu, 24-Jul-2025 15:51:57 GMT; Max-Age=7200; path=\\/; secure; httponly; samesite=lax\\r\\nX-Frame-Options: SAMEORIGIN\\r\\n\\r\\n\",\n        \"response_body\": \"{\\\"message\\\":\\\"No valid number in recipients!\\\",\\\"status\\\":\\\"error\\\"}\",\n        \"curl_error\": \"\",\n        \"curl_info\": {\n            \"total_time\": 1.057187,\n            \"connect_time\": 0.229367,\n            \"namelookup_time\": 0.005255,\n            \"pretransfer_time\": 0.554055,\n            \"starttransfer_time\": 1.05716,\n            \"redirect_time\": 0,\n            \"redirect_count\": 0,\n            \"size_upload\": 241,\n            \"size_download\": 61,\n            \"speed_download\": 57,\n            \"speed_upload\": 227,\n            \"download_content_length\": -1,\n            \"upload_content_length\": 241,\n            \"content_type\": \"application\\/json\"\n        },\n        \"verbose_log\": \"*   Trying 66.175.211.30:443...\\n* Connected to sms.arkesel.com (66.175.211.30) port 443\\n* ALPN: curl offers h2,http\\/1.1\\n*  CAfile: C:\\\\xampp\\\\apache\\\\bin\\\\curl-ca-bundle.crt\\n*  CApath: none\\n* SSL connection using TLSv1.3 \\/ TLS_AES_256_GCM_SHA384\\n* ALPN: server accepted http\\/1.1\\n* Server certificate:\\n*  subject: CN=sms.arkesel.com\\n*  start date: Jun  4 06:14:43 2025 GMT\\n*  expire date: Sep  2 06:14:42 2025 GMT\\n*  subjectAltName: host \\\"sms.arkesel.com\\\" matched cert\'s \\\"sms.arkesel.com\\\"\\n*  issuer: C=US; O=Let\'s Encrypt; CN=E6\\n*  SSL certificate verify ok.\\n* using HTTP\\/1.1\\n> POST \\/api\\/v2\\/sms\\/send HTTP\\/1.1\\r\\nHost: sms.arkesel.com\\r\\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\\r\\nContent-Type: application\\/json\\r\\nAccept: application\\/json\\r\\nContent-Length: 241\\r\\n\\r\\n< HTTP\\/1.1 422 Unprocessable Content\\r\\n< Server: nginx\\r\\n< Content-Type: application\\/json\\r\\n< Transfer-Encoding: chunked\\r\\n< Connection: keep-alive\\r\\n< Cache-Control: no-cache, private\\r\\n< Date: Thu, 24 Jul 2025 13:51:57 GMT\\r\\n< X-RateLimit-Limit: 1500\\r\\n< X-RateLimit-Remaining: 1498\\r\\n< Access-Control-Allow-Origin: *\\r\\n< Set-Cookie: arkesel_sms_messenger_session=nBnMNsKEkdpQZTz26Zd7sBE0BR8PCgnQoKKoQuvX; expires=Thu, 24-Jul-2025 15:51:57 GMT; Max-Age=7200; path=\\/; secure; httponly; samesite=lax\\r\\n< X-Frame-Options: SAMEORIGIN\\r\\n< \\r\\n* Connection #0 to host sms.arkesel.com left intact\\n\"\n    }\n}');
 
 -- --------------------------------------------------------
 
@@ -3991,6 +4113,140 @@ INSERT INTO `visitors` (`id`, `church_id`, `name`, `phone`, `email`, `address`, 
 (19, 7, 'FATIMATU AWUDU', '0545644741', '', 'NEW TOWM- SOUJA MAN JUNCTION', 'dkldjadkljlkjlksdsa', 'Male', 'BUDUBURAM', 'Greater Accra', '', '', 'Yes', '2025-07-12', 72, '2025-07-12 13:33:53'),
 (20, 7, 'FIIFI YAWSON', '0242363905', '', 'TAKORADI', 'TO WORSHIP WITH US', 'Male', 'KIKAM', 'Western North', 'TRADER', 'Married', 'Yes', '2025-07-07', 73, '2025-07-14 21:25:05');
 
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `zkteco_devices`
+--
+
+CREATE TABLE `zkteco_devices` (
+  `id` int(11) NOT NULL,
+  `device_name` varchar(100) NOT NULL,
+  `ip_address` varchar(15) NOT NULL,
+  `port` int(11) DEFAULT 4370,
+  `location` varchar(255) DEFAULT NULL,
+  `church_id` int(11) DEFAULT NULL,
+  `is_active` tinyint(1) DEFAULT 1,
+  `last_sync` timestamp NULL DEFAULT NULL,
+  `device_model` varchar(50) DEFAULT 'MB460',
+  `firmware_version` varchar(50) DEFAULT NULL,
+  `total_users` int(11) DEFAULT 0,
+  `total_records` int(11) DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Stores ZKTeco biometric device configuration and status information';
+
+--
+-- Dumping data for table `zkteco_devices`
+--
+
+INSERT INTO `zkteco_devices` (`id`, `device_name`, `ip_address`, `port`, `location`, `church_id`, `is_active`, `last_sync`, `device_model`, `firmware_version`, `total_users`, `total_records`, `created_at`, `updated_at`) VALUES
+(2, 'Attendance System', '192.168.1.1', 4370, 'MyFreeman - KM', NULL, 1, NULL, 'MB460', NULL, 0, 0, '2025-07-24 14:56:36', '2025-07-24 14:56:36'),
+(3, 'Attendance System', '192.168.1.1', 4370, 'MyFreeman - KM', NULL, 1, NULL, 'MB460', NULL, 0, 0, '2025-07-24 14:57:27', '2025-07-24 14:57:27'),
+(12, 'Attendance System', '1.1.1.100', 4370, '0', 7, 1, NULL, 'MB460', NULL, 0, 0, '2025-07-24 15:42:19', '2025-07-24 15:48:35'),
+(13, 'My Freeman Device', '192.168.1.1', 4370, 'My Freeman - KM', 7, 1, NULL, 'MB460', NULL, 0, 0, '2025-07-24 15:56:18', '2025-07-24 15:56:18');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `zkteco_raw_logs`
+--
+
+CREATE TABLE `zkteco_raw_logs` (
+  `id` int(11) NOT NULL,
+  `device_id` int(11) NOT NULL,
+  `zk_user_id` varchar(50) NOT NULL,
+  `timestamp` datetime NOT NULL,
+  `verification_type` enum('fingerprint','face','card','password','unknown') DEFAULT 'unknown',
+  `in_out_mode` enum('check_in','check_out','break_out','break_in','overtime_in','overtime_out','unknown') DEFAULT 'unknown',
+  `raw_data` text DEFAULT NULL,
+  `processed` tinyint(1) DEFAULT 0,
+  `processed_at` timestamp NULL DEFAULT NULL,
+  `session_id` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Stores raw attendance logs retrieved from ZKTeco devices before processing';
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `zkteco_session_mapping_rules`
+--
+
+CREATE TABLE `zkteco_session_mapping_rules` (
+  `id` int(11) NOT NULL,
+  `device_id` int(11) NOT NULL,
+  `session_pattern` varchar(255) NOT NULL,
+  `time_window_before` int(11) DEFAULT 120,
+  `time_window_after` int(11) DEFAULT 120,
+  `auto_create_session` tinyint(1) DEFAULT 0,
+  `default_session_title` varchar(255) DEFAULT NULL,
+  `is_active` tinyint(1) DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Rules for automatically mapping ZKTeco attendance data to attendance sessions';
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `zkteco_sync_history`
+--
+
+CREATE TABLE `zkteco_sync_history` (
+  `id` int(11) NOT NULL,
+  `device_id` int(11) NOT NULL,
+  `sync_type` enum('manual','automatic','scheduled') DEFAULT 'manual',
+  `sync_status` enum('success','partial','failed') DEFAULT 'failed',
+  `records_synced` int(11) DEFAULT 0,
+  `records_processed` int(11) DEFAULT 0,
+  `sync_start` timestamp NOT NULL DEFAULT current_timestamp(),
+  `sync_end` timestamp NULL DEFAULT NULL,
+  `error_message` text DEFAULT NULL,
+  `sync_details` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`sync_details`)),
+  `initiated_by` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Tracks synchronization history and status for ZKTeco devices';
+
+--
+-- Dumping data for table `zkteco_sync_history`
+--
+
+INSERT INTO `zkteco_sync_history` (`id`, `device_id`, `sync_type`, `sync_status`, `records_synced`, `records_processed`, `sync_start`, `sync_end`, `error_message`, `sync_details`, `initiated_by`) VALUES
+(1, 12, 'manual', 'failed', 0, 0, '2025-07-24 15:59:09', '2025-07-24 15:59:30', 'Failed to connect to device', NULL, 3),
+(2, 12, 'manual', 'failed', 0, 0, '2025-07-24 16:38:02', '2025-07-24 16:38:23', 'Failed to connect to device', NULL, 3);
+
+-- --------------------------------------------------------
+
+--
+-- Structure for view `attendance_with_zkteco`
+--
+-- DROP the existing view if it exists (optional, to avoid conflicts)
+DROP VIEW IF EXISTS `attendance_with_zkteco`;
+
+-- CREATE the view without DEFINER
+CREATE VIEW `attendance_with_zkteco` AS
+SELECT 
+    ar.id AS id,
+    ar.session_id AS session_id,
+    ar.member_id AS member_id,
+    ar.status AS status,
+    ar.marked_by AS marked_by,
+    ar.created_at AS created_at,
+    ar.sync_source AS sync_source,
+    ar.verification_type AS verification_type,
+    ar.device_timestamp AS device_timestamp,
+    zrl.device_id AS device_id,
+    zd.device_name AS device_name,
+    zd.location AS device_location,
+    m.first_name AS first_name,
+    m.last_name AS last_name,
+    m.crn AS crn,
+    ats.title AS session_title,
+    ats.service_date AS service_date
+FROM attendance_records ar
+LEFT JOIN zkteco_raw_logs zrl ON ar.zkteco_raw_log_id = zrl.id
+LEFT JOIN zkteco_devices zd ON zrl.device_id = zd.id
+LEFT JOIN members m ON ar.member_id = m.id
+LEFT JOIN attendance_sessions ats ON ar.session_id = ats.id;
+
 --
 -- Indexes for dumped tables
 --
@@ -4002,7 +4258,9 @@ ALTER TABLE `attendance_records`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `uniq_session_member` (`session_id`,`member_id`),
   ADD KEY `member_id` (`member_id`),
-  ADD KEY `marked_by` (`marked_by`);
+  ADD KEY `marked_by` (`marked_by`),
+  ADD KEY `idx_sync_source` (`sync_source`),
+  ADD KEY `idx_zkteco_raw_log` (`zkteco_raw_log_id`);
 
 --
 -- Indexes for table `attendance_sessions`
@@ -4110,6 +4368,17 @@ ALTER TABLE `members`
   ADD KEY `class_id` (`class_id`);
 
 --
+-- Indexes for table `member_biometric_data`
+--
+ALTER TABLE `member_biometric_data`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_member_device` (`member_id`,`device_id`),
+  ADD UNIQUE KEY `unique_zk_user_device` (`zk_user_id`,`device_id`),
+  ADD KEY `idx_member_biometric` (`member_id`),
+  ADD KEY `idx_zk_user_id` (`zk_user_id`),
+  ADD KEY `idx_device_biometric` (`device_id`);
+
+--
 -- Indexes for table `member_emergency_contacts`
 --
 ALTER TABLE `member_emergency_contacts`
@@ -4169,7 +4438,20 @@ ALTER TABLE `menu_items`
 --
 ALTER TABLE `organizations`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `church_id` (`church_id`);
+  ADD KEY `church_id` (`church_id`),
+  ADD KEY `fk_organizations_leader_id` (`leader_id`);
+
+--
+-- Indexes for table `organization_membership_approvals`
+--
+ALTER TABLE `organization_membership_approvals`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_pending_request` (`member_id`,`organization_id`,`status`),
+  ADD KEY `approved_by` (`approved_by`),
+  ADD KEY `idx_member_id` (`member_id`),
+  ADD KEY `idx_organization_id` (`organization_id`),
+  ADD KEY `idx_status` (`status`),
+  ADD KEY `idx_requested_at` (`requested_at`);
 
 --
 -- Indexes for table `password_resets`
@@ -4325,6 +4607,45 @@ ALTER TABLE `visitors`
   ADD KEY `fk_visitors_invited_by` (`invited_by`);
 
 --
+-- Indexes for table `zkteco_devices`
+--
+ALTER TABLE `zkteco_devices`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_device_ip` (`ip_address`),
+  ADD KEY `idx_device_church` (`church_id`),
+  ADD KEY `idx_device_active` (`is_active`);
+
+--
+-- Indexes for table `zkteco_raw_logs`
+--
+ALTER TABLE `zkteco_raw_logs`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_device_user_timestamp` (`device_id`,`zk_user_id`,`timestamp`),
+  ADD KEY `session_id` (`session_id`),
+  ADD KEY `idx_device_timestamp` (`device_id`,`timestamp`),
+  ADD KEY `idx_zk_user_timestamp` (`zk_user_id`,`timestamp`),
+  ADD KEY `idx_processed` (`processed`),
+  ADD KEY `idx_timestamp` (`timestamp`);
+
+--
+-- Indexes for table `zkteco_session_mapping_rules`
+--
+ALTER TABLE `zkteco_session_mapping_rules`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_device_mapping` (`device_id`),
+  ADD KEY `idx_mapping_active` (`is_active`);
+
+--
+-- Indexes for table `zkteco_sync_history`
+--
+ALTER TABLE `zkteco_sync_history`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `initiated_by` (`initiated_by`),
+  ADD KEY `idx_device_sync` (`device_id`,`sync_start`),
+  ADD KEY `idx_sync_status` (`sync_status`),
+  ADD KEY `idx_sync_type` (`sync_type`);
+
+--
 -- AUTO_INCREMENT for dumped tables
 --
 
@@ -4344,7 +4665,7 @@ ALTER TABLE `attendance_sessions`
 -- AUTO_INCREMENT for table `audit_log`
 --
 ALTER TABLE `audit_log`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=322;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=334;
 
 --
 -- AUTO_INCREMENT for table `bible_classes`
@@ -4410,13 +4731,19 @@ ALTER TABLE `health_records`
 -- AUTO_INCREMENT for table `members`
 --
 ALTER TABLE `members`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=97;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=98;
+
+--
+-- AUTO_INCREMENT for table `member_biometric_data`
+--
+ALTER TABLE `member_biometric_data`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- AUTO_INCREMENT for table `member_emergency_contacts`
 --
 ALTER TABLE `member_emergency_contacts`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=102;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=103;
 
 --
 -- AUTO_INCREMENT for table `member_feedback`
@@ -4434,7 +4761,7 @@ ALTER TABLE `member_feedback_thread`
 -- AUTO_INCREMENT for table `member_organizations`
 --
 ALTER TABLE `member_organizations`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=109;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=110;
 
 --
 -- AUTO_INCREMENT for table `member_transfers`
@@ -4446,13 +4773,19 @@ ALTER TABLE `member_transfers`
 -- AUTO_INCREMENT for table `menu_items`
 --
 ALTER TABLE `menu_items`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=78;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=80;
 
 --
 -- AUTO_INCREMENT for table `organizations`
 --
 ALTER TABLE `organizations`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+
+--
+-- AUTO_INCREMENT for table `organization_membership_approvals`
+--
+ALTER TABLE `organization_membership_approvals`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `password_resets`
@@ -4482,7 +4815,7 @@ ALTER TABLE `payment_types`
 -- AUTO_INCREMENT for table `permissions`
 --
 ALTER TABLE `permissions`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=317;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=320;
 
 --
 -- AUTO_INCREMENT for table `permission_audit_log`
@@ -4512,7 +4845,7 @@ ALTER TABLE `roles_of_serving`
 -- AUTO_INCREMENT for table `sms_logs`
 --
 ALTER TABLE `sms_logs`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=133;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=134;
 
 --
 -- AUTO_INCREMENT for table `sms_templates`
@@ -4551,6 +4884,30 @@ ALTER TABLE `visitors`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
 
 --
+-- AUTO_INCREMENT for table `zkteco_devices`
+--
+ALTER TABLE `zkteco_devices`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
+
+--
+-- AUTO_INCREMENT for table `zkteco_raw_logs`
+--
+ALTER TABLE `zkteco_raw_logs`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `zkteco_session_mapping_rules`
+--
+ALTER TABLE `zkteco_session_mapping_rules`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `zkteco_sync_history`
+--
+ALTER TABLE `zkteco_sync_history`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
 -- Constraints for dumped tables
 --
 
@@ -4560,7 +4917,8 @@ ALTER TABLE `visitors`
 ALTER TABLE `attendance_records`
   ADD CONSTRAINT `attendance_records_ibfk_1` FOREIGN KEY (`session_id`) REFERENCES `attendance_sessions` (`id`),
   ADD CONSTRAINT `attendance_records_ibfk_2` FOREIGN KEY (`member_id`) REFERENCES `members` (`id`),
-  ADD CONSTRAINT `attendance_records_ibfk_3` FOREIGN KEY (`marked_by`) REFERENCES `users` (`id`);
+  ADD CONSTRAINT `attendance_records_ibfk_3` FOREIGN KEY (`marked_by`) REFERENCES `users` (`id`),
+  ADD CONSTRAINT `fk_attendance_zkteco_raw_log` FOREIGN KEY (`zkteco_raw_log_id`) REFERENCES `zkteco_raw_logs` (`id`) ON DELETE SET NULL;
 
 --
 -- Constraints for table `attendance_sessions`
@@ -4617,6 +4975,13 @@ ALTER TABLE `members`
   ADD CONSTRAINT `members_ibfk_2` FOREIGN KEY (`class_id`) REFERENCES `bible_classes` (`id`);
 
 --
+-- Constraints for table `member_biometric_data`
+--
+ALTER TABLE `member_biometric_data`
+  ADD CONSTRAINT `member_biometric_data_ibfk_1` FOREIGN KEY (`member_id`) REFERENCES `members` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `member_biometric_data_ibfk_2` FOREIGN KEY (`device_id`) REFERENCES `zkteco_devices` (`id`) ON DELETE CASCADE;
+
+--
 -- Constraints for table `member_emergency_contacts`
 --
 ALTER TABLE `member_emergency_contacts`
@@ -4655,7 +5020,16 @@ ALTER TABLE `member_transfers`
 -- Constraints for table `organizations`
 --
 ALTER TABLE `organizations`
+  ADD CONSTRAINT `fk_organizations_leader_id` FOREIGN KEY (`leader_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   ADD CONSTRAINT `organizations_ibfk_1` FOREIGN KEY (`church_id`) REFERENCES `churches` (`id`);
+
+--
+-- Constraints for table `organization_membership_approvals`
+--
+ALTER TABLE `organization_membership_approvals`
+  ADD CONSTRAINT `organization_membership_approvals_ibfk_1` FOREIGN KEY (`member_id`) REFERENCES `members` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `organization_membership_approvals_ibfk_2` FOREIGN KEY (`organization_id`) REFERENCES `organizations` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `organization_membership_approvals_ibfk_3` FOREIGN KEY (`approved_by`) REFERENCES `users` (`id`) ON DELETE SET NULL;
 
 --
 -- Constraints for table `payments`
@@ -4746,6 +5120,32 @@ ALTER TABLE `user_roles`
 ALTER TABLE `visitors`
   ADD CONSTRAINT `fk_visitors_invited_by` FOREIGN KEY (`invited_by`) REFERENCES `members` (`id`) ON DELETE SET NULL,
   ADD CONSTRAINT `visitors_ibfk_1` FOREIGN KEY (`church_id`) REFERENCES `churches` (`id`);
+
+--
+-- Constraints for table `zkteco_devices`
+--
+ALTER TABLE `zkteco_devices`
+  ADD CONSTRAINT `zkteco_devices_ibfk_1` FOREIGN KEY (`church_id`) REFERENCES `churches` (`id`) ON DELETE SET NULL;
+
+--
+-- Constraints for table `zkteco_raw_logs`
+--
+ALTER TABLE `zkteco_raw_logs`
+  ADD CONSTRAINT `zkteco_raw_logs_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `zkteco_devices` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `zkteco_raw_logs_ibfk_2` FOREIGN KEY (`session_id`) REFERENCES `attendance_sessions` (`id`) ON DELETE SET NULL;
+
+--
+-- Constraints for table `zkteco_session_mapping_rules`
+--
+ALTER TABLE `zkteco_session_mapping_rules`
+  ADD CONSTRAINT `zkteco_session_mapping_rules_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `zkteco_devices` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `zkteco_sync_history`
+--
+ALTER TABLE `zkteco_sync_history`
+  ADD CONSTRAINT `zkteco_sync_history_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `zkteco_devices` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `zkteco_sync_history_ibfk_2` FOREIGN KEY (`initiated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

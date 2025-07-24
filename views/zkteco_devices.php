@@ -277,71 +277,11 @@ ob_start();
                 </div>
             <?php endif; ?>
 
-            <!-- Add Device Card -->
-            <div class="card card-primary">
-                <div class="card-header">
-                    <h3 class="card-title">Add New ZKTeco Device</h3>
-                </div>
-                <form method="POST">
-                    <div class="card-body">
-                        <input type="hidden" name="action" value="add_device">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="form-group">
-                                    <label for="device_name">Device Name *</label>
-                                    <input type="text" class="form-control" id="device_name" name="device_name" required>
-                                    <small class="form-text text-muted">e.g., "Main Entrance Scanner"</small>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="form-group">
-                                    <label for="church_id">Church <?php echo $is_super_admin ? '*' : ''; ?></label>
-                                    <?php if ($is_super_admin): ?>
-                                        <select class="form-control" id="church_id" name="church_id" required>
-                                            <option value="">Select Church...</option>
-                                            <?php foreach ($churches as $church): ?>
-                                                <option value="<?php echo $church['id']; ?>">
-                                                    <?php echo htmlspecialchars($church['name']); ?>
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                        <small class="form-text text-muted">Select which church this device belongs to</small>
-                                    <?php else: ?>
-                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($churches[0]['name'] ?? 'No Church'); ?>" readonly>
-                                        <small class="form-text text-muted">Device will be assigned to your church</small>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="form-group">
-                                    <label for="ip_address">IP Address *</label>
-                                    <input type="text" class="form-control" id="ip_address" name="ip_address" 
-                                           pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$" required>
-                                    <small class="form-text text-muted">e.g., "192.168.1.100"</small>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="form-group">
-                                    <label for="port">Port</label>
-                                    <input type="number" class="form-control" id="port" name="port" value="4370" min="1" max="65535">
-                                    <small class="form-text text-muted">Default: 4370</small>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="form-group">
-                                    <label for="location">Location</label>
-                                    <input type="text" class="form-control" id="location" name="location">
-                                    <small class="form-text text-muted">Physical location</small>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="card-footer">
-                        <button type="submit" class="btn btn-primary">Add Device</button>
-                    </div>
-                </form>
+            <!-- Add Device Button -->
+            <div class="mb-3">
+                <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#addDeviceModal">
+                    <i class="fas fa-plus"></i> Add New Device
+                </button>
             </div>
 
             <!-- Devices List -->
@@ -601,6 +541,7 @@ function viewStats(deviceId) {
 <?php
 // Following visitor_list.php modal pattern
 ob_start();
+include 'zkteco_add_device_modal.php';
 include 'zkteco_stats_modal.php';
 include 'zkteco_edit_device_modal.php';
 $modal_html = ob_get_clean();
