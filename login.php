@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Set session flag for welcome modal
                 $_SESSION['login_success'] = true;
                 $_SESSION['login_fullname'] = $member['first_name'] . ' ' . $member['last_name'];
-                header('Location: views/member_dashboard.php');
+                header('Location: ' . BASE_URL . '/views/member_dashboard.php');
                 exit;
             } else {
                 $error = 'Invalid CRN or password.';
@@ -86,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (in_array(1, $role_ids)) {
                         $_SESSION['role_id'] = 1;
                     }
-                    header('Location: index.php');
+                    header('Location: ' . BASE_URL . '/index.php');
                     exit;
                 }
             } else {
@@ -631,7 +631,7 @@ if (file_exists(__DIR__.'/uploads/logo_6866e9048867c.jpg')) {
                 <div id="loginFormsContainer">
                     <!-- Member Login Form -->
                     <div id="member-login" style="display: <?php echo ($login_mode === 'member' ? 'block' : 'none'); ?>;">
-                        <form method="post" autocomplete="off" id="memberLoginForm">
+                        <form method="post" autocomplete="off" id="memberLoginForm" action="<?php echo BASE_URL; ?>/login.php">
                             <input type="hidden" name="login_mode" value="member">
                             
                             <div class="form-floating">
@@ -657,7 +657,7 @@ if (file_exists(__DIR__.'/uploads/logo_6866e9048867c.jpg')) {
 
                     <!-- Admin Login Form -->
                     <div id="admin-login" style="display: <?php echo ($login_mode !== 'member' ? 'block' : 'none'); ?>;">
-                        <form method="post" autocomplete="off" id="adminLoginForm">
+                        <form method="post" autocomplete="off" id="adminLoginForm" action="<?php echo BASE_URL; ?>/login.php">
                             <input type="hidden" name="login_mode" value="user">
                             
                             <div class="form-floating">
@@ -684,7 +684,7 @@ if (file_exists(__DIR__.'/uploads/logo_6866e9048867c.jpg')) {
 
                 <!-- Forgot Password Link -->
                 <div class="forgot-password">
-                    <a href="forgot_password.php">
+                    <a href="<?php echo BASE_URL; ?>/forgot_password.php">
                         <i class="fas fa-key me-1"></i>Forgot your password?
                     </a>
                 </div>
