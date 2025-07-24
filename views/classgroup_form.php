@@ -44,25 +44,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error) {
     if (!$name) {
         $error = 'Name is required.';
     } else {
+        // Check for duplicate name
         if ($editing) {
-            $stmt = $conn->prepare('UPDATE class_groups SET name=? WHERE id=?');
-            $stmt->bind_param('si', $name, $id);
-            $stmt->execute();
-            if ($stmt->affected_rows >= 0) {
-                header('Location: classgroup_list.php?updated=1');
-                exit;
-            } else {
-                $error = 'Database error. Please try again.';
-            }
+            // When editing, check for duplicates excluding the current record
+            $duplicate_check = $conn->prepare('SELECT id FROM class_groups WHERE name = ? AND id != ?');
+            $duplicate_check->bind_param('si', $name, $id);
         } else {
-            $stmt = $conn->prepare('INSERT INTO class_groups (name) VALUES (?)');
-            $stmt->bind_param('s', $name);
-            $stmt->execute();
-            if ($stmt->affected_rows > 0) {
-                header('Location: classgroup_list.php?added=1');
-                exit;
+            // When adding, check for any existing record with the same name
+            $duplicate_check = $conn->prepare('SELECT id FROM class_groups WHERE name = ?');
+            $duplicate_check->bind_param('s', $name);
+        }
+        
+        $duplicate_check->execute();
+        $duplicate_check->store_result();
+        
+        if ($duplicate_check->num_rows > 0) {
+            $error = 'A class group with this name already exists. Please choose a different name.';
+            $duplicate_check->close();
+        } else {
+            $duplicate_check->close();
+            
+            if ($editing) {
+                $stmt = $conn->prepare('UPDATE class_groups SET name=? WHERE id=?');
+                $stmt->bind_param('si', $name, $id);
+                $stmt->execute();
+                if ($stmt->affected_rows >= 0) {
+                    header('Location: classgroup_list.php?updated=1');
+                    exit;
+                } else {
+                    $error = 'Database error. Please try again.';
+                }
             } else {
-                $error = 'Database error. Please try again.';
+                $stmt = $conn->prepare('INSERT INTO class_groups (name) VALUES (?)');
+                $stmt->bind_param('s', $name);
+                $stmt->execute();
+                if ($stmt->affected_rows > 0) {
+                    header('Location: classgroup_list.php?added=1');
+                    exit;
+                } else {
+                    $error = 'Database error. Please try again.';
+                }
             }
         }
     }
