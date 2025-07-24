@@ -21,7 +21,7 @@ $user_permissions = $is_super_admin ? null : ($_SESSION['permissions'] ?? []);
 
 // Branding: logo, name, address
 $logo_path = BASE_URL . '/uploads/logo.png';
-$church_name = 'FMC-KM';
+$church_name = 'MyFreeman';
 $church_address = '';
 if (isset($_SESSION['church_id'])) {
     $stmt = $conn->prepare('SELECT name, address, logo FROM churches WHERE id = ? LIMIT 1');
