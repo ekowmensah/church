@@ -1,0 +1,312 @@
+<!-- user_dashboard.php: Dashboard for Super Admin, Admin, etc. -->
+<?php
+require_once __DIR__.'/../config/config.php';
+global $conn;
+
+// user_dashboard.php: Dashboard for Super Admin, Admin, etc.
+if (!has_permission('access_dashboard')) {
+    http_response_code(403);
+    exit('Forbidden: You do not have permission to access this resource.');
+}
+ob_start();
+// Show welcome message
+$user_name = isset($_SESSION['user_name']) ? $_SESSION['user_name'] : '';
+if (!$user_name && isset($_SESSION['user_id'])) {
+    $uid = intval($_SESSION['user_id']);
+    $res = $conn->query("SELECT name FROM users WHERE id = $uid");
+    if ($row = $res->fetch_assoc()) $user_name = $row['name'];
+}
+// Fetch stat card values
+// Find Sunday School class IDs
+$sunday_school_classes = [];
+$res = $conn->query("SELECT id FROM bible_classes WHERE LOWER(name) LIKE 'sunday school%'");
+while ($row = $res->fetch_assoc()) {
+    $sunday_school_classes[] = intval($row['id']);
+}
+$sunday_school_ids = $sunday_school_classes ? implode(',', $sunday_school_classes) : 'NULL';
+
+// FULL MEMBER: baptized = 'Yes' AND confirmed = 'Yes'
+$full_member = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE baptized = 'Yes' AND confirmed = 'Yes'")->fetch_assoc()['cnt'];
+// CATECHUMEN: baptized = 'Yes' AND (confirmed IS NULL OR confirmed != 'Yes')
+$catechumen = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE baptized = 'Yes' AND (confirmed IS NULL OR confirmed != 'Yes')")->fetch_assoc()['cnt'];
+// ADHERENT: status = 'de-activated' OR status = 'suspended'
+$adherent = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'de-activated' OR status = 'suspended'")->fetch_assoc()['cnt'];
+// JUNIOR MEMBERS: count all records in sunday_school table
+$junior_members = $conn->query("SELECT COUNT(*) as cnt FROM sunday_school")->fetch_assoc()['cnt'];
+// TOTAL
+$total_members = $conn->query("SELECT (SELECT COUNT(*) FROM members) + (SELECT COUNT(*) FROM sunday_school) AS cnt")->fetch_assoc()['cnt'];
+
+// Registered Members (Active Members)
+$registered_members = 0;
+$res = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'active'");
+if ($res && ($row = $res->fetch_assoc())) $registered_members = $row['cnt'];
+// Pending Registration
+$pending_registration = 0;
+$res = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'pending'");
+if ($res && ($row = $res->fetch_assoc())) $pending_registration = $row['cnt'];
+// Total Payments
+$total_payments = 0.00;
+$res = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments");
+if ($res && ($row = $res->fetch_assoc())) $total_payments = $row['total'];
+// Members with No Payments
+$members_no_payments = 0;
+$res = $conn->query("SELECT COUNT(*) as cnt FROM members m LEFT JOIN payments p ON m.id = p.member_id WHERE p.id IS NULL AND m.status = 'active'");
+if ($res && ($row = $res->fetch_assoc())) $members_no_payments = $row['cnt'];
+
+if (!empty($_SESSION['login_success']) && !empty($_SESSION['login_fullname'])): ?>
+<!-- Login Success Modal -->
+<div id="loginSuccessModal" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:14px;padding:36px 28px;box-shadow:0 8px 40px rgba(0,0,0,0.18);max-width:340px;width:90%;text-align:center;">
+    <div style="font-size:1.5rem;font-weight:600;margin-bottom:8px;color:#2d7c36;">You are Welcome</div>
+    <div style="font-size:1.2rem;font-weight:500;margin-bottom:20px;">
+      <?php echo htmlspecialchars($_SESSION['login_fullname']); ?>
+    </div>
+    <button id="loginSuccessOk" style="background:#2d7c36;color:#fff;font-weight:600;border:none;border-radius:6px;padding:10px 32px;font-size:1.1rem;cursor:pointer;">OK</button>
+  </div>
+</div>
+<script>
+document.getElementById('loginSuccessOk').onclick = function() {
+  document.getElementById('loginSuccessModal').style.display = 'none';
+};
+</script>
+<?php unset($_SESSION['login_success'], $_SESSION['login_fullname']); endif;
+if (!empty($_SESSION['login_success']) && !empty($_SESSION['login_fullname'])): ?>
+<!-- Login Success Modal -->
+<div id="loginSuccessModal" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:14px;padding:36px 28px;box-shadow:0 8px 40px rgba(0,0,0,0.18);max-width:340px;width:90%;text-align:center;">
+    <div style="font-size:1.5rem;font-weight:600;margin-bottom:8px;color:#2d7c36;">You are Welcome</div>
+    <div style="font-size:1.2rem;font-weight:500;margin-bottom:20px;">
+      <?php echo htmlspecialchars($_SESSION['login_fullname']); ?>
+    </div>
+    <button id="loginSuccessOk" style="background:#2d7c36;color:#fff;font-weight:600;border:none;border-radius:6px;padding:10px 32px;font-size:1.1rem;cursor:pointer;">OK</button>
+  </div>
+</div>
+<script>
+document.getElementById('loginSuccessOk').onclick = function() {
+  document.getElementById('loginSuccessModal').style.display = 'none';
+};
+</script>
+<?php unset($_SESSION['login_success'], $_SESSION['login_fullname']); endif;
+echo '<div class="alert alert-info mb-4"><h4>Welcome back, ' . htmlspecialchars($user_name) . '!</h4></div>';
+?>
+<!-- Modern Dashboard Summary -->
+<div class="dashboard-summary py-4 px-2 px-md-4 mb-4 rounded shadow-sm" style="background: linear-gradient(90deg, #f8fafc 60%, #e9ecef 100%); border: 1px solid #e3e6f0;">
+  <div class="d-flex flex-column flex-md-row align-items-center justify-content-between mb-3">
+    <div>
+      <h2 class="h4 font-weight-bold mb-1">Membership Overview</h2>
+      <div class="text-muted small">Snapshot of your current congregation and Sunday School</div>
+    </div>
+    <div class="mt-3 mt-md-0">
+      <span class="badge badge-pill badge-primary px-3 py-2" style="font-size:1rem;">Dashboard</span>
+    </div>
+  </div>
+  <div class="row g-3">
+    <div class="col-12 col-sm-6 col-md col-lg mb-3">
+      <div class="card border-0 shadow-sm h-100 gradient-card bg-primary text-white">
+        <div class="card-body text-center">
+          <div class="mb-2"><i class="fas fa-user-check fa-2x"></i></div>
+          <div class="h5 mb-1 font-weight-bold">Full Members</div>
+          <div class="display-4 font-weight-bold mb-1"><?php echo number_format($full_member); ?></div>
+          <div class="small">Baptized & Confirmed</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-md col-lg mb-3">
+      <div class="card border-0 shadow-sm h-100 gradient-card bg-success text-white">
+        <div class="card-body text-center">
+          <div class="mb-2"><i class="fas fa-user-graduate fa-2x"></i></div>
+          <div class="h5 mb-1 font-weight-bold">Catechumens</div>
+          <div class="display-4 font-weight-bold mb-1"><?php echo number_format($catechumen); ?></div>
+          <div class="small">Baptized, Not Confirmed</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-md col-lg mb-3">
+      <div class="card border-0 shadow-sm h-100 gradient-card bg-danger text-white">
+        <div class="card-body text-center">
+          <div class="mb-2"><i class="fas fa-user-slash fa-2x"></i></div>
+          <div class="h5 mb-1 font-weight-bold">Adherents</div>
+          <div class="display-4 font-weight-bold mb-1"><?php echo number_format($adherent); ?></div>
+          <div class="small">De-activated Members</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-md col-lg mb-3">
+      <div class="card border-0 shadow-sm h-100 gradient-card bg-warning text-white">
+        <div class="card-body text-center">
+          <div class="mb-2"><i class="fas fa-child fa-2x"></i></div>
+          <div class="h5 mb-1 font-weight-bold">Junior Members</div>
+          <div class="display-4 font-weight-bold mb-1"><?php echo number_format($junior_members); ?></div>
+          <div class="small">Sunday School</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-md col-lg mb-3">
+      <div class="card border-0 shadow-sm h-100 gradient-card bg-dark text-white">
+        <div class="card-body text-center">
+          <div class="mb-2"><i class="fas fa-users fa-2x"></i></div>
+          <div class="h5 mb-1 font-weight-bold">Total</div>
+          <div class="display-4 font-weight-bold mb-1"><?php echo number_format($total_members); ?></div>
+          <div class="small">All Members & Children</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="row g-3 mt-2">
+    <div class="col-12 col-sm-6 col-md col-lg mb-3">
+      <div class="card border-0 shadow-sm h-100 gradient-card bg-info text-white">
+        <div class="card-body text-center">
+          <div class="mb-2"><i class="fas fa-user-friends fa-2x"></i></div>
+          <div class="h5 mb-1 font-weight-bold">Registered Members</div>
+          <div class="display-4 font-weight-bold mb-1"><?php echo number_format($registered_members); ?></div>
+          <div class="small">Active Members</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-md col-lg mb-3">
+      <div class="card border-0 shadow-sm h-100 gradient-card bg-secondary text-white">
+        <div class="card-body text-center">
+          <div class="mb-2"><i class="fas fa-user-clock fa-2x"></i></div>
+          <div class="h5 mb-1 font-weight-bold">Pending Registration</div>
+          <div class="display-4 font-weight-bold mb-1"><?php echo number_format($pending_registration); ?></div>
+          <div class="small">Awaiting Approval</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-md col-lg mb-3">
+      <div class="card border-0 shadow-sm h-100 gradient-card bg-success text-white">
+        <div class="card-body text-center">
+          <div class="mb-2"><i class="fas fa-coins fa-2x"></i></div>
+          <div class="h5 mb-1 font-weight-bold">Total Payments</div>
+          <div class="display-4 font-weight-bold mb-1">₵ <?php echo number_format($total_payments,2); ?></div>
+          <div class="small">All Time</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-md col-lg mb-3">
+      <div class="card border-0 shadow-sm h-100 gradient-card bg-danger text-white">
+        <div class="card-body text-center">
+          <div class="mb-2"><i class="fas fa-user-times fa-2x"></i></div>
+          <div class="h5 mb-1 font-weight-bold">Zero Payments</div>
+          <div class="display-4 font-weight-bold mb-1"><?php echo number_format($members_no_payments); ?></div>
+          <div class="small">Members with No Payments</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<style>
+.gradient-card {
+  background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.08) 100%);
+  border-radius: 1rem;
+}
+</style>
+
+<?php
+// Fetch stat card values
+// Find Sunday School class IDs
+$sunday_school_classes = [];
+$res = $conn->query("SELECT id FROM bible_classes WHERE LOWER(name) LIKE 'sunday school%'");
+while ($row = $res->fetch_assoc()) {
+    $sunday_school_classes[] = intval($row['id']);
+}
+$sunday_school_ids = $sunday_school_classes ? implode(',', $sunday_school_classes) : 'NULL';
+
+// FULL MEMBER: baptized = 'Yes' AND confirmed = 'Yes'
+$full_member = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE baptized = 'Yes' AND confirmed = 'Yes'")->fetch_assoc()['cnt'];
+// CATECHUMEN: baptized = 'Yes' AND (confirmed IS NULL OR confirmed != 'Yes')
+$catechumen = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE baptized = 'Yes' AND (confirmed IS NULL OR confirmed != 'Yes')")->fetch_assoc()['cnt'];
+// ADHERENT: status = 'de-activated' OR status = 'suspended'
+$adherent = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'de-activated' OR status = 'suspended'")->fetch_assoc()['cnt'];
+// JUNIOR MEMBERS: count all records in sunday_school table
+$junior_members = $conn->query("SELECT COUNT(*) as cnt FROM sunday_school")->fetch_assoc()['cnt'];
+// TOTAL
+$total_members = $conn->query("SELECT (SELECT COUNT(*) FROM members) + (SELECT COUNT(*) FROM sunday_school) AS cnt")->fetch_assoc()['cnt'];
+
+// Fetch attendance percentage (last session)
+$attendance_percent = 0;
+$attendance_sql = "SELECT id FROM attendance_sessions ORDER BY service_date DESC, id DESC LIMIT 1";
+$attendance_result = $conn->query($attendance_sql);
+if ($attendance_row = $attendance_result->fetch_assoc()) {
+    $session_id = $attendance_row['id'];
+    $total = $conn->query("SELECT COUNT(*) as cnt FROM attendance_records WHERE session_id = $session_id")->fetch_assoc()['cnt'];
+    $members = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'active'")->fetch_assoc()['cnt'];
+    $attendance_percent = $members > 0 ? round(($total / $members) * 100) : 0;
+}
+// Fetch total payments sum
+$total_payments = $conn->query("SELECT SUM(amount) as total FROM payments")->fetch_assoc()['total'];
+$total_payments = $total_payments ? number_format($total_payments, 0) : '0';
+// Fetch pending requests (pending members)
+$pending_requests = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'pending'")->fetch_assoc()['cnt'];
+// Fetch 5 most recent members
+$recent_members = $conn->query("SELECT m.id, CONCAT(m.last_name, ' ', m.first_name, ' ', m.middle_name) AS name, bc.name AS class, m.status FROM members m LEFT JOIN bible_classes bc ON m.class_id = bc.id ORDER BY m.created_at DESC, m.id DESC LIMIT 5");
+?>
+
+    <!-- Notification Alert -->
+    <!-- <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <strong>Welcome!</strong> You have 3 new notifications.
+        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+        </button>
+    </div> -->
+</div>
+<!-- SB Admin 2 Plugins: Chart.js and DataTables -->
+<script src="<?= BASE_URL ?>/assets/vendor/chart.js/Chart.min.js"></script>
+<script src="<?= BASE_URL ?>/assets/vendor/datatables/jquery.dataTables.min.js"></script>
+<script src="<?= BASE_URL ?>/assets/vendor/datatables/dataTables.bootstrap4.min.js"></script>
+<script>
+// Chart.js demo
+var ctx = document.getElementById('attendanceChart').getContext('2d');
+var attendanceChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+        datasets: [{
+            label: 'Attendance',
+            data: [120, 150, 170, 140, 180, 200, 160],
+            backgroundColor: 'rgba(78, 115, 223, 0.05)',
+            borderColor: 'rgba(78, 115, 223, 1)',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: 'rgba(78, 115, 223, 1)',
+            pointBorderColor: 'rgba(78, 115, 223, 1)',
+            pointHoverRadius: 3,
+            pointHoverBackgroundColor: 'rgba(78, 115, 223, 1)',
+            pointHoverBorderColor: 'rgba(78, 115, 223, 1)',
+            fill: true,
+        }]
+    },
+    options: {
+        maintainAspectRatio: false,
+        legend: { display: false },
+        scales: {
+            xAxes: [{ gridLines: { display: false } }],
+            yAxes: [{ gridLines: { color: "#e3e6f0", zeroLineColor: "#e3e6f0" } }]
+        }
+    }
+});
+// DataTable demo
+$(document).ready(function() {
+    $('#membersTable').DataTable();
+});
+</script>
+<script>
+(function() {
+  var idleTimeout = 600000; // 10 minutes in ms
+  var idleTimer;
+  function resetIdleTimer() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function() {
+      window.location.href = './logout.php';
+    }, idleTimeout);
+  }
+  ['mousemove','keydown','mousedown','touchstart'].forEach(function(evt) {
+    document.addEventListener(evt, resetIdleTimer, true);
+  });
+  resetIdleTimer();
+})();
+</script>
+<?php
+$page_content = ob_get_clean();
+include __DIR__.'/../includes/layout.php';
+?>

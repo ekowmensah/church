@@ -1,0 +1,6 @@
+# CSV header must be: name,code,type
+# Example:
+name,code,type
+Men's Fellowship,ORG01,Men
+Women's Fellowship,ORG02,Women
+Youth Fellowship,ORG03,Youth

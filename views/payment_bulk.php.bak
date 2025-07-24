@@ -1,0 +1,143 @@
+<?php
+// BACKUP of the old payment_bulk.php before professional rewrite. See payment_bulk.php for the new implementation.
+// This file is for reference only and will not be used by the application.
+
+require_once __DIR__.'/../config/config.php';
+require_once __DIR__.'/../helpers/auth.php';
+if (!is_logged_in()) { header('Location: /myfreeman/login.php'); exit; }
+
+$churches = $conn->query("SELECT id, name FROM churches ORDER BY name ASC");
+
+ob_start();
+?>
+<div class="container py-4">
+    <h2 class="mb-4">Bulk Payments</h2>
+    <form id="bulkPaymentForm" method="post" autocomplete="off">
+        <div class="form-row">
+            <div class="form-group col-md-4">
+                <label for="church_id">Church <span class="text-danger">*</span></label>
+                <select class="form-control" id="church_id" name="church_id" required>
+                    <option value="">-- Select Church --</option>
+                    <?php while($c = $churches->fetch_assoc()): ?>
+                        <option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option>
+                    <?php endwhile; ?>
+                </select>
+            </div>
+            <div class="form-group col-md-8">
+                <label for="crnSearch">Add Member by CRN</label>
+                <div class="input-group">
+                    <input type="text" id="crnSearch" class="form-control" placeholder="Enter CRN to search..." autocomplete="off">
+                    <div class="input-group-append">
+                        <button class="btn btn-outline-primary" type="button" id="crnSearchBtn"><i class="fa fa-search"></i> Search</button>
+                    </div>
+                </div>
+                <div id="crnSearchError" class="text-danger small mt-1" style="display:none;"></div>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group col-md-4">
+                <label for="payment_date">Payment Date <span class="text-danger">*</span></label>
+                <input type="date" class="form-control" id="payment_date" name="payment_date" required>
+            </div>
+        </div>
+        <button type="button" class="btn btn-success d-none" id="submitBulkBtn">Submit Bulk Payment</button>
+    </form>
+    <div id="bulkPreview" class="mt-4"></div>
+</div>
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="payment_bulk_member_multi.css" rel="stylesheet" />
+<style>
+.payment-type-bible-c {
+  background: #f7faff;
+  color: #1a237e;
+  font-weight: bold;
+}
+</style>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.bundle.min.js"></script>
+<script>
+function cediFormat(amount) {
+    return '₵' + Number(amount).toLocaleString('en-GH', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+$(function(){
+    // Prevent form submit on Enter in CRN input
+    $('#crnSearch').on('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            $('#crnSearchBtn').click();
+        }
+    });
+    // Search button logic
+    $('#crnSearchBtn').on('click', function() {
+        var crn = $('#crnSearch').val().trim();
+        var churchId = $('#church_id').val();
+        $('#crnSearchError').hide();
+        if (!crn) {
+            $('#crnSearchError').text('Please enter a CRN.').show();
+            return;
+        }
+        if (!churchId) {
+            $('#crnSearchError').text('Please select a church first.').show();
+            return;
+        }
+        // Find member by CRN (filtered by church)
+        $.get('ajax_get_member_by_crn.php', {crn: crn, church_id: churchId}, function(resp) {
+            if (resp.success && resp.member && resp.member.id) {
+                var memberId = resp.member.id;
+                // Check for duplicates by memberId only
+                if ($('#bulkPreview input[name="member_ids[]"][value="'+memberId+'"]').length > 0) {
+                    $('#crnSearchError').text('This member is already added.').show();
+                    return;
+                }
+                // ... (rest of code truncated for brevity)
+            }
+        });
+    });
+});
+</script>
+<!-- Confirmation Modal -->
+<div class="modal fade" id="confirmModal" tabindex="-1" role="dialog" aria-labelledby="confirmModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="confirmModalLabel">Confirm Bulk Payment</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div id="confirmSummary"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-success" id="confirmSubmitBtn">Confirm & Submit</button>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- Member Info Modal -->
+<div class="modal fade" id="memberInfoModal" tabindex="-1" role="dialog" aria-labelledby="memberInfoModalLabel" aria-hidden="true">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="memberInfoModalLabel">Member Info</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body" id="memberInfoContent">
+        <!-- Member details will be injected here -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="addToBulkBtn" data-member-id="">Add to Bulk Payment List</button>
+      </div>
+    </div>
+  </div>
+</div>
+<?php
+$page_content = ob_get_clean();
+include '../includes/layout.php';
+?>
+<script src="payment_bulk_member_multi.js"></script>

@@ -1,0 +1,52 @@
+<?php
+// New, comprehensive permissions list for the system
+$permissions = [
+    'Activities log',
+    'Add Admin',
+    'Additions',
+    'Audit',
+    'Bulk SMS',
+    'Church attendance',
+    'Church service',
+    'Class health report',
+    'Class members report',
+    'Class payment report',
+    'Class type report',
+    'access_dashboard', // for Dashboard
+    'Enter records',
+    'Feedback',
+    'Health Statistics',
+    'Individual payment report',
+    'Individual statement',
+    'Make Payment',
+    'Manage Members',
+    'Organisational health report',
+    'Organizational members report',
+    'Organizational payment report',
+    'Organizational type report',
+    'Overall Payment Statistics',
+    'Payment',
+    'Payment History',
+    'Payment Statistics',
+    'Payments',
+    'Permission',
+    'Record history',
+    'Records',
+    'Register Member',
+    'Registered List',
+    'Registration',
+    'Reports',
+    'Role',
+    'SMS Provider Settings',
+    'SMS Templates',
+    'Transfer member',
+    'User',
+    'User Audit',
+    'Withdrawals',
+    'Zero payment report',
+    'Total payment report',
+];
+
+header('Content-Type: text/plain');
+echo "New permissions list (".count($permissions)."):\n";
+foreach ($permissions as $p) echo "- $p\n";

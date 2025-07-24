@@ -1,0 +1,56 @@
+/* Modern Visitor List Custom Styles */
+.visitor-table th, .visitor-table td {
+  vertical-align: middle !important;
+  font-size: 15px;
+}
+.visitor-table .badge {
+  font-size: 90%;
+  font-weight: 500;
+}
+.visitor-status {
+  min-width: 90px;
+}
+.visitor-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-right: 8px;
+  border: 2px solid #dee2e6;
+}
+.visitor-action-btns .btn {
+  margin-right: 4px;
+}
+.visitor-table .text-muted {
+  font-size: 12px;
+}
+.visitor-table-row:hover {
+  background: #f4f8fb;
+}
+.visitor-table .highlight {
+  background: #e8f7ff;
+}
+.visitor-table .purpose {
+  max-width: 320px;
+  white-space: pre-line;
+  word-break: break-word;
+  overflow: visible;
+  text-overflow: unset;
+}
+.visitor-table td:nth-child(5), .visitor-table th:nth-child(5) {
+  min-width: 80px;
+  max-width: 180px;
+}
+.visitor-table td:nth-child(6), .visitor-table th:nth-child(6) {
+  min-width: 140px;
+  max-width: 180px;
+}
+
+
+.visitor-table th:last-child,
+.visitor-table td.visitor-action-btns {
+  width: 160px;
+  min-width: 120px;
+  text-align: right;
+  vertical-align: middle;
+}

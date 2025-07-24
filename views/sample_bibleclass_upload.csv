@@ -1,0 +1,5 @@
+# CSV header must be: name,code,church_code
+# Example:
+name,code,church_code
+Faith Class,CLS01,CH001
+Hope Class,CLS02,CH001

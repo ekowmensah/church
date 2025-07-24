@@ -1,0 +1,222 @@
+{
+    "time": "2025-07-23 19:31:44",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Dear ABRAHAM, your registration is complete. CRN: FMC-A0202-KM, Password: 1234567890",
+        "recipients": [
+            "233245740544"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: no-cache, private\r\nDate: Wed, 23 Jul 2025 19:31:44 GMT\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1499\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=xdxcPX2TCOFJkwDQqOCsSOVmYTAgTGTiUD7DZdig; expires=Wed, 23-Jul-2025 21:31:44 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\nX-Frame-Options: SAMEORIGIN\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"92a0b5ff-48fb-4c15-8d78-09a58d7036ec\",\"recipient\":\"233245740544\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 0.390811999999999992727595099495374597609043121337890625,
+        "connect_time": 0.149183000000000010043521569969016127288341522216796875,
+        "namelookup_time": 0.10700500000000000289102075612390763126313686370849609375,
+        "pretransfer_time": 0.2021820000000000006057376822354854084551334381103515625,
+        "starttransfer_time": 0.390788999999999997481126001730444841086864471435546875,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 149,
+        "size_download": 102,
+        "speed_download": 261,
+        "speed_upload": 382,
+        "download_content_length": -1,
+        "upload_content_length": 149,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 66.175.211.30...\n* TCP_NODELAY set\n* Connected to sms.arkesel.com (66.175.211.30) port 443 (#0)\n* ALPN, offering http\/1.1\n* successfully set certificate verify locations:\n*   CAfile: \/etc\/pki\/tls\/certs\/ca-bundle.crt\n  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN, server accepted to use http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Jun  4 06:14:43 2025 GMT\n*  expire date: Sep  2 06:14:42 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 149\r\n\r\n* upload completely sent off: 149 out of 149 bytes\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: no-cache, private\r\n< Date: Wed, 23 Jul 2025 19:31:44 GMT\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1499\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=xdxcPX2TCOFJkwDQqOCsSOVmYTAgTGTiUD7DZdig; expires=Wed, 23-Jul-2025 21:31:44 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< X-Frame-Options: SAMEORIGIN\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-07-23 19:32:29",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "FMC-KM",
+        "message": "Hello freeman Network",
+        "recipients": [
+            "233245740544"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: no-cache, private\r\nDate: Wed, 23 Jul 2025 19:32:29 GMT\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1498\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=KFEgMNUjMoCGge8bc3L0hyqivYAlAeICMNxQusNw; expires=Wed, 23-Jul-2025 21:32:29 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\nX-Frame-Options: SAMEORIGIN\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"b24d735a-0388-4831-9e48-a9ce06fc88a8\",\"recipient\":\"233245740544\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 0.26743200000000000304822833641082979738712310791015625,
+        "connect_time": 0.042084000000000003349764909899022313766181468963623046875,
+        "namelookup_time": 9.1000000000000002870099991003627337704529054462909698486328125e-5,
+        "pretransfer_time": 0.09001900000000000179323222937455284409224987030029296875,
+        "starttransfer_time": 0.26740500000000000380140363631653599441051483154296875,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 83,
+        "size_download": 102,
+        "speed_download": 382,
+        "speed_upload": 310,
+        "download_content_length": -1,
+        "upload_content_length": 83,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 66.175.211.30...\n* TCP_NODELAY set\n* Connected to sms.arkesel.com (66.175.211.30) port 443 (#0)\n* ALPN, offering http\/1.1\n* successfully set certificate verify locations:\n*   CAfile: \/etc\/pki\/tls\/certs\/ca-bundle.crt\n  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN, server accepted to use http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Jun  4 06:14:43 2025 GMT\n*  expire date: Sep  2 06:14:42 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 83\r\n\r\n* upload completely sent off: 83 out of 83 bytes\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: no-cache, private\r\n< Date: Wed, 23 Jul 2025 19:32:29 GMT\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1498\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=KFEgMNUjMoCGge8bc3L0hyqivYAlAeICMNxQusNw; expires=Wed, 23-Jul-2025 21:32:29 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< X-Frame-Options: SAMEORIGIN\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-07-23 19:37:41",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Hi DANIEL, click on the link to complete your registration: https:\/\/myfreeman.mensweb.xyz\/views\/complete_registration.php?token=a73a5bf0378e0796ac7b2977f6e7a0db",
+        "recipients": [
+            "233553143607"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: no-cache, private\r\nDate: Wed, 23 Jul 2025 19:37:41 GMT\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1499\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=GMrdtdVPwBDkho9FqbnzKcrwClzK2ot72qvCpZWi; expires=Wed, 23-Jul-2025 21:37:41 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\nX-Frame-Options: SAMEORIGIN\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"acd97fe0-a361-4e3d-8e52-12c30da3ce93\",\"recipient\":\"233553143607\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 0.273735000000000006092903959142859093844890594482421875,
+        "connect_time": 0.042625000000000003164135620181696140207350254058837890625,
+        "namelookup_time": 0.00012999999999999998861154038021226142518571577966213226318359375,
+        "pretransfer_time": 0.0912300000000000055333515547317801974713802337646484375,
+        "starttransfer_time": 0.2737060000000000048459014578838832676410675048828125,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 229,
+        "size_download": 102,
+        "speed_download": 373,
+        "speed_upload": 838,
+        "download_content_length": -1,
+        "upload_content_length": 229,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 66.175.211.30...\n* TCP_NODELAY set\n* Connected to sms.arkesel.com (66.175.211.30) port 443 (#0)\n* ALPN, offering http\/1.1\n* successfully set certificate verify locations:\n*   CAfile: \/etc\/pki\/tls\/certs\/ca-bundle.crt\n  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN, server accepted to use http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Jun  4 06:14:43 2025 GMT\n*  expire date: Sep  2 06:14:42 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 229\r\n\r\n* upload completely sent off: 229 out of 229 bytes\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: no-cache, private\r\n< Date: Wed, 23 Jul 2025 19:37:41 GMT\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1499\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=GMrdtdVPwBDkho9FqbnzKcrwClzK2ot72qvCpZWi; expires=Wed, 23-Jul-2025 21:37:41 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< X-Frame-Options: SAMEORIGIN\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-07-23 19:37:41",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Hi DANIEL, click on the link to complete your registration: https:\/\/myfreeman.mensweb.xyz\/views\/complete_registration.php?token=a73a5bf0378e0796ac7b2977f6e7a0db",
+        "recipients": [
+            "233553143607"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: no-cache, private\r\nDate: Wed, 23 Jul 2025 19:37:41 GMT\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1498\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=myjj9Je4R6Gz1PhAWXoBdpg7JDcsa4xEi10tSNkB; expires=Wed, 23-Jul-2025 21:37:41 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\nX-Frame-Options: SAMEORIGIN\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"975763a3-edb5-4c14-b760-0dec35eecd33\",\"recipient\":\"233553143607\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 0.266815999999999997616129121524863876402378082275390625,
+        "connect_time": 0.04219699999999999839861430928067420609295368194580078125,
+        "namelookup_time": 1.69999999999999998659926114807916519566788338124752044677734375e-5,
+        "pretransfer_time": 0.0904760000000000008668621376273222267627716064453125,
+        "starttransfer_time": 0.266801000000000010370371228418662212789058685302734375,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 229,
+        "size_download": 102,
+        "speed_download": 383,
+        "speed_upload": 860,
+        "download_content_length": -1,
+        "upload_content_length": 229,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "* Hostname sms.arkesel.com was found in DNS cache\n*   Trying 66.175.211.30...\n* TCP_NODELAY set\n* Connected to sms.arkesel.com (66.175.211.30) port 443 (#0)\n* ALPN, offering http\/1.1\n* successfully set certificate verify locations:\n*   CAfile: \/etc\/pki\/tls\/certs\/ca-bundle.crt\n  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN, server accepted to use http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Jun  4 06:14:43 2025 GMT\n*  expire date: Sep  2 06:14:42 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 229\r\n\r\n* upload completely sent off: 229 out of 229 bytes\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: no-cache, private\r\n< Date: Wed, 23 Jul 2025 19:37:41 GMT\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1498\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=myjj9Je4R6Gz1PhAWXoBdpg7JDcsa4xEi10tSNkB; expires=Wed, 23-Jul-2025 21:37:41 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< X-Frame-Options: SAMEORIGIN\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-07-23 19:43:10",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Dear DANIEL, your registration is complete. Your CRN is: FMC-0101-KM. Login at: https:\/\/myfreeman.mensweb.xyz\/login.php",
+        "recipients": [
+            "233553143607"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: no-cache, private\r\nDate: Wed, 23 Jul 2025 19:43:10 GMT\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1499\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=h6O9WqNoOwybcAnC2KUx0SgMspwsttC1OFNbIlmI; expires=Wed, 23-Jul-2025 21:43:10 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\nX-Frame-Options: SAMEORIGIN\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"d6f50dca-9049-427b-81b0-e600f6757635\",\"recipient\":\"233553143607\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 0.272243000000000012761347534251399338245391845703125,
+        "connect_time": 0.04228099999999999913935511131057864986360073089599609375,
+        "namelookup_time": 0.00011699999999999999788190263583231853772304020822048187255859375,
+        "pretransfer_time": 0.0915620000000000044959591605220339260995388031005859375,
+        "starttransfer_time": 0.2722160000000000135145228341571055352687835693359375,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 187,
+        "size_download": 102,
+        "speed_download": 375,
+        "speed_upload": 687,
+        "download_content_length": -1,
+        "upload_content_length": 187,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 66.175.211.30...\n* TCP_NODELAY set\n* Connected to sms.arkesel.com (66.175.211.30) port 443 (#0)\n* ALPN, offering http\/1.1\n* successfully set certificate verify locations:\n*   CAfile: \/etc\/pki\/tls\/certs\/ca-bundle.crt\n  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN, server accepted to use http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Jun  4 06:14:43 2025 GMT\n*  expire date: Sep  2 06:14:42 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 187\r\n\r\n* upload completely sent off: 187 out of 187 bytes\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: no-cache, private\r\n< Date: Wed, 23 Jul 2025 19:43:10 GMT\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1499\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=h6O9WqNoOwybcAnC2KUx0SgMspwsttC1OFNbIlmI; expires=Wed, 23-Jul-2025 21:43:10 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< X-Frame-Options: SAMEORIGIN\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-07-23 23:07:43",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Dear TOM, your registration is complete. CRN: FMC-A0703-KM, Password: 1234567890",
+        "recipients": [
+            "233500124587"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: no-cache, private\r\nDate: Wed, 23 Jul 2025 23:07:43 GMT\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1499\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=RlTIIMcir3bikqZMqYEDL26l0BNqqilf0WIoZnhn; expires=Thu, 24-Jul-2025 01:07:43 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\nX-Frame-Options: SAMEORIGIN\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"b1fb72c8-c7cc-4e6c-a92a-fb1433be2397\",\"recipient\":\"233500124587\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 0.305491000000000012537526572486967779695987701416015625,
+        "connect_time": 0.068471000000000004082068016941775567829608917236328125,
+        "namelookup_time": 0.0216009999999999986741716639926380594260990619659423828125,
+        "pretransfer_time": 0.1217789999999999983604226372335688211023807525634765625,
+        "starttransfer_time": 0.3054609999999999825348595550167374312877655029296875,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 145,
+        "size_download": 102,
+        "speed_download": 334,
+        "speed_upload": 475,
+        "download_content_length": -1,
+        "upload_content_length": 145,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 66.175.211.30...\n* TCP_NODELAY set\n* Connected to sms.arkesel.com (66.175.211.30) port 443 (#0)\n* ALPN, offering http\/1.1\n* successfully set certificate verify locations:\n*   CAfile: \/etc\/pki\/tls\/certs\/ca-bundle.crt\n  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN, server accepted to use http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Jun  4 06:14:43 2025 GMT\n*  expire date: Sep  2 06:14:42 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 145\r\n\r\n* upload completely sent off: 145 out of 145 bytes\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: no-cache, private\r\n< Date: Wed, 23 Jul 2025 23:07:43 GMT\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1499\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=RlTIIMcir3bikqZMqYEDL26l0BNqqilf0WIoZnhn; expires=Thu, 24-Jul-2025 01:07:43 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< X-Frame-Options: SAMEORIGIN\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}

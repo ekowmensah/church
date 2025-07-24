@@ -1,0 +1,12 @@
+-- Migration for bible_classes table
+CREATE TABLE IF NOT EXISTS bible_classes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    code VARCHAR(20) DEFAULT NULL,
+    church_id INT DEFAULT NULL,
+    leader_id INT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (church_id) REFERENCES churches(id) ON DELETE SET NULL,
+    FOREIGN KEY (leader_id) REFERENCES members(id) ON DELETE SET NULL
+);

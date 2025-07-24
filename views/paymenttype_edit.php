@@ -1,0 +1,86 @@
+<?php
+require_once __DIR__.'/../config/config.php';
+require_once __DIR__.'/../helpers/auth.php';
+
+// Only allow logged-in users
+if (!is_logged_in()) {
+    header('Location: ' . BASE_URL . '/login.php');
+    exit;
+}
+if (!(isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1)) {
+    if (function_exists('has_permission') && !has_permission('edit_paymenttype')) {
+        $error = 'No permission to edit payment type';
+    }
+}
+
+$id = intval($_GET['id'] ?? 0);
+if (!$id) {
+    header('Location: paymenttype_list.php');
+    exit;
+}
+
+$error = '';
+$success = '';
+
+// Fetch current data
+$stmt = $conn->prepare("SELECT * FROM payment_types WHERE id = ? LIMIT 1");
+$stmt->bind_param('i', $id);
+$stmt->execute();
+$type = $stmt->get_result()->fetch_assoc();
+if (!$type) {
+    header('Location: paymenttype_list.php');
+    exit;
+}
+
+$name = $type['name'];
+$description = $type['description'];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $name = trim($_POST['name'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+    if (!$name) {
+        $error = 'Payment type name is required.';
+    } else {
+        $stmt = $conn->prepare("UPDATE payment_types SET name=?, description=? WHERE id=?");
+        $stmt->bind_param('ssi', $name, $description, $id);
+        if ($stmt->execute()) {
+            header('Location: paymenttype_list.php?updated=1');
+            exit;
+        } else {
+            $error = 'Database error. Please try again.';
+        }
+    }
+}
+
+ob_start();
+?>
+<div class="d-sm-flex align-items-center justify-content-between mb-4">
+    <h1 class="h3 mb-0 text-gray-800">Edit Payment Type</h1>
+    <a href="paymenttype_list.php" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back to List</a>
+</div>
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 bg-primary text-white">
+                <h6 class="m-0 font-weight-bold">Edit Payment Type</h6>
+            </div>
+            <div class="card-body">
+                <?php if ($error): ?>
+                    <div class="alert alert-danger mb-4"> <?= htmlspecialchars($error) ?> </div>
+                <?php endif; ?>
+                <form method="post" autocomplete="off">
+                    <div class="form-group">
+                        <label for="name">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="name" name="name" value="<?= htmlspecialchars($name) ?>" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="description">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="2"><?= htmlspecialchars($description) ?></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-success">Update Payment Type</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+<?php $page_content = ob_get_clean(); include '../includes/layout.php'; ?>

@@ -1,0 +1,12 @@
+-- SQL for sms_logs table
+CREATE TABLE IF NOT EXISTS sms_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    member_id INT DEFAULT NULL,
+    phone VARCHAR(30) NOT NULL,
+    message TEXT NOT NULL,
+    template_name VARCHAR(100) DEFAULT NULL,
+    status VARCHAR(30) DEFAULT NULL,
+    provider VARCHAR(30) DEFAULT NULL,
+    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    response TEXT DEFAULT NULL
+);

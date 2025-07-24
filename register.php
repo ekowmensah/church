@@ -1,0 +1,3 @@
+<?php
+// Register page (optional)
+?>

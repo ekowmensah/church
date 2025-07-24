@@ -1,0 +1,3 @@
+<?php
+// BACKUP of the original make_payment.php before teller-style UI rewrite
+// See make_payment.php for the new implementation

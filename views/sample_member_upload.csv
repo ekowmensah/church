@@ -1,0 +1,5 @@
+# For each row, CRN will be auto-generated as: church_code-class_code<seq>-circuit_code
+# Example: CH001-CLS0101-CC01 (where CC01 is the circuit_code of CH001, 01 is sequence)
+first_name,middle_name,last_name,gender,dob,phone,church_code,class_code
+John,,Doe,Male,1990-01-01,0551234567,CH001,CLS01  # CRN: CH001-CLS0101-CC01
+Jane,Mary,Smith,Female,1992-05-10,0249876543,CH001,CLS02  # CRN: CH001-CLS0201-CC01

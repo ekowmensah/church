@@ -1,0 +1,197 @@
+/* Stylish custom payment type search group */
+.payment-type-search-group {
+  min-width: 180px;
+  max-width: 100%;
+  width: 100%;
+}
+.payment-type-search-group .form-control.payment-type-search {
+  border-radius: 0.5rem 0 0 0.5rem;
+  border: 1.5px solid #bfcad6;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  background: #fafdff;
+  font-size: 1rem;
+  padding-left: 1rem;
+}
+.payment-type-search-group .form-control.payment-type-dropdown-list.card.shadow-sm {
+  border: 1.5px solid #e0e5ea;
+  background: #fafdff;
+  box-shadow: 0 8px 32px rgba(60,90,150,0.10);
+  border-radius: 0.75rem;
+  padding: 0.25rem 0;
+  font-size: 1.08em;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  color: #1a2636;
+  margin-top: 2px;
+  transition: box-shadow 0.2s;
+  outline: none;
+}
+.payment-type-dropdown-item {
+  border-radius: 0.5rem;
+  margin: 0.15rem 0.5rem 0.15rem 0.5rem;
+  padding: 0.55rem 1.2rem;
+  font-size: 1.05em;
+  color: #1a2636;
+  background: #fff;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.payment-type-dropdown-item:hover, .payment-type-dropdown-item:focus {
+  background: #e6f0fa;
+  color: #1565c0;
+}
+.payment-type-dropdown-item:active {
+  background: #d0e7ff;
+  color: #003366;
+}
+.payment-type-search-group .form-control.payment-type-search:focus {
+  border-color: #5a8dee;
+  box-shadow: 0 0 0 2px rgba(90,141,238,0.14);
+}
+.payment-type-search-group .input-group-append .btn {
+  border-radius: 0 0.5rem 0.5rem 0;
+  border: 1.5px solid #e0e5ea;
+  border-left: 0;
+  background: #fafdff;
+  color: #5a8dee;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+  font-size: 1.18em;
+  padding: 0.375rem 0.95rem;
+}
+.payment-type-search-group .input-group-append .btn:hover,
+.payment-type-search-group .input-group-append .btn:focus {
+  background: #5a8dee;
+  color: #fff;
+  border-color: #5a8dee;
+}
+
+.payment-type-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.5rem;
+  margin-bottom: 0.1rem;
+}
+.payment-type-tag {
+  display: flex;
+  align-items: center;
+  background: linear-gradient(90deg, #e3e9f1 85%, #c7d0e1 100%);
+  color: #1a2636;
+  border-radius: 999px;
+  font-size: 1.08em;
+  padding: 0.32rem 1.2rem 0.32rem 1rem;
+  margin-right: 0.4rem;
+  margin-bottom: 0.1rem;
+  border: none;
+  box-shadow: 0 2px 8px rgba(60,90,150,0.07);
+  position: relative;
+  cursor: default;
+  font-family: 'Segoe UI', Arial, sans-serif;
+}
+.payment-type-tag .remove-tag {
+  color: #888;
+  margin-left: 0.7em;
+  font-weight: bold;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+  font-size: 1.15em;
+}
+.payment-type-tag .remove-tag:hover {
+  opacity: 1;
+  color: #d32f2f;
+}
+  font-size: 1em;
+  padding: 0.25rem 1.1rem 0.25rem 0.85rem;
+  margin-right: 0.25rem;
+  margin-bottom: 0.1rem;
+  border: none;
+  box-shadow: none;
+  position: relative;
+  cursor: default;
+}
+.payment-type-tag .remove-tag {
+  color: #fff;
+  margin-left: 0.7em;
+  font-weight: bold;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+  font-size: 1.15em;
+}
+.payment-type-tag .remove-tag:hover {
+  opacity: 1;
+}
+.select2-container--default .select2-selection--multiple {
+  background: #fafdff;
+  border: 1.5px solid #bfcad6;
+  border-radius: 0.5rem;
+  min-height: 42px;
+  padding: 4px 10px 4px 14px;
+  box-shadow: 0 2px 8px rgba(90,141,238,0.07);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  cursor: pointer;
+  position: relative;
+}
+.select2-container--default .select2-selection--multiple:focus,
+.select2-container--default .select2-selection--multiple.select2-selection--focus {
+  border-color: #5a8dee;
+  box-shadow: 0 0 0 2px rgba(90,141,238,0.14);
+}
+.select2-container--default .select2-selection--multiple:hover {
+  border-color: #5a8dee;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice {
+  background: linear-gradient(90deg, #5a8dee 85%, #3e72c9 100%);
+  color: #fff;
+  border: none;
+  border-radius: 0.35rem;
+  margin-top: 5px;
+  margin-bottom: 2px;
+  margin-right: 6px;
+  padding: 0 14px 0 10px;
+  font-size: 1em;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  vertical-align: middle;
+  box-shadow: 0 1px 4px rgba(90,141,238,0.09);
+  transition: background 0.2s;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+  color: #fff;
+  margin-right: 6px;
+  font-weight: bold;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+  opacity: 1;
+}
+/* Hide default dropdown arrow and add custom icon */
+.select2-container--default .select2-selection--multiple .select2-search--inline:after {
+  content: '\25BC';
+  color: #5a8dee;
+  font-size: 1.1em;
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.select2-container--default .select2-selection--multiple .select2-search__field {
+  min-width: 60px;
+  font-size: 1em;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding: 4px 0 4px 0;
+}
+/* Ensure the select and tags align and wrap nicely */
+.payment-type-select {
+  min-width: 180px;
+  max-width: 100%;
+  width: 100%;
+}
+.card-body .d-flex {
+  flex-wrap: wrap;
+  align-items: flex-start !important;
+}
