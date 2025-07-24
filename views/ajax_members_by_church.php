@@ -23,6 +23,8 @@ if (!$is_super_admin && !has_permission('access_ajax_members_by_church')) {
 
 $q = isset($_GET['q']) ? trim($_GET['q']) : '';
 $church_id = isset($_GET['church_id']) ? intval($_GET['church_id']) : 0;
+$organization_id = isset($_GET['organization_id']) ? intval($_GET['organization_id']) : 0;
+$bible_class_id = isset($_GET['bible_class_id']) ? intval($_GET['bible_class_id']) : 0;
 
 $is_class_leader = (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 5);
 $linked_member_id = isset($_SESSION['member_id']) ? intval($_SESSION['member_id']) : 0;
@@ -38,8 +40,14 @@ if ($is_class_leader && $linked_member_id) {
 }
 $sql = "SELECT m.id, m.first_name, m.last_name, m.middle_name, CONCAT(m.last_name, ' ', m.first_name, ' ', m.middle_name, ' (', m.crn, ')') as text, m.crn, c.name as class_name
         FROM members m
-        LEFT JOIN bible_classes c ON m.class_id = c.id
-        WHERE m.status = 'active'";
+        LEFT JOIN bible_classes c ON m.class_id = c.id";
+
+// Add organization join if filtering by organization
+if ($organization_id) {
+    $sql .= " INNER JOIN member_organizations mo ON m.id = mo.member_id";
+}
+
+$sql .= " WHERE m.status = 'active'";
 // Restrict to class for class leaders (CRN)
 if ($is_class_leader && $class_leader_class_id) {
     $sql .= " AND m.class_id = ?";
@@ -53,6 +61,20 @@ $gender = isset($_GET['gender']) ? strtolower(trim($_GET['gender'])) : '';
 if ($church_id) {
     $sql .= " AND m.church_id = ?";
     $params[] = $church_id;
+    $types .= 'i';
+}
+
+// Add organization filter
+if ($organization_id) {
+    $sql .= " AND mo.organization_id = ?";
+    $params[] = $organization_id;
+    $types .= 'i';
+}
+
+// Add bible class filter
+if ($bible_class_id) {
+    $sql .= " AND m.class_id = ?";
+    $params[] = $bible_class_id;
     $types .= 'i';
 }
 if (in_array($gender, ['male','female'])) {
