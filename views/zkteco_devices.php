@@ -308,7 +308,7 @@ ob_start();
                                         <th>IP Address</th>
                                         <th>Location</th>
                                         <th>Status</th>
-                                        <th>Enrolled Members</th>
+                                        <th>Enrolled</th>
                                         <th>Total Logs</th>
                                         <th>Last Sync</th>
                                         <th>Actions</th>
