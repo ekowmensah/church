@@ -36,7 +36,7 @@ if ($type === 'class' && !empty($class_ids)) {
         $recipients[] = $m['phone'];
         $recipient_names[$m['phone']] = $m;
     }
-} elseif (($type === 'church' || $type === 'all') && !empty($church_ids)) {
+} elseif (($type === 'organization' || $type === 'all') && !empty($church_ids)) {
     $in = implode(',', array_map('intval', $church_ids));
     $q = $conn->query("SELECT phone, first_name, last_name, crn FROM members WHERE church_id IN ($in) AND phone IS NOT NULL AND phone != ''");
     while($m = $q->fetch_assoc()) {

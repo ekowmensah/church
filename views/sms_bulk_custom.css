@@ -1,0 +1,82 @@
+/* Bulk SMS Custom UI - visually distinct, modern, and user friendly */
+
+.bulk-sms-container {
+  background: linear-gradient(135deg, #f8fafc 0%, #e0e7ef 100%);
+  border-radius: 18px;
+  box-shadow: 0 8px 32px rgba(60,80,120,0.12);
+  padding: 2.5rem 2rem 2rem 2rem;
+  margin-top: 2.5rem;
+  margin-bottom: 2.5rem;
+  max-width: 700px;
+}
+.bulk-sms-title {
+  font-size: 2.1rem;
+  font-weight: 700;
+  color: #2756a2;
+  letter-spacing: 1px;
+  margin-bottom: 1.2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+.bulk-sms-section {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(60,80,120,0.07);
+  padding: 1.5rem 1.2rem 1.2rem 1.2rem;
+  margin-bottom: 1.4rem;
+}
+.bulk-sms-label {
+  font-weight: 500;
+  color: #1b2a47;
+  margin-bottom: 0.4rem;
+}
+.bulk-sms-select, .bulk-sms-textarea, .bulk-sms-input {
+  border-radius: 8px !important;
+  border: 1px solid #d1d9e6;
+  background: #f4f7fa;
+  font-size: 1rem;
+  margin-bottom: 0.9rem;
+}
+.bulk-sms-select:focus, .bulk-sms-textarea:focus, .bulk-sms-input:focus {
+  border-color: #2756a2;
+  box-shadow: 0 0 0 2px #b1d1ff55;
+  background: #fafdff;
+}
+.bulk-sms-btn {
+  background: linear-gradient(90deg, #2756a2 60%, #3fa7e6 100%);
+  border: none;
+  color: #fff;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 0.8rem 2.5rem;
+  font-size: 1.15rem;
+  box-shadow: 0 4px 18px rgba(60,80,120,0.10);
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.bulk-sms-btn:hover {
+  background: linear-gradient(90deg, #3fa7e6 0%, #2756a2 100%);
+  box-shadow: 0 6px 24px rgba(60,80,120,0.18);
+}
+.bulk-sms-badge {
+  background: #eaf1fb;
+  color: #2756a2;
+  border-radius: 8px;
+  padding: 0.2rem 0.8rem;
+  font-size: 0.95rem;
+  margin-left: 0.4rem;
+}
+.bulk-sms-help {
+  color: #7c8ca6;
+  font-size: 0.98rem;
+  margin-bottom: 1.2rem;
+}
+.bulk-sms-divider {
+  border-top: 2px dashed #d1d9e6;
+  margin: 2rem 0 1.2rem 0;
+}
+.bulk-sms-icon {
+  color: #3fa7e6;
+  font-size: 1.3em;
+  margin-right: 0.4rem;
+}

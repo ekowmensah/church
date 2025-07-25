@@ -74,7 +74,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member) {
     } else if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
         $ext = pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION);
         $filename = uniqid('member_').'.'.$ext;
-        $dest = __DIR__.'/../uploads/'.$filename;
+        $dest_dir = __DIR__.'/../uploads/members/';
+        if (!is_dir($dest_dir)) {
+            mkdir($dest_dir, 0777, true);
+        }
+        $dest = $dest_dir . $filename;
         if (move_uploaded_file($_FILES['photo']['tmp_name'], $dest)) {
             $photo = $filename;
         }
@@ -165,7 +169,7 @@ if ($safe_member_id > 0) {
             if ($base_url === '' || $base_url === '.') $base_url = '/myfreeman';
             // Set flag to show toast after redirect
             $_SESSION['show_registration_toast'] = true;
-            header('Location: ' . $base_url . '/views/member_dashboard.php');
+            header('Location: ' . BASE_URL . '/views/member_dashboard.php');
             exit;
         } else {
             $error = 'Database error. Please try again.';
@@ -708,8 +712,7 @@ $(function(){
 </style>
 <?php
 $page_content = ob_get_clean();
-$base_url = rtrim(dirname(dirname($_SERVER['SCRIPT_NAME'])), '/\\');
-if ($base_url === '' || $base_url === '.') $base_url = '/myfreeman';
+$base_url = BASE_URL;
 $logo_url = $base_url . '/assets/logo.png';
 ?><!DOCTYPE html>
 <html lang="en">
