@@ -19,10 +19,24 @@ if (!$is_super_admin && !has_permission('mark_attendance')) {
     exit;
 }
 
+// Debug: Log all GET parameters
+error_log('ajax_get_device.php - GET parameters: ' . print_r($_GET, true));
+
 $device_id = isset($_GET['device_id']) ? intval($_GET['device_id']) : 0;
 
+// Debug: Log the device_id value
+error_log('ajax_get_device.php - device_id: ' . $device_id);
+
 if (!$device_id) {
-    echo json_encode(['success' => false, 'message' => 'Device ID is required']);
+    echo json_encode([
+        'success' => false, 
+        'message' => 'Device ID is required',
+        'debug' => [
+            'received_get' => $_GET,
+            'device_id_raw' => $_GET['device_id'] ?? 'not_set',
+            'device_id_parsed' => $device_id
+        ]
+    ]);
     exit;
 }
 

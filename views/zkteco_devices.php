@@ -447,42 +447,19 @@ function syncAllDevices() {
 }
 
 function editDevice(deviceId) {
-    // Get device data and populate edit modal
-    fetch('ajax_get_device.php?device_id=' + deviceId)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                document.getElementById('edit_device_id').value = data.device.id;
-                document.getElementById('edit_device_name').value = data.device.device_name;
-                document.getElementById('edit_ip_address').value = data.device.ip_address;
-                document.getElementById('edit_port').value = data.device.port;
-                document.getElementById('edit_location').value = data.device.location;
-                $('#editDeviceModal').modal('show');
-            } else {
-                alert('Error loading device data: ' + data.message);
-            }
-        })
-        .catch(error => {
-            alert('Error loading device data: ' + error.message);
-        });
-}
-
-function deleteDevice(deviceId) {
-    if (confirm('Are you sure you want to delete this device? This action cannot be undone.')) {
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.innerHTML = `
-            <input type="hidden" name="action" value="delete_device">
-            <input type="hidden" name="device_id" value="${deviceId}">
-        `;
-        document.body.appendChild(form);
-        form.submit();
+    // Debug: Check if deviceId is properly passed
+    console.log('editDevice called with deviceId:', deviceId);
+    
+    if (!deviceId || deviceId === 'undefined' || deviceId === '') {
+        alert('Error: Device ID is missing or invalid');
+        return;
     }
-}
-
-function editDevice(deviceId) {
+    
     // Fetch device data via AJAX
-    fetch('ajax_get_device.php?device_id=' + deviceId)
+    const url = '<?= BASE_URL ?>/views/ajax_get_device.php?device_id=' + deviceId;
+    console.log('Fetching from URL:', url);
+    
+    fetch(url)
         .then(response => response.json())
         .then(data => {
             if (data.success) {
@@ -514,19 +491,19 @@ function editDevice(deviceId) {
 
 function manageEnrollments(deviceId) {
     // Redirect to enrollment page with device filter
-    window.location.href = 'zkteco_enrollment.php?device_id=' + deviceId;
+    window.location.href = '<?= BASE_URL ?>/views/zkteco_enrollment.php?device_id=' + deviceId;
 }
 
 function bulkEnrollDevice(deviceId) {
     // Redirect to bulk enrollment page
-    window.location.href = 'zkteco_bulk_enrollment.php?device_id=' + deviceId;
+    window.location.href = '<?= BASE_URL ?>/views/zkteco_bulk_enrollment.php?device_id=' + deviceId;
 }
 
 function viewStats(deviceId) {
     $('#statsModal').modal('show');
     
     // Load device statistics via AJAX
-    fetch('zkteco_device_stats.php?device_id=' + deviceId)
+    fetch('<?= BASE_URL ?>/views/zkteco_device_stats.php?device_id=' + deviceId)
         .then(response => response.text())
         .then(html => {
             document.getElementById('statsContent').innerHTML = html;
