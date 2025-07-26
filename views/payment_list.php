@@ -42,6 +42,11 @@ $search_term = trim($_GET['search'] ?? '');
 $date_from = $_GET['date_from'] ?? '';
 $date_to = $_GET['date_to'] ?? '';
 
+// Pagination settings
+$records_per_page = 20;
+$current_page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+$offset = ($current_page - 1) * $records_per_page;
+
 // Fetch filter options
 $churches = $conn->query("SELECT id, name FROM churches ORDER BY name ASC");
 $payment_types = $conn->query("SELECT id, name FROM payment_types ORDER BY name ASC");
@@ -132,14 +137,84 @@ if ($date_to) {
     $types .= 's';
 }
 
-$sql .= " GROUP BY p.id ORDER BY p.payment_date DESC, p.id DESC";
+// Get total count for pagination (before adding LIMIT)
+// Create a proper count query that wraps the original query as a subquery
+$count_sql = "SELECT COUNT(*) as total FROM (
+    SELECT p.id
+    FROM payments p
+        LEFT JOIN members m ON p.member_id = m.id
+        LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
+        LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
+        LEFT JOIN churches c ON m.church_id = c.id
+        LEFT JOIN bible_classes bc ON m.class_id = bc.id
+        LEFT JOIN member_organizations mo ON mo.member_id = m.id
+        LEFT JOIN organizations org ON mo.organization_id = org.id
+        WHERE 1";
 
-$stmt = $conn->prepare($sql);
-if (!empty($params)) {
-    $stmt->bind_param($types, ...$params);
+// Apply the same filters to count query
+if ($filter_church) {
+    $count_sql .= " AND m.church_id = ?";
 }
-$stmt->execute();
-$payments = $stmt->get_result();
+if ($filter_class) {
+    $count_sql .= " AND m.class_id = ?";
+}
+if ($filter_org) {
+    $count_sql .= " AND mo.organization_id = ?";
+}
+if ($filter_gender) {
+    $count_sql .= " AND m.gender = ?";
+}
+if ($filter_payment_type) {
+    $count_sql .= " AND p.payment_type_id = ?";
+}
+if ($filter_mode) {
+    $count_sql .= " AND p.mode = ?";
+}
+if ($search_term) {
+    $count_sql .= " AND (m.first_name LIKE ? OR m.last_name LIKE ? OR m.middle_name LIKE ? OR m.crn LIKE ? OR ss.first_name LIKE ? OR ss.last_name LIKE ? OR ss.srn LIKE ? OR p.description LIKE ?)";
+}
+if ($date_from) {
+    $count_sql .= " AND DATE(p.payment_date) >= ?";
+}
+if ($date_to) {
+    $count_sql .= " AND DATE(p.payment_date) <= ?";
+}
+
+$count_sql .= " GROUP BY p.id
+) as count_subquery";
+
+if ($types) {
+    $count_stmt = $conn->prepare($count_sql);
+    $count_stmt->bind_param($types, ...$params);
+    $count_stmt->execute();
+    $count_result = $count_stmt->get_result()->fetch_assoc();
+    $total_records = $count_result ? $count_result['total'] : 0;
+} else {
+    $count_result = $conn->query($count_sql);
+    if ($count_result) {
+        $count_row = $count_result->fetch_assoc();
+        $total_records = $count_row ? $count_row['total'] : 0;
+    } else {
+        $total_records = 0;
+    }
+}
+
+// Calculate pagination values
+$total_pages = ceil($total_records / $records_per_page);
+$current_page = min($current_page, max(1, $total_pages)); // Ensure current page is within bounds
+
+// Add ORDER BY and LIMIT to main query
+$sql .= " GROUP BY p.id ORDER BY p.payment_date DESC, p.id DESC LIMIT $records_per_page OFFSET $offset";
+
+// Execute the main query
+if ($types) {
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $payments = $stmt->get_result();
+} else {
+    $payments = $conn->query($sql);
+}
 
 // Calculate totals
 $total_amount = 0;
@@ -560,6 +635,72 @@ ob_start();
         <?php endif; ?>
     </div>
 </div>
+
+<!-- Pagination -->
+<?php if ($total_pages > 1): ?>
+<div class="d-flex justify-content-between align-items-center mt-4">
+    <div class="pagination-info">
+        <small class="text-muted">
+            Showing <?= (($current_page - 1) * $records_per_page) + 1 ?> to 
+            <?= min($current_page * $records_per_page, $total_records) ?> of 
+            <?= number_format($total_records) ?> entries
+        </small>
+    </div>
+    <nav aria-label="Payment pagination">
+        <ul class="pagination pagination-sm mb-0">
+            <?php if ($current_page > 1): ?>
+                <li class="page-item">
+                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => 1])) ?>" aria-label="First">
+                        <span aria-hidden="true">&laquo;&laquo;</span>
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $current_page - 1])) ?>" aria-label="Previous">
+                        <span aria-hidden="true">&laquo;</span>
+                    </a>
+                </li>
+            <?php endif; ?>
+            
+            <?php
+            $start_page = max(1, $current_page - 2);
+            $end_page = min($total_pages, $current_page + 2);
+            
+            if ($start_page > 1): ?>
+                <li class="page-item"><a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => 1])) ?>">1</a></li>
+                <?php if ($start_page > 2): ?>
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                <?php endif; ?>
+            <?php endif; ?>
+            
+            <?php for ($i = $start_page; $i <= $end_page; $i++): ?>
+                <li class="page-item <?= $i == $current_page ? 'active' : '' ?>">
+                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $i])) ?>"><?= $i ?></a>
+                </li>
+            <?php endfor; ?>
+            
+            <?php if ($end_page < $total_pages): ?>
+                <?php if ($end_page < $total_pages - 1): ?>
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                <?php endif; ?>
+                <li class="page-item"><a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $total_pages])) ?>"><?= $total_pages ?></a></li>
+            <?php endif; ?>
+            
+            <?php if ($current_page < $total_pages): ?>
+                <li class="page-item">
+                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $current_page + 1])) ?>" aria-label="Next">
+                        <span aria-hidden="true">&raquo;</span>
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $total_pages])) ?>" aria-label="Last">
+                        <span aria-hidden="true">&raquo;&raquo;</span>
+                    </a>
+                </li>
+            <?php endif; ?>
+        </ul>
+    </nav>
+</div>
+<?php endif; ?>
 
 <!-- Enhanced JavaScript -->
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
