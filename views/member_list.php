@@ -607,15 +607,12 @@ ob_start();
                             </td>
                             <td class="crn-cell">
                                 <?= htmlspecialchars($member['crn']) ?>
-                                <br><span class="total-payments" data-member-id="<?= $member['id'] ?>">
+                                <br><span class="total-payments text-success font-weight-bold" data-member-id="<?= $member['id'] ?>">
                                     <i class="fas fa-spinner fa-spin"></i> Loading...
                                 </span>
                             </td>
                             <td>
-                                <strong><?= htmlspecialchars($member['last_name'] . ', ' . $member['first_name']) ?></strong>
-                                <?php if (!empty($member['middle_name'])): ?>
-                                    <br><small class="text-muted"><?= htmlspecialchars($member['middle_name']) ?></small>
-                                <?php endif; ?>
+                                <strong><?= htmlspecialchars($member['first_name'] . ' ' . $member['last_name']) ?></strong>
                             </td>
                             <td><?= htmlspecialchars($member['phone']) ?></td>
                             <td><?= htmlspecialchars($member['church_name'] ?? 'N/A') ?></td>
@@ -661,7 +658,7 @@ ob_start();
                                         <button type="button" class="btn btn-link btn-sm p-0 ml-1" 
                                                 data-toggle="modal" 
                                                 data-target="#statusInfoModal"
-                                                data-member-name="<?php echo htmlspecialchars($member['last_name'] . ' ' . $member['first_name']); ?>"
+                                                data-member-name="<?php echo htmlspecialchars($member['first_name'] . ' ' . $member['last_name']); ?>"
                                                 data-missing="<?php echo htmlspecialchars(implode(', ', $missing_requirements)); ?>"
                                                 title="View missing requirements">
                                             <i class="fas fa-info-circle text-info" style="font-size: 12px;"></i>
