@@ -45,31 +45,47 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv' && $can_export) {
         'Day Born', 'Church', 'Bible Class', 'Status', 'Total Paid'
     ]);
     
-    // Re-run the query for export (without pagination)
+    // Re-run the query for export (without pagination) - include Sunday school members
     $export_sql = "SELECT 
         m.id, m.crn, m.last_name, m.first_name, m.middle_name, m.phone, m.gender, 
         m.day_born, m.photo, m.membership_status, m.status, m.confirmed, m.baptized,
-        c.name as church_name,
-        cl.name as class_name
+        c.name as church_name, cl.name as class_name, 'member' as member_type
     FROM members m
     LEFT JOIN churches c ON m.church_id = c.id
     LEFT JOIN bible_classes cl ON m.class_id = cl.id
     WHERE $where_clause
-    ORDER BY m.last_name ASC, m.first_name ASC";
+    
+    UNION ALL
+    
+    SELECT 
+        s.id, s.srn as crn, s.last_name, s.first_name, s.middle_name, s.contact as phone, 'N/A' as gender,
+        DATE_FORMAT(s.dob, '%d/%m') as day_born, s.photo, NULL as membership_status, 'active' as status, 
+        'no' as confirmed, 'no' as baptized, c.name as church_name, cl.name as class_name, 'sunday_school' as member_type
+    FROM sunday_school s
+    LEFT JOIN churches c ON s.church_id = c.id
+    LEFT JOIN bible_classes cl ON s.class_id = cl.id
+    WHERE 1=1
+    
+    ORDER BY last_name ASC, first_name ASC";
     
     $export_result = $conn->query($export_sql);
     
     while ($row = $export_result->fetch_assoc()) {
-        // Determine status
-        $is_confirmed = (strtolower($row['confirmed']) === 'yes');
-        $is_baptized = (strtolower($row['baptized']) === 'yes');
-        
-        if ($is_confirmed && $is_baptized) {
-            $status = 'Full Member';
-        } elseif ($is_confirmed || $is_baptized) {
-            $status = 'Catechumen';
+        // Determine status based on member type
+        if ($row['member_type'] === 'sunday_school') {
+            $status = 'Juvenile';
         } else {
-            $status = 'No Status';
+            // Regular members - determine status based on confirmed and baptized
+            $is_confirmed = (strtolower($row['confirmed']) === 'yes');
+            $is_baptized = (strtolower($row['baptized']) === 'yes');
+            
+            if ($is_confirmed && $is_baptized) {
+                $status = 'Full Member';
+            } elseif ($is_confirmed || $is_baptized) {
+                $status = 'Catechumen';
+            } else {
+                $status = 'No Status';
+            }
         }
         
         // Get total payments for this member
@@ -155,8 +171,15 @@ if (!empty($_GET['day_born'])) {
 // Build the main query
 $where_clause = implode(' AND ', $where_conditions);
 
-// Count total members for pagination
-$count_sql = "SELECT COUNT(*) as total FROM members m WHERE $where_clause";
+// Count total members for pagination (including Sunday school members)
+$count_sql = "SELECT COUNT(*) as total FROM (
+    SELECT m.id FROM members m WHERE $where_clause
+    UNION ALL
+    SELECT s.id FROM sunday_school s 
+    LEFT JOIN churches c ON s.church_id = c.id 
+    LEFT JOIN bible_classes cl ON s.class_id = cl.id 
+    WHERE 1=1
+) as combined_members";
 $count_stmt = $conn->prepare($count_sql);
 if (!empty($params)) {
     $count_stmt->bind_param($param_types, ...$params);
@@ -169,18 +192,29 @@ $total_pages = ($page_size === 'all') ? 1 : ceil($total_members / $page_size);
 $offset = ($page_size === 'all') ? 0 : ($page - 1) * $page_size;
 $limit_clause = ($page_size === 'all') ? '' : "LIMIT $page_size OFFSET $offset";
 
-// Main query to get members
+// Main query to get members and Sunday school members combined
 $sql = "
     SELECT 
         m.id, m.crn, m.last_name, m.first_name, m.middle_name, m.phone, m.gender, 
         m.day_born, m.photo, m.membership_status, m.status, m.confirmed, m.baptized,
-        c.name as church_name,
-        cl.name as class_name
+        c.name as church_name, cl.name as class_name, 'member' as member_type
     FROM members m
     LEFT JOIN churches c ON m.church_id = c.id
     LEFT JOIN bible_classes cl ON m.class_id = cl.id
     WHERE $where_clause
-    ORDER BY m.last_name ASC, m.first_name ASC
+    
+    UNION ALL
+    
+    SELECT 
+        s.id, s.srn as crn, s.last_name, s.first_name, s.middle_name, s.contact as phone, 'N/A' as gender,
+        DATE_FORMAT(s.dob, '%d/%m') as day_born, s.photo, NULL as membership_status, 'active' as status, 
+        'no' as confirmed, 'no' as baptized, c.name as church_name, cl.name as class_name, 'sunday_school' as member_type
+    FROM sunday_school s
+    LEFT JOIN churches c ON s.church_id = c.id
+    LEFT JOIN bible_classes cl ON s.class_id = cl.id
+    WHERE 1=1
+    
+    ORDER BY last_name ASC, first_name ASC
     $limit_clause
 ";
 
@@ -627,28 +661,39 @@ ob_start();
                             </td>
                             <td>
                                 <?php
-                                // Determine membership status based on confirmed and baptized
-                                $is_confirmed = (strtolower($member['confirmed']) === 'yes');
-                                $is_baptized = (strtolower($member['baptized']) === 'yes');
-                                
-                                if ($is_confirmed && $is_baptized) {
-                                    $status = 'Full Member';
-                                    $status_class = 'success';
+                                // Determine membership status based on member type and confirmed/baptized status
+                                if ($member['member_type'] === 'sunday_school') {
+                                    // Sunday school members always show as Juvenile
+                                    $status = 'Juvenile';
+                                    $status_class = 'info';
                                     $show_info = false;
-                                } elseif ($is_confirmed || $is_baptized) {
-                                    $status = 'Catechumen';
-                                    $status_class = 'warning';
-                                    $show_info = true;
                                 } else {
-                                    $status = 'No Status';
-                                    $status_class = 'secondary';
-                                    $show_info = true;
+                                    // Regular members - determine status based on confirmed and baptized
+                                    $is_confirmed = (strtolower($member['confirmed']) === 'yes');
+                                    $is_baptized = (strtolower($member['baptized']) === 'yes');
+                                    
+                                    if ($is_confirmed && $is_baptized) {
+                                        $status = 'Full Member';
+                                        $status_class = 'success';
+                                        $show_info = false;
+                                    } elseif ($is_confirmed || $is_baptized) {
+                                        $status = 'Catechumen';
+                                        $status_class = 'warning';
+                                        $show_info = true;
+                                    } else {
+                                        $status = 'No Status';
+                                        $status_class = 'secondary';
+                                        $show_info = true;
+                                    }
                                 }
                                 
                                 // Prepare missing requirements for modal
                                 $missing_requirements = [];
-                                if (!$is_confirmed) $missing_requirements[] = 'Not Confirmed';
-                                if (!$is_baptized) $missing_requirements[] = 'Not Baptized';
+                                if ($member['member_type'] !== 'sunday_school') {
+                                    // Only check requirements for regular members (not Sunday school)
+                                    if (!$is_confirmed) $missing_requirements[] = 'Not Confirmed';
+                                    if (!$is_baptized) $missing_requirements[] = 'Not Baptized';
+                                }
                                 ?>
                                 <div class="d-flex align-items-center">
                                     <span class="badge badge-<?php echo $status_class; ?>">
@@ -668,51 +713,67 @@ ob_start();
                             </td>
                             <?php if ($can_edit || $can_delete): ?>
                                 <td>
-                                    <?php if ($can_view): ?>
-                                        <a href="member_view.php?id=<?= $member['id'] ?>" class="action-btn btn-view" title="View Details">
-                                            <i class="fas fa-eye"></i>
-                                        </a>
-                                    <?php endif; ?>
-                                    
-                                    <?php if ($can_edit): ?>
-                                        <a href="admin_member_edit.php?id=<?= $member['id'] ?>" class="action-btn btn-edit" title="Edit Member">
-                                            <i class="fas fa-edit"></i>
-                                        </a>
-                                        
-                                        <button class="action-btn btn-adherent" 
-                                                data-toggle="modal" 
-                                                data-target="#markAdherentModal"
-                                                data-member-id="<?= $member['id'] ?>" 
-                                                data-member-name="<?= htmlspecialchars($member['first_name'] . ' ' . $member['last_name']) ?>"
-                                                title="Mark as Adherent">
-                                            <i class="fas fa-user-tag"></i>
-                                        </button>
-                                        
-                                        <?php
-                                        // Check if member has adherent history
-                                        $history_check = $conn->prepare("SELECT COUNT(*) as count FROM adherents WHERE member_id = ?");
-                                        $history_check->bind_param("i", $member['id']);
-                                        $history_check->execute();
-                                        $has_history = $history_check->get_result()->fetch_assoc()['count'] > 0;
-                                        ?>
-                                        
-                                        <?php if ($has_history): ?>
-                                            <button class="action-btn btn-history" 
-                                                    data-toggle="modal" 
-                                                    data-target="#adherentHistoryModal"
-                                                    data-member-id="<?= $member['id'] ?>" 
-                                                    data-member-name="<?= htmlspecialchars($member['first_name'] . ' ' . $member['last_name']) ?>"
-                                                    title="View Adherent History">
-                                                <i class="fas fa-history"></i>
-                                            </button>
+                                    <?php if ($member['member_type'] === 'sunday_school'): ?>
+                                        <!-- Sunday school member actions -->
+                                        <?php if ($can_view): ?>
+                                            <a href="sundayschool_view.php?id=<?= $member['id'] ?>" class="action-btn btn-view" title="View Sunday School Details">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
                                         <?php endif; ?>
                                         
-                                        <a href="<?= BASE_URL ?>/views/ajax_deactivate_member.php?id=<?= $member['id'] ?>" 
-                                           class="action-btn btn-deactivate" 
-                                           onclick="return confirm('Are you sure you want to de-activate this member?')" 
-                                           title="De-activate Member">
-                                            <i class="fas fa-user-times"></i>
-                                        </a>
+                                        <?php if ($can_edit): ?>
+                                            <a href="sundayschool_form.php?id=<?= $member['id'] ?>" class="action-btn btn-edit" title="Edit Sunday School Member">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        <!-- Regular member actions -->
+                                        <?php if ($can_view): ?>
+                                            <a href="member_view.php?id=<?= $member['id'] ?>" class="action-btn btn-view" title="View Details">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                        <?php endif; ?>
+                                        
+                                        <?php if ($can_edit): ?>
+                                            <a href="admin_member_edit.php?id=<?= $member['id'] ?>" class="action-btn btn-edit" title="Edit Member">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            
+                                            <button class="action-btn btn-adherent" 
+                                                    data-toggle="modal" 
+                                                    data-target="#markAdherentModal"
+                                                    data-member-id="<?= $member['id'] ?>" 
+                                                    data-member-name="<?= htmlspecialchars($member['first_name'] . ' ' . $member['last_name']) ?>"
+                                                    title="Mark as Adherent">
+                                                <i class="fas fa-user-tag"></i>
+                                            </button>
+                                            
+                                            <?php
+                                            // Check if member has adherent history
+                                            $history_check = $conn->prepare("SELECT COUNT(*) as count FROM adherents WHERE member_id = ?");
+                                            $history_check->bind_param("i", $member['id']);
+                                            $history_check->execute();
+                                            $has_history = $history_check->get_result()->fetch_assoc()['count'] > 0;
+                                            ?>
+                                            
+                                            <?php if ($has_history): ?>
+                                                <button class="action-btn btn-history" 
+                                                        data-toggle="modal" 
+                                                        data-target="#adherentHistoryModal"
+                                                        data-member-id="<?= $member['id'] ?>" 
+                                                        data-member-name="<?= htmlspecialchars($member['first_name'] . ' ' . $member['last_name']) ?>"
+                                                        title="View Adherent History">
+                                                    <i class="fas fa-history"></i>
+                                                </button>
+                                            <?php endif; ?>
+                                            
+                                            <a href="<?= BASE_URL ?>/views/ajax_deactivate_member.php?id=<?= $member['id'] ?>" 
+                                               class="action-btn btn-deactivate" 
+                                               onclick="return confirm('Are you sure you want to de-activate this member?')" 
+                                               title="De-activate Member">
+                                                <i class="fas fa-user-times"></i>
+                                            </a>
+                                        <?php endif; ?>
                                     <?php endif; ?>
                                 </td>
                             <?php endif; ?>

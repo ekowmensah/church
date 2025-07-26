@@ -37,9 +37,17 @@ $can_view = true; // Already validated above
 // --- COMPREHENSIVE DASHBOARD DATA QUERIES ---
 
 // Member Statistics
-$full_member = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE baptized = 'Yes' AND confirmed = 'Yes'")->fetch_assoc()['cnt'];
-$catechumen = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE baptized = 'Yes' AND (confirmed IS NULL OR confirmed != 'Yes')")->fetch_assoc()['cnt'];
+// Full Member: Both confirmed AND baptized = 'Yes', but NOT adherents (matching member_list.php logic with adherent exclusion)
+$full_member = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE LOWER(confirmed) = 'yes' AND LOWER(baptized) = 'yes' AND (membership_status IS NULL OR membership_status != 'Adherent')")->fetch_assoc()['cnt'];
+
+// Catechumen: Either confirmed OR baptized = 'Yes', but not both, and NOT adherents (matching member_list.php logic with adherent exclusion)
+$catechumen = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE (LOWER(confirmed) = 'yes' OR LOWER(baptized) = 'yes') AND NOT (LOWER(confirmed) = 'yes' AND LOWER(baptized) = 'yes') AND (membership_status IS NULL OR membership_status != 'Adherent')")->fetch_assoc()['cnt'];
+
+// Adherent: Members with membership_status = 'Adherent'
 $adherent = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE membership_status = 'Adherent'")->fetch_assoc()['cnt'];
+
+// No Status: Members who are not Full Members, Catechumens, or Adherents (matching member_list.php 'No Status' logic)
+$no_status = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE NOT (LOWER(confirmed) = 'yes' OR LOWER(baptized) = 'yes') AND (membership_status IS NULL OR membership_status != 'Adherent')")->fetch_assoc()['cnt'];
 $junior_members = $conn->query("SELECT COUNT(*) as cnt FROM sunday_school")->fetch_assoc()['cnt'];
 $total_members = $conn->query("SELECT (SELECT COUNT(*) FROM members) + (SELECT COUNT(*) FROM sunday_school) AS cnt")->fetch_assoc()['cnt'];
 $registered_members = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'active'")->fetch_assoc()['cnt'];
@@ -205,6 +213,15 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
                 </div>
             </div>
         </div>
+        <!-- <div class="col-6 col-md-3 mb-2">
+            <div class="info-box bg-secondary shadow-sm">
+                <span class="info-box-icon bg-gradient-secondary elevation-1"><i class="fas fa-user-times"></i></span>
+                <div class="info-box-content">
+                    <span class="info-box-text">No Status</span>
+                    <span class="info-box-number h4 mb-0"><?= number_format($no_status) ?></span>
+                </div>
+            </div>
+        </div> -->
     </div>
     <!-- Member Stats Cards -->
     <div class="row g-2 mb-3">
@@ -722,6 +739,11 @@ $('#payment-type-filter-form').on('submit', function(e) {
 
 .bg-gradient-purple {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+}
+
+.bg-gradient-secondary {
+    background: linear-gradient(135deg, #6c757d 0%, #495057 100%) !important;
+    color: white !important;
 }
 
 /* Info Box Styling */
