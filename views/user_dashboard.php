@@ -41,7 +41,7 @@ error_log('has_permission(view_dashboard): ' . (has_permission('view_dashboard')
 // --- DASHBOARD DATA QUERIES ---
 $full_member = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE baptized = 'Yes' AND confirmed = 'Yes'")->fetch_assoc()['cnt'];
 $catechumen = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE baptized = 'Yes' AND (confirmed IS NULL OR confirmed != 'Yes')")->fetch_assoc()['cnt'];
-$adherent = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'de-activated' OR status = 'suspended'")->fetch_assoc()['cnt'];
+$adherent = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE membership_status = 'Adherent'")->fetch_assoc()['cnt'];
 $junior_members = $conn->query("SELECT COUNT(*) as cnt FROM sunday_school")->fetch_assoc()['cnt'];
 $total_members = $conn->query("SELECT (SELECT COUNT(*) FROM members) + (SELECT COUNT(*) FROM sunday_school) AS cnt")->fetch_assoc()['cnt'];
 $registered_members = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'active'")->fetch_assoc()['cnt'];
