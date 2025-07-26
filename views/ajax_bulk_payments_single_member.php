@@ -35,7 +35,12 @@ $failed = [];
 foreach ($payments as $p) {
     $type_id = intval($p['type_id'] ?? 0);
     $amount = floatval($p['amount'] ?? 0);
-    $mode = 'Cash'; // Force all bulk payments to Cash
+    $mode = isset($p['mode']) ? trim($p['mode']) : 'Cash';
+// Validate mode against allowed options
+$allowed_modes = ['Cash', 'Cheque', 'Transfer', 'POS', 'Online', 'Offline', 'Other'];
+if (!in_array($mode, $allowed_modes)) {
+    $mode = 'Cash';
+}
     $date = $p['date'] ?? date('Y-m-d');
     $desc = trim($p['desc'] ?? '');
     if (!$type_id || !$amount || !$mode || !$date) {
@@ -44,18 +49,20 @@ foreach ($payments as $p) {
         $failed[] = ['type_id'=>$type_id, 'reason'=>$msg];
         continue;
     }
-    // Validate type_id exists in payment_types
-    $check = $conn->prepare('SELECT id FROM payment_types WHERE id=?');
+    // Validate type_id exists in payment_types and get the type name
+    $check = $conn->prepare('SELECT id, name FROM payment_types WHERE id=?');
     $check->bind_param('i', $type_id);
     $check->execute();
-    $check->store_result();
-    if ($check->num_rows === 0) {
+    $check_result = $check->get_result();
+    $payment_type_data = $check_result->fetch_assoc();
+    if (!$payment_type_data) {
         $msg = 'Invalid payment type selected (type ID '.$type_id.')';
         $errors[] = $msg;
         $failed[] = ['type_id'=>$type_id, 'reason'=>$msg];
         $check->close();
         continue;
     }
+    $payment_type_name = $payment_type_data['name'];
     $check->close();
     if ($member_id) {
         $stmt = $conn->prepare('INSERT INTO payments (member_id, payment_type_id, amount, mode, payment_date, description) VALUES (?, ?, ?, ?, ?, ?)');
@@ -108,7 +115,7 @@ foreach ($payments as $p) {
     if ($person && !empty($person['phone'])) {
         try {
             $full_name = trim(($person['first_name'] ?? '').' '.($person['middle_name'] ?? '').' '.($person['last_name'] ?? ''));
-            $sms_message = get_payment_sms_message($full_name, $amount, $desc, $date);
+            $sms_message = get_payment_sms_message($full_name, $amount, $payment_type_name, $date);
             $sms_result = send_sms($person['phone'], $sms_message);
 
             // Log the SMS attempt

@@ -702,3 +702,25 @@ Processing as CRN only. member_ids=[79,81]
     }
 }
 Processing as CRN only. member_ids=[84]
+
+====
+2025-07-26T18:08:12+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-07-26",
+    "member_ids": [],
+    "sundayschool_ids": [
+        7
+    ],
+    "amounts": {
+        "ss_7": {
+            "3": 100
+        }
+    },
+    "descriptions": {
+        "ss_7": {
+            "3": "Offertory for July"
+        }
+    }
+}
+Processing as SRN only. sundayschool_ids=[7]

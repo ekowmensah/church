@@ -105,12 +105,14 @@ ob_start();
                                     <select class="form-control form-control-lg" id="single_mode" name="mode" required>
                                         <option value="">-- Select --</option>
                                         <option value="Cash">Cash</option>
-                                        <option value="Transfer">Transfer</option>
+
                                         <option value="Cheque">Cheque</option>
+                                        <!-- <option value="Transfer">Transfer</option>
+                                        
                                         <option value="POS">POS</option>
                                         <option value="Online">Online</option>
                                         <option value="Offline">Offline</option>
-                                        <option value="Other">Other</option>
+                                        <option value="Other">Other</option> -->
                                     </select>
                                 </div>
                                 <div class="form-group col-md-2">
@@ -121,7 +123,7 @@ ob_start();
                             <div class="form-row">
                                 <div class="form-group col-md-12">
                                     <label for="single_description">Description</label>
-                                    <input type="text" class="form-control form-control-lg" id="single_description" name="description" placeholder="Optional">
+                                    <input type="text" class="form-control form-control-lg" id="single_description" name="description" placeholder="Optional" autocomplete="off">
                                 </div>
                             </div>
                             <div class="form-row">
@@ -194,12 +196,13 @@ ob_start();
                                             <select class="form-control form-control-lg" id="bulk_mode" name="bulk_mode">
                                                 <option value="">-- Select --</option>
                                                 <option value="Cash">Cash</option>
-                                                <option value="Transfer">Transfer</option>
                                                 <option value="Cheque">Cheque</option>
+                                                <!-- <option value="Transfer">Transfer</option>
+                                                
                                                 <option value="POS">POS</option>
                                                 <option value="Online">Online</option>
                                                 <option value="Offline">Offline</option>
-                                                <option value="Other">Other</option>
+                                                <option value="Other">Other</option> -->
                                             </select>
                                         </div>
                                         <div class="form-group col-md-2">
@@ -295,7 +298,26 @@ ob_start();
 <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/js/all.min.js"></script>
 <script src="payment_form_multi.js"></script>
 <script>
-$(function() {
+$(function(){
+    // Auto-populate description field
+    function updateDescriptionField() {
+        var paymentType = $('#single_payment_type_id option:selected').text();
+        var dateVal = $('#single_payment_date').val();
+        var month = '';
+        if (dateVal) {
+            var d = new Date(dateVal);
+            month = d.toLocaleString('default', { month: 'long' });
+        }
+        if (paymentType && paymentType !== '-- Select --' && month) {
+            $('#single_description').val('Payment for ' + month + ' ' + paymentType);
+        } else {
+            $('#single_description').val('');
+        }
+    }
+    $('#single_payment_type_id, #single_payment_date').on('change', updateDescriptionField);
+    // Initial auto-populate on page load (if both fields have value)
+    updateDescriptionField();
+
     // --- Member Search ---
     $('#searchMemberForm').on('submit', function(e) {
         e.preventDefault();

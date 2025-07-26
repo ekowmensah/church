@@ -557,16 +557,31 @@ ob_start();
                                     <?php 
                                     $mode_icons = [
                                         'cash' => 'fas fa-money-bill text-success',
-                                        'mobile_money' => 'fas fa-mobile-alt text-info',
+                                        'cheque' => 'fas fa-file-invoice text-warning',
                                         'bank_transfer' => 'fas fa-university text-primary',
-                                        'cheque' => 'fas fa-file-invoice text-warning'
+                                        'mobile_money' => 'fas fa-mobile-alt text-info',
+                                        'transfer' => 'fas fa-exchange-alt text-secondary',
+                                        'pos' => 'fas fa-credit-card text-dark',
+                                        'online' => 'fas fa-globe text-primary',
+                                        'offline' => 'fas fa-unlink text-muted',
+                                        'other' => 'fas fa-ellipsis-h text-muted',
                                     ];
-                                    $mode = $row['mode'] ?? 'offline';
+                                    // Normalize mode value for display and icon
+                                    $raw_mode = $row['mode'] ?? '';
+                                    $mode = strtolower(trim(str_replace([' ', '-'], ['_', '_'], $raw_mode)));
                                     $icon = $mode_icons[$mode] ?? 'fas fa-question-circle text-muted';
                                     ?>
                                     <span class="d-flex align-items-center">
                                         <i class="<?= $icon ?> mr-1"></i>
-                                        <?= isset($row['mode']) ? htmlspecialchars(ucwords(str_replace('_', ' ', $row['mode']))) : '<span class="text-muted">Offline</span>' ?>
+                                        <?php
+    if (!empty($raw_mode)) {
+        // Clean up for display
+        $display_mode = ucwords(str_replace(['_', '-'], ' ', strtolower($raw_mode)));
+        echo htmlspecialchars($display_mode);
+    } else {
+        echo '<span class="text-muted">Unknown</span>';
+    }
+?>
                                     </span>
                                 </td>
                                 <td class="align-middle">
