@@ -5,7 +5,22 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <meta name="base-url" content="<?php echo BASE_URL; ?>">
-    <title>Church Management System</title>
+    
+    <!-- Favicon and App Icons -->
+    <link rel="icon" type="image/svg+xml" href="<?php echo BASE_URL; ?>/assets/img/favicon.svg">
+    <link rel="icon" type="image/x-icon" href="<?php echo BASE_URL; ?>/assets/img/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="<?php echo BASE_URL; ?>/assets/img/apple-touch-icon.png">
+    <link rel="manifest" href="<?php echo BASE_URL; ?>/assets/img/site.webmanifest">
+    
+    <!-- Theme and App Metadata -->
+    <meta name="theme-color" content="#667eea">
+    <meta name="msapplication-TileColor" content="#667eea">
+    <meta name="application-name" content="Church CMS">
+    <meta name="apple-mobile-web-app-title" content="Church CMS">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    
+    <title><?php echo isset($page_title) ? htmlspecialchars($page_title) : 'Church Management System'; ?></title>
     <style>
       .content-wrapper {
         overflow-x: visible;
