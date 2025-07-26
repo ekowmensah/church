@@ -36,20 +36,25 @@ $can_view = true; // Already validated above
 
 // --- COMPREHENSIVE DASHBOARD DATA QUERIES ---
 
-// Member Statistics
-// Full Member: Both confirmed AND baptized = 'Yes', but NOT adherents (matching member_list.php logic with adherent exclusion)
-$full_member = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE LOWER(confirmed) = 'yes' AND LOWER(baptized) = 'yes' AND (membership_status IS NULL OR membership_status != 'Adherent')")->fetch_assoc()['cnt'];
-
-// Catechumen: Either confirmed OR baptized = 'Yes', but not both, and NOT adherents (matching member_list.php logic with adherent exclusion)
-$catechumen = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE (LOWER(confirmed) = 'yes' OR LOWER(baptized) = 'yes') AND NOT (LOWER(confirmed) = 'yes' AND LOWER(baptized) = 'yes') AND (membership_status IS NULL OR membership_status != 'Adherent')")->fetch_assoc()['cnt'];
-
-// Adherent: Members with membership_status = 'Adherent'
+// Member Statistics - New Formula Implementation
+// Base counts for calculations
+$total_baptized_confirmed = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE LOWER(confirmed) = 'yes' AND LOWER(baptized) = 'yes'")->fetch_assoc()['cnt'];
+$total_baptized_or_confirmed = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE LOWER(confirmed) = 'yes' OR LOWER(baptized) = 'yes'")->fetch_assoc()['cnt'];
 $adherent = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE membership_status = 'Adherent'")->fetch_assoc()['cnt'];
-
-// No Status: Members who are not Full Members, Catechumens, or Adherents (matching member_list.php 'No Status' logic)
 $no_status = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE NOT (LOWER(confirmed) = 'yes' OR LOWER(baptized) = 'yes') AND (membership_status IS NULL OR membership_status != 'Adherent')")->fetch_assoc()['cnt'];
 $junior_members = $conn->query("SELECT COUNT(*) as cnt FROM sunday_school")->fetch_assoc()['cnt'];
-$total_members = $conn->query("SELECT (SELECT COUNT(*) FROM members) + (SELECT COUNT(*) FROM sunday_school) AS cnt")->fetch_assoc()['cnt'];
+
+// Apply new formulas:
+// Full Members = Total (Baptized + Confirmed) - Total (Adherents + No Status)
+$full_member = $total_baptized_confirmed - ($adherent + $no_status);
+$full_member = max(0, $full_member); // Ensure non-negative
+
+// Catechumens = Total (Baptized/Confirmed) - Total (Adherents + No Status) - Full Members
+$catechumen = $total_baptized_or_confirmed - ($adherent + $no_status) - $full_member;
+$catechumen = max(0, $catechumen); // Ensure non-negative
+
+// Total Members = Full Members + Catechumens + Junior Members + Adherents + No Status
+$total_members = $full_member + $catechumen + $junior_members + $adherent + $no_status;
 $registered_members = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'active'")->fetch_assoc()['cnt'];
 $pending_registration = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'pending'")->fetch_assoc()['cnt'];
 $members_no_payments = $conn->query("SELECT COUNT(*) as cnt FROM members m LEFT JOIN payments p ON m.id = p.member_id WHERE p.id IS NULL AND m.status = 'active'")->fetch_assoc()['cnt'];
@@ -213,7 +218,7 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
                 </div>
             </div>
         </div>
-        <!-- <div class="col-6 col-md-3 mb-2">
+         <!-- <div class="col-6 col-md-3 mb-2">
             <div class="info-box bg-secondary shadow-sm">
                 <span class="info-box-icon bg-gradient-secondary elevation-1"><i class="fas fa-user-times"></i></span>
                 <div class="info-box-content">
@@ -221,7 +226,7 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
                     <span class="info-box-number h4 mb-0"><?= number_format($no_status) ?></span>
                 </div>
             </div>
-        </div> -->
+        </div> --> 
     </div>
     <!-- Member Stats Cards -->
     <div class="row g-2 mb-3">
@@ -233,14 +238,14 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
                 </div>
             </div>
         </div>
-        <div class="col-6 col-md-3 mb-2">
+     <!--   <div class="col-6 col-md-3 mb-2">
             <div class="card bg-light shadow-sm">
                 <div class="card-body text-center p-2">
                     <div class="text-secondary small">Registered Members</div>
                     <div class="h4 mb-0 font-weight-bold"><i class="fas fa-user-friends mr-1 text-success"></i><?= number_format($registered_members) ?></div>
                 </div>
             </div>
-        </div>
+        </div> -->
         <div class="col-6 col-md-3 mb-2">
             <div class="card bg-light shadow-sm">
                 <div class="card-body text-center p-2">
