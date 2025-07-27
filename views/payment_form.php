@@ -446,8 +446,8 @@ $(function(){
     // Modal confirm button
     $('#confirmSinglePaymentBtn').on('click', function(){
         if ($(this).prop('disabled')) return;
-        $(this).prop('disabled', true).text('Processing...');
-        $('#single-payment-feedback').empty();
+        $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-2"></i>Processing...');
+        $('#single-payment-feedback').html('<div class="alert alert-info"><i class="fas fa-clock mr-2"></i>Processing payment and sending notifications...</div>');
         var member_id = $('#single_member_id').val();
         var sundayschool_id = $('#single_sundayschool_id').val();
         var type_id = $('#single_payment_type_id').val();
@@ -464,6 +464,7 @@ $(function(){
             data: JSON.stringify(payload),
             contentType: 'application/json',
             dataType: 'json',
+            timeout: 30000, // 30 second timeout for SMS processing
             success: function(resp){
                 let typeMap = {};
                 $('#single_payment_type_id option').each(function(){
@@ -492,13 +493,17 @@ $(function(){
             },
             error: function(xhr, status, err){
                 let msg = 'Network/server error.';
-                if (xhr && xhr.responseText) {
+                if (status === 'timeout') {
+                    msg = 'Payment processing is taking longer than expected. Please check the payment list to verify if your payment was recorded.';
+                } else if (xhr && xhr.responseText) {
                     try {
                         let resp = JSON.parse(xhr.responseText);
                         msg = resp.msg || msg;
-                    } catch(e) {}
+                    } catch(e) {
+                        msg = 'Server response error. Please check if payment was recorded.';
+                    }
                 }
-                $('#single-payment-feedback').html('<div class="alert alert-danger">'+msg+'</div>');
+                $('#single-payment-feedback').html('<div class="alert alert-warning"><i class="fas fa-exclamation-triangle mr-2"></i>'+msg+'</div>');
             },
             complete: function(){
                 $('#submitSinglePaymentBtn').prop('disabled', false).text('Submit Payment');

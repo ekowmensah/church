@@ -665,17 +665,31 @@ $('#submitBulkBtn').click(function(){
         dataType: 'json',
         success: function(resp){
           $('#confirmSubmitBtn').prop('disabled', false).text('Confirm & Submit');
+          console.log('[AJAX SUCCESS] Response:', resp);
           if (resp.success) {
             $('#confirmModal').modal('hide');
-            showToast('Bulk payment successful!','success');
+            showToast('Bulk payment successful!', 'success');
             setTimeout(function(){ location.reload(); }, 1500);
           } else {
-            showToast(resp.msg || 'Error processing payment.','danger');
+            showToast(resp.msg || 'Error processing payment.', 'danger');
+            if (resp.msg) console.error('[AJAX ERROR] Server message:', resp.msg);
           }
         },
-        error: function(xhr){
+        error: function(xhr, status, err){
           $('#confirmSubmitBtn').prop('disabled', false).text('Confirm & Submit');
-          showToast('Failed to submit. Please try again.','danger');
+          let msg = 'Network/server error.';
+          if (xhr && xhr.responseText) {
+            try {
+              let resp = JSON.parse(xhr.responseText);
+              msg = resp.msg || msg;
+              console.error('[AJAX ERROR] Parsed response:', resp);
+            } catch(e) {
+              console.error('[AJAX ERROR] Could not parse responseText:', xhr.responseText);
+            }
+          } else {
+            console.error('[AJAX ERROR] status:', status, 'err:', err, 'xhr:', xhr);
+          }
+          showToast(msg, 'danger');
         }
       });
     });

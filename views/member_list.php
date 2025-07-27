@@ -767,7 +767,7 @@ ob_start();
                                                 </button>
                                             <?php endif; ?>
                                             
-                                            <a href="<?= BASE_URL ?>/views/ajax_deactivate_member.php?id=<?= $member['id'] ?>" 
+                                            <a href="<?= BASE_URL ?>/views/member_deactivate.php?id=<?= $member['id'] ?>" 
                                                class="action-btn btn-deactivate" 
                                                onclick="return confirm('Are you sure you want to de-activate this member?')" 
                                                title="De-activate Member">

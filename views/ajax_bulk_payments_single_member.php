@@ -92,89 +92,43 @@ if (!in_array($mode, $allowed_modes)) {
         continue;
     }
     $stmt->close();
-    // --- Send SMS notification ---
-    require_once __DIR__.'/../includes/payment_sms_template.php';
-    require_once __DIR__.'/../includes/sms.php';
-    
-    // Track if SMS was sent successfully
+    // --- Queue SMS notification asynchronously ---
+    $payment_id = $conn->insert_id;
     $sms_sent = false;
     $sms_error = null;
     $sms_debug = [];
     
-    // Fetch member or child info for SMS
-    if ($member_id) {
-        $mstmt = $conn->prepare('SELECT first_name, middle_name, last_name, phone FROM members WHERE id=?');
-        $mstmt->bind_param('i', $member_id);
-        $mstmt->execute();
-        $mresult = $mstmt->get_result();
-        $person = $mresult->fetch_assoc();
-    } else if ($sundayschool_id) {
-        $mstmt = $conn->prepare('SELECT first_name, middle_name, last_name, contact as phone FROM sunday_school WHERE id=?');
-        $mstmt->bind_param('i', $sundayschool_id);
-        $mstmt->execute();
-        $mresult = $mstmt->get_result();
-        $person = $mresult->fetch_assoc();
-    } else {
-        $person = null;
+    // Queue SMS for background processing (non-blocking)
+    if ($payment_id && ($member_id || $sundayschool_id)) {
+        $sms_queue_data = [
+            'payment_id' => $payment_id,
+            'member_id' => $member_id,
+            'sundayschool_id' => $sundayschool_id,
+            'amount' => $amount,
+            'payment_type_name' => $payment_type_name,
+            'date' => $date,
+            'description' => $desc
+        ];
+        
+        // Use cURL to make non-blocking request to SMS queue
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, 'http://localhost' . dirname($_SERVER['REQUEST_URI']) . '/ajax_queue_sms.php');
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($sms_queue_data));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Content-Type: application/json',
+            'Cookie: ' . $_SERVER['HTTP_COOKIE'] ?? ''
+        ]);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 1); // Very short timeout for non-blocking
+        curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
+        
+        // Execute in background (ignore response)
+        curl_exec($ch);
+        curl_close($ch);
+        
+        $sms_debug = ['queued' => true, 'payment_id' => $payment_id];
     }
-    
-    if ($person && !empty($person['phone'])) {
-        try {
-            $full_name = trim(($person['first_name'] ?? '').' '.($person['middle_name'] ?? '').' '.($person['last_name'] ?? ''));
-            $sms_message = get_payment_sms_message($full_name, $amount, $payment_type_name, $date);
-            $sms_result = send_sms($person['phone'], $sms_message);
-
-            // Log the SMS attempt
-            $sms_debug = [
-                'member_phone' => $person['phone'],
-                'sms_message' => $sms_message,
-                'payment_id' => $conn->insert_id,
-                'template_data' => [
-                    'member_name' => $full_name,
-                    'amount' => $amount,
-                    'description' => $desc,
-                    'date' => $date
-                ]
-            ];
-
-            try {
-                // Log the SMS attempt
-                log_sms(
-                    $person['phone'], 
-                    $sms_message,
-                    $conn->insert_id, // Payment ID
-                    'payment',
-                    null, // Use default sender
-                    [
-                        'member_name' => $full_name,
-                        'amount' => $amount,
-                        'description' => $desc,
-                        'date' => $date
-                    ]
-                );
-
-                // Check if SMS was sent successfully
-                if (isset($sms_result['status']) && $sms_result['status'] === 'success') {
-                    $sms_sent = true;
-                } elseif (isset($sms_result['error'])) {
-                    $sms_error = $sms_result['error'];
-                    $sms_debug['error'] = $sms_result;
-                    error_log("SMS sending failed: " . $sms_error);
-                } else {
-                    $sms_error = $sms_result['message'] ?? 'Unknown error';
-                    $sms_debug['error'] = $sms_result;
-                }
-            } catch (Exception $e) {
-                $sms_error = $e->getMessage();
-                $sms_debug['exception'] = $e->getMessage();
-                error_log("SMS sending exception: " . $e->getMessage());
-            }
-        } catch (Exception $e) {
-            error_log("Error sending SMS: " . $e->getMessage());
-            $sms_error = $e->getMessage();
-        }
-    }
-    $mstmt->close();
 }
 
 $response = [
