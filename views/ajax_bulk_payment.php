@@ -121,7 +121,11 @@ class BulkPaymentProcessor {
                 try {
                     if ($stmt->execute()) {
                         $this->success_count++;
-                        $this->summary[] = ['member_id' => $mid, 'payment_type_id' => $ptid, 'amount' => $amount];
+                        $payment_id = $this->conn->insert_id;
+                        $this->summary[] = ['member_id' => $mid, 'payment_type_id' => $ptid, 'amount' => $amount, 'payment_id' => $payment_id];
+                        
+                        // Queue SMS notification asynchronously
+                        $this->queueSMS($payment_id, $mid, null, $amount, $ptid, $payment_date, $desc);
                     } else {
                         $this->error_count++;
                         $this->errors[] = "DB error for member $mid, type $ptid: ".$stmt->error;
@@ -160,7 +164,11 @@ class BulkPaymentProcessor {
                 try {
                     if ($stmt->execute()) {
                         $this->success_count++;
-                        $this->summary[] = ['sundayschool_id' => $sid, 'payment_type_id' => $ptid, 'amount' => $amount];
+                        $payment_id = $this->conn->insert_id;
+                        $this->summary[] = ['sundayschool_id' => $sid, 'payment_type_id' => $ptid, 'amount' => $amount, 'payment_id' => $payment_id];
+                        
+                        // Queue SMS notification asynchronously
+                        $this->queueSMS($payment_id, null, $sid, $amount, $ptid, $payment_date, $desc);
                     } else {
                         $this->error_count++;
                         $this->errors[] = "DB error for sunday school $sid, type $ptid: ".$stmt->error;
@@ -176,10 +184,61 @@ class BulkPaymentProcessor {
             }
         }
     }
-    // Example for extensibility
-    // private function notify($mid, $amount, $ptid, $payment_date) {
-    //     // Plugin/hook logic here
-    // }
+    // Queue SMS notification asynchronously (non-blocking)
+    private function queueSMS($payment_id, $member_id, $sundayschool_id, $amount, $payment_type_id, $payment_date, $description) {
+        // Get payment type name for SMS
+        $stmt = $this->conn->prepare('SELECT name FROM payment_types WHERE id = ?');
+        $stmt->bind_param('i', $payment_type_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $payment_type_data = $result->fetch_assoc();
+        $payment_type_name = $payment_type_data['name'] ?? 'Payment';
+        $stmt->close();
+        
+        $sms_queue_data = [
+            'payment_id' => $payment_id,
+            'member_id' => $member_id,
+            'sundayschool_id' => $sundayschool_id,
+            'amount' => $amount,
+            'payment_type_name' => $payment_type_name,
+            'date' => $payment_date,
+            'description' => $description
+        ];
+        
+        // Add small delay to prevent overwhelming the SMS queue
+        usleep(100000); // 100ms delay between SMS queue requests
+        
+        // Use cURL to make non-blocking request to SMS queue
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, 'http://localhost' . dirname($_SERVER['REQUEST_URI']) . '/ajax_queue_sms.php');
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($sms_queue_data));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Content-Type: application/json',
+            'Cookie: ' . ($_SERVER['HTTP_COOKIE'] ?? '')
+        ]);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 5); // Increased timeout for reliability
+        curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
+        
+        // Execute and log result for debugging
+        $result = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_error = curl_error($ch);
+        curl_close($ch);
+        
+        // Log SMS queue attempt for debugging
+        $log_data = [
+            'payment_id' => $payment_id,
+            'member_id' => $member_id,
+            'sundayschool_id' => $sundayschool_id,
+            'http_code' => $http_code,
+            'curl_error' => $curl_error,
+            'timestamp' => date('Y-m-d H:i:s')
+        ];
+        file_put_contents(__DIR__.'/sms_queue_debug.log', json_encode($log_data)."\n", FILE_APPEND);
+    }
 }
 
 // Strict SRN/CRN separation: If sundayschool_ids is non-empty, ignore member_ids and only process SRN
