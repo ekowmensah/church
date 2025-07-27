@@ -64,12 +64,18 @@ if (!in_array($mode, $allowed_modes)) {
     }
     $payment_type_name = $payment_type_data['name'];
     $check->close();
+    $user_id = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : null;
+    if (!$user_id) {
+        $errors[] = 'User session expired or not found.';
+        $failed[] = ['type_id'=>$type_id, 'reason'=>'User session expired or not found.'];
+        continue;
+    }
     if ($member_id) {
-        $stmt = $conn->prepare('INSERT INTO payments (member_id, payment_type_id, amount, mode, payment_date, description) VALUES (?, ?, ?, ?, ?, ?)');
-        $stmt->bind_param('iidsss', $member_id, $type_id, $amount, $mode, $date, $desc);
+        $stmt = $conn->prepare('INSERT INTO payments (member_id, payment_type_id, amount, mode, payment_date, description, recorded_by) VALUES (?, ?, ?, ?, ?, ?, ?)');
+        $stmt->bind_param('iidsssi', $member_id, $type_id, $amount, $mode, $date, $desc, $user_id);
     } else if ($sundayschool_id) {
-        $stmt = $conn->prepare('INSERT INTO payments (sundayschool_id, payment_type_id, amount, mode, payment_date, description) VALUES (?, ?, ?, ?, ?, ?)');
-        $stmt->bind_param('iidsss', $sundayschool_id, $type_id, $amount, $mode, $date, $desc);
+        $stmt = $conn->prepare('INSERT INTO payments (sundayschool_id, payment_type_id, amount, mode, payment_date, description, recorded_by) VALUES (?, ?, ?, ?, ?, ?, ?)');
+        $stmt->bind_param('iidsssi', $sundayschool_id, $type_id, $amount, $mode, $date, $desc, $user_id);
     } else {
         $errors[] = 'No valid member or Sunday School child specified.';
         $failed[] = ['type_id'=>$type_id, 'reason'=>'No valid member or Sunday School child specified.'];

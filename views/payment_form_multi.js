@@ -186,7 +186,8 @@ $(function(){
                     if ($(this).val()) typeMap[$(this).val()] = $(this).text();
                 });
                 if (resp.success) {
-                    alert('DEBUG: Payment response: ' + JSON.stringify(resp, null, 2));
+                    $('#bulk-payment-feedback').html('<div class="alert alert-success">Payments recorded successfully!</div>');
+                    window.location.href = 'payment_list.php';
                 } else {
                     let msg = resp.msg || 'Error saving payments.';
                     if (resp.failed && Array.isArray(resp.failed)) {
@@ -272,7 +273,10 @@ $(function(){
                     if ($(this).val()) typeMap[$(this).val()] = $(this).text();
                 });
                 if (resp.success) {
-                    alert('DEBUG: Payment response: ' + JSON.stringify(resp, null, 2));
+                    $('#bulk-payment-feedback').html('<div class="alert alert-success">Payments recorded successfully!</div>');
+setTimeout(function(){
+    window.location.href = 'payment_list.php';
+}, 1200);
                 } else {
                     let msg = resp.msg || 'Error saving payments.';
                     if (resp.failed && Array.isArray(resp.failed)) {
@@ -371,7 +375,10 @@ $(function(){
                     if ($(this).val()) typeMap[$(this).val()] = $(this).text();
                 });
                 if (resp.success) {
-                    alert('DEBUG: Payment response: ' + JSON.stringify(resp, null, 2));
+                    $('#bulk-payment-feedback').html('<div class="alert alert-success">Payments recorded successfully!</div>');
+setTimeout(function(){
+    window.location.href = 'payment_list.php';
+}, 1200);
                 } else {
                     let msg = resp.msg || 'Error saving payments.';
                     if (resp.failed && Array.isArray(resp.failed)) {

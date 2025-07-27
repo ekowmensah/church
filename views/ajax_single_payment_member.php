@@ -1,6 +1,8 @@
 <?php
+$__start = microtime(true);
 // AJAX endpoint for single payment by logged-in member
 if (session_status() === PHP_SESSION_NONE) session_start();
+error_log('SESSION user_id: ' . print_r($_SESSION['user_id'], true));
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions.php';
@@ -41,14 +43,22 @@ if ($dup_stmt->num_rows > 0) {
 $dup_stmt->close();
 
 if ($payment_type_id && $amount > 0) {
-    $stmt = $conn->prepare('INSERT INTO payments (member_id, payment_type_id, amount, payment_date, description) VALUES (?, ?, ?, ?, ?)');
-    $stmt->bind_param('iidss', $member_id, $payment_type_id, $amount, $date, $description);
+    if (!isset($_SESSION['user_id']) || !$_SESSION['user_id']) {
+        error_log('ERROR: user_id not set in session for single payment insert!');
+        echo json_encode(['success' => false, 'error' => 'User session error: Not logged in or session expired. Please log in again.']);
+        exit;
+    }
+    $user_id = intval($_SESSION['user_id']);
+    $stmt = $conn->prepare('INSERT INTO payments (member_id, payment_type_id, amount, payment_date, description, recorded_by) VALUES (?, ?, ?, ?, ?, ?)');
+    $stmt->bind_param('iidssi', $member_id, $payment_type_id, $amount, $date, $description, $user_id);
     if ($stmt->execute()) {
         echo json_encode(['success' => true, 'message' => 'Payment recorded successfully.']);
     } else {
-        echo json_encode(['success' => false, 'error' => 'Error: Could not record payment.']);
+        error_log('SINGLE PAYMENT INSERT ERROR: '. $stmt->error . ' | Values: member_id=' . $member_id . ', payment_type_id=' . $payment_type_id . ', amount=' . $amount . ', date=' . $date . ', desc=' . $description . ', user_id=' . $user_id);
+        echo json_encode(['success' => false, 'error' => 'Error: Could not record payment. Please contact admin.']);
     }
     $stmt->close();
+error_log('TIMING: Insert: ' . round((microtime(true) - $__after_dup)*1000, 2) . ' ms');
 } else {
     echo json_encode(['success' => false, 'error' => 'Please select a payment type and enter a valid amount.']);
 }

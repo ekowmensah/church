@@ -38,6 +38,9 @@ $descriptions = $data['descriptions'] ?? [];
 $church_id = intval($data['church_id'] ?? 0);
 $payment_date = $data['payment_date'] ?? '';
 
+// Get logged-in user id for recorded_by
+$recorded_by = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : null;
+
 // --- Restrict Class Leaders to their own class ---
 @session_start();
 $is_super_admin = (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
@@ -113,8 +116,8 @@ class BulkPaymentProcessor {
                 $mode = 'Cash';
                 $desc = isset($descriptions[$mid][$ptid]) ? mb_substr($descriptions[$mid][$ptid], 0, 255) : '';
                 $this->summary[] = ["debug" => "Attempting insert: member_id=$mid, sundayschool_id=NULL, church_id=$church_id, payment_type_id=$ptid, amount=$amount, mode=$mode, payment_date=$payment_date, description=$desc"];
-                $stmt = $this->conn->prepare('INSERT INTO payments (member_id, sundayschool_id, church_id, payment_type_id, amount, mode, payment_date, description) VALUES (?, NULL, ?, ?, ?, ?, ?, ?)');
-                $stmt->bind_param('iiidsss', $mid, $church_id, $ptid, $amount, $mode, $payment_date, $desc);
+                $stmt = $this->conn->prepare('INSERT INTO payments (member_id, sundayschool_id, church_id, payment_type_id, amount, mode, payment_date, description, recorded_by) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)');
+                $stmt->bind_param('iiidsssi', $mid, $church_id, $ptid, $amount, $mode, $payment_date, $desc, $GLOBALS['recorded_by']);
                 try {
                     if ($stmt->execute()) {
                         $this->success_count++;
@@ -152,8 +155,8 @@ class BulkPaymentProcessor {
                 $mode = 'Cash';
                 $desc = isset($descriptions['ss_'.$sid][$ptid]) ? mb_substr($descriptions['ss_'.$sid][$ptid], 0, 255) : '';
                 $this->summary[] = ["debug" => "Attempting insert: member_id=NULL, sundayschool_id=$sid, church_id=$church_id, payment_type_id=$ptid, amount=$amount, mode=$mode, payment_date=$payment_date, description=$desc"];
-                $stmt = $this->conn->prepare('INSERT INTO payments (member_id, sundayschool_id, church_id, payment_type_id, amount, mode, payment_date, description) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?)');
-                $stmt->bind_param('iiidsss', $sid, $church_id, $ptid, $amount, $mode, $payment_date, $desc);
+                $stmt = $this->conn->prepare('INSERT INTO payments (member_id, sundayschool_id, church_id, payment_type_id, amount, mode, payment_date, description, recorded_by) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $stmt->bind_param('iiidsssi', $sid, $church_id, $ptid, $amount, $mode, $payment_date, $desc, $GLOBALS['recorded_by']);
                 try {
                     if ($stmt->execute()) {
                         $this->success_count++;

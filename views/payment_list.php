@@ -74,7 +74,8 @@ $sql = "SELECT p.*,
     pt.name AS payment_type,
     c.name AS church_name,
     bc.name AS class_name,
-    org.name AS organization_name
+    org.name AS organization_name,
+    u.name AS recorded_by_username
 FROM payments p
     LEFT JOIN members m ON p.member_id = m.id
     LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
@@ -83,7 +84,8 @@ FROM payments p
     LEFT JOIN bible_classes bc ON m.class_id = bc.id
     LEFT JOIN member_organizations mo ON mo.member_id = m.id
     LEFT JOIN organizations org ON mo.organization_id = org.id
-    WHERE 1";
+    LEFT JOIN users u ON p.recorded_by = u.id
+WHERE 1";
 $params = [];
 $types = '';
 
@@ -149,6 +151,7 @@ $count_sql = "SELECT COUNT(*) as total FROM (
         LEFT JOIN bible_classes bc ON m.class_id = bc.id
         LEFT JOIN member_organizations mo ON mo.member_id = m.id
         LEFT JOIN organizations org ON mo.organization_id = org.id
+        LEFT JOIN users u ON p.recorded_by = u.id
         WHERE 1";
 
 // Apply the same filters to count query
@@ -510,9 +513,12 @@ ob_start();
                                 <i class="fas fa-calendar mr-1"></i>Date
                                 <i class="fas fa-sort text-muted ml-1"></i>
                             </th>
-                            <th class="border-0 font-weight-bold text-primary text-center">
-                                <i class="fas fa-cogs mr-1"></i>Actions
-                            </th>
+                            <th class="border-0 font-weight-bold text-primary">
+    <i class="fas fa-user-edit mr-1"></i>Recorded By
+</th>
+<th class="border-0 font-weight-bold text-primary text-center">
+    <i class="fas fa-cogs mr-1"></i>Actions
+</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -548,7 +554,7 @@ ob_start();
                                     </div>
                                 </td>
                                 <td class="align-middle">
-                                    <span class="badge badge-outline-primary"><?=htmlspecialchars($row['payment_type'])?></span>
+                                    <span class="badge badge-outline-primary"><?=htmlspecialchars($row['payment_type'] ?? 'N/A')?></span>
                                 </td>
                                 <td class="align-middle">
                                     <span class="font-weight-bold text-success">₵<?=number_format($row['amount'],2)?></span>
@@ -594,6 +600,13 @@ ob_start();
                                         <span class="font-weight-bold"><?=date('M d, Y', strtotime($row['payment_date']))?></span><br>
                                         <small class="text-muted"><?=date('h:i A', strtotime($row['payment_date']))?></small>
                                     </div>
+                                </td>
+                                <td class="align-middle">
+                                    <?php if (!empty($row['recorded_by_username'])): ?>
+                                        <span class="badge badge-secondary"><i class="fas fa-user-edit mr-1"></i><?= htmlspecialchars($row['recorded_by_username']) ?></span>
+                                    <?php else: ?>
+                                        <span class="text-muted">N/A</span>
+                                    <?php endif; ?>
                                 </td>
                                 <td class="align-middle text-center">
                                     <div class="btn-group" role="group">
