@@ -22,6 +22,9 @@
     <div class="text-center py-3">
       <img src="<?=$logo_path?>" alt="Church Logo" style="max-width:120px; max-height:90px; margin:0 auto 10px auto; box-shadow:0 2px 8px rgba(0,0,0,0.09); border-radius:9px; background:#fff; padding:8px;">
     </div>
+    <div class="text-center py-3">
+      <h2>MyFreeman Church </h2>
+    </div>
     <nav class="mt-3">
       <ul class="nav nav-pills nav-sidebar flex-column" data-widget="treeview" role="menu" data-accordion="false">
         <li class="nav-item">
