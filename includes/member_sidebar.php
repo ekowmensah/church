@@ -87,6 +87,12 @@
                 <p>Payment History</p>
               </a>
             </li>
+            <li class="nav-item">
+              <a href="<?php echo BASE_URL; ?>/views/member_harvest_records.php" class="nav-link">
+                <i class="fas fa-seedling nav-icon"></i>
+                <p>Harvest Records</p>
+              </a>
+            </li>
           </ul>
         </li>
         <li class="nav-item">

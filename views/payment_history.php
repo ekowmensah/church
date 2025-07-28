@@ -6,9 +6,12 @@ if (!isset($_SESSION['member_id'])) {
     exit;
 }
 $member_id = intval($_SESSION['member_id']);
+
+
 // Handle date filter
 $start_date = $_GET['start_date'] ?? '';
 $end_date = $_GET['end_date'] ?? '';
+// Start with simple query to test
 $where = 'p.member_id = ?';
 $params = [$member_id];
 $types = 'i';
@@ -23,7 +26,10 @@ if ($end_date) {
     $types .= 's';
 }
 // Fetch filtered payment history
-$sql = "SELECT p.*, pt.name AS payment_type FROM payments p LEFT JOIN payment_types pt ON p.payment_type_id = pt.id WHERE ($where) AND ((p.reversal_approved_at IS NULL) OR (p.reversal_undone_at IS NOT NULL)) ORDER BY p.payment_date DESC, p.id DESC";
+$sql = "SELECT p.*, pt.name AS payment_type FROM payments p 
+        LEFT JOIN payment_types pt ON p.payment_type_id = pt.id 
+        WHERE ($where) AND ((p.reversal_approved_at IS NULL) OR (p.reversal_undone_at IS NOT NULL)) 
+        ORDER BY p.payment_date DESC, p.id DESC";
 $stmt = $conn->prepare($sql);
 if (count($params) > 1) {
     $stmt->bind_param($types, ...$params);
@@ -32,8 +38,11 @@ if (count($params) > 1) {
 }
 $stmt->execute();
 $result = $stmt->get_result();
+
+
 // Fetch summary
-$sum_sql = "SELECT SUM(amount) as total, COUNT(*) as num, MAX(payment_date) as last FROM payments WHERE member_id = ? AND ((reversal_approved_at IS NULL) OR (reversal_undone_at IS NOT NULL))";
+$sum_sql = "SELECT SUM(amount) as total, COUNT(*) as num, MAX(payment_date) as last FROM payments 
+            WHERE member_id = ? AND ((reversal_approved_at IS NULL) OR (reversal_undone_at IS NOT NULL))";
 $sum_params = [$member_id];
 $sum_types = 'i';
 if ($start_date) {

@@ -254,3 +254,2237 @@
         }
     }
 }
+{
+    "time": "2025-07-26 17:39:23",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b5190.00 for 'July' 'Offertory' has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b5190.00 for 'July' 'Offertory' has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 190,
+        "description": "",
+        "date": "2025-07-26"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "945514fa-2cc7-4453-83c9-ca9f8ae1cd97",
+                "recipient": "233545644749"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-26 17:46:41",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b5100.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b5100.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 100,
+        "description": "Payment for July education fund",
+        "date": "2025-07-26"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "141e1e09-d616-4583-b3e1-080452b6ed82",
+                "recipient": "233545644749"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-26 17:49:20",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b550.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b550.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 50,
+        "description": "Payment for July Offertory - Cheque No: 0101010101",
+        "date": "2025-07-26"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "c829fe83-0ed8-4e2e-b557-7e016c94be49",
+                "recipient": "233545644749"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-26 17:57:33",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b529.00 for July welfare has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b529.00 for July welfare has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 29,
+        "description": "Payment for July welfare",
+        "date": "2025-07-26"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "9b3db7eb-bb2e-4cba-ae4c-2025ef83a3f0",
+                "recipient": "233545644749"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-26 18:06:38",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b539.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b539.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 39,
+        "description": "Payment for July Sample Payment",
+        "date": "2025-07-26"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "b7dc730c-2621-4b5c-aa4c-e0736852d464",
+                "recipient": "233545644749"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-27 11:53:09",
+    "recipients": "0242363905",
+    "message": "Dear BARNABAS  QUAYSON-OTOO, your payment of \u20b590.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear BARNABAS  QUAYSON-OTOO, your payment of \u20b590.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "BARNABAS  QUAYSON-OTOO",
+        "amount": 90,
+        "description": "Payment for July Offertory",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Could not resolve host: sms.arkesel.com",
+        "debug": {
+            "time": "2025-07-27 11:53:09",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear BARNABAS  QUAYSON-OTOO, your payment of \u20b590.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233242363905"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Could not resolve host: sms.arkesel.com",
+            "curl_info": {
+                "total_time": 0.001704,
+                "connect_time": 0,
+                "namelookup_time": 0,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "* Could not resolve host: sms.arkesel.com\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 13:15:55",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b550.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b550.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 50,
+        "description": "Payment for July Offertory",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21038 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 13:15:55",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b550.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21038 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.038308,
+                "connect_time": 0,
+                "namelookup_time": 0.003099,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21038 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 13:16:56",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b550.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b550.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 50,
+        "description": "Payment for July education fund",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21057 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 13:16:56",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b550.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21057 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.057544,
+                "connect_time": 0,
+                "namelookup_time": 0.01352,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21057 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 13:22:12",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b540.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b540.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 40,
+        "description": "Payment for July education fund",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21071 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 13:22:12",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b540.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21071 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.071446,
+                "connect_time": 0,
+                "namelookup_time": 0.040969,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21071 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 13:27:11",
+    "recipients": "0550318628",
+    "message": "Dear COMFORT  AIDOO, your payment of \u20b550.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear COMFORT  AIDOO, your payment of \u20b550.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "COMFORT  AIDOO",
+        "amount": 50,
+        "description": "Payment for July harvest",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21491 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 13:27:11",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear COMFORT  AIDOO, your payment of \u20b550.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233550318628"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21491 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.50593,
+                "connect_time": 0,
+                "namelookup_time": 0.286827,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21491 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 13:30:56",
+    "recipients": "0551756789",
+    "message": "Dear JACOB F AYIEI, your payment of \u20b550.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear JACOB F AYIEI, your payment of \u20b550.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "JACOB F AYIEI",
+        "amount": 50,
+        "description": "Payment for July Offertory",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21068 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 13:30:56",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear JACOB F AYIEI, your payment of \u20b550.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233551756789"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21068 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.068656,
+                "connect_time": 0,
+                "namelookup_time": 0.011014,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21068 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 13:32:43",
+    "recipients": "0551756789",
+    "message": "Dear JACOB F AYIEI, your payment of \u20b510.00 for July Tithe has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear JACOB F AYIEI, your payment of \u20b510.00 for July Tithe has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "JACOB F AYIEI",
+        "amount": 10,
+        "description": "Payment for July Tithe",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21135 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 13:32:43",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear JACOB F AYIEI, your payment of \u20b510.00 for July Tithe has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233551756789"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21135 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.134278,
+                "connect_time": 0,
+                "namelookup_time": 0.122872,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21135 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 13:39:15",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b570.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b570.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 70,
+        "description": "Payment for July Sample Payment",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21039 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 13:39:15",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b570.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21039 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.039502,
+                "connect_time": 0,
+                "namelookup_time": 0.001466,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21039 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 13:48:32",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b5100.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b5100.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 100,
+        "description": "Payment for July harvest",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21042 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 13:48:32",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b5100.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21042 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.043,
+                "connect_time": 0,
+                "namelookup_time": 0.020208,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21042 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 13:51:04",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b580.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b580.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 80,
+        "description": "Payment for July Offertory",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21050 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 13:51:04",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b580.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21050 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.050879,
+                "connect_time": 0,
+                "namelookup_time": 0.019418,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21050 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 13:54:07",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b510.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b510.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 10,
+        "description": "Payment for July Sample Payment",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21040 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 13:54:07",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b510.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21040 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.040344,
+                "connect_time": 0,
+                "namelookup_time": 0.011865,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21040 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 13:59:11",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b57.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b57.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 7,
+        "description": "Payment for July Sample Payment",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21033 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 13:59:11",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b57.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21033 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.03328,
+                "connect_time": 0,
+                "namelookup_time": 0.001753,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21033 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 14:10:54",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b59.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b59.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 9,
+        "description": "Payment for July Offertory",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21055 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 14:10:54",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b59.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21055 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.055712,
+                "connect_time": 0,
+                "namelookup_time": 0.021836,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21055 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 14:12:13",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b590.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b590.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 90,
+        "description": "Payment for July education fund",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21043 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 14:12:13",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b590.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21043 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.04247,
+                "connect_time": 0,
+                "namelookup_time": 0.002868,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21043 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 14:35:12",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b520.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b520.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 20,
+        "description": "Payment for July education fund",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21044 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 14:35:12",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b520.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21044 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.044697,
+                "connect_time": 0,
+                "namelookup_time": 0.013309,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21044 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 14:47:38",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b510.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b510.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 10,
+        "description": "Payment for July education fund",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21047 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 14:47:38",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b510.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21047 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.04836,
+                "connect_time": 0,
+                "namelookup_time": 0.002018,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21047 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 14:48:36",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b59.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b59.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 9,
+        "description": "Payment for July education fund",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21037 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 14:48:36",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b59.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21037 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.037167,
+                "connect_time": 0,
+                "namelookup_time": 0.005807,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21037 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 14:51:40",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b510.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b510.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 10,
+        "description": "Payment for July education fund",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21026 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 14:51:40",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b510.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21026 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.027439,
+                "connect_time": 0,
+                "namelookup_time": 0.003954,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21026 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 19:16:29",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b51.60 for July Tithe has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b51.60 for July Tithe has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 1.6,
+        "description": "Payment for July Tithe",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21075 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 19:16:29",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b51.60 for July Tithe has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21075 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.075662,
+                "connect_time": 0,
+                "namelookup_time": 0.02123,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21075 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 19:44:12",
+    "recipients": "494949494",
+    "message": "Hi kdklddlk, click on the link to complete your registration: http:\/\/localhost\/myfreemanchurchgit\/church\/views\/complete_registration.php?token=a10ff7daeabd9d83d8b9107cb03f8a27",
+    "processed_message": "Hi kdklddlk, click on the link to complete your registration: http:\/\/localhost\/myfreemanchurchgit\/church\/views\/complete_registration.php?token=a10ff7daeabd9d83d8b9107cb03f8a27",
+    "template_data": {
+        "member_name": "kdklddlk",
+        "link": "http:\/\/localhost\/myfreemanchurchgit\/church\/views\/complete_registration.php?token=a10ff7daeabd9d83d8b9107cb03f8a27",
+        "phone": "494949494",
+        "template": "registration_link (hardcoded)"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21037 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 19:44:12",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Hi kdklddlk, click on the link to complete your registration: http:\/\/localhost\/myfreemanchurchgit\/church\/views\/complete_registration.php?token=a10ff7daeabd9d83d8b9107cb03f8a27",
+                "recipients": [
+                    "494949494"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21037 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.037484,
+                "connect_time": 0,
+                "namelookup_time": 0.002928,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21037 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 19:46:50",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b51.90 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b51.90 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 1.9,
+        "description": "Payment for July Sample Payment",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21051 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 19:46:50",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b51.90 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21051 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.051996,
+                "connect_time": 0,
+                "namelookup_time": 0.010537,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21051 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 20:09:41",
+    "recipients": "0554828663",
+    "message": "Dear Thomas Sam, your payment of \u20b510.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Thomas Sam, your payment of \u20b510.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Thomas Sam",
+        "amount": 10,
+        "description": "bulk harv",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21047 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 20:09:41",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Thomas Sam, your payment of \u20b510.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233554828663"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21047 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.048102,
+                "connect_time": 0,
+                "namelookup_time": 0.002586,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21047 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 20:10:23",
+    "recipients": "0554828663",
+    "message": "Dear Thomas Sam, your payment of \u20b539.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Thomas Sam, your payment of \u20b539.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Thomas Sam",
+        "amount": 39,
+        "description": "bulk samp",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21030 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 20:10:23",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Thomas Sam, your payment of \u20b539.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233554828663"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21030 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.031015,
+                "connect_time": 0,
+                "namelookup_time": 0.004477,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21030 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 20:21:35",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b54.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b54.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 4,
+        "description": "",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21047 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 20:21:35",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Ekow Paa Mensah, your payment of \u20b54.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644749"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21047 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.047724,
+                "connect_time": 0,
+                "namelookup_time": 0.015693,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21047 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-27 20:22:17",
+    "recipients": "0545644748",
+    "message": "Dear Grace  Dadson, your payment of \u20b55.00 for July Tithe has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Grace  Dadson, your payment of \u20b55.00 for July Tithe has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Grace  Dadson",
+        "amount": 5,
+        "description": "",
+        "date": "2025-07-27"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "fail",
+    "result": {
+        "status": "error",
+        "message": "cURL Error: Failed to connect to sms.arkesel.com port 443 after 21043 ms: Couldn't connect to server",
+        "debug": {
+            "time": "2025-07-27 20:22:17",
+            "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+            "payload": {
+                "sender": "MyFreeman",
+                "message": "Dear Grace  Dadson, your payment of \u20b55.00 for July Tithe has been received by Freeman Methodist Church - KM. Thank You!",
+                "recipients": [
+                    "233545644748"
+                ]
+            },
+            "request_headers": [
+                "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+                "Content-Type: application\/json",
+                "Accept: application\/json"
+            ],
+            "http_status": 0,
+            "response_headers": "",
+            "response_body": false,
+            "curl_error": "Failed to connect to sms.arkesel.com port 443 after 21043 ms: Couldn't connect to server",
+            "curl_info": {
+                "total_time": 21.043359,
+                "connect_time": 0,
+                "namelookup_time": 0.0358,
+                "pretransfer_time": 0,
+                "starttransfer_time": 0,
+                "redirect_time": 0,
+                "redirect_count": 0,
+                "size_upload": 0,
+                "size_download": 0,
+                "speed_download": 0,
+                "speed_upload": 0,
+                "download_content_length": -1,
+                "upload_content_length": -1,
+                "content_type": false
+            },
+            "verbose_log": "*   Trying 66.175.211.30:443...\n* connect to 66.175.211.30 port 443 failed: Timed out\n* Failed to connect to sms.arkesel.com port 443 after 21043 ms: Couldn't connect to server\n* Closing connection\n"
+        }
+    }
+}
+{
+    "time": "2025-07-28 14:30:54",
+    "recipients": "0555456712",
+    "message": "Dear James  Evens, your payment of \u20b52.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear James  Evens, your payment of \u20b52.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "James  Evens",
+        "amount": 2,
+        "description": "Payment for July harvest",
+        "date": "2025-07-28"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "63f3ad72-7195-4b18-8569-097fffb8ae38",
+                "recipient": "233555456712"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 14:33:50",
+    "recipients": "0555456712",
+    "message": "Dear James  Evens, your payment of \u20b510.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear James  Evens, your payment of \u20b510.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "James  Evens",
+        "amount": 10,
+        "description": "bulk off",
+        "date": "2025-07-28"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "8ab308d9-32be-440a-b133-71038a3b8520",
+                "recipient": "233555456712"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 14:33:53",
+    "recipients": "0555456712",
+    "message": "Dear James  Evens, your payment of \u20b538.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear James  Evens, your payment of \u20b538.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "James  Evens",
+        "amount": 38,
+        "description": "bulk harv",
+        "date": "2025-07-28"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "ba150a33-0d0e-42e4-982c-3aa3983f18a0",
+                "recipient": "233555456712"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 14:33:56",
+    "recipients": "0555456712",
+    "message": "Dear James  Evens, your payment of \u20b513.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear James  Evens, your payment of \u20b513.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "James  Evens",
+        "amount": 13,
+        "description": "bulk edu fund",
+        "date": "2025-07-28"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "2b552ae2-4d77-4763-b1a7-ae784866d5a8",
+                "recipient": "233555456712"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 14:37:30",
+    "recipients": "0555456712",
+    "message": "Dear James  Evens, your payment of \u20b54.00 for July Tithe has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear James  Evens, your payment of \u20b54.00 for July Tithe has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "James  Evens",
+        "amount": 4,
+        "description": "Payment for July Tithe",
+        "date": "2025-07-28"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "a84f111a-e23f-41e6-a5f5-2ba4df812efe",
+                "recipient": "233555456712"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 14:40:53",
+    "recipients": "0555456712",
+    "message": "Dear James  Evens, your payment of \u20b590.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear James  Evens, your payment of \u20b590.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "James  Evens",
+        "amount": 90,
+        "description": "Payment for July harvest",
+        "date": "2025-07-28"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "992feae7-cecc-4024-857c-16adaa4c0c89",
+                "recipient": "233555456712"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 14:46:26",
+    "recipients": "0555456712",
+    "message": "Dear James  Evens, your payment of \u20b520.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear James  Evens, your payment of \u20b520.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "James  Evens",
+        "amount": 20,
+        "description": "Payment for July Sample Payment",
+        "date": "2025-07-28"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "5ae38191-40c8-4b83-a55e-5ed1bad2c906",
+                "recipient": "233555456712"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 14:48:06",
+    "recipients": "0555456712",
+    "message": "Dear James  Evens, your payment of \u20b520.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear James  Evens, your payment of \u20b520.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "James  Evens",
+        "amount": 20,
+        "description": "Payment for July Sample Payment",
+        "date": "2025-07-28 14:48:03"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "4395e071-7baa-4d8b-b1c9-09e58bafc023",
+                "recipient": "233555456712"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 14:50:23",
+    "recipients": "0555456712",
+    "message": "Dear James  Evens, your payment of \u20b512.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear James  Evens, your payment of \u20b512.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "James  Evens",
+        "amount": 12,
+        "description": "Payment for July Sample Payment",
+        "date": "2025-07-28 14:50:20"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "03d1ad5b-bf6e-4193-9366-2e5cc3f6bfd4",
+                "recipient": "233555456712"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 14:53:02",
+    "recipients": "0555456712",
+    "message": "Dear James  Evens, your payment of \u20b510.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear James  Evens, your payment of \u20b510.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "James  Evens",
+        "amount": 10,
+        "description": "Payment for July Offertory",
+        "date": "2025-07-28 14:52:59"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "a560f2e9-447b-4663-8b70-167e23c3534c",
+                "recipient": "233555456712"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 14:58:29",
+    "recipients": "0555456712",
+    "message": "Dear James  Evens, your payment of \u20b510.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear James  Evens, your payment of \u20b510.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "James  Evens",
+        "amount": 10,
+        "description": "Payment for July harvest",
+        "date": "2025-07-28 14:58:25"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "11b8e6ad-3d67-429a-8e4c-05ac1fba595e",
+                "recipient": "233555456712"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:16:37",
+    "recipients": "0545644749",
+    "message": "Hi Ekow Mensah, your payment of \u20b520.00 has been paid to Freeman Methodist Church as Payment for July harvest. Your Total Harvest amount for the year 2025 is \u20b520.00",
+    "processed_message": "Hi Ekow Mensah, your payment of \u20b520.00 has been paid to Freeman Methodist Church as Payment for July harvest. Your Total Harvest amount for the year 2025 is \u20b520.00",
+    "template_data": [],
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "2791f8ef-c6ee-4ec7-b182-26b28da8a221",
+                "recipient": "233545644749"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:16:40",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b520.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b520.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 20,
+        "description": "Payment for July harvest",
+        "date": "2025-07-28 15:16:35"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "140a7296-b29a-4884-ad8d-268c76bd916d",
+                "recipient": "233545644749"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:25:24",
+    "recipients": "0545644749",
+    "message": "Hi Ekow Mensah, your payment of \u20b52.00 has been paid to Freeman Methodist Church - KM as Payment for July harvest. Your Total Harvest amount for the year 2025 is \u20b522.00",
+    "processed_message": "Hi Ekow Mensah, your payment of \u20b52.00 has been paid to Freeman Methodist Church - KM as Payment for July harvest. Your Total Harvest amount for the year 2025 is \u20b522.00",
+    "template_data": [],
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "934ecc26-7302-4d09-a768-3dc2dd441401",
+                "recipient": "233545644749"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:25:28",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b52.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b52.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 2,
+        "description": "Payment for July harvest",
+        "date": "2025-07-28 15:25:22"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "3f181632-a6c8-4895-914e-1eacbca4f6bc",
+                "recipient": "233545644749"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:26:33",
+    "recipients": "0545644749",
+    "message": "Hi Ekow Mensah, your payment of \u20b51.00 has been paid to Freeman Methodist Church - KM as Harvest Payment. Your Total Harvest amount for the year 2025 is \u20b523.00",
+    "processed_message": "Hi Ekow Mensah, your payment of \u20b51.00 has been paid to Freeman Methodist Church - KM as Harvest Payment. Your Total Harvest amount for the year 2025 is \u20b523.00",
+    "template_data": [],
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "9aa665e6-6223-42e0-8022-9efd0ab927de",
+                "recipient": "233545644749"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:26:46",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b51.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b51.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 1,
+        "description": "",
+        "date": "2025-07-28 15:26:32"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "df8c70f7-b938-4402-9a9d-932dd4f6b6a8",
+                "recipient": "233545644749"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:26:48",
+    "recipients": "0545644749",
+    "message": "Dear Ekow Paa Mensah, your payment of \u20b510.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Ekow Paa Mensah, your payment of \u20b510.00 for July education fund has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Ekow Paa Mensah",
+        "amount": 10,
+        "description": "",
+        "date": "2025-07-28 15:26:32"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "24814d36-d5ed-4267-a73d-ba3d5d1d7318",
+                "recipient": "233545644749"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:53:14",
+    "recipients": "0544842820",
+    "message": "Hi GLADYS KANKAM, your payment of \u20b510.00 has been paid to Freeman Methodist Church - KM as Harvest Payment. Your Total Harvest amount for the year 2025 is \u20b510.00",
+    "processed_message": "Hi GLADYS KANKAM, your payment of \u20b510.00 has been paid to Freeman Methodist Church - KM as Harvest Payment. Your Total Harvest amount for the year 2025 is \u20b510.00",
+    "template_data": [],
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "5d2657ed-47c4-48e8-944f-3e697a1d0889",
+                "recipient": "233544842820"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:53:41",
+    "recipients": "0553143607",
+    "message": "Hi DANIEL ANTWI, your payment of \u20b510.00 has been paid to Freeman Methodist Church - KM as Harvest Payment. Your Total Harvest amount for the year 2025 is \u20b510.00",
+    "processed_message": "Hi DANIEL ANTWI, your payment of \u20b510.00 has been paid to Freeman Methodist Church - KM as Harvest Payment. Your Total Harvest amount for the year 2025 is \u20b510.00",
+    "template_data": [],
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "1d75f981-5e3a-49a5-ab8b-9a44754d60d7",
+                "recipient": "233553143607"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:53:53",
+    "recipients": "0545644748",
+    "message": "Dear Grace  Dadson, your payment of \u20b519.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear Grace  Dadson, your payment of \u20b519.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "Grace  Dadson",
+        "amount": 19,
+        "description": "",
+        "date": "2025-07-28 15:52:57"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "f0760e25-220b-4228-96df-81877587baa7",
+                "recipient": "233545644748"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:53:56",
+    "recipients": "0551756789",
+    "message": "Dear JACOB F AYIEI, your payment of \u20b510.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear JACOB F AYIEI, your payment of \u20b510.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "JACOB F AYIEI",
+        "amount": 10,
+        "description": "",
+        "date": "2025-07-28 15:52:57"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "225317e1-1d57-46ea-b693-4868a3f01d92",
+                "recipient": "233551756789"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:53:58",
+    "recipients": "0544842820",
+    "message": "Dear GLADYS F KANKAM, your payment of \u20b510.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear GLADYS F KANKAM, your payment of \u20b510.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "GLADYS F KANKAM",
+        "amount": 10,
+        "description": "",
+        "date": "2025-07-28 15:52:57"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "bb4a5269-c238-4ace-8498-54f9f52013e1",
+                "recipient": "233544842820"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:54:01",
+    "recipients": "0544842820",
+    "message": "Dear GLADYS F KANKAM, your payment of \u20b510.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear GLADYS F KANKAM, your payment of \u20b510.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "GLADYS F KANKAM",
+        "amount": 10,
+        "description": "",
+        "date": "2025-07-28 15:52:57"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "8796ab1e-5b57-4de5-b884-55822039917e",
+                "recipient": "233544842820"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:54:04",
+    "recipients": "0544842820",
+    "message": "Dear GLADYS F KANKAM, your payment of \u20b510.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear GLADYS F KANKAM, your payment of \u20b510.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "GLADYS F KANKAM",
+        "amount": 10,
+        "description": "",
+        "date": "2025-07-28 15:52:57"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "5c7f59d1-095a-4d6f-b2e6-6404aca02030",
+                "recipient": "233544842820"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:54:08",
+    "recipients": "0550318628",
+    "message": "Dear COMFORT  AIDOO, your payment of \u20b510.00 for July Tithe has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear COMFORT  AIDOO, your payment of \u20b510.00 for July Tithe has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "COMFORT  AIDOO",
+        "amount": 10,
+        "description": "",
+        "date": "2025-07-28 15:52:57"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "c3d32cba-45a2-4b6a-9742-bd66f57d72e1",
+                "recipient": "233550318628"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:54:13",
+    "recipients": "0550318628",
+    "message": "Dear COMFORT  AIDOO, your payment of \u20b51.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear COMFORT  AIDOO, your payment of \u20b51.00 for July Offertory has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "COMFORT  AIDOO",
+        "amount": 1,
+        "description": "",
+        "date": "2025-07-28 15:52:57"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "4a1600a2-25e5-4700-9d1f-61e4922c291e",
+                "recipient": "233550318628"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:54:16",
+    "recipients": "0500124587",
+    "message": "Dear TOM BAIDOO DAN, your payment of \u20b519.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear TOM BAIDOO DAN, your payment of \u20b519.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "TOM BAIDOO DAN",
+        "amount": 19,
+        "description": "",
+        "date": "2025-07-28 15:52:57"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "ea98891b-8c82-48e4-9141-ce9f26d07c7d",
+                "recipient": "233500124587"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:54:19",
+    "recipients": "0553143607",
+    "message": "Dear DANIEL  ANTWI, your payment of \u20b510.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear DANIEL  ANTWI, your payment of \u20b510.00 for July harvest has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "DANIEL  ANTWI",
+        "amount": 10,
+        "description": "",
+        "date": "2025-07-28 15:52:57"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "e23bf9d0-0af5-4267-addb-d373bfbfd56f",
+                "recipient": "233553143607"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 15:54:23",
+    "recipients": "0553143607",
+    "message": "Dear DANIEL  ANTWI, your payment of \u20b510.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "processed_message": "Dear DANIEL  ANTWI, your payment of \u20b510.00 for July Sample Payment has been received by Freeman Methodist Church - KM. Thank You!",
+    "template_data": {
+        "member_name": "DANIEL  ANTWI",
+        "amount": 10,
+        "description": "",
+        "date": "2025-07-28 15:52:57"
+    },
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "514630de-c2af-4cf1-9e46-af2658474b96",
+                "recipient": "233553143607"
+            }
+        ],
+        "status": "success"
+    }
+}
+{
+    "time": "2025-07-28 16:49:27",
+    "recipients": "0545644749",
+    "message": "Hi Ekow Mensah, your payment of \u20b5100.00 has been paid to Freeman Methodist Church - KM as Payment for July harvest. Your Total Harvest amount for the year 2025 is \u20b5123.00",
+    "processed_message": "Hi Ekow Mensah, your payment of \u20b5100.00 has been paid to Freeman Methodist Church - KM as Payment for July harvest. Your Total Harvest amount for the year 2025 is \u20b5123.00",
+    "template_data": [],
+    "sender": null,
+    "provider": "arkesel",
+    "status": "success",
+    "result": {
+        "data": [
+            {
+                "id": "aaef1bd7-3dc8-462d-b54c-d3ea7d9e8fae",
+                "recipient": "233545644749"
+            }
+        ],
+        "status": "success"
+    }
+}

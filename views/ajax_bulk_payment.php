@@ -36,7 +36,11 @@ $sundayschool_ids = $data['sundayschool_ids'] ?? [];
 $amounts = isset($data['amounts_json']) ? json_decode($data['amounts_json'], true) : ($data['amounts'] ?? []);
 $descriptions = $data['descriptions'] ?? [];
 $church_id = intval($data['church_id'] ?? 0);
-$payment_date = $data['payment_date'] ?? '';
+// Handle payment date - if only date is provided, append current time
+$payment_date = $data['payment_date'] ?? date('Y-m-d H:i:s');
+if ($payment_date && strlen($payment_date) == 10) { // If date is in Y-m-d format (10 chars), append current time
+    $payment_date .= ' ' . date('H:i:s');
+}
 
 // Get logged-in user id for recorded_by
 $recorded_by = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : null;
@@ -124,8 +128,51 @@ class BulkPaymentProcessor {
                         $payment_id = $this->conn->insert_id;
                         $this->summary[] = ['member_id' => $mid, 'payment_type_id' => $ptid, 'amount' => $amount, 'payment_id' => $payment_id];
                         
-                        // Queue SMS notification asynchronously
-                        $this->queueSMS($payment_id, $mid, null, $amount, $ptid, $payment_date, $desc);
+                        // Check if this is a harvest payment (payment_type_id = 4) and send special SMS
+                        if ($ptid == 4) {
+                            require_once __DIR__.'/../includes/payment_sms_template.php';
+                            require_once __DIR__.'/../includes/sms.php';
+                            
+                            // Get member details
+                            $member_stmt = $this->conn->prepare('SELECT first_name, last_name, phone FROM members WHERE id = ?');
+                            $member_stmt->bind_param('i', $mid);
+                            $member_stmt->execute();
+                            $member_data = $member_stmt->get_result()->fetch_assoc();
+                            $member_stmt->close();
+                            
+                            if ($member_data && !empty($member_data['phone'])) {
+                                // Get church name
+                                $church_stmt = $this->conn->prepare('SELECT name FROM churches WHERE id = ?');
+                                $church_stmt->bind_param('i', $church_id);
+                                $church_stmt->execute();
+                                $church_data = $church_stmt->get_result()->fetch_assoc();
+                                $church_stmt->close();
+                                
+                                $member_name = trim($member_data['first_name'] . ' ' . $member_data['last_name']);
+                                $church_name = $church_data['name'] ?? 'Freeman Methodist Church - KM';
+                                $yearly_total = get_member_yearly_harvest_total($this->conn, $mid);
+                                
+                                // Generate harvest SMS message
+                                $sms_message = get_harvest_payment_sms_message(
+                                    $member_name,
+                                    $amount,
+                                    $church_name,
+                                    $desc,
+                                    $yearly_total
+                                );
+                                
+                                // Send SMS
+                                $sms_result = log_sms($member_data['phone'], $sms_message, $payment_id, 'harvest_payment');
+                                
+                                // Log SMS attempt
+                                error_log('General Bulk Harvest SMS sent to ' . $member_data['phone'] . ': ' . json_encode($sms_result));
+                            }
+                        }
+                        
+                        // Queue SMS notification asynchronously - Skip for harvest payments as they have custom SMS
+                        if ($ptid != 4) {
+                            $this->queueSMS($payment_id, $mid, null, $amount, $ptid, $payment_date, $desc);
+                        }
                     } else {
                         $this->error_count++;
                         $this->errors[] = "DB error for member $mid, type $ptid: ".$stmt->error;

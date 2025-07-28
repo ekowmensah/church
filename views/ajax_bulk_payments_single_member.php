@@ -41,7 +41,11 @@ $allowed_modes = ['Cash', 'Cheque', 'Transfer', 'POS', 'Online', 'Offline', 'Oth
 if (!in_array($mode, $allowed_modes)) {
     $mode = 'Cash';
 }
-    $date = $p['date'] ?? date('Y-m-d');
+    // Handle payment date - if only date is provided, append current time
+    $date = $p['date'] ?? date('Y-m-d H:i:s');
+    if ($date && strlen($date) == 10) { // If date is in Y-m-d format (10 chars), append current time
+        $date .= ' ' . date('H:i:s');
+    }
     $desc = trim($p['desc'] ?? '');
     if (!$type_id || !$amount || !$mode || !$date) {
         $msg = 'Missing fields for payment type ID '.$type_id;
@@ -64,18 +68,33 @@ if (!in_array($mode, $allowed_modes)) {
     }
     $payment_type_name = $payment_type_data['name'];
     $check->close();
-    $user_id = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : null;
-    if (!$user_id) {
-        $errors[] = 'User session expired or not found.';
-        $failed[] = ['type_id'=>$type_id, 'reason'=>'User session expired or not found.'];
-        continue;
-    }
+    // For member payments, use user_id if available, otherwise use 0
+    $user_id = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
+    
+    // Get church_id for the payment
+    $church_id = 1; // Default fallback
     if ($member_id) {
-        $stmt = $conn->prepare('INSERT INTO payments (member_id, payment_type_id, amount, mode, payment_date, description, recorded_by) VALUES (?, ?, ?, ?, ?, ?, ?)');
-        $stmt->bind_param('iidsssi', $member_id, $type_id, $amount, $mode, $date, $desc, $user_id);
+        // Get church_id from member record
+        $church_stmt = $conn->prepare('SELECT church_id FROM members WHERE id = ?');
+        $church_stmt->bind_param('i', $member_id);
+        $church_stmt->execute();
+        $church_result = $church_stmt->get_result()->fetch_assoc();
+        $church_id = $church_result['church_id'] ?? 1;
+        $church_stmt->close();
+        
+        $stmt = $conn->prepare('INSERT INTO payments (member_id, payment_type_id, amount, mode, payment_date, description, recorded_by, church_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+        $stmt->bind_param('iidsssii', $member_id, $type_id, $amount, $mode, $date, $desc, $user_id, $church_id);
     } else if ($sundayschool_id) {
-        $stmt = $conn->prepare('INSERT INTO payments (sundayschool_id, payment_type_id, amount, mode, payment_date, description, recorded_by) VALUES (?, ?, ?, ?, ?, ?, ?)');
-        $stmt->bind_param('iidsssi', $sundayschool_id, $type_id, $amount, $mode, $date, $desc, $user_id);
+        // Get church_id from sunday school record
+        $church_stmt = $conn->prepare('SELECT church_id FROM sunday_school WHERE id = ?');
+        $church_stmt->bind_param('i', $sundayschool_id);
+        $church_stmt->execute();
+        $church_result = $church_stmt->get_result()->fetch_assoc();
+        $church_id = $church_result['church_id'] ?? 1;
+        $church_stmt->close();
+        
+        $stmt = $conn->prepare('INSERT INTO payments (sundayschool_id, payment_type_id, amount, mode, payment_date, description, recorded_by, church_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+        $stmt->bind_param('iidsssii', $sundayschool_id, $type_id, $amount, $mode, $date, $desc, $user_id, $church_id);
     } else {
         $errors[] = 'No valid member or Sunday School child specified.';
         $failed[] = ['type_id'=>$type_id, 'reason'=>'No valid member or Sunday School child specified.'];
@@ -92,14 +111,56 @@ if (!in_array($mode, $allowed_modes)) {
         continue;
     }
     $stmt->close();
-    // --- Queue SMS notification asynchronously ---
     $payment_id = $conn->insert_id;
+    
+    // Check if this is a harvest payment (payment_type_id = 4) and send special SMS
+    if ($type_id == 4 && $member_id) {
+        require_once __DIR__.'/../includes/payment_sms_template.php';
+        require_once __DIR__.'/../includes/sms.php';
+        
+        // Get member details
+        $member_stmt = $conn->prepare('SELECT first_name, last_name, phone FROM members WHERE id = ?');
+        $member_stmt->bind_param('i', $member_id);
+        $member_stmt->execute();
+        $member_data = $member_stmt->get_result()->fetch_assoc();
+        $member_stmt->close();
+        
+        if ($member_data && !empty($member_data['phone'])) {
+            // Get church name
+            $church_stmt = $conn->prepare('SELECT name FROM churches WHERE id = ?');
+            $church_stmt->bind_param('i', $church_id);
+            $church_stmt->execute();
+            $church_data = $church_stmt->get_result()->fetch_assoc();
+            $church_stmt->close();
+            
+            $member_name = trim($member_data['first_name'] . ' ' . $member_data['last_name']);
+            $church_name = $church_data['name'] ?? 'Freeman Methodist Church - KM';
+            $yearly_total = get_member_yearly_harvest_total($conn, $member_id);
+            
+            // Generate harvest SMS message
+            $sms_message = get_harvest_payment_sms_message(
+                $member_name,
+                $amount,
+                $church_name,
+                $desc,
+                $yearly_total
+            );
+            
+            // Send SMS
+            $sms_result = log_sms($member_data['phone'], $sms_message, $payment_id, 'harvest_payment');
+            
+            // Log SMS attempt
+            error_log('Bulk Harvest SMS sent to ' . $member_data['phone'] . ': ' . json_encode($sms_result));
+        }
+    }
+    
+    // --- Queue SMS notification asynchronously ---
     $sms_sent = false;
     $sms_error = null;
     $sms_debug = [];
     
-    // Queue SMS for background processing (non-blocking)
-    if ($payment_id && ($member_id || $sundayschool_id)) {
+    // Queue SMS for background processing (non-blocking) - Skip for harvest payments as they have custom SMS
+    if ($payment_id && ($member_id || $sundayschool_id) && $type_id != 4) {
         $sms_queue_data = [
             'payment_id' => $payment_id,
             'member_id' => $member_id,
