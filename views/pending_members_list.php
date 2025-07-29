@@ -89,7 +89,7 @@ $query = "
     FROM members m 
     LEFT JOIN bible_classes c ON m.class_id = c.id 
     LEFT JOIN churches ch ON m.church_id = ch.id 
-    WHERE m.status IN ('pending', 'de-activated') 
+    WHERE m.status = 'de-activated' 
     ORDER BY m.status DESC, m.created_at DESC
 ";
 
@@ -104,9 +104,9 @@ ob_start();
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4">
     <div>
         <h1 class="h4 mb-1 text-primary font-weight-bold">
-            <i class="fas fa-user-clock mr-2"></i>Pending Members
+            <i class="fas fa-user-clock mr-2"></i>De-activated Members
         </h1>
-        <small class="text-muted">Manage members awaiting activation or completion of registration</small>
+        <small class="text-muted">Manage de-activated members only</small>
     </div>
     <div class="mt-2 mt-md-0">
         <?php if ($can_add): ?>
