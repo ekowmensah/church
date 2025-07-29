@@ -110,10 +110,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member) {
         if (!empty($password)) {
             $password_hash = password_hash($password, PASSWORD_DEFAULT);
             $stmt = $conn->prepare('UPDATE members SET first_name=?, middle_name=?, last_name=?, gender=?, dob=?, day_born=?, place_of_birth=?, address=?, gps_address=?, marital_status=?, home_town=?, region=?, phone=?, telephone=?, email=?, employment_status=?, profession=?, baptized=?, confirmed=?, date_of_baptism=?, date_of_confirmation=?, date_of_enrollment=?, photo=?, password_hash=? WHERE id=?');
-            $stmt->bind_param('sssssssssssssssssssssss si',
-                $first_name, $middle_name, $last_name, $gender, $dob, $day_born, $place_of_birth, $address, $gps_address, $marital_status, $home_town, $region, $phone, $telephone, $email,
-                $employment_status, $profession, $baptized, $confirmed, $date_of_baptism, $date_of_confirmation, $date_of_enrollment, $photo, $password_hash, $member_id
-            );
+            $stmt->bind_param('ssssssssssssssssssssssssi',
+    $first_name, $middle_name, $last_name, $gender, $dob, $day_born, $place_of_birth, $address, $gps_address, $marital_status, $home_town, $region, $phone, $telephone, $email,
+    $employment_status, $profession, $baptized, $confirmed, $date_of_baptism, $date_of_confirmation, $date_of_enrollment, $photo, $password_hash, $member_id
+);
+// Double-check: 26 variables, 26 types
         } else {
             $stmt = $conn->prepare('UPDATE members SET first_name=?, middle_name=?, last_name=?, gender=?, dob=?, day_born=?, place_of_birth=?, address=?, gps_address=?, marital_status=?, home_town=?, region=?, phone=?, telephone=?, email=?, employment_status=?, profession=?, baptized=?, confirmed=?, date_of_baptism=?, date_of_confirmation=?, date_of_enrollment=?, photo=? WHERE id=?');
             $stmt->bind_param('sssssssssssssssssssssssi',

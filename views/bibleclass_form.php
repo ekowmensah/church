@@ -103,6 +103,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error) {
             }
         }
     }
+    $class_group_id = isset($_POST['class_group_id']) ? intval($_POST['class_group_id']) : '';
+    $leader_id = isset($_POST['leader_id']) ? intval($_POST['leader_id']) : '';
     $bclass = ['name'=>$name,'code'=>$code,'class_group_id'=>$class_group_id,'leader_id'=>$leader_id,'church_id'=>$church_id];
 }
 }

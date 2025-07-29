@@ -125,7 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!empty($bible_class_name)) {
                         $msg = "Hi, $first_name, you have been transferred to $bible_class_name. Your New CRN is: $new_crn";
                         try {
-                            send_sms($phone, $msg);
+                            log_sms($phone, $msg, null, 'transfer');
                         } catch (Exception $ex) {
                             error_log('Transfer SMS send failed: ' . $ex->getMessage());
                         }
@@ -142,76 +142,95 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-ob_start();
-?>
-<div class="container mt-4">
-    <h2 class="mb-4">Add Member Transfer</h2>
-    <?php if ($error): ?>
-        <div class="alert alert-danger"><?=htmlspecialchars($error)?></div>
-    <?php endif; ?>
-    <?php if ($success): ?>
-        <?php
-        // Gather transfer summary info for modal
-        $member_name = '';
-        $from_class_name = '';
-        $to_class_name = '';
-        $transfer_date_disp = htmlspecialchars($_POST['transfer_date'] ?? date('Y-m-d'));
-        $transferred_by_disp = htmlspecialchars($user_name);
-        // Get member name
+// Always initialize transfer summary variables to avoid undefined warnings
+$member_name = '';
+$from_class_name = '';
+$to_class_name = '';
+$transfer_date_disp = '';
+$transferred_by_disp = htmlspecialchars($user_name);
+if ($success) {
+    // Safely attempt to populate variables from POST and DB
+    $transfer_date_disp = htmlspecialchars($_POST['transfer_date'] ?? date('Y-m-d'));
+    // Get member name
+    if (!empty($member_id)) {
         $stmt = $conn->prepare('SELECT CONCAT(last_name, " ", first_name, " ", middle_name) AS full_name FROM members WHERE id = ?');
         $stmt->bind_param('i', $member_id);
         $stmt->execute();
         $stmt->bind_result($member_name);
         $stmt->fetch();
         $stmt->close();
-        // Get class names
+    }
+    // Get class names
+    if (!empty($from_class_id)) {
         $stmt = $conn->prepare('SELECT name FROM bible_classes WHERE id = ?');
         $stmt->bind_param('i', $from_class_id);
         $stmt->execute();
         $stmt->bind_result($from_class_name);
         $stmt->fetch();
         $stmt->close();
+    }
+    if (!empty($to_class_id)) {
         $stmt = $conn->prepare('SELECT name FROM bible_classes WHERE id = ?');
         $stmt->bind_param('i', $to_class_id);
         $stmt->execute();
         $stmt->bind_result($to_class_name);
         $stmt->fetch();
         $stmt->close();
-        ?>
-        <!-- Bootstrap Modal -->
-        <div class="modal fade" id="transferSuccessModal" tabindex="-1" role="dialog" aria-labelledby="transferSuccessLabel" aria-hidden="true">
-          <div class="modal-dialog modal-dialog-centered" role="document">
-            <div class="modal-content">
-              <div class="modal-header bg-success text-white">
-                <h5 class="modal-title" id="transferSuccessLabel">Transfer Successful</h5>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close" onclick="window.location='transfer_list.php'">
-                  <span aria-hidden="true">&times;</span>
-                </button>
+    }
+    ob_start(); ?>
+    <!-- Bootstrap Modal -->
+    <style>
+      .modal-backdrop.show { z-index: 1040 !important; }
+      .modal.show { z-index: 1050 !important; }
+    </style>
+    <div class="modal fade" id="transferSuccessModal" tabindex="-1" role="dialog" aria-labelledby="transferSuccessLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+          <div class="modal-header bg-success text-white">
+            <h5 class="modal-title" id="transferSuccessLabel">Transfer Successful</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close" onclick="window.location='transfer_list.php'">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p class="lead"><i class="fa fa-check-circle text-success"></i> Member transfer completed successfully!</p>
+            <ul class="list-group mb-3">
+              <li class="list-group-item"><b>Member:</b> <?=htmlspecialchars($member_name)?></li>
+              <li class="list-group-item"><b>From Class:</b> <?=htmlspecialchars($from_class_name)?></li>
+              <li class="list-group-item"><b>To Class:</b> <?=htmlspecialchars($to_class_name)?></li>
+              <li class="list-group-item"><b>New CRN:</b> <?=htmlspecialchars($new_crn)?></li>
+              <li class="list-group-item"><b>Transfer Date:</b> <?=htmlspecialchars($transfer_date_disp)?></li>
+              <li class="list-group-item"><b>Transferred By:</b> <?=htmlspecialchars($transferred_by_disp)?></li>
+            </ul>
+            <?php if (!empty($migration_msgs)): ?>
+              <div class="alert alert-info mb-0">
+                <?=implode('<br>', array_map('htmlspecialchars', $migration_msgs))?>
               </div>
-              <div class="modal-body">
-                <p class="lead"><i class="fa fa-check-circle text-success"></i> Member transfer completed successfully!</p>
-                <ul class="list-group mb-3">
-                  <li class="list-group-item"><b>Member:</b> <?=htmlspecialchars($member_name)?></li>
-                  <li class="list-group-item"><b>From Class:</b> <?=htmlspecialchars($from_class_name)?></li>
-                  <li class="list-group-item"><b>To Class:</b> <?=htmlspecialchars($to_class_name)?></li>
-                  <li class="list-group-item"><b>New CRN:</b> <?=htmlspecialchars($new_crn)?></li>
-                  <li class="list-group-item"><b>Transfer Date:</b> <?=htmlspecialchars($transfer_date_disp)?></li>
-                  <li class="list-group-item"><b>Transferred By:</b> <?=htmlspecialchars($transferred_by_disp)?></li>
-                </ul>
-                <?php if (!empty($migration_msgs)): ?>
-                  <div class="alert alert-info mb-0">
-                    <?=implode('<br>', array_map('htmlspecialchars', $migration_msgs))?>
-                  </div>
-                <?php endif; ?>
-              </div>
-              <div class="modal-footer">
-                <a href="transfer_list.php" class="btn btn-success">Continue to Transfer List</a>
-              </div>
-            </div>
+            <?php endif; ?>
+          </div>
+          <div class="modal-footer">
+            <a href="transfer_list.php" class="btn btn-success">Continue to Transfer List</a>
           </div>
         </div>
-        <input type="hidden" id="showTransferSuccessModal" value="1">
-        
+      </div>
+    </div>
+    <input type="hidden" id="showTransferSuccessModal" value="1">
+    <script>
+      $(function() {
+        $('#transferForm').hide();
+        $('#transferSuccessModal').modal({backdrop:'static',keyboard:false});
+      });
+    </script>
+    <?php
+    $modal_html = ob_get_clean();
+}
+
+// Buffer main form content
+ob_start(); ?>
+<div class="container mt-4">
+    <h2 class="mb-4">Add Member Transfer</h2>
+    <?php if ($error): ?>
+        <div class="alert alert-danger"><?=htmlspecialchars($error)?></div>
     <?php endif; ?>
     <form method="post" id="transferForm" autocomplete="off">
         <div class="form-group">
@@ -328,4 +347,5 @@ $(document).ready(function() {
 </script>
 <?php
 $page_content = ob_get_clean();
+// Output modal HTML before main content, like visitor_list.php
 include '../includes/layout.php';
