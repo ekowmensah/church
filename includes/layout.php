@@ -30,9 +30,10 @@
       .content-wrapper {
         overflow-x: auto;
         margin-left: 260px !important;
+        margin-top: 57px !important;
         z-index: 1000;
         position: relative;
-        min-height: calc(100vh - 60px);
+        min-height: calc(100vh - 57px);
         padding-bottom: 20px;
       }
       
@@ -46,6 +47,7 @@
       @media (max-width: 991.98px) {
         .content-wrapper {
           margin-left: 0 !important;
+          margin-top: 57px !important;
           width: 100%;
         }
         
@@ -180,19 +182,21 @@
 </head>
 <body class="hold-transition sidebar-mini layout-fixed">
     <div class="wrapper">
-        <?php
-        if (isset($_SESSION['member_id'])) {
-            include __DIR__.'/member_sidebar.php';
-        } else {
-            include __DIR__.'/sidebar.php';
-        }
-        ?>
-        
+        <!-- Header must come first for proper AdminLTE layout -->
         <?php
         if (isset($_SESSION['member_id'])) {
             include __DIR__.'/member_header.php';
         } else {
             include __DIR__.'/header.php';
+        }
+        ?>
+        
+        <!-- Sidebar comes after header -->
+        <?php
+        if (isset($_SESSION['member_id'])) {
+            include __DIR__.'/member_sidebar.php';
+        } else {
+            include __DIR__.'/sidebar.php';
         }
         ?>
         

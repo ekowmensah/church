@@ -43,7 +43,7 @@ if (isset($_SESSION['user_id'])) {
 }
 ?>
 <!-- AdminLTE Main Header -->
-<nav class="main-header navbar navbar-expand navbar-white navbar-light border-bottom shadow-sm" style="margin-left:0;padding-left:0;">
+<nav class="main-header navbar navbar-expand navbar-white navbar-light border-bottom shadow-sm" style="position: fixed; top: 0; left: 0; right: 0; z-index: 1030; margin-left: 0; padding-left: 0; height: 57px;">
   <!-- Left navbar links -->
   <ul class="navbar-nav">
     <li class="nav-item">
