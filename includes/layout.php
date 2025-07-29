@@ -17,10 +17,14 @@
     <meta name="msapplication-TileColor" content="#667eea">
     <meta name="application-name" content="Church CMS">
     <meta name="apple-mobile-web-app-title" content="Church CMS">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     
     <title><?php echo isset($page_title) ? htmlspecialchars($page_title) : 'Church Management System'; ?></title>
+    
+    <!-- Modern Sidebar Styles -->
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/modern-sidebar.css">
     <style>
       /* Enhanced Responsive Layout Styles */
       .content-wrapper {
@@ -183,14 +187,16 @@
             include __DIR__.'/sidebar.php';
         }
         ?>
+        
+        <?php
+        if (isset($_SESSION['member_id'])) {
+            include __DIR__.'/member_header.php';
+        } else {
+            include __DIR__.'/header.php';
+        }
+        ?>
+        
         <div class="content-wrapper">
-    <?php
-    if (isset($_SESSION['member_id'])) {
-        include __DIR__.'/member_header.php';
-    } else {
-        include __DIR__.'/header.php';
-    }
-    ?>
             <!-- Main Content -->
             <section class="content">
                 <?php 

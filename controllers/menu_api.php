@@ -4,7 +4,7 @@ require_once '../helpers/permissions.php';
 session_start();
 
 // Check permissions
-$is_super_admin = isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3;
+$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
 if (!$is_super_admin && !has_permission('manage_menu_items')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Access denied']);

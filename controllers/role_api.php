@@ -1,9 +1,38 @@
 <?php
+// DEBUG: Enable error reporting for troubleshooting
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+session_start();
 // AJAX/API endpoint for advanced role management
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/RoleController.php';
 header('Content-Type: application/json');
+// DEBUG: Dump session for troubleshooting
+if (isset($_GET['debug_session'])) {
+    echo json_encode(['_SESSION' => $_SESSION, 'session_id' => session_id()]);
+    exit;
+}
 
+// Authentication and robust super admin bypass
+require_once __DIR__ . '/../helpers/auth.php';
+require_once __DIR__ . '/../helpers/permissions.php';
+if (!is_logged_in()) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => 'Unauthorized - Please log in']);
+    exit;
+}
+$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+if (!$is_super_admin && !has_permission('manage_roles')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Forbidden - Insufficient permissions']);
+    exit;
+}
+
+// Ensure database connection is available
+global $conn;
+if (!isset($conn)) {
+    $conn = $GLOBALS['conn'];
+}
 $controller = new RoleController($conn);
 $method = $_SERVER['REQUEST_METHOD'];
 

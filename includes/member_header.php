@@ -1,22 +1,7 @@
-<!-- Member Dashboard Header: Enhanced for Mobile Responsiveness -->
-<nav class="main-header navbar navbar-expand navbar-white navbar-light border-bottom">
-  <ul class="navbar-nav">
-    <li class="nav-item">
-      <a class="nav-link" data-widget="pushmenu" href="#" role="button" aria-label="Toggle sidebar">
-        <i class="fas fa-bars"></i>
-      </a>
-    </li>
-    <li class="nav-item d-none d-md-inline-block">
-      <a href="<?php echo BASE_URL; ?>/views/member_dashboard.php" class="nav-link font-weight-bold">Member Dashboard</a>
-    </li>
-    <li class="nav-item d-inline-block d-md-none">
-      <a href="<?php echo BASE_URL; ?>/views/member_dashboard.php" class="nav-link font-weight-bold">Dashboard</a>
-    </li>
-  </ul>
-  <ul class="navbar-nav ml-auto">
-    <li class="nav-item dropdown">
-      <?php
+<?php
 if (session_status() === PHP_SESSION_NONE) session_start();
+
+// Get member profile image
 $profile_img = BASE_URL . '/assets/img/undraw_profile.svg';
 if (!empty($_SESSION['member_id'])) {
     $conn = $GLOBALS['conn'] ?? null;
@@ -31,23 +16,74 @@ if (!empty($_SESSION['member_id'])) {
     }
 }
 ?>
-<a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="memberDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" style="min-height: 44px; padding: 0.5rem 0.75rem;">
-  <img src="<?php echo htmlspecialchars($profile_img); ?>" alt="Profile" class="rounded-circle mr-2" style="width:32px;height:32px;object-fit:cover; flex-shrink: 0;">
-  <span class="d-none d-sm-inline"><?php echo htmlspecialchars($_SESSION['member_name'] ?? 'Member'); ?></span>
-  <span class="d-inline d-sm-none"><?php echo htmlspecialchars(explode(' ', $_SESSION['member_name'] ?? 'Member')[0]); ?></span>
-</a>
-      <div class="dropdown-menu dropdown-menu-right shadow" aria-labelledby="memberDropdown" style="min-width: 200px; border: none; border-radius: 8px;">
-        <h6 class="dropdown-header d-flex align-items-center">
-          <img src="<?php echo htmlspecialchars($profile_img); ?>" alt="Profile" class="rounded-circle mr-2" style="width:24px;height:24px;object-fit:cover;">
-          <?php echo htmlspecialchars($_SESSION['member_name'] ?? 'Member'); ?>
-        </h6>
+
+<!-- Navbar -->
+<nav class="main-header navbar navbar-expand navbar-white navbar-light">
+  <!-- Left navbar links -->
+  <ul class="navbar-nav">
+    <li class="nav-item">
+      <a class="nav-link" data-widget="pushmenu" href="#" role="button"><i class="fas fa-bars"></i></a>
+    </li>
+    <li class="nav-item d-none d-sm-inline-block">
+      <a href="<?php echo BASE_URL; ?>/views/member_dashboard.php" class="nav-link">Home</a>
+    </li>
+    <li class="nav-item d-none d-sm-inline-block">
+      <a href="<?php echo BASE_URL; ?>/views/member_events.php" class="nav-link">Events</a>
+    </li>
+  </ul>
+
+  <!-- Right navbar links -->
+  <ul class="navbar-nav ml-auto">
+    <!-- Notifications Dropdown Menu -->
+    <li class="nav-item dropdown">
+      <a class="nav-link" data-toggle="dropdown" href="#">
+        <i class="far fa-bell"></i>
+        <span class="badge badge-warning navbar-badge">15</span>
+      </a>
+      <div class="dropdown-menu dropdown-menu-lg dropdown-menu-right">
+        <span class="dropdown-item dropdown-header">15 Notifications</span>
         <div class="dropdown-divider"></div>
-        <a class="dropdown-item d-flex align-items-center" href="<?php echo BASE_URL; ?>/views/member_profile.php" style="padding: 0.75rem 1rem; min-height: 44px;">
-          <i class="fas fa-id-card mr-3" style="width: 16px;"></i> My Profile
+        <a href="#" class="dropdown-item">
+          <i class="fas fa-envelope mr-2"></i> 4 new messages
+          <span class="float-right text-muted text-sm">3 mins</span>
         </a>
         <div class="dropdown-divider"></div>
-        <a class="dropdown-item text-danger d-flex align-items-center" href="<?php echo BASE_URL; ?>/logout.php" style="padding: 0.75rem 1rem; min-height: 44px;">
-          <i class="fas fa-sign-out-alt mr-3" style="width: 16px;"></i> Logout
+        <a href="#" class="dropdown-item">
+          <i class="fas fa-users mr-2"></i> 8 friend requests
+          <span class="float-right text-muted text-sm">12 hours</span>
+        </a>
+        <div class="dropdown-divider"></div>
+        <a href="#" class="dropdown-item">
+          <i class="fas fa-file mr-2"></i> 3 new reports
+          <span class="float-right text-muted text-sm">2 days</span>
+        </a>
+        <div class="dropdown-divider"></div>
+        <a href="#" class="dropdown-item dropdown-footer">See All Notifications</a>
+      </div>
+    </li>
+    
+    <!-- User Account Dropdown Menu -->
+    <li class="nav-item dropdown">
+      <a class="nav-link" data-toggle="dropdown" href="#">
+        <img src="<?php echo htmlspecialchars($profile_img); ?>" alt="User Avatar" class="img-size-32 mr-2 img-circle">
+        <span class="d-none d-md-inline"><?php echo htmlspecialchars($_SESSION['member_name'] ?? 'Member'); ?></span>
+      </a>
+      <div class="dropdown-menu dropdown-menu-lg dropdown-menu-right">
+        <div class="dropdown-divider"></div>
+        <a href="<?php echo BASE_URL; ?>/views/member_profile.php" class="dropdown-item">
+          <i class="fas fa-user mr-2"></i> Profile
+        </a>
+        <div class="dropdown-divider"></div>
+        <a href="<?php echo BASE_URL; ?>/views/member_health_records.php" class="dropdown-item">
+          <i class="fas fa-heartbeat mr-2"></i> Health Records
+        </a>
+        <div class="dropdown-divider"></div>
+        <a href="<?php echo BASE_URL; ?>/views/member_events.php" class="dropdown-item">
+          <i class="fas fa-calendar mr-2"></i> Events
+        </a>
+        <div class="dropdown-divider"></div>
+        <a href="<?php echo BASE_URL; ?>/logout.php" class="dropdown-item">
+          <i class="fas fa-sign-out-alt mr-2"></i> Logout
         </a>
       </div>
     </li>
