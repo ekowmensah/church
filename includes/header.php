@@ -42,49 +42,45 @@ if (isset($_SESSION['user_id'])) {
     }
 }
 ?>
-<!-- AdminLTE Main Header -->
-<nav class="main-header navbar navbar-expand navbar-white navbar-light border-bottom shadow-sm" style="position: fixed; top: 0; left: 0; right: 0; z-index: 1030; margin-left: 0; padding-left: 0; height: 57px;">
+<!-- Main Header -->
+<nav class="main-header navbar navbar-expand navbar-white navbar-light" style="z-index: 1050;">
   <!-- Left navbar links -->
   <ul class="navbar-nav">
     <li class="nav-item">
       <a class="nav-link" data-widget="pushmenu" href="#" role="button"><i class="fas fa-bars"></i></a>
     </li>
     <li class="nav-item d-none d-sm-inline-block">
-      <a href="<?php echo BASE_URL; ?>/index.php" class="navbar-brand font-weight-bold text-primary" style="font-size:1.25rem;">Freeman Methodist Church Kwesimintsim - Takoradi</a>
+      <a href="<?php echo BASE_URL; ?>/index.php" class="nav-link">Home</a>
     </li>
   </ul>
 
   <!-- Right navbar links -->
-  <ul class="navbar-nav ml-auto align-items-center">
+  <ul class="navbar-nav ml-auto">
     <!-- User Dropdown Menu -->
     <li class="nav-item dropdown user-menu">
       <a href="#" class="nav-link dropdown-toggle" data-toggle="dropdown">
-        <img src="<?php echo $user_photo; ?>" class="user-image img-circle elevation-2" alt="User Image" style="width:36px;height:36px;object-fit:cover;">
-        <span class="d-none d-md-inline font-weight-bold"><?php echo htmlspecialchars($user_name); ?></span>
+        <img src="<?php echo $user_photo; ?>" class="user-image img-circle elevation-2" alt="User Image">
+        <span class="d-none d-md-inline"><?php echo htmlspecialchars($user_name); ?></span>
       </a>
       <ul class="dropdown-menu dropdown-menu-lg dropdown-menu-right">
         <!-- User image -->
         <li class="user-header bg-primary">
-          <img src="<?php echo $user_photo; ?>" class="img-circle elevation-2 mb-2" alt="User Image" style="width:70px;height:70px;object-fit:cover;">
-          <p class="mb-0">
+          <img src="<?php echo $user_photo; ?>" class="img-circle elevation-2" alt="User Image">
+          <p>
             <?php echo htmlspecialchars($user_name); ?>
-            <br>
             <?php if (!empty($user_roles_arr)): ?>
-              <?php foreach ($user_roles_arr as $role): ?>
-                <?php $badge = ($role === 'Super Admin') ? 'badge-danger' : 'badge-light'; ?>
-                <span class="badge <?php echo $badge; ?> mx-1" style="font-size:0.93em;"><?php echo htmlspecialchars($role); ?></span>
-              <?php endforeach; ?>
+              <small><?php echo implode(', ', $user_roles_arr); ?></small>
             <?php endif; ?>
           </p>
         </li>
         <!-- Menu Footer-->
-        <li class="user-footer d-flex justify-content-between">
+        <li class="user-footer">
           <?php if (isset($_SESSION['member_id'])): ?>
             <a href="<?php echo BASE_URL; ?>/views/member_profile.php" class="btn btn-default btn-flat">Profile</a>
           <?php elseif (isset($_SESSION['user_id'])): ?>
             <a href="<?php echo BASE_URL; ?>/views/profile.php" class="btn btn-default btn-flat">Profile</a>
           <?php endif; ?>
-          <a href="<?php echo BASE_URL; ?>/logout.php" class="btn btn-default btn-flat text-danger">Sign out</a>
+          <a href="<?php echo BASE_URL; ?>/logout.php" class="btn btn-default btn-flat float-right">Sign out</a>
         </li>
       </ul>
     </li>
