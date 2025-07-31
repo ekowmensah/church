@@ -100,10 +100,10 @@ function fetchRoles() {
 function deleteRole(id, btn) {
     if (!confirm('Are you sure you want to delete this role?')) return;
     btn.disabled = true;
-    fetch('controllers/role_api.php', {
-        method: 'DELETE',
+    fetch(BASE_URL + '/controllers/role_api.php', {
+        method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'id=' + encodeURIComponent(id)
+        body: 'action=delete&id=' + encodeURIComponent(id)
     })
     .then(res => res.json())
     .then(data => {

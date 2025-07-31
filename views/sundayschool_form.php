@@ -102,7 +102,7 @@ ob_start();
         <div class="card-body p-4">
             <?php if($error): ?><div class="alert alert-danger"><?=$error?></div><?php endif; ?>
             <?php if($success): ?><div class="alert alert-success"><?=$success?></div><?php endif; ?>
-            <?php if ($editing): ?><pre style="background:#fffbe6;color:#b36b00;border:1px solid #ffe58f;padding:8px 12px;font-size:13px;">DEBUG: $record = <?php var_export($record); ?></pre><?php endif; ?>
+            
 <form method="post" enctype="multipart/form-data">
                 <div class="ss-section mb-4">
                     <div class="ss-section-title"><i class="fa-solid fa-user-graduate ss-icon"></i> Personal Information</div>

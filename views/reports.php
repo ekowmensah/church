@@ -92,6 +92,12 @@ $report_categories = [
             'title' => 'Gender Report',
             'icon' => 'fa-venus-mars',
             'desc' => 'Distribution of members by gender.'
+        ],
+        [
+            'file' => BASE_URL.'/views/reports/details/bibleclass_members_report.php',
+            'title' => 'Bible Class Members Report',
+            'icon' => 'fa-chalkboard-teacher',
+            'desc' => 'Members by Bible Class.'
         ]
     ],
     'Payment Reports' => [

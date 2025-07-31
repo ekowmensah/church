@@ -12,30 +12,33 @@ class RoleController {
     // Create a new role with assigned permissions
     public function create($data) {
         $name = trim($data['name'] ?? '');
-        $permissions = $data['permissions'] ?? [];
+        $description = trim($data['description'] ?? '');
         if (!$name) return false;
+        // Duplicate name check
+        $stmt = $this->conn->prepare('SELECT id FROM roles WHERE LOWER(name) = LOWER(?)');
+        $stmt->bind_param('s', $name);
+        $stmt->execute();
+        $stmt->store_result();
+        if ($stmt->num_rows > 0) {
+            $stmt->close();
+            return ['error' => 'Role name already exists.'];
+        }
+        $stmt->close();
         $this->conn->begin_transaction();
         try {
-            $stmt = $this->conn->prepare('INSERT INTO roles (name) VALUES (?)');
-            $stmt->bind_param('s', $name);
+            $stmt = $this->conn->prepare('INSERT INTO roles (name, description) VALUES (?, ?)');
+            $stmt->bind_param('ss', $name, $description);
             $stmt->execute();
             $role_id = $this->conn->insert_id;
-            if (!empty($permissions)) {
-                $stmt2 = $this->conn->prepare('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)');
-                foreach ($permissions as $pid) {
-                    $pid = intval($pid);
-                    $stmt2->bind_param('ii', $role_id, $pid);
-                    $stmt2->execute();
-                }
-            }
             // Audit log
             $user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : null;
-            write_audit_log('create', 'role', $role_id, json_encode(['name'=>$name, 'permissions'=>$permissions]), $user_id);
+            write_audit_log('create', 'role', $role_id, json_encode(['name'=>$name, 'description'=>$description]), $user_id);
             $this->conn->commit();
             return $this->read($role_id);
         } catch (Exception $e) {
             $this->conn->rollback();
-            return false;
+            error_log("ROLE CREATE ERROR: " . $e->getMessage());
+            return ['error' => $e->getMessage()];
         }
     }
 
@@ -58,25 +61,26 @@ class RoleController {
     // Update a role's name and permissions
     public function update($id, $data) {
         $name = trim($data['name'] ?? '');
-        $permissions = $data['permissions'] ?? [];
+        $description = trim($data['description'] ?? '');
         if (!$name) return false;
+        // Duplicate name check
+        $stmt = $this->conn->prepare('SELECT id FROM roles WHERE LOWER(name) = LOWER(?) AND id != ?');
+        $stmt->bind_param('si', $name, $id);
+        $stmt->execute();
+        $stmt->store_result();
+        if ($stmt->num_rows > 0) {
+            $stmt->close();
+            return ['error' => 'Role name already exists.'];
+        }
+        $stmt->close();
         $this->conn->begin_transaction();
         try {
-            $stmt = $this->conn->prepare('UPDATE roles SET name=? WHERE id=?');
-            $stmt->bind_param('si', $name, $id);
+            $stmt = $this->conn->prepare('UPDATE roles SET name=?, description=? WHERE id=?');
+            $stmt->bind_param('ssi', $name, $description, $id);
             $stmt->execute();
-            $this->conn->query('DELETE FROM role_permissions WHERE role_id = '.$id);
-            if (!empty($permissions)) {
-                $stmt2 = $this->conn->prepare('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)');
-                foreach ($permissions as $pid) {
-                    $pid = intval($pid);
-                    $stmt2->bind_param('ii', $id, $pid);
-                    $stmt2->execute();
-                }
-            }
             // Audit log
             $user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : null;
-            write_audit_log('update', 'role', $id, json_encode(['name'=>$name, 'permissions'=>$permissions]), $user_id);
+            write_audit_log('update', 'role', $id, json_encode(['name'=>$name, 'description'=>$description]), $user_id);
             $this->conn->commit();
             return $this->read($id);
         }  catch (Exception $e) {

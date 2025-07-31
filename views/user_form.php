@@ -102,8 +102,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!filter_var($user['email'], FILTER_VALIDATE_EMAIL)) $error .= 'Valid email is required.<br>';
         if ($user['phone'] === '') $error .= 'Phone is required.<br>';
         if (empty($user['role_id'])) $error .= 'At least one role is required.<br>';
-        if ($user['church_id'] === '') $error .= 'Church is required.<br>';
-        if ($user['class_id'] === '') $error .= 'Bible Class is required.<br>';
+        if (!$editing && $user['church_id'] === '') $error .= 'Church is required.<br>';
+        if (!$editing && $user['class_id'] === '') $error .= 'Bible Class is required.<br>';
         // Uniqueness checks
         $stmt = $conn->prepare('SELECT id FROM users WHERE email = ? AND id != ?');
         $stmt->bind_param('si', $user['email'], $uid);
@@ -198,6 +198,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->close();
             $error = '';
             $show_link_prompt = true;
+        } else if ($existing_member_id && isset($_POST['skip_member_link']) && $_POST['skip_member_link'] == '1') {
+            // Skip linking, just create user without member_id
+            $conn->begin_transaction();
+            try {
+                $password_hash = password_hash($user['password'], PASSWORD_DEFAULT);
+                $stmt = $conn->prepare('INSERT INTO users (name, email, phone, password_hash, status, member_id, church_id) VALUES (?, ?, ?, ?, ?, NULL, ?)');
+                $stmt->bind_param('ssssss', $user['name'], $user['email'], $user['phone'], $password_hash, $user['status'], $user['church_id']);
+                $stmt->execute();
+                if ($stmt->affected_rows <= 0) throw new Exception('Failed to create user.');
+                $user_id = $stmt->insert_id;
+                $stmt->close();
+                // Insert user_roles
+                foreach($user['role_id'] as $rid) {
+                    $stmt = $conn->prepare('INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)');
+                    $stmt->bind_param('ii', $user_id, $rid);
+                    $stmt->execute();
+                    $stmt->close();
+                }
+                $conn->commit();
+                header('Location: user_list.php');
+                exit;
+            } catch (Exception $e) {
+                $conn->rollback();
+                $error = 'Error: ' . $e->getMessage();
+            }
         } else if ($existing_member_id && $link_to_member == $existing_member_id) {
             // Link to existing member
             $conn->begin_transaction();
@@ -336,6 +361,7 @@ ob_start();
                     endforeach; ?>
                     <input type="hidden" name="link_to_member" value="<?= $existing_member_id ?>">
                     <button type="submit" class="btn btn-primary mt-2">Yes, Link User to Member</button>
+                    <button type="submit" name="skip_member_link" value="1" class="btn btn-warning mt-2 ml-2">No, Just Create User</button>
                     <a href="user_form.php" class="btn btn-secondary mt-2 ml-2">Cancel</a>
                 </form>
             </div>
@@ -384,8 +410,8 @@ ob_start();
               <h5 class="font-weight-bold mb-3"><i class="fas fa-users mr-2 text-primary"></i>Member Info</h5>
               <div class="form-row">
                 <div class="form-group col-md-6">
-                  <label for="church_id" class="font-weight-bold">Church <span class="text-danger">*</span></label>
-                  <select class="form-control" id="church_id" name="church_id" required>
+                  <label for="church_id" class="font-weight-bold">Church<?php if ($editing): ?> <span class="text-muted">(optional)</span><?php else: ?> <span class="text-danger">*</span><?php endif; ?></label>
+                  <select class="form-control" id="church_id" name="church_id"<?php if (!$editing): ?> required<?php endif; ?>>
                     <option value="">-- Select Church --</option>
                     <?php 
                     $churches2 = $conn->query("SELECT id, name FROM churches ORDER BY name ASC");
@@ -397,8 +423,8 @@ ob_start();
                   <small class="form-text text-muted">Required. Changing church will reset class selection.</small>
                 </div>
                 <div class="form-group col-md-6">
-                  <label for="class_id" class="font-weight-bold">Bible Class <span class="text-danger">*</span></label>
-                  <select class="form-control" id="class_id" name="class_id" required style="width:100%">
+                  <label for="class_id" class="font-weight-bold">Bible Class<?php if ($editing): ?> <span class="text-muted">(optional)</span><?php else: ?> <span class="text-danger">*</span><?php endif; ?></label>
+                  <select class="form-control" id="class_id" name="class_id"<?php if (!$editing): ?> required<?php endif; ?> style="width:100%">
                     <option value="">-- Select Class --</option>
                     <?php
                     if (!empty($user['church_id'])) {
@@ -547,7 +573,7 @@ $(document).ready(function() {
       $('#email-feedback').empty();
       return;
     }
-    $.get('ajax_validate_member.php', {type: 'email', value: email, id: 0}, function(resp) {
+    $.get('ajax_validate_user.php', {type: 'email', value: email, id: 0}, function(resp) {
       $('#email-feedback').empty();
       if (resp.valid) {
         $(input).removeClass('is-invalid').addClass('is-valid');
@@ -567,7 +593,7 @@ $(document).ready(function() {
       $('#phone-feedback').empty();
       return;
     }
-    $.get('ajax_validate_member.php', {type: 'phone', value: phone, id: 0}, function(resp) {
+    $.get('ajax_validate_user.php', {type: 'phone', value: phone, id: 0}, function(resp) {
       $('#phone-feedback').empty();
       if (resp.valid) {
         $(input).removeClass('is-invalid').addClass('is-valid');

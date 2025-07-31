@@ -1,7 +1,4 @@
 <?php
-// DEBUG: Enable error reporting for troubleshooting
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
 session_start();
 // AJAX/API endpoint for advanced role management
 require_once __DIR__ . '/../config/config.php';
@@ -59,6 +56,18 @@ switch ($method) {
         break;
     case 'POST':
         $input = json_decode(file_get_contents('php://input'), true) ?? $_POST;
+        // Handle delete via POST
+        if (($input['action'] ?? '') === 'delete') {
+            $id = $input['id'] ?? null;
+            if (!$id) json_response(['success' => false, 'error' => 'Missing role id'], 400);
+            $deleted = $controller->delete($id);
+            if ($deleted) {
+                json_response(['success' => true]);
+            } else {
+                json_response(['success' => false, 'error' => 'Failed to delete role'], 400);
+            }
+            break;
+        }
         // Update role if action=update
         if (isset($_GET['action']) && $_GET['action'] === 'update' || isset($input['action']) && $input['action'] === 'update') {
             $id = $input['id'] ?? $_GET['id'] ?? null;
