@@ -1,8 +1,8 @@
 <?php
 $__start = microtime(true);
 // AJAX endpoint for single payment by logged-in member
-if (session_status() === PHP_SESSION_NONE) session_start();
-error_log('SESSION user_id: ' . print_r($_SESSION['user_id'], true));
+//if (session_status() === PHP_SESSION_NONE) session_start();
+//error_log('SESSION user_id: ' . print_r($_SESSION['user_id'], true));
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions.php';

@@ -1,5 +1,5 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) { session_start(); }
+//if (session_status() === PHP_SESSION_NONE) { session_start(); }
 // Modern Bulk Payment API Endpoint
 require_once __DIR__.'/../config/config.php';
 header('Content-Type: application/json');

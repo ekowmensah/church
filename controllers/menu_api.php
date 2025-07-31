@@ -1,7 +1,7 @@
 <?php
 require_once '../config/config.php';
 require_once '../helpers/permissions.php';
-session_start();
+//session_start();
 
 // Check permissions
 $is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);

@@ -1,7 +1,7 @@
 <?php
 require_once '../config/config.php';
 require_once '../helpers/permissions.php';
-session_start();
+//session_start();
 
 // Enable error reporting for debugging
 error_reporting(E_ALL);

@@ -1,6 +1,6 @@
 <?php
 // Accepts JSON POST: { member_id: int, payments: [{type_id, amount, mode, date, desc}] }
-if (session_status() === PHP_SESSION_NONE) session_start();
+//if (session_status() === PHP_SESSION_NONE) session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions.php';
