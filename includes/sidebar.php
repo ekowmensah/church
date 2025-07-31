@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__.'/../config/config.php';
 global $conn;
-if (session_status() === PHP_SESSION_NONE) session_start();
+//if (session_status() === PHP_SESSION_NONE) session_start();
 
 // Super admin detection
 $is_super_admin = isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3;

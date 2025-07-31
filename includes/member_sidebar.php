@@ -1,6 +1,6 @@
 <?php
 // Get member info and church logo
-if (session_status() === PHP_SESSION_NONE) session_start();
+//if (session_status() === PHP_SESSION_NONE) session_start();
 
 $logo_path = BASE_URL.'/logo.png';
 $member_name = $_SESSION['member_name'] ?? 'Member';
@@ -146,6 +146,14 @@ if (isset($_SESSION['member_id'])) {
                   <i class="fas fa-user-tie nav-icon"></i>
                 </div>
                 <span class="nav-text">Service Roles</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a href="<?php echo BASE_URL; ?>/views/member_join_organization.php" class="nav-link modern-sub-nav-link">
+                <div class="sub-nav-icon-wrapper">
+                  <i class="fas fa-users-cog nav-icon"></i>
+                </div>
+                <span class="nav-text">Join Organization(s)</span>
               </a>
             </li>
           </ul>

@@ -144,6 +144,54 @@ if ($member_id) {
                     </div>
                 </div>
             </div>
+            <div class="col-xl-4 col-md-6 mb-4">
+                <div class="card border-left-info shadow h-100 py-2">
+                    <div class="card-body d-flex flex-column align-items-center">
+                        <div class="mb-2">
+                            <i class="fas fa-users-cog fa-2x text-info"></i>
+                        </div>
+                        <div class="h5 mb-2 font-weight-bold text-info">Join an Organization</div>
+                        <div class="mb-2 small text-muted text-center">
+                            Request to join one or more church organizations and get involved!
+                        </div>
+                        <a href="<?= BASE_URL ?>/views/member_join_organization.php" class="btn btn-sm btn-info">Join Organization(s)</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-4 col-md-6 mb-4">
+                <div class="card border-left-success shadow h-100 py-2">
+                    <div class="card-body d-flex flex-column align-items-center">
+                        <div class="mb-2">
+                            <i class="fas fa-users fa-2x text-success"></i>
+                        </div>
+                        <div class="h5 mb-2 font-weight-bold text-success">My Organizations</div>
+                        <?php
+                        // Fetch organizations the member belongs to
+                        $member_orgs = [];
+                        if ($member_id) {
+                            $org_stmt = $conn->prepare('SELECT o.name FROM member_organizations mo INNER JOIN organizations o ON mo.organization_id = o.id WHERE mo.member_id = ? ORDER BY o.name');
+                            $org_stmt->bind_param('i', $member_id);
+                            $org_stmt->execute();
+                            $org_res = $org_stmt->get_result();
+                            while ($row = $org_res->fetch_assoc()) {
+                                $member_orgs[] = $row['name'];
+                            }
+                            $org_stmt->close();
+                        }
+                        ?>
+                        <?php if (empty($member_orgs)): ?>
+                            <div class="mb-2 small text-muted text-center">You do not belong to any organizations yet.</div>
+                        <?php else: ?>
+                            <ul class="list-unstyled mb-2 text-center">
+                                <?php foreach ($member_orgs as $org): ?>
+                                    <li><i class="fas fa-check-circle text-success mr-1"></i> <?= htmlspecialchars($org) ?></li>
+                                <?php endforeach; ?>
+                            </ul>
+                        <?php endif; ?>
+                        <a href="<?= BASE_URL ?>/views/member_join_organization.php" class="btn btn-sm btn-outline-success mt-2">Join More</a>
+                    </div>
+                </div>
+            </div>
             <div class="col-xl-4 col-md-12 mb-4">
                 <div class="card border-left-primary shadow h-100 py-2">
                     <div class="card-body">

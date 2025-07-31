@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions.php';
+
 ?>
 <script>
     window.BASE_URL = "<?= htmlspecialchars(BASE_URL) ?>";
@@ -28,7 +29,7 @@ if ($role_id == 1) {
         $super_admin = true;
     }
 }
-if (!$super_admin && !has_permission('health_statistics')) {
+if (!$super_admin && !has_permission('create_health_record')) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }

@@ -34,8 +34,13 @@ if (isset($_GET['org_id']) && is_numeric($_GET['org_id'])) {
 ?>
 <?php ob_start(); ?>
 <div class="card mt-4">
-        <div class="card-header bg-info text-white"><i class="fas fa-users-cog mr-2"></i>My Organizations</div>
-        <div class="card-body">
+  <div class="d-flex justify-content-end mb-3">
+    <a href="<?= BASE_URL ?>/views/member_join_organization.php" class="btn btn-info">
+      <i class="fas fa-plus-circle mr-1"></i> Join Organization(s)
+    </a>
+  </div>
+  <div class="card-header bg-info text-white"><i class="fas fa-users-cog mr-2"></i>My Organizations</div>
+  <div class="card-body">
     <div class="row">
       <div class="col-md-4">
         <ul class="list-group mb-3">
@@ -71,7 +76,6 @@ if (isset($_GET['org_id']) && is_numeric($_GET['org_id'])) {
     </div>
   </div>
 </div>
-  </div>
 </div>
 <?php $page_content = ob_get_clean(); ?>
 <?php include '../includes/layout.php'; ?>

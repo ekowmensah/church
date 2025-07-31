@@ -1,8 +1,17 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
+//echo "AFTER CONFIG<br>";
 require_once __DIR__.'/../../../helpers/auth.php';
+
 require_once __DIR__.'/../../../helpers/permissions.php';
 
+
+
+if (!is_logged_in()) {
+  die('STOP');
+  header('Location: ' . BASE_URL . '/login.php');
+  exit;
+}
 // Only allow logged-in users
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');

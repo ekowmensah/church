@@ -148,6 +148,12 @@ $report_categories = [
             'title' => 'Payment Made Report',
             'icon' => 'fa-cash-register',
             'desc' => 'All payments made.'
+        ],
+        [
+            'file' => BASE_URL.'/views/reports/details/payments_by_user_report.php',
+            'title' => 'Payments by User Report',
+            'icon' => 'fa-user-circle',
+            'desc' => 'Aggregate payments grouped by user (admin/staff).'
         ]
     ],
     'Health Reports' => [

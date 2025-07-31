@@ -1,6 +1,6 @@
 <?php
 // Authentication and authorization helpers
-if (session_status() === PHP_SESSION_NONE) session_start();
+//if (session_status() === PHP_SESSION_NONE) session_start();
 require_once __DIR__.'/../config/config.php';
 
 function is_logged_in() {

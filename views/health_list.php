@@ -26,9 +26,9 @@ if (!$is_super_admin && !has_permission('view_health_list')) {
 }
 
 // Set permission flags for UI elements
-$can_add = $is_super_admin || has_permission('create_health');
-$can_edit = $is_super_admin || has_permission('edit_health');
-$can_delete = $is_super_admin || has_permission('delete_health');
+$can_add = $is_super_admin || has_permission('create_health_record');
+$can_edit = $is_super_admin || has_permission('edit_health_record');
+$can_delete = $is_super_admin || has_permission('delete_health_record');
 $can_view = true; // Already validated above
 
 // Filters

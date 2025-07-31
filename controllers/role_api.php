@@ -1,5 +1,5 @@
 <?php
-session_start();
+//session_start();
 // AJAX/API endpoint for advanced role management
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/RoleController.php';

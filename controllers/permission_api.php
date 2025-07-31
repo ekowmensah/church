@@ -4,7 +4,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/PermissionController.php';
 
 // Start session for audit logging
-session_start();
+//session_start();
 
 header('Content-Type: application/json');
 
