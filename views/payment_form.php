@@ -72,14 +72,14 @@ ob_start();
                 </div>
             </div>
             <div id="payment-panels" class="d-none animate__animated animate__fadeIn">
-                <!-- <ul class="nav nav-tabs mb-3" id="paymentTab" role="tablist">
+                 <ul class="nav nav-tabs mb-3" id="paymentTab" role="tablist">
                     <li class="nav-item">
                         <a class="nav-link active" id="single-tab" data-toggle="tab" href="#singlePanel" role="tab" aria-controls="singlePanel" aria-selected="true"><i class="fas fa-money-bill-wave"></i> Single Payment</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" id="bulk-tab" data-toggle="tab" href="#bulkPanel" role="tab" aria-controls="bulkPanel" aria-selected="false"><i class="fas fa-layer-group"></i> Multiple Payment</a>
                     </li>
-                </ul> -->
+                </ul> 
                 <div class="tab-content" id="paymentTabContent">
                     <!-- Single Payment Panel -->
                     <div class="tab-pane fade show active" id="singlePanel" role="tabpanel" aria-labelledby="single-tab">
@@ -117,7 +117,7 @@ ob_start();
                                 </div>
                                 <div class="form-group col-md-2">
                                     <label for="single_payment_date">Date <span class="text-danger">*</span></label>
-                                    <input type="date" class="form-control form-control-lg" id="single_payment_date" name="payment_date" value="<?= date('Y-m-d') ?>" required>
+                                    <input type="date" class="form-control form-control-lg" id="single_payment_date" name="payment_date" value="<?= date('Y-m-d') ?>" readonly required>
                                 </div>
                             </div>
                             <div class="form-row">
@@ -207,7 +207,7 @@ ob_start();
                                         </div>
                                         <div class="form-group col-md-2">
                                             <label for="bulk_payment_date">Date <span class="text-danger">*</span></label>
-                                            <input type="date" class="form-control form-control-lg" id="bulk_payment_date" name="bulk_payment_date" value="<?= date('Y-m-d') ?>">
+                                            <input type="date" class="form-control form-control-lg" id="bulk_payment_date" name="bulk_payment_date" value="<?= date('Y-m-d') ?>" readonly >
                                         </div>
                                         <div class="form-group col-md-2">
                                             <label for="bulk_description">Description</label>
