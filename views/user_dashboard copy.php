@@ -59,19 +59,6 @@ $registered_members = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE st
 $pending_registration = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'pending'")->fetch_assoc()['cnt'];
 $members_no_payments = $conn->query("SELECT COUNT(*) as cnt FROM members m LEFT JOIN payments p ON m.id = p.member_id WHERE p.id IS NULL AND m.status = 'active'")->fetch_assoc()['cnt'];
 
-// --- CASH PAYMENT FILTERING LOGIC ---
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
-$user_id = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
-$cash_filter = "mode = 'Cash'";
-$user_filter = $is_super_admin ? '' : " AND recorded_by = $user_id";
-
-// --- FILTERED CASH PAYMENT STATS ---
-$total_cash_payments = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter$user_filter")->fetch_assoc()['total'];
-$cash_payments_today = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND DATE(payment_date) = CURDATE()$user_filter")->fetch_assoc()['total'];
-$cash_payments_week = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1)$user_filter")->fetch_assoc()['total'];
-$cash_payments_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE())$user_filter")->fetch_assoc()['total'];
-$cash_payments_last_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND YEAR(payment_date) = YEAR(CURDATE() - INTERVAL 1 MONTH) AND MONTH(payment_date) = MONTH(CURDATE() - INTERVAL 1 MONTH)$user_filter")->fetch_assoc()['total'];
-
 // Payment Statistics
 $total_payments = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments")->fetch_assoc()['total'];
 $payments_today = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE DATE(payment_date) = CURDATE()")->fetch_assoc()['total'];
@@ -231,6 +218,15 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
                 </div>
             </div>
         </div>
+         <!-- <div class="col-6 col-md-3 mb-2">
+            <div class="info-box bg-secondary shadow-sm">
+                <span class="info-box-icon bg-gradient-secondary elevation-1"><i class="fas fa-user-times"></i></span>
+                <div class="info-box-content">
+                    <span class="info-box-text">No Status</span>
+                    <span class="info-box-number h4 mb-0"><?= number_format($no_status) ?></span>
+                </div>
+            </div>
+        </div> --> 
     </div>
     <!-- Member Stats Cards -->
     <div class="row g-2 mb-3">
@@ -242,6 +238,14 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
                 </div>
             </div>
         </div>
+     <!--   <div class="col-6 col-md-3 mb-2">
+            <div class="card bg-light shadow-sm">
+                <div class="card-body text-center p-2">
+                    <div class="text-secondary small">Registered Members</div>
+                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-user-friends mr-1 text-success"></i><?= number_format($registered_members) ?></div>
+                </div>
+            </div>
+        </div> -->
         <div class="col-6 col-md-3 mb-2">
             <div class="card bg-light shadow-sm">
                 <div class="card-body text-center p-2">
@@ -260,7 +264,7 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
         </div>
     </div>
     <!-- Payment Stats Cards (Row 1: Total, Today, Average) -->
-    <!-- <div class="row g-2 mb-3">
+    <div class="row g-2 mb-3">
         <div class="col-12 col-md-4 mb-2">
             <div class="card bg-light shadow-sm">
                 <div class="card-body text-center p-2">
@@ -286,7 +290,7 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
             </div>
         </div>
     </div>
-    Payment Stats Cards (Row 2: Week, Month, Last Month)
+    <!-- Payment Stats Cards (Row 2: Week, Month, Last Month) -->
     <div class="row g-2 mb-3">
         <div class="col-12 col-md-4 mb-2">
             <div class="card bg-light shadow-sm">
@@ -309,59 +313,6 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
                 <div class="card-body text-center p-2">
                     <div class="text-secondary small">Payments Last Month</div>
                     <div class="h4 mb-0 font-weight-bold"><i class="fas fa-calendar-minus mr-1 text-secondary"></i>₵<?= number_format($payments_last_month,2) ?></div>
-                </div>
-            </div>
-        </div>
-    </div> -->
-    <!-- Cash Payment Stats Cards -->
-    <div class="row g-2 mb-3">
-        <div class="col-12 col-md-4 mb-2">
-            <div class="card border-0 shadow-sm h-100 gradient-card bg-success text-white">
-                <div class="card-body text-center">
-                    <div class="mb-2"><i class="fas fa-coins fa-2x"></i></div>
-                    <div class="h5 mb-1 font-weight-bold">Total Payments</div>
-                    <div class="display-4 font-weight-bold mb-1">₵ <?= number_format($total_cash_payments,2); ?></div>
-                    <div class="small">All Time</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-12 col-md-4 mb-2">
-            <div class="card border-0 shadow-sm h-100 gradient-card bg-info text-white">
-                <div class="card-body text-center">
-                    <div class="mb-2"><i class="fas fa-calendar-day fa-2x"></i></div>
-                    <div class="h5 mb-1 font-weight-bold">Payments Today</div>
-                    <div class="display-4 font-weight-bold mb-1">₵ <?= number_format($cash_payments_today,2); ?></div>
-                    <div class="small">Today</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-12 col-md-4 mb-2">
-            <div class="card border-0 shadow-sm h-100 gradient-card bg-warning text-white">
-                <div class="card-body text-center">
-                    <div class="mb-2"><i class="fas fa-calendar-week fa-2x"></i></div>
-                    <div class="h5 mb-1 font-weight-bold">Payments This Week</div>
-                    <div class="display-4 font-weight-bold mb-1">₵ <?= number_format($cash_payments_week,2); ?></div>
-                    <div class="small">This Week</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-12 col-md-4 mb-2">
-            <div class="card border-0 shadow-sm h-100 gradient-card bg-primary text-white">
-                <div class="card-body text-center">
-                    <div class="mb-2"><i class="fas fa-calendar-alt fa-2x"></i></div>
-                    <div class="h5 mb-1 font-weight-bold">Payments This Month</div>
-                    <div class="display-4 font-weight-bold mb-1">₵ <?= number_format($cash_payments_month,2); ?></div>
-                    <div class="small">This Month</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-12 col-md-4 mb-2">
-            <div class="card border-0 shadow-sm h-100 gradient-card bg-secondary text-white">
-                <div class="card-body text-center">
-                    <div class="mb-2"><i class="fas fa-calendar-minus fa-2x"></i></div>
-                    <div class="h5 mb-1 font-weight-bold">Payments Last Month</div>
-                    <div class="display-4 font-weight-bold mb-1">₵ <?= number_format($cash_payments_last_month,2); ?></div>
-                    <div class="small">Last Month</div>
                 </div>
             </div>
         </div>
