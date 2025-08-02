@@ -15,7 +15,7 @@ $(function(){
             $tbody.append(`
                 <tr>
                     <td>${idx+1}</td>
-                    <td>${p.type_text}</td>
+                    <td><select class="form-control form-control-sm bulk-type-input" data-idx="${idx}">${$('#bulk_payment_type_id').html()}</select></td>
                     <td><input type="number" min="0" step="0.01" class="form-control form-control-sm bulk-amount-input" data-idx="${idx}" value="${p.amount}" style="width:100px;text-align:right"></td>
                     <td>
                         <select class="form-control form-control-sm bulk-mode-input" data-idx="${idx}" style="width:110px">
@@ -28,9 +28,12 @@ $(function(){
                         </select>
                     </td>
                     <td><input type="date" class="form-control form-control-sm bulk-date-input" data-idx="${idx}" value="${p.date}" style="width:135px"></td>
-                    <td><input type="text" class="form-control form-control-sm bulk-desc-input" data-idx="${idx}" value="${p.desc||''}" style="width:140px"></td>
+                    <td><input type="text" class="form-control form-control-sm bulk-desc-input" data-idx="${idx}" value="${p.desc||''}" data-autodesc="${p._autodesc||''}" style="width:140px"></td>
                     <td><button type="button" class="btn btn-link text-danger btn-sm remove-payment-row" data-idx="${idx}"><i class="fa fa-trash"></i></button></td>
                 </tr>`);
+            // Set type selection after rendering and trigger change for autofill
+            $tbody.find(`.bulk-type-input[data-idx="${idx}"]`).val(p.type_id).trigger('change');
+            $tbody.find(`.bulk-date-input[data-idx="${idx}"]`).trigger('change');
         });
         $('#bulkPaymentsTotal').text('₵'+total.toFixed(2));
         if (payments.length === 0) {
@@ -40,6 +43,19 @@ $(function(){
             $('#bulkPaymentsTable, #bulkPaymentsFooter').show();
             $('#submitBulkPaymentsBtn').prop('disabled', false);
         }
+    }
+
+    // Utility: Generate auto-description for bulk payment row
+    function getBulkAutoDescription(typeText, dateVal) {
+        let month = '';
+        if (dateVal) {
+            let d = new Date(dateVal);
+            month = d.toLocaleString('default', { month: 'long' });
+        }
+        if (typeText && typeText !== '-- Select --' && month) {
+            return 'Payment for ' + month + ' ' + typeText;
+        }
+        return '';
     }
 
     // --- Add payment to bulk list ---
@@ -95,6 +111,37 @@ $(function(){
         payments[idx].desc = $(this).val();
     });
 
+    // Auto-populate desc on type/date change for each row
+    $(document).on('change', '.bulk-type-input, .bulk-date-input', function(){
+        const idx = $(this).data('idx');
+        const p = payments[idx];
+        // Only auto-update if desc is empty or matches previous auto-desc
+        const $desc = $(`.bulk-desc-input[data-idx="${idx}"]`);
+        const prevAuto = p._autodesc || '';
+        const currentDesc = $desc.val();
+        const typeText = $(`.bulk-type-input[data-idx="${idx}"] option:selected`).text();
+        const dateVal = $(`.bulk-date-input[data-idx="${idx}"]`).val();
+        const autoDesc = getBulkAutoDescription(typeText, dateVal);
+        if (!currentDesc || currentDesc === prevAuto) {
+            $desc.val(autoDesc);
+            payments[idx].desc = autoDesc;
+        }
+        // Track the auto-desc for this row
+        payments[idx]._autodesc = autoDesc;
+    });
+    // When user manually edits desc, stop auto-replacing
+    $(document).on('input', '.bulk-desc-input', function(){
+        const idx = $(this).data('idx');
+        payments[idx].desc = $(this).val();
+    });
+
+    // Ensure payment type change updates payment object
+    $(document).on('change', '.bulk-type-input', function() {
+        const idx = $(this).data('idx');
+        payments[idx].type_id = $(this).val();
+        payments[idx].type_text = $(this).find('option:selected').text();
+    });
+
     // --- Enable Add to Bulk Button ---
     function enableAddToBulkBtn() {
         const $btn = $('#addToBulkBtn');
@@ -143,7 +190,7 @@ $(function(){
         allowBulkSubmit = false;
         $('#submitBulkPaymentsBtn').prop('disabled', true).text('Processing...');
 
-        // Determine if this is a member or Sunday School child (SRN)
+        // Always use arrays for member_ids/sundayschool_ids to match backend validation
         let isSRN = member && (member.person_type === 'sundayschool' || member.sundayschool_id);
         let postData = {
             member_ids: [],
@@ -152,28 +199,29 @@ $(function(){
             church_id: member?.church_id || '',
             payment_date: payments[0]?.date || ''
         };
+        // --- Build descriptions object for backend ---
+        let descriptions = {};
         if (isSRN) {
-            postData.sundayschool_ids = [member.sundayschool_id || member.id];
-            // Amounts keyed by 'ss_' + id
-            postData.amounts['ss_' + (member.sundayschool_id || member.id)] = {};
+            let sid = member.sundayschool_id || member.id;
+            postData.sundayschool_ids = [sid];
+            postData.amounts['ss_' + sid] = {};
+            descriptions['ss_' + sid] = {};
             payments.forEach(function(p) {
-                postData.amounts['ss_' + (member.sundayschool_id || member.id)][p.type_id] = p.amount;
+                postData.amounts['ss_' + sid][p.type_id] = p.amount;
+                descriptions['ss_' + sid][p.type_id] = p.desc || '';
             });
         } else {
             postData.member_ids = [member.id];
             postData.amounts[member.id] = {};
+            descriptions[member.id] = {};
             payments.forEach(function(p) {
                 postData.amounts[member.id][p.type_id] = p.amount;
+                descriptions[member.id][p.type_id] = p.desc || '';
             });
         }
+        postData.descriptions = descriptions;
 
         console.log('BULK SUBMIT', postData);
-        if (isSRN && (!postData.sundayschool_ids || postData.sundayschool_ids.length === 0)) {
-            alert('DEBUG: sundayschool_ids is empty!');
-        }
-        if (isSRN && !postData.amounts['ss_' + (member.sundayschool_id || member.id)]) {
-            alert('DEBUG: amounts missing ss_ key!');
-        }
         $.ajax({
             url: 'ajax_bulk_payment.php',
             type: 'POST',
@@ -220,8 +268,16 @@ $(function(){
     });
 
     // --- Expose setBulkMember for PHP integration ---
-    window.setBulkMember = function(m) {
+    window.setBulkMember = function(m, type) {
         member = m;
+        // Patch: ensure correct person_type and sundayschool_id for Sunday School students
+        if (type === 'sundayschool' || m.srn) {
+            member.person_type = 'sundayschool';
+            member.sundayschool_id = m.id;
+        } else {
+            member.person_type = 'member';
+            member.sundayschool_id = null;
+        }
         payments = [];
         renderPayments();
         $('#bulk-payment-panel').show();
@@ -411,8 +467,16 @@ setTimeout(function(){
     });
 
     // When member is found, store for bulk
-    window.setBulkMember = function(m) {
+    window.setBulkMember = function(m, type) {
         member = m;
+        // Patch: ensure correct person_type and sundayschool_id for Sunday School students
+        if (type === 'sundayschool' || m.srn) {
+            member.person_type = 'sundayschool';
+            member.sundayschool_id = m.id;
+        } else {
+            member.person_type = 'member';
+            member.sundayschool_id = null;
+        }
         payments = [];
         renderPayments();
         // Show bulk panel and enable Add to Bulk button

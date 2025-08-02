@@ -117,7 +117,7 @@ ob_start();
                                 </div>
                                 <div class="form-group col-md-2">
                                     <label for="single_payment_date">Date <span class="text-danger">*</span></label>
-                                    <input type="date" class="form-control form-control-lg" id="single_payment_date" name="payment_date" value="<?= date('Y-m-d') ?>" readonly required>
+                                    <input type="date" class="form-control form-control-lg" id="single_payment_date" name="payment_date" value="<?= date('Y-m-d') ?>" required>
                                 </div>
                             </div>
                             <div class="form-row">
@@ -207,12 +207,12 @@ ob_start();
                                         </div>
                                         <div class="form-group col-md-2">
                                             <label for="bulk_payment_date">Date <span class="text-danger">*</span></label>
-                                            <input type="date" class="form-control form-control-lg" id="bulk_payment_date" name="bulk_payment_date" value="<?= date('Y-m-d') ?>" readonly >
+                                            <input type="date" class="form-control form-control-lg" id="bulk_payment_date" name="bulk_payment_date" value="<?= date('Y-m-d') ?>"  >
                                         </div>
-                                        <div class="form-group col-md-2">
+                                <!--        <div class="form-group col-md-2">
                                             <label for="bulk_description">Description</label>
                                             <input type="text" class="form-control form-control-lg" id="bulk_description" name="bulk_description" placeholder="Optional">
-                                        </div>
+                                        </div> -->
                                     </div>
                                     <div class="form-row">
                                         <div class="col-md-12 text-right">

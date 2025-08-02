@@ -1,4 +1,7 @@
 <?php
+// --- DEBUG: Log incoming payload for bulk payments ---
+file_put_contents(__DIR__.'/bulk_payment_debug.log', "\n--- BULK PAYMENT SUBMIT ".date('Y-m-d H:i:s')." ---\n".file_get_contents('php://input')."\n", FILE_APPEND);
+
 //if (session_status() === PHP_SESSION_NONE) { session_start(); }
 // Modern Bulk Payment API Endpoint
 require_once __DIR__.'/../config/config.php';
@@ -100,6 +103,7 @@ class BulkPaymentProcessor {
     public function __construct($conn) {
         $this->conn = $conn;
     }
+    
     public function process($member_ids, $sundayschool_ids, $amounts, $descriptions, $church_id, $payment_date) {
         // Process member payments
         foreach ($member_ids as $mid) {
@@ -189,7 +193,14 @@ class BulkPaymentProcessor {
         }
         // Process Sunday School payments
         foreach ($sundayschool_ids as $sid) {
-            $sid = intval($sid);
+            // Ensure $sid is always an integer (strip 'ss_' prefix if present)
+            $sid = is_numeric($sid) ? intval($sid) : intval(preg_replace('/^ss_/', '', $sid));
+            if (!$sid) {
+                $this->errors[] = "Invalid Sunday School ID: $sid.";
+                $this->summary[] = ["debug" => "Skipping invalid sunday school id: $sid."];
+                continue;
+            }
+            // Only insert as Sunday School payment: member_id=NULL, sundayschool_id=$sid
             if (!isset($amounts['ss_'.$sid]) || !is_array($amounts['ss_'.$sid])) {
                 $this->errors[] = "Missing amounts for sunday school $sid.";
                 $this->summary[] = ["debug" => "Skipping sunday school $sid: no amounts."];
@@ -213,7 +224,6 @@ class BulkPaymentProcessor {
                         $this->success_count++;
                         $payment_id = $this->conn->insert_id;
                         $this->summary[] = ['sundayschool_id' => $sid, 'payment_type_id' => $ptid, 'amount' => $amount, 'payment_id' => $payment_id];
-                        
                         // Queue SMS notification asynchronously
                         $this->queueSMS($payment_id, null, $sid, $amount, $ptid, $payment_date, $desc);
                     } else {

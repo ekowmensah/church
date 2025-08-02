@@ -528,7 +528,9 @@ ob_start();
                                     <?php if (!empty($row['member_id'])): ?>
                                         <span class="badge badge-info"><?=htmlspecialchars($row['crn'])?></span>
                                     <?php elseif (!empty($row['sundayschool_id'])): ?>
-                                        <span class="badge badge-warning"><?=htmlspecialchars($row['srn'])?></span>
+                                        <span class="badge badge-warning">
+                                            <?= !empty($row['srn']) ? htmlspecialchars($row['srn']) : 'SRN: '.$row['sundayschool_id'].' (no match)' ?>
+                                        </span>
                                     <?php else: ?>
                                         <span class="text-muted">N/A</span>
                                     <?php endif; ?>
@@ -545,8 +547,13 @@ ob_start();
                                                     <small class="text-muted"><i class="fas fa-church mr-1"></i><?= htmlspecialchars($row['church_name']) ?></small>
                                                 <?php endif; ?>
                                             <?php elseif (!empty($row['sundayschool_id'])): ?>
-                                                <div class="font-weight-bold"><?= htmlspecialchars(trim(($row['ss_last_name'] ?? '').' '.($row['ss_first_name'] ?? '').' '.($row['ss_middle_name'] ?? ''))) ?></div>
-                                                <small class="text-muted"><i class="fas fa-graduation-cap mr-1"></i>Sunday School</small>
+                                                <?php if (!empty($row['ss_last_name']) || !empty($row['ss_first_name'])): ?>
+                                                    <div class="font-weight-bold"><?= htmlspecialchars(trim(($row['ss_last_name'] ?? '').' '.($row['ss_first_name'] ?? '').' '.($row['ss_middle_name'] ?? ''))) ?></div>
+                                                    <small class="text-muted"><i class="fas fa-graduation-cap mr-1"></i>Sunday School</small>
+                                                <?php else: ?>
+                                                    <div class="font-weight-bold text-danger">Unknown Student (ID: <?= htmlspecialchars($row['sundayschool_id']) ?>)</div>
+                                                    <small class="text-muted">No match in Sunday School table</small>
+                                                <?php endif; ?>
                                             <?php else: ?>
                                                 <span class="text-muted">N/A</span>
                                             <?php endif; ?>
