@@ -121,7 +121,7 @@ ob_start();
                     <tr>
                         <th>User</th>
                         <th>Email</th>
-                        <th>Payment Count</th>
+                        <th>Payments</th>
                         <th>Total Amount</th>
                         <th>Payment Types</th>
                     </tr>
@@ -138,7 +138,13 @@ ob_start();
                     <tr>
                         <td><?= htmlspecialchars($row['user_name']) ?></td>
                         <td><?= htmlspecialchars($row['user_email']) ?></td>
-                        <td><?= number_format($row['payment_count']) ?></td>
+                        <td>
+  <button class="btn btn-link p-0 payment-count-btn" 
+          data-user-id="<?= $row['user_id'] ?>" 
+          data-user-name="<?= htmlspecialchars($row['user_name']) ?>">
+    <?= number_format($row['payment_count']) ?>
+  </button>
+</td>
                         <td><span class="text-success font-weight-bold">₵<?= number_format($row['total_amount'], 2) ?></span></td>
                         <td><?= htmlspecialchars($row['payment_types']) ?></td>
                     </tr>
@@ -170,4 +176,126 @@ function exportToExcel() {
 <style>
 #reportTable th, #reportTable td { vertical-align: middle; }
 </style>
+
 <?php $page_content = ob_get_clean(); include '../../../includes/layout.php'; ?>
+<!-- User Transactions Modal -->
+<div class="modal fade" id="userTransactionsModal" tabindex="-1" role="dialog" aria-labelledby="userTransactionsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="userTransactionsModalLabel">User Transactions</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="user-transactions-filter" class="form-row mb-3">
+          <input type="hidden" id="modal_user_id" name="user_id">
+          <div class="form-group col-md-4">
+            <label for="modal_payment_type_id">Payment Type</label>
+            <select class="form-control" id="modal_payment_type_id" name="payment_type_id">
+              <option value="">All</option>
+              <?php
+              // Re-fetch payment types for modal
+              $modal_payment_types = $conn->query("SELECT id, name FROM payment_types ORDER BY name ASC");
+              while($pt = $modal_payment_types->fetch_assoc()):
+              ?>
+                <option value="<?= $pt['id'] ?>"><?= htmlspecialchars($pt['name']) ?></option>
+              <?php endwhile; ?>
+            </select>
+          </div>
+          <div class="form-group col-md-3">
+            <label for="modal_date_from">From</label>
+            <input type="date" class="form-control" id="modal_date_from" name="date_from">
+          </div>
+          <div class="form-group col-md-3">
+            <label for="modal_date_to">To</label>
+            <input type="date" class="form-control" id="modal_date_to" name="date_to">
+          </div>
+          <div class="form-group col-md-2 d-flex align-items-end">
+            <button type="submit" class="btn btn-primary btn-block">Filter</button>
+          </div>
+        </form>
+        <div id="user-transactions-table-area">
+          <div class="text-center text-muted py-5">Select a user to view transactions.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+$(document).ready(function() {
+  $('.payment-count-btn').on('click', function() {
+    var userId = $(this).data('user-id');
+    var userName = $(this).data('user-name');
+    $('#modal_user_id').val(userId);
+    $('#userTransactionsModalLabel').text('Transactions for ' + userName);
+    // Reset filters
+    $('#modal_payment_type_id').val('');
+    $('#modal_date_from').val('');
+    $('#modal_date_to').val('');
+    loadUserTransactions(1);
+    $('#userTransactionsModal').modal('show');
+  });
+
+  $('#user-transactions-filter').on('submit', function(e) {
+    e.preventDefault();
+    loadUserTransactions(1);
+  });
+
+  // Pagination click handler
+  $('#user-transactions-table-area').on('click', '.user-transactions-page-link', function(e) {
+    e.preventDefault();
+    var page = $(this).data('page');
+    var perPage = $(this).data('per-page') || 10;
+    loadUserTransactions(page, perPage);
+  });
+
+  // Export buttons
+  $('#user-transactions-table-area').on('click', '#export-transactions-excel', function() {
+    exportTableToExcel('user-transactions-table');
+  });
+  $('#user-transactions-table-area').on('click', '#export-transactions-csv', function() {
+    exportTableToCSV('user-transactions-table');
+  });
+
+  function loadUserTransactions(page, perPage) {
+    var userId = $('#modal_user_id').val();
+    var paymentTypeId = $('#modal_payment_type_id').val();
+    var dateFrom = $('#modal_date_from').val();
+    var dateTo = $('#modal_date_to').val();
+    $('#user-transactions-table-area').html('<div class="text-center py-5"><span class="spinner-border"></span> Loading...</div>');
+    $.get('ajax_user_transactions.php', {
+      user_id: userId,
+      payment_type_id: paymentTypeId,
+      date_from: dateFrom,
+      date_to: dateTo,
+      page: page || 1,
+      per_page: perPage
+    }, function(data) {
+      $('#user-transactions-table-area').html(data);
+    });
+  }
+
+  // Export helpers
+  function exportTableToExcel(tableID) {
+    if(typeof XLSX === 'undefined') {
+      alert('Excel export requires XLSX.js library.');
+      return;
+    }
+    var wb = XLSX.utils.table_to_book(document.getElementById(tableID), {sheet: "Transactions"});
+    XLSX.writeFile(wb, "user_transactions.xlsx");
+  }
+  function exportTableToCSV(tableID) {
+    var table = document.getElementById(tableID);
+    var rows = Array.from(table.rows);
+    var csv = rows.map(row => Array.from(row.cells).map(cell => '"'+cell.innerText.replace(/"/g, '""')+'"').join(',')).join('\n');
+    var blob = new Blob([csv], { type: 'text/csv' });
+    var link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = "user_transactions.csv";
+    link.click();
+  }
+});
+</script>
