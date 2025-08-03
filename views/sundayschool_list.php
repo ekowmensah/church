@@ -112,7 +112,7 @@ ob_start();
                         <td><?=htmlspecialchars($row['contact'])?></td>
                         <td><?=htmlspecialchars($row['school_attend'])?></td>
                         <td><?=htmlspecialchars($row['father_name'])?><br><small><?=htmlspecialchars($row['father_contact'])?></small></td>
-                        <td><?=htmlspecialchars($row['mother_name'])?><br><small><?=htmlspecialchars($row['mother_contact'])?></small></td>
+                        <td><?=!empty($row['mother_name']) && $row['mother_name'] !== '0' ? htmlspecialchars($row['mother_name']) : '-'?><br><small><?=htmlspecialchars($row['mother_contact'])?></small></td>
                         <td>
                             <?php if (!empty($row['transferred_at'])): ?>
                                 <span class="badge badge-success">Transferred</span>

@@ -23,7 +23,14 @@ if ($editing) {
     $stmt->close();
 }
 if ($_SERVER['REQUEST_METHOD']==='POST') {
-    foreach($record as $k=>$v) if(isset($_POST[$k])) $record[$k]=trim($_POST[$k]);
+    foreach($record as $k=>$v) if(isset($_POST[$k])) {
+    $val = trim($_POST[$k]);
+    // Prevent saving '0' as string for name/contact fields
+    if (in_array($k, ['mother_name','father_name','mother_contact','father_contact','mother_occupation','father_occupation','first_name','last_name','middle_name','other_name']) && $val === '0') {
+        $val = '';
+    }
+    $record[$k] = $val;
+}
 // Ensure 'other_name' is set if not present in POST (for legacy forms)
 if (!isset($record['other_name'])) $record['other_name'] = '';
     // Calculate dayborn from dob if dob is set
@@ -40,8 +47,11 @@ if (!isset($record['other_name'])) $record['other_name'] = '';
         $res = $stmt->get_result();
         if ($row = $res->fetch_assoc()) {
             $record['father_name'] = trim($row['last_name'].' '.$row['first_name'].' '.$row['middle_name']);
+            if ($record['father_name'] === '0') $record['father_name'] = '';
             $record['father_contact'] = $row['phone'];
+            if ($record['father_contact'] === '0') $record['father_contact'] = '';
             $record['father_occupation'] = $row['profession'];
+            if ($record['father_occupation'] === '0') $record['father_occupation'] = '';
         }
         $stmt->close();
     }
@@ -53,8 +63,11 @@ if (!isset($record['other_name'])) $record['other_name'] = '';
         $res = $stmt->get_result();
         if ($row = $res->fetch_assoc()) {
             $record['mother_name'] = trim($row['last_name'].' '.$row['first_name'].' '.$row['middle_name']);
+            if ($record['mother_name'] === '0') $record['mother_name'] = '';
             $record['mother_contact'] = $row['phone'];
+            if ($record['mother_contact'] === '0') $record['mother_contact'] = '';
             $record['mother_occupation'] = $row['profession'];
+            if ($record['mother_occupation'] === '0') $record['mother_occupation'] = '';
         }
         $stmt->close();
     }
@@ -84,8 +97,8 @@ if (!isset($record['other_name'])) $record['other_name'] = '';
             header('Location: sundayschool_list.php');
             exit;
         } else {
-            $stmt = $conn->prepare('INSERT INTO sunday_school (srn, photo, last_name, middle_name, first_name, dob, gender, dayborn, contact, gps_address, residential_address, organization, school_attend, father_name, father_contact, father_occupation, mother_name, mother_contact, mother_occupation, church_id, class_id, father_member_id, mother_member_id, father_is_member, mother_is_member) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-            $stmt->bind_param('ssssssssssssssiiiiissssss',
+            $stmt = $conn->prepare('INSERT INTO sunday_school (srn, photo, last_name, middle_name, first_name, dob, gender, dayborn, contact, gps_address, residential_address, organization, school_attend, father_name, father_contact, father_occupation, mother_name, mother_contact, mother_occupation, church_id, class_id, father_member_id, mother_member_id, father_is_member, mother_is_member) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+            $stmt->bind_param('sssssssssssssssiiiiisssss',
                 $record['srn'],
                 $record['photo'],
                 $record['last_name'],
@@ -584,15 +597,15 @@ $(function(){
     <div class="form-row" id="mother_name_row">
         <div class="form-group col-md-4">
             <label><i class="fa-solid fa-signature ss-icon"></i>Mother's Name</label>
-            <input type="text" name="mother_name" class="form-control" value="<?=htmlspecialchars($record['mother_name'])?>">
+            <input type="text" name="mother_name" class="form-control" value="<?=($record['mother_name']==='0'?'':htmlspecialchars($record['mother_name']))?>">
         </div>
         <div class="form-group col-md-4">
             <label><i class="fa-solid fa-phone ss-icon"></i>Mother's Contact</label>
-            <input type="text" name="mother_contact" class="form-control" value="<?=htmlspecialchars($record['mother_contact'])?>">
+            <input type="text" name="mother_contact" class="form-control" value="<?=($record['mother_contact']==='0'?'':htmlspecialchars($record['mother_contact']))?>">
         </div>
         <div class="form-group col-md-4">
             <label><i class="fa-solid fa-briefcase ss-icon"></i>Mother's Occupation</label>
-            <input type="text" name="mother_occupation" class="form-control" value="<?=htmlspecialchars($record['mother_occupation'])?>">
+            <input type="text" name="mother_occupation" class="form-control" value="<?=($record['mother_occupation']==='0'?'':htmlspecialchars($record['mother_occupation']))?>">
         </div>
     </div>
 </div>
