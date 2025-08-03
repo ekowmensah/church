@@ -54,7 +54,7 @@ try {
 $stmt->close();
 
     // 2. Try to find in sunday_school by SRN
-    $stmt2 = $conn->prepare("SELECT id, srn, first_name, last_name, middle_name, dob, contact, school_attend, father_name, father_contact, mother_name, mother_contact, church_id, class_id, father_member_id, mother_member_id, father_is_member, mother_is_member FROM sunday_school WHERE srn = ? LIMIT 1");
+    $stmt2 = $conn->prepare("SELECT id, srn, first_name, last_name, middle_name, dob, gender, contact, school_attend, father_name, father_contact, mother_name, mother_contact, church_id, class_id, father_member_id, mother_member_id, father_is_member, mother_is_member FROM sunday_school WHERE srn = ? LIMIT 1");
     if (!$stmt2) throw new Exception('Sunday School query prepare failed: ' . $conn->error);
     $stmt2->bind_param('s', $id);
     if (!$stmt2->execute()) throw new Exception('Sunday School query execute failed: ' . $stmt2->error);
