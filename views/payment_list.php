@@ -52,6 +52,14 @@ $churches = $conn->query("SELECT id, name FROM churches ORDER BY name ASC");
 $payment_types = $conn->query("SELECT id, name FROM payment_types ORDER BY name ASC");
 $genders = $conn->query("SELECT DISTINCT gender FROM members WHERE gender IS NOT NULL AND gender != '' ORDER BY gender");
 
+// Fetch users for filter dropdown (only if super admin or can view all payments)
+$user_filter_options = null;
+$filter_user_id = isset($_GET['user_id']) ? intval($_GET['user_id']) : '';
+if ($is_super_admin || has_permission('view_all_payments')) {
+    $user_filter_options = $conn->query("SELECT id, name FROM users ORDER BY name ASC");
+}
+
+
 // Fetch classes and organizations based on selected church
 $bible_classes = null;
 $organizations = null;
@@ -94,6 +102,13 @@ $params = [];
 $types = '';
 
 // Apply filters
+// User filter (for super admin or view_all_payments permission)
+if (($is_super_admin || $can_view_all) && $filter_user_id) {
+    $sql .= " AND p.recorded_by = ?";
+    $params[] = $filter_user_id;
+    $types .= 'i';
+}
+
 if ($filter_church) {
     $sql .= " AND m.church_id = ?";
     $params[] = $filter_church;
@@ -148,6 +163,7 @@ if (!$can_view_all && $user_id) {
     $params[] = $user_id;
     $types .= 'i';
 }
+// For regular users, the above clause always applies. For super admins/view_all, only filter if dropdown is used.
 
 // Get total count for pagination (before adding LIMIT)
 // Create a proper count query that wraps the original query as a subquery
@@ -164,10 +180,15 @@ $count_sql = "SELECT COUNT(*) as total FROM (
         LEFT JOIN users u ON p.recorded_by = u.id
         WHERE 1";
 
+// User filter for count query (for super admin or view_all_payments permission)
+if (($is_super_admin || $can_view_all) && $filter_user_id) {
+    $count_sql .= " AND p.recorded_by = ?";
+}
 // Restrict to user payments if not allowed to view all
 if (!$can_view_all && $user_id) {
     $count_sql .= " AND p.recorded_by = ?";
 }
+// For regular users, the above clause always applies. For super admins/view_all, only filter if dropdown is used.
 
 if ($filter_church) {
     $count_sql .= " AND m.church_id = ?";
@@ -241,6 +262,10 @@ if ($date_from) {
 if ($date_to) {
     $count_params[] = $date_to;
     $count_types .= 's';
+}
+if (($is_super_admin || $can_view_all) && $filter_user_id) {
+    $count_params[] = $filter_user_id;
+    $count_types .= 'i';
 }
 if (!$can_view_all && $user_id) {
     $count_params[] = $user_id;
@@ -476,7 +501,21 @@ ob_start();
                     </div>
                 </div>
                 
-                <!-- Filter Row 2 -->
+                <!-- Filter Row 1.5: User Filter Dropdown (only for super admin or users with view_all_payments permission) -->
+<?php if ($user_filter_options !== null): ?>
+<div class="row mb-3">
+    <div class="col-md-3">
+        <label for="user_id" class="font-weight-bold text-dark"><i class="fas fa-user-shield mr-1"></i>Recorded By (User)</label>
+        <select class="form-control custom-select" name="user_id" id="user_id">
+            <option value="">All Users</option>
+            <?php while($u = $user_filter_options->fetch_assoc()): ?>
+                <option value="<?= $u['id'] ?>" <?= ($filter_user_id == $u['id'] ? 'selected' : '') ?>><?= htmlspecialchars($u['name']) ?></option>
+            <?php endwhile; ?>
+        </select>
+    </div>
+</div>
+<?php endif; ?>
+<!-- Filter Row 2 -->
                 <div class="row mb-3">
                     <div class="col-md-3">
                         <label for="payment_type_id" class="font-weight-bold text-dark"><i class="fas fa-tags mr-1"></i>Payment Type</label>
@@ -575,7 +614,7 @@ ob_start();
                                 <i class="fas fa-sort text-muted ml-1"></i>
                             </th>
                             <th class="border-0 font-weight-bold text-primary">
-    <i class="fas fa-user-edit mr-1"></i>Recorded By
+    <i class="fas fa-user-edit mr-1"></i>By
 </th>
 <th class="border-0 font-weight-bold text-primary text-center">
     <i class="fas fa-cogs mr-1"></i>Actions
