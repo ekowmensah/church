@@ -7,7 +7,7 @@ $editing = $id > 0;
 $error = '';
 $success = '';
 $record = [
-    'srn'=>'','photo'=>'','last_name'=>'','middle_name'=>'','first_name'=>'','dob'=>'','contact'=>'','gps_address'=>'','residential_address'=>'','organization'=>'','school_attend'=>'','father_name'=>'','father_contact'=>'','father_occupation'=>'','mother_name'=>'','mother_contact'=>'','mother_occupation'=>'','church_id'=>'','class_id'=>'','father_member_id'=>'','mother_member_id'=>'','father_is_member'=>'','mother_is_member'=>''
+    'srn'=>'','photo'=>'','last_name'=>'','middle_name'=>'','first_name'=>'','other_name'=>'','dob'=>'','gender'=>'','dayborn'=>'','contact'=>'','gps_address'=>'','residential_address'=>'','organization'=>'','school_attend'=>'','father_name'=>'','father_contact'=>'','father_occupation'=>'','mother_name'=>'','mother_contact'=>'','mother_occupation'=>'','church_id'=>'','class_id'=>'','father_member_id'=>'','mother_member_id'=>'','father_is_member'=>'','mother_is_member'=>''
 ];
 if ($editing) {
     $stmt = $conn->prepare('SELECT * FROM sunday_school WHERE id = ?');
@@ -24,6 +24,40 @@ if ($editing) {
 }
 if ($_SERVER['REQUEST_METHOD']==='POST') {
     foreach($record as $k=>$v) if(isset($_POST[$k])) $record[$k]=trim($_POST[$k]);
+// Ensure 'other_name' is set if not present in POST (for legacy forms)
+if (!isset($record['other_name'])) $record['other_name'] = '';
+    // Calculate dayborn from dob if dob is set
+    if (!empty($record['dob'])) {
+        $record['dayborn'] = date('l', strtotime($record['dob']));
+    } else {
+        $record['dayborn'] = '';
+    }
+    // Autofill father info if member
+    if ($record['father_is_member'] === 'yes' && !empty($record['father_member_id'])) {
+        $stmt = $conn->prepare('SELECT last_name, first_name, middle_name, phone, profession FROM members WHERE id = ?');
+        $stmt->bind_param('i', $record['father_member_id']);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($row = $res->fetch_assoc()) {
+            $record['father_name'] = trim($row['last_name'].' '.$row['first_name'].' '.$row['middle_name']);
+            $record['father_contact'] = $row['phone'];
+            $record['father_occupation'] = $row['profession'];
+        }
+        $stmt->close();
+    }
+    // Autofill mother info if member
+    if ($record['mother_is_member'] === 'yes' && !empty($record['mother_member_id'])) {
+        $stmt = $conn->prepare('SELECT last_name, first_name, middle_name, phone, profession FROM members WHERE id = ?');
+        $stmt->bind_param('i', $record['mother_member_id']);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($row = $res->fetch_assoc()) {
+            $record['mother_name'] = trim($row['last_name'].' '.$row['first_name'].' '.$row['middle_name']);
+            $record['mother_contact'] = $row['phone'];
+            $record['mother_occupation'] = $row['profession'];
+        }
+        $stmt->close();
+    }
     // Handle photo upload
     if (!empty($_FILES['photo']['name'])) {
         $target_dir = __DIR__.'/../uploads/sundayschool/';
@@ -42,16 +76,42 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
         }
         if (!$error) {
         if ($editing) {
-            $stmt = $conn->prepare('UPDATE sunday_school SET srn=?, photo=?, last_name=?, middle_name=?, first_name=?, dob=?, contact=?, gps_address=?, residential_address=?, organization=?, school_attend=?, father_name=?, father_contact=?, father_occupation=?, mother_name=?, mother_contact=?, mother_occupation=?, church_id=?, class_id=?, father_member_id=?, mother_member_id=?, father_is_member=?, mother_is_member=? WHERE id=?');
-            $stmt->bind_param('ssssssssssssssssssiiissi', $record['srn'],$record['photo'],$record['last_name'],$record['middle_name'],$record['first_name'],$record['dob'],$record['contact'],$record['gps_address'],$record['residential_address'],$record['organization'],$record['school_attend'],$record['father_name'],$record['father_contact'],$record['father_occupation'],$record['mother_name'],$record['mother_contact'],$record['mother_occupation'],$record['church_id'],$record['class_id'],$record['father_member_id'],$record['mother_member_id'],$record['father_is_member'],$record['mother_is_member'],$id);
+            $stmt = $conn->prepare('UPDATE sunday_school SET srn=?, photo=?, last_name=?, middle_name=?, first_name=?, dob=?, gender=?, dayborn=?, contact=?, gps_address=?, residential_address=?, organization=?, school_attend=?, father_name=?, father_contact=?, father_occupation=?, mother_name=?, mother_contact=?, mother_occupation=?, church_id=?, class_id=?, father_member_id=?, mother_member_id=?, father_is_member=?, mother_is_member=? WHERE id=?');
+            $stmt->bind_param('sssssssssssssssiiiiisssssi', $record['srn'],$record['photo'],$record['last_name'],$record['middle_name'],$record['first_name'],$record['dob'],$record['gender'],$record['dayborn'],$record['contact'],$record['gps_address'],$record['residential_address'],$record['organization'],$record['school_attend'],$record['father_name'],$record['father_contact'],$record['father_occupation'],$record['mother_name'],$record['mother_contact'],$record['mother_occupation'],$record['church_id'],$record['class_id'],$record['father_member_id'],$record['mother_member_id'],$record['father_is_member'],$record['mother_is_member'],$id);
             $stmt->execute();
             $stmt->close();
             $success = 'Record updated.';
             header('Location: sundayschool_list.php');
             exit;
         } else {
-            $stmt = $conn->prepare('INSERT INTO sunday_school (srn, photo, last_name, middle_name, first_name, dob, contact, gps_address, residential_address, organization, school_attend, father_name, father_contact, father_occupation, mother_name, mother_contact, mother_occupation, church_id, class_id, father_member_id, mother_member_id, father_is_member, mother_is_member) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-            $stmt->bind_param('ssssssssssssssssssiiiss', $record['srn'],$record['photo'],$record['last_name'],$record['middle_name'],$record['first_name'],$record['dob'],$record['contact'],$record['gps_address'],$record['residential_address'],$record['organization'],$record['school_attend'],$record['father_name'],$record['father_contact'],$record['father_occupation'],$record['mother_name'],$record['mother_contact'],$record['mother_occupation'],$record['church_id'],$record['class_id'],$record['father_member_id'],$record['mother_member_id'],$record['father_is_member'],$record['mother_is_member']);
+            $stmt = $conn->prepare('INSERT INTO sunday_school (srn, photo, last_name, middle_name, first_name, dob, gender, dayborn, contact, gps_address, residential_address, organization, school_attend, father_name, father_contact, father_occupation, mother_name, mother_contact, mother_occupation, church_id, class_id, father_member_id, mother_member_id, father_is_member, mother_is_member) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+            $stmt->bind_param('ssssssssssssssiiiiissssss',
+                $record['srn'],
+                $record['photo'],
+                $record['last_name'],
+                $record['middle_name'],
+                $record['first_name'],
+                $record['dob'],
+                $record['gender'],
+                $record['dayborn'],
+                $record['contact'],
+                $record['gps_address'],
+                $record['residential_address'],
+                $record['organization'],
+                $record['school_attend'],
+                $record['father_name'],
+                $record['father_contact'],
+                $record['father_occupation'],
+                $record['mother_name'],
+                $record['mother_contact'],
+                $record['mother_occupation'],
+                $record['church_id'],
+                $record['class_id'],
+                $record['father_member_id'],
+                $record['mother_member_id'],
+                $record['father_is_member'],
+                $record['mother_is_member']
+            );
             $stmt->execute();
             $stmt->close();
             $success = 'Record added.';
@@ -340,9 +400,19 @@ $(function(){
             </div>
         </div>
         <div class="form-row">
+            
             <div class="form-group col-md-3">
                 <label>First Name</label>
-                <input type="text" name="first_name" class="form-control" value="<?=htmlspecialchars($record['first_name'])?>">
+                <input type="text" name="first_name" class="form-control" value="<?=isset($record['first_name']) ? htmlspecialchars($record['first_name']) : ''?>">
+            </div>
+            <div class="form-group col-md-2">
+                <label>Gender</label>
+                <select name="gender" class="form-control" required>
+                    <option value="">Select</option>
+                    <option value="male" <?=($record['gender']??'')=='male'?'selected':''?>>Male</option>
+                    <option value="female" <?=($record['gender']??'')=='female'?'selected':''?>>Female</option>
+                    <option value="other" <?=($record['gender']??'')=='other'?'selected':''?>>Other</option>
+                </select>
             </div>
             <div class="form-group col-md-3 d-flex align-items-end">
                 <div style="width:100%">
@@ -351,22 +421,33 @@ $(function(){
                 </div>
                 <span id="age_display" class="ml-2 text-muted small" style="white-space:nowrap"></span>
             </div>
+            <div class="form-group col-md-2 d-flex align-items-end">
+                <div style="width:100%">
+                    <label>Day Born</label>
+                    <input type="text" name="dayborn" id="dayborn" class="form-control" value="<?=htmlspecialchars($record['dayborn'])?>" readonly>
+                </div>
+            </div>
+        </div>
 <script>
 $(function(){
-  function updateAgeDisplay(){
+  function updateAgeDisplayAndDayborn(){
     var val = $('#dob').val();
-    if(!val){ $('#age_display').text(''); return; }
+    if(!val){ $('#age_display').text(''); $('#dayborn').val(''); return; }
     var birth = new Date(val);
     var now = new Date();
-    if(isNaN(birth.getTime())){ $('#age_display').text(''); return; }
+    if(isNaN(birth.getTime())){ $('#age_display').text(''); $('#dayborn').val(''); return; }
     var years = now.getFullYear() - birth.getFullYear();
     var months = now.getMonth() - birth.getMonth();
     if(months < 0){ years--; months += 12; }
     var ageStr = years+'yrs'+(months>0?(' '+months+'mo'):'');
     $('#age_display').text(ageStr);
+    // Calculate dayborn
+    var days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    var dayborn = days[birth.getDay()];
+    $('#dayborn').val(dayborn);
   }
-  $('#dob').on('input change', updateAgeDisplay);
-  updateAgeDisplay();
+  $('#dob').on('input change', updateAgeDisplayAndDayborn);
+  updateAgeDisplayAndDayborn();
 });
 </script>
         </div>
