@@ -68,6 +68,10 @@ if ($filter_church) {
 }
 
 // Build SQL with enhanced filters
+// Restrict to payments made by the logged-in user unless super admin or has 'view_all_payments' permission
+$user_id = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
+$can_view_all = $is_super_admin || has_permission('view_all_payments');
+
 $sql = "SELECT p.*, 
     m.crn, m.first_name, m.last_name, m.middle_name, m.gender, 
     ss.srn, ss.first_name AS ss_first_name, ss.last_name AS ss_last_name, ss.middle_name AS ss_middle_name, 
@@ -138,6 +142,12 @@ if ($date_to) {
     $params[] = $date_to;
     $types .= 's';
 }
+// Restrict to user payments if not allowed to view all
+if (!$can_view_all && $user_id) {
+    $sql .= " AND p.recorded_by = ?";
+    $params[] = $user_id;
+    $types .= 'i';
+}
 
 // Get total count for pagination (before adding LIMIT)
 // Create a proper count query that wraps the original query as a subquery
@@ -154,7 +164,11 @@ $count_sql = "SELECT COUNT(*) as total FROM (
         LEFT JOIN users u ON p.recorded_by = u.id
         WHERE 1";
 
-// Apply the same filters to count query
+// Restrict to user payments if not allowed to view all
+if (!$can_view_all && $user_id) {
+    $count_sql .= " AND p.recorded_by = ?";
+}
+
 if ($filter_church) {
     $count_sql .= " AND m.church_id = ?";
 }
@@ -186,9 +200,56 @@ if ($date_to) {
 $count_sql .= " GROUP BY p.id
 ) as count_subquery";
 
-if ($types) {
+// Build separate count params/types to match count_sql placeholders
+$count_params = [];
+$count_types = '';
+if ($filter_church) {
+    $count_params[] = $filter_church;
+    $count_types .= 'i';
+}
+if ($filter_class) {
+    $count_params[] = $filter_class;
+    $count_types .= 'i';
+}
+if ($filter_org) {
+    $count_params[] = $filter_org;
+    $count_types .= 'i';
+}
+if ($filter_gender) {
+    $count_params[] = $filter_gender;
+    $count_types .= 's';
+}
+if ($filter_payment_type) {
+    $count_params[] = $filter_payment_type;
+    $count_types .= 'i';
+}
+if ($filter_mode) {
+    $count_params[] = $filter_mode;
+    $count_types .= 's';
+}
+if ($search_term) {
+    $search_like = "%$search_term%";
+    for ($i = 0; $i < 8; $i++) {
+        $count_params[] = $search_like;
+        $count_types .= 's';
+    }
+}
+if ($date_from) {
+    $count_params[] = $date_from;
+    $count_types .= 's';
+}
+if ($date_to) {
+    $count_params[] = $date_to;
+    $count_types .= 's';
+}
+if (!$can_view_all && $user_id) {
+    $count_params[] = $user_id;
+    $count_types .= 'i';
+}
+
+if ($count_types) {
     $count_stmt = $conn->prepare($count_sql);
-    $count_stmt->bind_param($types, ...$params);
+    $count_stmt->bind_param($count_types, ...$count_params);
     $count_stmt->execute();
     $count_result = $count_stmt->get_result()->fetch_assoc();
     $total_records = $count_result ? $count_result['total'] : 0;
