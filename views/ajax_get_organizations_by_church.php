@@ -23,9 +23,19 @@ if (!$is_super_admin && !has_permission('access_ajax_get_organizations_by_church
 
 $church_id = intval($_GET['church_id'] ?? 0);
 if (!$church_id) exit;
-$res = $conn->query("SELECT id, name FROM organizations WHERE church_id = $church_id ORDER BY name ASC");
-$options = '';
-while($row = $res->fetch_assoc()) {
-    $options .= '<option value="'.htmlspecialchars($row['id']).'">'.htmlspecialchars($row['name']).'</option>';
+$search = isset($_GET['q']) ? trim($_GET['q']) : '';
+$sql = "SELECT id, name FROM organizations WHERE church_id = $church_id";
+if ($search !== '') {
+    $search_esc = $conn->real_escape_string($search);
+    $sql .= " AND name LIKE '%$search_esc%'";
 }
-echo json_encode(['success' => true, 'options' => $options]);
+$sql .= " ORDER BY name ASC";
+$res = $conn->query($sql);
+$results = [];
+while($row = $res->fetch_assoc()) {
+    $results[] = [
+        'id' => $row['id'],
+        'text' => $row['name']
+    ];
+}
+echo json_encode(['results' => $results]);

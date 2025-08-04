@@ -24,7 +24,12 @@ if ($editing) {
 }
 if ($_SERVER['REQUEST_METHOD']==='POST') {
     foreach($record as $k=>$v) if(isset($_POST[$k])) {
-    $val = trim($_POST[$k]);
+    if (is_array($_POST[$k])) {
+        // For multi-select fields (like organization), store as comma-separated string
+        $val = implode(',', array_filter($_POST[$k]));
+    } else {
+        $val = trim($_POST[$k]);
+    }
     // Prevent saving '0' as string for name/contact fields
     if (in_array($k, ['mother_name','father_name','mother_contact','father_contact','mother_occupation','father_occupation','first_name','last_name','middle_name','other_name']) && $val === '0') {
         $val = '';
@@ -167,21 +172,27 @@ ob_start();
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css"/>
 <div class="container-fluid px-lg-5 px-md-4 px-2">
-    <div class="card shadow-lg border-0 mb-4 mt-3">
+    <div class="row justify-content-center">
+      <div class="col-xl-10 col-lg-11 col-md-12">
+
+    <div class="card shadow-lg border-0 mb-4 mt-3" style="background: #fafdff; border-radius: 18px;">
+
         <div class="card-header bg-primary text-white d-flex align-items-center">
             <i class="fa-solid fa-child ss-icon"></i>
             <span class="h4 mb-0"><?=$editing?'Edit':'Add'?> Sunday School Child</span>
         </div>
-        <div class="card-body p-4">
+        <div class="card-body p-4" style="background: #fafdff; border-radius: 0 0 18px 18px;">
+
             <?php if($error): ?><div class="alert alert-danger"><?=$error?></div><?php endif; ?>
             <?php if($success): ?><div class="alert alert-success"><?=$success?></div><?php endif; ?>
             
-<form method="post" enctype="multipart/form-data">
-                <div class="ss-section mb-4">
-                    <div class="ss-section-title"><i class="fa-solid fa-user-graduate ss-icon"></i> Personal Information</div>
+<form method="post" enctype="multipart/form-data" autocomplete="off" style="margin-bottom:0;">
+                <div class="ss-section mb-4" style="background: #f4f8fb; border-radius: 10px; box-shadow: 0 1px 6px rgba(0,0,0,0.04); padding: 22px 18px 16px 18px;">
+
+                    <div class="ss-section-title" style="font-size: 1.2rem; color: #0d6efd;"><i class="fa-solid fa-user-graduate ss-icon"></i> Personal Information <span class="text-danger">*</span></div>
 <div class="form-row">
     <div class="form-group col-md-4">
-        <label>Church</label>
+        <label>Church <span class="text-danger">*</span></label>
         <select name="church_id" id="church_id" class="form-control" required>
 <option value="">Select Church</option>
 <?php $churches = $conn->query("SELECT id, name FROM churches ORDER BY name");
@@ -191,7 +202,7 @@ while($c = $churches->fetch_assoc()): ?>
 </select>
     </div>
     <div class="form-group col-md-4">
-        <label>Bible Class</label>
+        <label>Bible Class <span class="text-danger">*</span></label>
         <select name="class_id" id="class_id" class="form-control" required <?=empty($record['church_id'])?'disabled':''?>>
 <option value="">-- Select Class --</option>
 <?php if (!empty($record['church_id'])): 
@@ -404,7 +415,7 @@ $(function(){
                 <input type="file" name="photo" class="form-control-file">
             </div>
             <div class="form-group col-md-3">
-                <label>Surname</label>
+                <label>Surname <span class="text-danger">*</span></label>
                 <input type="text" name="last_name" class="form-control" value="<?=htmlspecialchars($record['last_name'])?>" required>
             </div>
             <div class="form-group col-md-3">
@@ -415,11 +426,11 @@ $(function(){
         <div class="form-row">
             
             <div class="form-group col-md-3">
-                <label>First Name</label>
+                <label>First Name <span class="text-danger">*</span></label>
                 <input type="text" name="first_name" class="form-control" value="<?=isset($record['first_name']) ? htmlspecialchars($record['first_name']) : ''?>">
             </div>
             <div class="form-group col-md-2">
-                <label>Gender</label>
+                <label>Gender <span class="text-danger">*</span></label>
                 <select name="gender" class="form-control" required>
                     <option value="">Select</option>
                     <option value="male" <?=($record['gender']??'')=='male'?'selected':''?>>Male</option>
@@ -429,7 +440,7 @@ $(function(){
             </div>
             <div class="form-group col-md-3 d-flex align-items-end">
                 <div style="width:100%">
-                    <label>Date of Birth</label>
+                    <label>Date of Birth <span class="text-danger">*</span></label>
                     <input type="date" name="dob" id="dob" class="form-control" value="<?=htmlspecialchars($record['dob'])?>">
                 </div>
                 <span id="age_display" class="ml-2 text-muted small" style="white-space:nowrap"></span>
@@ -465,10 +476,10 @@ $(function(){
 </script>
         </div>
         <hr/>
-        <div class="ss-section-title"><i class="fa-solid fa-address-card ss-icon"></i> Other Details</div>
+        <div class="ss-section-title" style="font-size: 1.2rem; color: #0d6efd;"><i class="fa-solid fa-address-card ss-icon"></i> Other Details</div>
         <div class="form-row">
             <div class="form-group col-md-3">
-                <label>Contact</label>
+                <label>Contact <span class="text-danger">*</span></label>
                 <input type="text" name="contact" class="form-control" value="<?=htmlspecialchars($record['contact'])?>">
             </div>
             <div class="form-group col-md-3">
@@ -480,9 +491,56 @@ $(function(){
                 <input type="text" name="residential_address" class="form-control" value="<?=htmlspecialchars($record['residential_address'])?>">
             </div>
             <div class="form-group col-md-3">
-                <label>Organisation</label>
-                <input type="text" name="organization" class="form-control" value="<?=htmlspecialchars($record['organization'])?>">
-            </div>
+    <label>Organisation <span class="text-danger">*</span></label>
+    <select name="organization[]" id="organization" class="form-control" multiple>
+        <option value="">Select Organisation</option>
+        <?php
+        // Pre-populate options if editing and value(s) are set
+        if (!empty($record['organization'])) {
+            $org_ids = is_array($record['organization']) ? $record['organization'] : explode(',', $record['organization']);
+            $org_ids = array_filter(array_map('intval', $org_ids));
+            if (!empty($org_ids)) {
+                $ids_str = implode(',', $org_ids);
+                $orgs = $conn->query("SELECT id, name FROM organizations WHERE id IN ($ids_str)");
+                while ($row = $orgs->fetch_assoc()) {
+                    $selected = in_array($row['id'], $org_ids) ? 'selected="selected"' : '';
+                    echo '<option value="'.htmlspecialchars($row['id']).'" '.$selected.'>'.htmlspecialchars($row['name']).'</option>';
+                }
+            }
+        }
+        ?>
+    </select>
+</div>
+<script>
+$(function(){
+    $('#organization').select2({
+        placeholder: 'Select Organisation',
+        allowClear: true,
+        ajax: {
+            url: '/myfreemanchurchgit/church/views/ajax_get_organizations_by_church.php',
+            dataType: 'json',
+            delay: 250,
+            data: function(params) {
+                return {
+                    church_id: $('#church_id').val(),
+                    q: params.term // not used in backend, but Select2 expects it
+                };
+            },
+            processResults: function (data) {
+                // Use the JSON array returned by the endpoint
+                return {results: data.results || []};
+            },
+            cache: true
+        },
+        minimumInputLength: 0,
+        width: '100%'
+    });
+    // Reload organizations when church changes
+    $('#church_id').on('change', function(){
+        $('#organization').val(null).trigger('change');
+    });
+});
+</script>
         </div>
         <div class="form-row">
             <div class="form-group col-md-4">
@@ -491,11 +549,12 @@ $(function(){
             </div>
         </div>
         <hr/>
-        <div class="ss-section-title"><i class="fa-solid fa-people-roof ss-icon"></i> Parent Information</div>
-<div class="ss-parent-section mb-3">
+        <div class="ss-section-title" style="font-size: 1.2rem; color: #0d6efd;"><i class="fa-solid fa-people-roof ss-icon"></i> Parent Information</div>
+<div class="ss-parent-section mb-3" style="background: #eaf3fa; border-left: 4px solid #0d6efd; border-radius: 9px; padding: 18px 14px 14px 14px;">
+  <div style="font-weight: 500; color: #0d6efd; margin-bottom: 10px;"><i class="fa-solid fa-mars ss-icon"></i> Father Details</div>
     <div class="form-row align-items-end">
         <div class="form-group col-md-4">
-            <label><i class="fa-solid fa-person ss-icon"></i>Is Father a Church Member?</label>
+            <label><i class="fa-solid fa-person ss-icon"></i>Is Father a Church Member? <span class="text-danger">*</span></label>
             <select name="father_is_member" id="father_is_member" class="form-control" required>
                 <option value="" disabled selected>Select...</option>
                 <option value="no" <?=($record['father_is_member']??'')=='no'?'selected':''?>>No</option>
@@ -539,10 +598,11 @@ $(function(){
     </div>
 </div>
 
-<div class="ss-parent-section mb-2">
+<div class="ss-parent-section mb-2" style="background: #f7eafe; border-left: 4px solid #d63384; border-radius: 9px; padding: 18px 14px 14px 14px;">
+  <div style="font-weight: 500; color: #d63384; margin-bottom: 10px;"><i class="fa-solid fa-venus ss-icon"></i> Mother Details</div>
     <div class="form-row align-items-end">
         <div class="form-group col-md-4">
-            <label><i class="fa-solid fa-person-dress ss-icon"></i>Is Mother a Church Member?</label>
+            <label><i class="fa-solid fa-person-dress ss-icon"></i>Is Mother a Church Member? <span class="text-danger">*</span></label>
             <select name="mother_is_member" id="mother_is_member" class="form-control" required>
                 <option value="" disabled selected>Select...</option>
                 <option value="no" <?=($record['mother_is_member']??'')=='no'?'selected':''?>>No</option>
