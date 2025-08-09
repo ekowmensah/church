@@ -58,8 +58,8 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv' && $can_export) {
     UNION ALL
     
     SELECT 
-        s.id, s.srn as crn, s.last_name, s.first_name, s.middle_name, s.contact as phone, 'N/A' as gender,
-        DATE_FORMAT(s.dob, '%d/%m') as day_born, s.photo, NULL as membership_status, 'active' as status, 
+        s.id, s.srn as crn, s.last_name, s.first_name, s.middle_name, s.contact as phone, s.gender,
+        s.dayborn as day_born, s.photo, NULL as membership_status, 'active' as status, 
         'no' as confirmed, 'no' as baptized, c.name as church_name, cl.name as class_name, 'sunday_school' as member_type
     FROM sunday_school s
     LEFT JOIN churches c ON s.church_id = c.id
@@ -206,8 +206,8 @@ $sql = "
     UNION ALL
     
     SELECT 
-        s.id, s.srn as crn, s.last_name, s.first_name, s.middle_name, s.contact as phone, 'N/A' as gender,
-        DATE_FORMAT(s.dob, '%d/%m') as day_born, s.photo, NULL as membership_status, 'active' as status, 
+        s.id, s.srn as crn, s.last_name, s.first_name, s.middle_name, s.contact as phone, s.gender,
+        s.dayborn as day_born, s.photo, NULL as membership_status, 'active' as status, 
         'no' as confirmed, 'no' as baptized, c.name as church_name, cl.name as class_name, 'sunday_school' as member_type
     FROM sunday_school s
     LEFT JOIN churches c ON s.church_id = c.id
