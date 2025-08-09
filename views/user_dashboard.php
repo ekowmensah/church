@@ -80,6 +80,9 @@ $payments_this_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FRO
 $payments_last_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE YEAR(payment_date) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH)) AND MONTH(payment_date) = MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))")->fetch_assoc()['total'];
 $avg_payment_per_member = $registered_members > 0 ? $total_payments / $registered_members : 0;
 
+// Payment Mode Breakdown
+$payment_modes = $conn->query("SELECT mode, COUNT(id) as count, COALESCE(SUM(amount),0) as total FROM payments GROUP BY mode ORDER BY total DESC");
+
 // Attendance Statistics
 $total_attendance_sessions = $conn->query("SELECT COUNT(*) as cnt FROM attendance_sessions")->fetch_assoc()['cnt'];
 $recent_attendance_rate = 0;
@@ -262,6 +265,7 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
             </div>
         </div>
     </div>
+ 
     <!-- Payment Stats Cards (Row 1: Total, Today, Average) -->
     <!-- <div class="row g-2 mb-3">
         <div class="col-12 col-md-4 mb-2">
@@ -369,10 +373,51 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
             </div>
         </div>
     </div>
-
+   <!-- Payment Mode Breakdown Table -->
+   <div class="row mb-3">
+        
+    </div>
     <!-- Payment Type Breakdown Section -->
     <div class="row g-2 mb-3">
-        <div class="col-12">
+    <div class="col-lg-6 mb-2">
+            <div class="card shadow-sm">
+                <div class="card-header bg-gradient-info text-white font-weight-bold py-2 d-flex align-items-center">
+                    <i class="fas fa-money-check-alt mr-2"></i> Payment Mode Breakdown
+                </div>
+                <div class="card-body p-2">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover table-bordered mb-0">
+                            <thead class="thead-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Payment Mode</th>
+                                    <th>Count</th>
+                                    <th>Total Amount (₵)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php $i=1; $mode_total=0; $mode_count=0; while($mode = $payment_modes->fetch_assoc()): $mode_total += $mode['total']; $mode_count += $mode['count']; ?>
+                                <tr>
+                                    <td><?= $i++ ?></td>
+                                    <td><?= htmlspecialchars($mode['mode']) ?></td>
+                                    <td><span class="badge badge-info p-2 px-3 font-weight-bold"><?= $mode['count'] ?></span></td>
+                                    <td><span class="badge badge-success p-2 px-3 font-weight-bold">₵ <?= number_format($mode['total'],2) ?></span></td>
+                                </tr>
+                                <?php endwhile; ?>
+                            </tbody>
+                            <tfoot>
+                                <tr class="font-weight-bold bg-light">
+                                    <td colspan="2" class="text-right">Grand Total</td>
+                                    <td><?= $mode_count ?></td>
+                                    <td>₵<?= number_format($mode_total, 2) ?></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6 mb-2">
             <div class="card shadow-sm mb-4">
                 <div class="card-header bg-gradient-primary text-white font-weight-bold py-2 d-flex align-items-center">
                     <i class="fas fa-list-alt mr-2"></i> Payment Type Breakdown
