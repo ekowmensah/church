@@ -32,6 +32,52 @@ $can_delete = $is_super_admin || has_permission('delete_member');
 $can_export = $is_super_admin || has_permission('export_member_list');
 $can_view = true; // Already validated above
 
+// Build WHERE clause with filters - EXCLUDE adherents (moved before export)
+$where_conditions = ["m.status = 'active'", "m.membership_status != 'Adherent'"];
+$params = [];
+$param_types = "";
+
+// Search filter
+if (!empty($_GET['search'])) {
+    $search = '%' . $_GET['search'] . '%';
+    $where_conditions[] = "(CONCAT(m.last_name, ' ', m.first_name, ' ', m.middle_name) LIKE ? OR m.crn LIKE ? OR m.phone LIKE ?)";
+    $params[] = $search;
+    $params[] = $search;
+    $params[] = $search;
+    $param_types .= "sss";
+}
+
+// Church filter
+if (!empty($_GET['church_id'])) {
+    $where_conditions[] = "m.church_id = ?";
+    $params[] = $_GET['church_id'];
+    $param_types .= "i";
+}
+
+// Bible class filter
+if (!empty($_GET['class_id'])) {
+    $where_conditions[] = "m.class_id = ?";
+    $params[] = $_GET['class_id'];
+    $param_types .= "i";
+}
+
+// Gender filter
+if (!empty($_GET['gender'])) {
+    $where_conditions[] = "m.gender = ?";
+    $params[] = $_GET['gender'];
+    $param_types .= "s";
+}
+
+// Day born filter
+if (!empty($_GET['day_born'])) {
+    $where_conditions[] = "m.day_born = ?";
+    $params[] = $_GET['day_born'];
+    $param_types .= "s";
+}
+
+// Build the main query
+$where_clause = implode(' AND ', $where_conditions);
+
 // Handle CSV export
 if (isset($_GET['export']) && $_GET['export'] === 'csv' && $can_export) {
     header('Content-Type: text/csv');
@@ -125,51 +171,7 @@ $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
 $allowed_sizes = [20,40,60,80,100,'all'];
 $page_size = isset($_GET['page_size']) && (in_array($_GET['page_size'], $allowed_sizes)) ? $_GET['page_size'] : 20;
 
-// Build WHERE clause with filters - EXCLUDE adherents
-$where_conditions = ["m.status = 'active'", "m.membership_status != 'Adherent'"];
-$params = [];
-$param_types = "";
-
-// Search filter
-if (!empty($_GET['search'])) {
-    $search = '%' . $_GET['search'] . '%';
-    $where_conditions[] = "(CONCAT(m.last_name, ' ', m.first_name, ' ', m.middle_name) LIKE ? OR m.crn LIKE ? OR m.phone LIKE ?)";
-    $params[] = $search;
-    $params[] = $search;
-    $params[] = $search;
-    $param_types .= "sss";
-}
-
-// Church filter
-if (!empty($_GET['church_id'])) {
-    $where_conditions[] = "m.church_id = ?";
-    $params[] = $_GET['church_id'];
-    $param_types .= "i";
-}
-
-// Bible class filter
-if (!empty($_GET['class_id'])) {
-    $where_conditions[] = "m.class_id = ?";
-    $params[] = $_GET['class_id'];
-    $param_types .= "i";
-}
-
-// Gender filter
-if (!empty($_GET['gender'])) {
-    $where_conditions[] = "m.gender = ?";
-    $params[] = $_GET['gender'];
-    $param_types .= "s";
-}
-
-// Day born filter
-if (!empty($_GET['day_born'])) {
-    $where_conditions[] = "m.day_born = ?";
-    $params[] = $_GET['day_born'];
-    $param_types .= "s";
-}
-
-// Build the main query
-$where_clause = implode(' AND ', $where_conditions);
+// Where clause already built above before export
 
 // Count total members for pagination (including Sunday school members)
 $count_sql = "SELECT COUNT(*) as total FROM (
