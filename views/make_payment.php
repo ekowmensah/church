@@ -174,67 +174,10 @@ if ((!$class_name || !$phone) && $member_id) {
         }
       </style>
     </div>
-    <!-- Bulk Payment Confirmation Modal -->
-    <div class="modal fade" id="bulkPaymentConfirmModal" tabindex="-1" role="dialog" aria-labelledby="bulkPaymentConfirmModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
-        <div class="modal-content">
-          <div class="modal-header bg-primary text-white">
-            <h5 class="modal-title" id="bulkPaymentConfirmModalLabel"><i class="fas fa-question-circle mr-2"></i>Confirm Bulk Payments</h5>
-            <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-              <span aria-hidden="true">&times;</span>
-            </button>
-          </div>
-          <div class="modal-body">
-            <div class="mb-2">Are you sure you want to submit all these payments?</div>
-            <div class="table-responsive">
-              <table class="table table-bordered table-sm mb-0" id="bulkConfirmTable">
-                <thead class="thead-light">
-                  <tr>
-                    <th>#</th>
-                    <th>Type</th>
-                    <th>Amount</th>
-                    <th>Date</th>
-                    <th>Description</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-                <tfoot>
-                  <tr>
-                    <td colspan="2" class="text-right font-weight-bold">Total</td>
-                    <td colspan="4" class="font-weight-bold" id="bulkConfirmTotal"></td>
-                  </tr>
-                </tfoot>
-              </table>
-           
-            
-            <div class="modal-footer">
-              <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-              <button type="button" class="btn btn-success" id="confirmBulkPaymentBtn"><i class="fas fa-check-circle mr-1"></i>Confirm & Submit</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    
   </div>
 </div>
-<!-- Confirmation Modal -->
-<div class="modal fade" id="paymentConfirmModal" tabindex="-1" role="dialog" aria-labelledby="paymentConfirmModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered" role="document">
-    <div class="modal-content">
-      <div class="modal-header bg-primary text-white">
-        <h5 class="modal-title" id="paymentConfirmModalLabel"><i class="fas fa-question-circle mr-2"></i>Confirm Payment</h5>
-        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-          <span aria-hidden="true">&times;</span>
-        </button>
-      </div>
-      <div class="modal-body" id="confirmSummary"></div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-success" id="confirmPayBtn"><i class="fas fa-credit-card mr-1"></i>Proceed to Pay</button>
-      </div>
-    </div>
-  </div>
-</div>
+
 <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/animate.min.css">
 <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/custom.css">
 <style>
@@ -548,3 +491,66 @@ $('#bulkPaymentForm').on('submit', function(e){
 include __DIR__.'/bulk_paystack_email_prompt.php';
 $page_content = ob_get_clean();
 include __DIR__.'/../includes/layout.php';
+?>
+
+<!-- Confirmation Modal -->
+
+<div class="modal fade" id="paymentConfirmModal" tabindex="-1" role="dialog" aria-labelledby="paymentConfirmModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title" id="paymentConfirmModalLabel"><i class="fas fa-question-circle mr-2"></i>Confirm Payment</h5>
+        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body" id="confirmSummary"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-success" id="confirmPayBtn"><i class="fas fa-credit-card mr-1"></i>Proceed to Pay</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk Payment Confirmation Modal -->
+<div class="modal fade" id="bulkPaymentConfirmModal" tabindex="-1" role="dialog" aria-labelledby="bulkPaymentConfirmModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content">
+          <div class="modal-header bg-primary text-white">
+            <h5 class="modal-title" id="bulkPaymentConfirmModalLabel"><i class="fas fa-question-circle mr-2"></i>Confirm Bulk Payments</h5>
+            <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-2">Are you sure you want to submit all these payments?</div>
+            <div class="table-responsive">
+              <table class="table table-bordered table-sm mb-0" id="bulkConfirmTable">
+                <thead class="thead-light">
+                  <tr>
+                    <th>#</th>
+                    <th>Type</th>
+                    <th>Amount</th>
+                    <th>Date</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="2" class="text-right font-weight-bold">Total</td>
+                    <td colspan="4" class="font-weight-bold" id="bulkConfirmTotal"></td>
+                  </tr>
+                </tfoot>
+              </table>
+           
+            
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+              <button type="button" class="btn btn-success" id="confirmBulkPaymentBtn"><i class="fas fa-check-circle mr-1"></i>Confirm & Submit</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
