@@ -62,7 +62,7 @@ $members_no_payments = $conn->query("SELECT COUNT(*) as cnt FROM members m LEFT 
 // --- CASH PAYMENT FILTERING LOGIC ---
 $is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
 $user_id = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
-$cash_filter = "mode = 'Cash'";
+$cash_filter = "1"; // No filter, include all payment types
 $user_filter = $is_super_admin ? '' : " AND recorded_by = $user_id";
 
 // --- FILTERED CASH PAYMENT STATS ---
@@ -72,7 +72,7 @@ $cash_payments_week = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM
 $cash_payments_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE())$user_filter")->fetch_assoc()['total'];
 $cash_payments_last_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND YEAR(payment_date) = YEAR(CURDATE() - INTERVAL 1 MONTH) AND MONTH(payment_date) = MONTH(CURDATE() - INTERVAL 1 MONTH)$user_filter")->fetch_assoc()['total'];
 
-// Payment Statistics
+// Payment Statistics (All Payment Types)
 $total_payments = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments")->fetch_assoc()['total'];
 $payments_today = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE DATE(payment_date) = CURDATE()")->fetch_assoc()['total'];
 $payments_this_week = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1)")->fetch_assoc()['total'];
@@ -109,7 +109,10 @@ $recent_members = $conn->query("SELECT m.id, CONCAT(m.last_name, ' ', m.first_na
 $recent_payments = $conn->query("SELECT p.id, p.amount, p.payment_date, pt.name as payment_type, CONCAT(m.last_name, ' ', m.first_name) as member_name FROM payments p LEFT JOIN payment_types pt ON p.payment_type_id = pt.id LEFT JOIN members m ON p.member_id = m.id ORDER BY p.payment_date DESC LIMIT 8");
 $recent_events = $conn->query("SELECT id, name, event_date, location FROM events WHERE event_date >= CURDATE() ORDER BY event_date ASC LIMIT 5");
 
-// Top Payment Types
+// All Payment Types Breakdown
+$all_payment_types = $conn->query("SELECT pt.name, COALESCE(SUM(p.amount),0) as total, COUNT(p.id) as count FROM payment_types pt LEFT JOIN payments p ON p.payment_type_id = pt.id GROUP BY pt.id ORDER BY total DESC");
+
+// Top Payment Types (keep for chart or old UI)
 $top_payment_types = $conn->query("SELECT pt.name, COALESCE(SUM(p.amount),0) as total, COUNT(p.id) as count FROM payment_types pt LEFT JOIN payments p ON p.payment_type_id = pt.id GROUP BY pt.id ORDER BY total DESC LIMIT 6");
 
 // Gender Distribution
@@ -367,8 +370,48 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
         </div>
     </div>
 
-    <!-- Quick Links and Recent Members Side by Side -->
+    <!-- Payment Type Breakdown Section -->
     <div class="row g-2 mb-3">
+        <div class="col-12">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-gradient-primary text-white font-weight-bold py-2 d-flex align-items-center">
+                    <i class="fas fa-list-alt mr-2"></i> Payment Type Breakdown
+                </div>
+                <div class="card-body p-2">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover table-bordered mb-0">
+                            <thead class="thead-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Payment Type</th>
+                                    <th>Count</th>
+                                    <th>Total Amount (₵)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php $i=1; $grand_total=0; $grand_count=0; while($type = $all_payment_types->fetch_assoc()): $grand_total += $type['total']; $grand_count += $type['count']; ?>
+                                <tr>
+                                    <td><?= $i++ ?></td>
+                                    <td><?= htmlspecialchars($type['name']) ?></td>
+                                    <td><span class="badge badge-info p-2 px-3 font-weight-bold"><?= $type['count'] ?></span></td>
+                                    <td><span class="badge badge-success p-2 px-3 font-weight-bold">₵ <?= number_format($type['total'],2) ?></span></td>
+                                </tr>
+                                <?php endwhile; ?>
+                            </tbody>
+                            <tfoot>
+                                <tr class="font-weight-bold bg-light">
+                                    <td colspan="2" class="text-right">Grand Total</td>
+                                    <td><?= $grand_count ?></td>
+                                    <td>₵<?= number_format($grand_total, 2) ?></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Quick Links and Recent Members Side by Side -->
         <div class="col-lg-6 mb-2">
             <div class="card shadow-sm h-100">
                 <div class="card-header bg-primary text-white font-weight-bold py-2"><i class="fa fa-link mr-2"></i>Quick Links</div>
