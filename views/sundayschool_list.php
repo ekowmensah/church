@@ -83,12 +83,12 @@ ob_start();
                         <th>Photo</th>
                         <th>SRN</th>
                         <th>Full Name</th>
-                        <th>Date of Birth</th>
+                        <th>DoB</th>
                         <th>Contact</th>
-                        <th>School Attend</th>
+                        <th>School</th>
                         <th>Father</th>
                         <th>Mother</th>
-                        <th>Transfer Status</th>
+                        <th>Status</th>
                 <th>Actions</th>
                     </tr>
                 </thead>
