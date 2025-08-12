@@ -552,7 +552,7 @@ $(function(){
         placeholder: 'Select Organisation',
         allowClear: true,
         ajax: {
-            url: '/views/ajax_get_organizations_by_church.php',
+            url: '../views/ajax_get_organizations_by_church.php',
             dataType: 'json',
             delay: 250,
             data: function(params) {
