@@ -3,6 +3,8 @@
 
 ob_start();
 require_once '../config/config.php';
+require_once '../helpers/auth.php';
+require_once '../helpers/permissions.php';
 require_once '../includes/admin_auth.php';
 require_once '../includes/report_ui_helpers.php';
 if (session_status() === PHP_SESSION_NONE) session_start();
