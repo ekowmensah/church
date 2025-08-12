@@ -1,4 +1,13 @@
 <?php
+// Enable error reporting for debugging
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+// Log errors to a file
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/../logs/php_errors.log');
+
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions.php';
@@ -157,22 +166,26 @@ if ($date_to) {
     $params[] = $date_to;
     $types .= 's';
 }
-if ($filter_period_from) {
+if (!empty($filter_period_from)) {
     // Convert YYYY-MM to YYYY-MM-01 for proper date comparison
     $period_from_date = $filter_period_from;
-    if (strlen($filter_period_from) === 7) { // Only append -01 if it's in YYYY-MM format
+    if (strlen($filter_period_from) === 7 && preg_match('/^\d{4}-\d{2}$/', $filter_period_from)) {
         $period_from_date = $filter_period_from . '-01';
     }
     $sql .= " AND p.payment_period >= ?";
     $params[] = $period_from_date;
     $types .= 's';
 }
-if ($filter_period_to) {
+if (!empty($filter_period_to)) {
     // Convert YYYY-MM to YYYY-MM-last_day for proper date comparison
     $period_to_date = $filter_period_to;
-    if (strlen($filter_period_to) === 7) { // Only calculate last day if it's in YYYY-MM format
-        $last_day = date('t', strtotime($filter_period_to . '-01'));
-        $period_to_date = $filter_period_to . '-' . $last_day;
+    if (strlen($filter_period_to) === 7 && preg_match('/^\d{4}-\d{2}$/', $filter_period_to)) {
+        try {
+            $last_day = date('t', strtotime($filter_period_to . '-01'));
+            $period_to_date = $filter_period_to . '-' . $last_day;
+        } catch (Exception $e) {
+            // If date calculation fails, just use the original value
+        }
     }
     $sql .= " AND p.payment_period <= ?";
     $params[] = $period_to_date;
@@ -306,21 +319,25 @@ if ($date_to) {
     $count_params[] = $date_to;
     $count_types .= 's';
 }
-if ($filter_period_from) {
+if (!empty($filter_period_from)) {
     // Convert YYYY-MM to YYYY-MM-01 for proper date comparison
     $period_from_date = $filter_period_from;
-    if (strlen($filter_period_from) === 7) { // Only append -01 if it's in YYYY-MM format
+    if (strlen($filter_period_from) === 7 && preg_match('/^\d{4}-\d{2}$/', $filter_period_from)) {
         $period_from_date = $filter_period_from . '-01';
     }
     $count_params[] = $period_from_date;
     $count_types .= 's';
 }
-if ($filter_period_to) {
+if (!empty($filter_period_to)) {
     // Convert YYYY-MM to YYYY-MM-last_day for proper date comparison
     $period_to_date = $filter_period_to;
-    if (strlen($filter_period_to) === 7) { // Only calculate last day if it's in YYYY-MM format
-        $last_day = date('t', strtotime($filter_period_to . '-01'));
-        $period_to_date = $filter_period_to . '-' . $last_day;
+    if (strlen($filter_period_to) === 7 && preg_match('/^\d{4}-\d{2}$/', $filter_period_to)) {
+        try {
+            $last_day = date('t', strtotime($filter_period_to . '-01'));
+            $period_to_date = $filter_period_to . '-' . $last_day;
+        } catch (Exception $e) {
+            // If date calculation fails, just use the original value
+        }
     }
     $count_params[] = $period_to_date;
     $count_types .= 's';
