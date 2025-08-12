@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__.'/../config/config.php';
+require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/permissions.php';
 require_once __DIR__.'/../includes/admin_auth.php';
 
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
@@ -512,12 +514,14 @@ $(function(){
     </select>
 </div>
 <script>
-$(function(){
+// Initialize Select2 when document is ready
+$(document).ready(function(){
+    // AdminLTE Select2 initialization
     $('#organization').select2({
         placeholder: 'Select Organisation',
         allowClear: true,
         ajax: {
-            url: '/myfreemanchurchgit/church/views/ajax_get_organizations_by_church.php',
+            url: '../views/ajax_get_organizations_by_church.php',
             dataType: 'json',
             delay: 250,
             data: function(params) {
@@ -533,7 +537,8 @@ $(function(){
             cache: true
         },
         minimumInputLength: 0,
-        width: '100%'
+        width: '100%',
+        theme: 'bootstrap4'
     });
     // Reload organizations when church changes
     $('#church_id').on('change', function(){
