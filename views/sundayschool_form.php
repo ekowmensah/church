@@ -552,7 +552,7 @@ $(function(){
         placeholder: 'Select Organisation',
         allowClear: true,
         ajax: {
-            url: '/myfreemanchurchgit/church/views/ajax_get_organizations_by_church.php',
+            url: '/views/ajax_get_organizations_by_church.php',
             dataType: 'json',
             delay: 250,
             data: function(params) {
@@ -575,7 +575,7 @@ $(function(){
     var churchId = $('#church_id').val();
     if (churchId) {
         $.ajax({
-            url: '/myfreemanchurchgit/church/views/ajax_get_organizations_by_church.php',
+            url: '/views/ajax_get_organizations_by_church.php',
             dataType: 'json',
             data: { church_id: churchId },
             success: function(data) {
