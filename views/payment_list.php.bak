@@ -15,7 +15,13 @@ $is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) ||
 
 if (!$is_super_admin && !has_permission('view_payment_list')) {
     http_response_code(403);
-    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
+    if (file_exists(__DIR__.'/errors/403.php')) {
+        include __DIR__.'/errors/403.php';
+    } else if (file_exists(dirname(__DIR__).'/views/errors/403.php')) {
+        include dirname(__DIR__).'/views/errors/403.php';
+    } else {
+        echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
+    }
     exit;
 }
 
@@ -23,27 +29,21 @@ if (!$is_super_admin && !has_permission('view_payment_list')) {
 $can_add = $is_super_admin || has_permission('create_payment');
 $can_edit = $is_super_admin || has_permission('edit_payment');
 $can_delete = $is_super_admin || has_permission('delete_payment');
-$can_view_all = $is_super_admin || has_permission('view_all_payments');
+$can_view = true; // Already validated above
 
-// Enhanced filter values with new payment period support
+// Get filter values
 $filter_class = $_GET['class_id'] ?? '';
 $filter_org = $_GET['organization_id'] ?? '';
 $filter_gender = $_GET['gender'] ?? '';
 $filter_church = $_GET['church_id'] ?? '';
 $filter_payment_type = $_GET['payment_type_id'] ?? '';
 $filter_mode = $_GET['mode'] ?? '';
-$filter_user_id = $_GET['user_id'] ?? '';
-$filter_period_from = $_GET['period_from'] ?? '';
-$filter_period_to = $_GET['period_to'] ?? '';
 $search_term = trim($_GET['search'] ?? '');
 $date_from = $_GET['date_from'] ?? '';
 $date_to = $_GET['date_to'] ?? '';
-$amount_min = $_GET['amount_min'] ?? '';
-$amount_max = $_GET['amount_max'] ?? '';
 
-// Pagination settings with dynamic records per page
-$records_per_page = isset($_GET['per_page']) ? intval($_GET['per_page']) : 25;
-if ($records_per_page <= 0 || $records_per_page > 500) $records_per_page = 25;
+// Pagination settings
+$records_per_page = 20;
 $current_page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
 $offset = ($current_page - 1) * $records_per_page;
 
@@ -157,31 +157,6 @@ if ($date_to) {
     $params[] = $date_to;
     $types .= 's';
 }
-if ($filter_period_from) {
-    // Convert YYYY-MM to YYYY-MM-01 for proper date comparison
-    $period_from_date = $filter_period_from . '-01';
-    $sql .= " AND p.payment_period >= ?";
-    $params[] = $period_from_date;
-    $types .= 's';
-}
-if ($filter_period_to) {
-    // Convert YYYY-MM to YYYY-MM-last_day for proper date comparison
-    $last_day = date('t', strtotime($filter_period_to . '-01'));
-    $period_to_date = $filter_period_to . '-' . $last_day;
-    $sql .= " AND p.payment_period <= ?";
-    $params[] = $period_to_date;
-    $types .= 's';
-}
-if ($amount_min) {
-    $sql .= " AND p.amount >= ?";
-    $params[] = floatval($amount_min);
-    $types .= 'd';
-}
-if ($amount_max) {
-    $sql .= " AND p.amount <= ?";
-    $params[] = floatval($amount_max);
-    $types .= 'd';
-}
 // Restrict to user payments if not allowed to view all
 if (!$can_view_all && $user_id) {
     $sql .= " AND p.recorded_by = ?";
@@ -242,18 +217,6 @@ if ($date_from) {
 if ($date_to) {
     $count_sql .= " AND DATE(p.payment_date) <= ?";
 }
-if ($filter_period_from) {
-    $count_sql .= " AND p.payment_period >= ?";
-}
-if ($filter_period_to) {
-    $count_sql .= " AND p.payment_period <= ?";
-}
-if ($amount_min) {
-    $count_sql .= " AND p.amount >= ?";
-}
-if ($amount_max) {
-    $count_sql .= " AND p.amount <= ?";
-}
 
 $count_sql .= " GROUP BY p.id
 ) as count_subquery";
@@ -299,27 +262,6 @@ if ($date_from) {
 if ($date_to) {
     $count_params[] = $date_to;
     $count_types .= 's';
-}
-if ($filter_period_from) {
-    // Convert YYYY-MM to YYYY-MM-01 for proper date comparison
-    $period_from_date = $filter_period_from . '-01';
-    $count_params[] = $period_from_date;
-    $count_types .= 's';
-}
-if ($filter_period_to) {
-    // Convert YYYY-MM to YYYY-MM-last_day for proper date comparison
-    $last_day = date('t', strtotime($filter_period_to . '-01'));
-    $period_to_date = $filter_period_to . '-' . $last_day;
-    $count_params[] = $period_to_date;
-    $count_types .= 's';
-}
-if ($amount_min) {
-    $count_params[] = floatval($amount_min);
-    $count_types .= 'd';
-}
-if ($amount_max) {
-    $count_params[] = floatval($amount_max);
-    $count_types .= 'd';
 }
 if (($is_super_admin || $can_view_all) && $filter_user_id) {
     $count_params[] = $filter_user_id;
@@ -511,7 +453,7 @@ ob_start();
                     </div>
                 </div>
                 
-                <!-- Filter Row 1: Basic Filters -->
+                <!-- Filter Row 1 -->
                 <div class="row mb-3">
                     <div class="col-md-3">
                         <label for="church_id" class="font-weight-bold text-dark"><i class="fas fa-church mr-1"></i>Church</label>
@@ -597,62 +539,12 @@ ob_start();
                         </select>
                     </div>
                     <div class="col-md-3">
-                        <label for="date_from" class="font-weight-bold text-dark"><i class="fas fa-calendar-alt mr-1"></i>Payment Date From</label>
+                        <label for="date_from" class="font-weight-bold text-dark"><i class="fas fa-calendar-alt mr-1"></i>From Date</label>
                         <input type="date" class="form-control" name="date_from" id="date_from" value="<?= htmlspecialchars($date_from) ?>">
                     </div>
                     <div class="col-md-3">
-                        <label for="date_to" class="font-weight-bold text-dark"><i class="fas fa-calendar-alt mr-1"></i>Payment Date To</label>
+                        <label for="date_to" class="font-weight-bold text-dark"><i class="fas fa-calendar-alt mr-1"></i>To Date</label>
                         <input type="date" class="form-control" name="date_to" id="date_to" value="<?= htmlspecialchars($date_to) ?>">
-                    </div>
-                </div>
-                
-                <!-- Filter Row 3: Payment Period and Amount Filters -->
-                <div class="row mb-3">
-                    <div class="col-md-3">
-                        <label for="period_from" class="font-weight-bold text-dark"><i class="fas fa-calendar-week mr-1"></i>Period From</label>
-                        <input type="month" class="form-control" name="period_from" id="period_from" value="<?= htmlspecialchars($filter_period_from) ?>" title="Filter by payment period (month allocated to)">
-                    </div>
-                    <div class="col-md-3">
-                        <label for="period_to" class="font-weight-bold text-dark"><i class="fas fa-calendar-week mr-1"></i>Period To</label>
-                        <input type="month" class="form-control" name="period_to" id="period_to" value="<?= htmlspecialchars($filter_period_to) ?>" title="Filter by payment period (month allocated to)">
-                    </div>
-                    <div class="col-md-3">
-                        <label for="amount_min" class="font-weight-bold text-dark"><i class="fas fa-money-bill mr-1"></i>Min Amount</label>
-                        <input type="number" class="form-control" name="amount_min" id="amount_min" step="0.01" min="0" 
-                               placeholder="0.00" value="<?= htmlspecialchars($amount_min) ?>" title="Minimum payment amount">
-                    </div>
-                    <div class="col-md-3">
-                        <label for="amount_max" class="font-weight-bold text-dark"><i class="fas fa-money-bill mr-1"></i>Max Amount</label>
-                        <input type="number" class="form-control" name="amount_max" id="amount_max" step="0.01" min="0" 
-                               placeholder="1000.00" value="<?= htmlspecialchars($amount_max) ?>" title="Maximum payment amount">
-                    </div>
-                </div>
-                
-                <!-- Records Per Page Filter -->
-                <div class="row mb-3">
-                    <div class="col-md-3">
-                        <label for="per_page" class="font-weight-bold text-dark"><i class="fas fa-list mr-1"></i>Records Per Page</label>
-                        <select class="form-control custom-select" name="per_page" id="per_page">
-                            <option value="10" <?= $records_per_page == 10 ? 'selected' : '' ?>>10</option>
-                            <option value="25" <?= $records_per_page == 25 ? 'selected' : '' ?>>25</option>
-                            <option value="50" <?= $records_per_page == 50 ? 'selected' : '' ?>>50</option>
-                            <option value="100" <?= $records_per_page == 100 ? 'selected' : '' ?>>100</option>
-                            <option value="250" <?= $records_per_page == 250 ? 'selected' : '' ?>>250</option>
-                        </select>
-                    </div>
-                    <div class="col-md-9">
-                        <label class="font-weight-bold text-dark">&nbsp;</label>
-                        <div class="d-flex justify-content-end">
-                            <button type="submit" class="btn btn-primary mr-2">
-                                <i class="fas fa-filter mr-1"></i> Apply Filters
-                            </button>
-                            <a href="payment_list.php" class="btn btn-outline-secondary mr-2">
-                                <i class="fas fa-times mr-1"></i> Clear All
-                            </a>
-                            <button type="button" class="btn btn-success" onclick="exportToExcel()">
-                                <i class="fas fa-file-excel mr-1"></i> Export Results
-                            </button>
-                        </div>
                     </div>
                 </div>
             </form>
@@ -718,11 +610,7 @@ ob_start();
                                 <i class="fas fa-comment mr-1"></i>Description
                             </th>
                             <th class="border-0 font-weight-bold text-primary sortable" data-sort="date">
-                                <i class="fas fa-calendar mr-1"></i>Payment Date
-                                <i class="fas fa-sort text-muted ml-1"></i>
-                            </th>
-                            <th class="border-0 font-weight-bold text-primary sortable" data-sort="period">
-                                <i class="fas fa-calendar-week mr-1"></i>Payment Period
+                                <i class="fas fa-calendar mr-1"></i>Date
                                 <i class="fas fa-sort text-muted ml-1"></i>
                             </th>
                             <th class="border-0 font-weight-bold text-primary">
@@ -819,18 +707,6 @@ ob_start();
                                         <span class="font-weight-bold"><?=date('M d, Y', strtotime($row['payment_date']))?></span><br>
                                         <small class="text-muted"><?=date('h:i A', strtotime($row['payment_date']))?></small>
                                     </div>
-                                </td>
-                                <td class="align-middle">
-                                    <?php if (!empty($row['payment_period'])): ?>
-                                        <div>
-                                            <span class="badge badge-info"><?= date('M Y', strtotime($row['payment_period'])) ?></span>
-                                            <?php if (!empty($row['payment_period_description'])): ?>
-                                                <br><small class="text-muted"><?= htmlspecialchars($row['payment_period_description']) ?></small>
-                                            <?php endif; ?>
-                                        </div>
-                                    <?php else: ?>
-                                        <span class="text-muted">Same as payment date</span>
-                                    <?php endif; ?>
                                 </td>
                                 <td class="align-middle">
                                     <?php if (!empty($row['recorded_by_username'])): ?>
@@ -1047,145 +923,67 @@ $(document).ready(function() {
         
         // Sort rows
         rows.sort(function(a, b) {
-            let aVal = $(a).find('td').eq($(this).index()).text().trim();
-            let bVal = $(b).find('td').eq($(this).index()).text().trim();
+            let aVal, bVal;
             
-            // Handle numeric values (amounts)
-            if (column === 'amount') {
-                aVal = parseFloat(aVal.replace(/[₵,]/g, '')) || 0;
-                bVal = parseFloat(bVal.replace(/[₵,]/g, '')) || 0;
-            }
-            // Handle dates
-            else if (column === 'date' || column === 'period') {
-                aVal = new Date(aVal);
-                bVal = new Date(bVal);
+            switch(column) {
+                case 'amount':
+                    aVal = parseFloat($(a).find('td:nth-child(4)').text().replace(/[₵,]/g, ''));
+                    bVal = parseFloat($(b).find('td:nth-child(4)').text().replace(/[₵,]/g, ''));
+                    break;
+                case 'date':
+                    aVal = new Date($(a).find('td:nth-child(7)').text());
+                    bVal = new Date($(b).find('td:nth-child(7)').text());
+                    break;
+                default:
+                    aVal = $(a).find('td:nth-child(' + ($(this).index() + 1) + ')').text().toLowerCase();
+                    bVal = $(b).find('td:nth-child(' + ($(this).index() + 1) + ')').text().toLowerCase();
             }
             
             if (aVal < bVal) return isAsc ? 1 : -1;
             if (aVal > bVal) return isAsc ? -1 : 1;
             return 0;
-        }.bind(this));
+        });
         
-        // Re-append sorted rows
-        table.append(rows);
+        // Reorder table
+        $.each(rows, function(index, row) {
+            table.append(row);
+        });
     });
     
-    // Records per page functionality
-    $('#recordsPerPage').on('change', function() {
-        const perPage = $(this).val();
-        const url = new URL(window.location);
-        url.searchParams.set('per_page', perPage);
-        url.searchParams.set('page', '1'); // Reset to first page
-        window.location.href = url.toString();
-    });
+    // Export to Excel functionality
+    window.exportToExcel = function() {
+        const table = document.getElementById('paymentTable');
+        const wb = XLSX.utils.table_to_book(table, {sheet: 'Payments'});
+        const filename = 'payments_' + new Date().toISOString().split('T')[0] + '.xlsx';
+        XLSX.writeFile(wb, filename);
+    };
     
-    // Auto-submit form on filter changes (optional)
-    $('#church_id, #class_id, #organization_id, #gender, #payment_type_id, #mode, #user_id, #per_page').on('change', function() {
-        // Optional: Auto-submit form when filters change
+    // Auto-submit form on filter change (optional)
+    $('#filterForm select, #filterForm input[type="date"]').on('change', function() {
+        // Uncomment the line below to auto-submit on filter change
         // $('#filterForm').submit();
     });
     
-    // Enhanced search functionality
-    let searchTimeout;
-    $('#search').on('keyup', function() {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(function() {
-            // Optional: Auto-submit search after typing stops
-            // $('#filterForm').submit();
-        }, 500);
-    });
-});
-
-// Export to Excel functionality
-function exportToExcel() {
-    // Show loading state
-    const exportBtn = $('button[onclick="exportToExcel()"]');
-    const originalText = exportBtn.html();
-    exportBtn.html('<i class="fas fa-spinner fa-spin mr-1"></i> Exporting...');
-    exportBtn.prop('disabled', true);
-    
-    // Get current filter parameters
-    const params = new URLSearchParams(window.location.search);
-    params.set('export', 'excel');
-    
-    // Create temporary form for export
-    const form = $('<form>', {
-        method: 'POST',
-        action: 'payment_export.php'
-    });
-    
-    // Add all current filter parameters as hidden inputs
-    params.forEach((value, key) => {
-        if (key !== 'page') { // Don't include pagination in export
-            form.append($('<input>', {
-                type: 'hidden',
-                name: key,
-                value: value
-            }));
+    // Search on Enter key
+    $('#search').on('keypress', function(e) {
+        if (e.which === 13) {
+            $('#filterForm').submit();
         }
     });
     
-    // Submit form
-    $('body').append(form);
-    form.submit();
-    form.remove();
-    
-    // Reset button after delay
-    setTimeout(function() {
-        exportBtn.html(originalText);
-        exportBtn.prop('disabled', false);
-    }, 2000);
-}
-
-// Initialize filter count on page load
-$(document).ready(function() {
-    // Count and display active filters
-    function countActiveFilters() {
-        let count = 0;
-        const filterInputs = [
-            'church_id', 'class_id', 'organization_id', 'gender', 
-            'payment_type_id', 'mode', 'user_id', 'search', 
-            'date_from', 'date_to', 'period_from', 'period_to', 
-            'amount_min', 'amount_max'
-        ];
-        
-        filterInputs.forEach(function(inputId) {
-            const element = document.getElementById(inputId);
-            if (element && element.value && element.value.trim() !== '') {
-                count++;
-            }
-        });
-        
-        document.getElementById('active-filters-count').textContent = count;
-        
-        // Update badge color based on filter count
-        const badge = document.querySelector('.border-left-warning .h5');
-        if (badge) {
-            if (count > 0) {
-                badge.classList.remove('text-gray-800');
-                badge.classList.add('text-warning');
-            } else {
-                badge.classList.remove('text-warning');
-                badge.classList.add('text-gray-800');
-            }
-        }
-    }
-    
-    // Initial count
-    countActiveFilters();
-    
-    // Update count when filters change
-    document.querySelectorAll('#filterForm input, #filterForm select').forEach(function(element) {
-        element.addEventListener('change', countActiveFilters);
-        element.addEventListener('keyup', countActiveFilters);
-    });
+    // Initialize tooltips
+    $('[title]').tooltip();
 });
 </script>
 
+<!-- Include SheetJS for Excel export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
 <style>
-/* Enhanced styling for payment list */
-.payment-row:hover {
-    background-color: #f8f9fc;
+.avatar-sm {
+    width: 32px;
+    height: 32px;
+    font-size: 12px;
 }
 
 .sortable {
@@ -1194,112 +992,45 @@ $(document).ready(function() {
 }
 
 .sortable:hover {
-    background-color: #eaecf4;
-}
-
-.sort-asc, .sort-desc {
-    background-color: #e3e6f0;
+    background-color: #f8f9fa;
 }
 
 .badge-outline-primary {
-    color: #4e73df;
-    border: 1px solid #4e73df;
+    color: #007bff;
+    border: 1px solid #007bff;
     background-color: transparent;
 }
 
-.avatar-sm {
-    width: 32px;
-    height: 32px;
-    font-size: 14px;
+.btn-xs {
+    padding: 0.125rem 0.25rem;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    border-radius: 0.15rem;
 }
 
-.table th {
-    border-top: none;
-    font-size: 0.875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+.payment-row:hover {
+    background-color: #f8f9fa;
 }
 
-.table td {
-    border-top: 1px solid #e3e6f0;
-    vertical-align: middle;
+.bg-gradient-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
-.card-header.bg-gradient-primary {
-    background: linear-gradient(135deg, #4e73df 0%, #224abe 100%);
+.text-truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.form-control:focus {
-    border-color: #4e73df;
-    box-shadow: 0 0 0 0.2rem rgba(78, 115, 223, 0.25);
-}
-
-.btn-group .btn {
-    margin-right: 2px;
-}
-
-.btn-group .btn:last-child {
-    margin-right: 0;
-}
-
-/* Responsive adjustments */
 @media (max-width: 768px) {
-    .table-responsive {
-        font-size: 0.875rem;
-    }
-    
     .d-flex.gap-2 {
         flex-direction: column;
-        gap: 0.5rem;
     }
     
     .btn-group {
         flex-direction: column;
     }
-    
-    .btn-group .btn {
-        margin-bottom: 2px;
-        margin-right: 0;
-    }
-}
-
-/* Filter panel enhancements */
-.collapse.show {
-    animation: slideDown 0.3s ease-out;
-}
-
-@keyframes slideDown {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-/* Loading states */
-.btn:disabled {
-    opacity: 0.7;
-}
-
-/* Enhanced badges */
-.badge {
-    font-size: 0.75rem;
-    padding: 0.375rem 0.5rem;
-}
-
-/* Summary cards hover effects */
-.card:hover {
-    transform: translateY(-2px);
-    transition: transform 0.2s ease-in-out;
-    box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.15);
 }
 </style>
 
-<?php
-$content = ob_get_clean();
-include __DIR__.'/../includes/template.php';
-?>
+<?php $page_content = ob_get_clean(); include '../includes/layout.php'; ?>

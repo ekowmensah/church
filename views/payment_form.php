@@ -119,6 +119,21 @@ ob_start();
                                     <label for="single_payment_date">Date <span class="text-danger">*</span></label>
                                     <input type="date" class="form-control form-control-lg" id="single_payment_date" name="payment_date" value="<?= date('Y-m-d') ?>" required>
                                 </div>
+                                <div class="form-group col-md-2">
+                                    <label for="single_payment_period">Period <span class="text-danger">*</span></label>
+                                    <select class="form-control form-control-lg" id="single_payment_period" name="payment_period" required>
+                                        <option value="">-- Select Period --</option>
+                                        <?php
+                                        // Generate payment period options (current month and previous 12 months)
+                                        for ($i = 0; $i < 12; $i++) {
+                                            $date = date('Y-m-01', strtotime("-$i months"));
+                                            $display = date('F Y', strtotime($date));
+                                            $selected = ($i == 0) ? 'selected' : ''; // Default to current month
+                                            echo "<option value=\"$date\" $selected>$display</option>";
+                                        }
+                                        ?>
+                                    </select>
+                                </div>
                             </div>
                             <div class="form-row">
                                 <div class="form-group col-md-12">
@@ -201,7 +216,22 @@ ob_start();
                                         </div>
                                         <div class="form-group col-md-2">
                                             <label for="bulk_payment_date">Date <span class="text-danger">*</span></label>
-                                            <input type="date" class="form-control form-control-lg" id="bulk_payment_date" name="bulk_payment_date" value="<?= date('Y-m-d') ?>"  >
+                                            <input type="date" class="form-control form-control-lg" id="bulk_payment_date" name="bulk_payment_date" value="<?= date('Y-m-d') ?>" required>
+                                        </div>
+                                        <div class="form-group col-md-2">
+                                            <label for="bulk_payment_period">Period <span class="text-danger">*</span></label>
+                                            <select class="form-control form-control-lg" id="bulk_payment_period" name="bulk_payment_period" required>
+                                                <option value="">-- Select Period --</option>
+                                                <?php
+                                                // Generate payment period options (current month and previous 12 months)
+                                                for ($i = 0; $i < 12; $i++) {
+                                                    $date = date('Y-m-01', strtotime("-$i months"));
+                                                    $display = date('F Y', strtotime($date));
+                                                    $selected = ($i == 0) ? 'selected' : ''; // Default to current month
+                                                    echo "<option value=\"$date\" $selected>$display</option>";
+                                                }
+                                                ?>
+                                            </select>
                                         </div>
                                 <!--        <div class="form-group col-md-2">
                                             <label for="bulk_description">Description</label>
@@ -224,6 +254,7 @@ ob_start();
                                                 <th>Amount</th>
                                                 <th>Mode</th>
                                                 <th>Date</th>
+                                                <th>Period</th>
                                                 <th>Description</th>
                                                 <th></th>
                                             </tr>
@@ -296,19 +327,16 @@ $(function(){
     // Auto-populate description field
     function updateDescriptionField() {
         var paymentType = $('#single_payment_type_id option:selected').text();
-        var dateVal = $('#single_payment_date').val();
-        var month = '';
-        if (dateVal) {
-            var d = new Date(dateVal);
-            month = d.toLocaleString('default', { month: 'long' });
-        }
-        if (paymentType && paymentType !== '-- Select --' && month) {
-            $('#single_description').val('Payment for ' + month + ' ' + paymentType);
+        var periodVal = $('#single_payment_period').val();
+        var periodText = $('#single_payment_period option:selected').text();
+        
+        if (paymentType && paymentType !== '-- Select --' && periodText && periodText !== '-- Select Period --') {
+            $('#single_description').val('Payment for ' + periodText + ' ' + paymentType);
         } else {
             $('#single_description').val('');
         }
     }
-    $('#single_payment_type_id, #single_payment_date').on('change', updateDescriptionField);
+    $('#single_payment_type_id, #single_payment_period').on('change', updateDescriptionField);
     // Initial auto-populate on page load (if both fields have value)
     updateDescriptionField();
 
@@ -449,7 +477,9 @@ $(function(){
         var mode = $('#single_mode').val();
         var date = $('#single_payment_date').val();
         var desc = $('#single_description').val();
-        var payload = {payments: [{type_id: type_id, amount: amount, mode: mode, date: date, desc: desc, type_text: $('#single_payment_type_id option:selected').text()}]};
+        var period = $('#single_payment_period').val();
+        var period_text = $('#single_payment_period option:selected').text();
+        var payload = {payments: [{type_id: type_id, amount: amount, mode: mode, date: date, desc: desc, period: period, period_text: period_text, type_text: $('#single_payment_type_id option:selected').text()}]};
         if (member_id) payload.member_id = member_id;
         if (sundayschool_id) payload.sundayschool_id = sundayschool_id;
         $.ajax({

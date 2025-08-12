@@ -25,7 +25,7 @@ ob_start();
         <label for="payment_date" class="font-weight-bold">Payment Date <span class="text-danger">*</span></label>
         <input type="date" class="form-control" id="payment_date" name="payment_date" value="<?= date('Y-m-d') ?>" required>
       </div>
-      <div class="col-md-4 mb-3">
+      <div class="col-md-8 mb-3">
         <label for="member_search" class="font-weight-bold">Add Member <span class="text-danger">*</span></label>
         <select class="form-control" id="member_search" style="width:100%"></select>
       </div>

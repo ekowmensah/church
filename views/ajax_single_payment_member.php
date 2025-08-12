@@ -34,6 +34,10 @@ if ($date && strlen($date) == 10) { // If date is in Y-m-d format (10 chars), ap
 }
 $description = trim($_POST['description'] ?? '');
 
+// Extract payment period fields
+$payment_period = $_POST['payment_period'] ?? null;
+$payment_period_description = trim($_POST['payment_period_description'] ?? '');
+
 // Duplicate check (ignore description for duplicate logic)
 $dup_stmt = $conn->prepare('SELECT id FROM payments WHERE member_id=? AND payment_type_id=? AND amount=? AND payment_date=?');
 $dup_stmt->bind_param('iids', $member_id, $payment_type_id, $amount, $date);
@@ -58,8 +62,8 @@ if ($payment_type_id && $amount > 0) {
     $church_id = $church_result['church_id'] ?? 1; // Default to church_id 1 if not found
     $church_stmt->close();
     
-    $stmt = $conn->prepare('INSERT INTO payments (member_id, payment_type_id, amount, payment_date, description, recorded_by, church_id) VALUES (?, ?, ?, ?, ?, ?, ?)');
-    $stmt->bind_param('iidssii', $member_id, $payment_type_id, $amount, $date, $description, $recorded_by, $church_id);
+    $stmt = $conn->prepare('INSERT INTO payments (member_id, payment_type_id, amount, payment_date, description, recorded_by, church_id, payment_period, payment_period_description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $stmt->bind_param('iidssiiss', $member_id, $payment_type_id, $amount, $date, $description, $recorded_by, $church_id, $payment_period, $payment_period_description);
     if ($stmt->execute()) {
         $payment_id = $conn->insert_id;
         

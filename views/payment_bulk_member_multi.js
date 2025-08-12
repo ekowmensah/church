@@ -131,8 +131,23 @@ $(function() {
     html += '<button type="button" class="btn btn-sm btn-secondary add-type-btn ml-2">Add</button>';
     html += '<div class="member-payment-types mt-2">';
     member.payments.forEach(function(pt, i) {
+      // Generate payment period options
+      var periodOptions = '';
+      for (var j = 0; j < 12; j++) {
+        var date = new Date();
+        date.setDate(1); // Always set to first of month
+        date.setMonth(date.getMonth() - j);
+        var periodValue = date.toISOString().slice(0, 7) + '-01';
+        var periodText = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        // If pt.period is not set, default to current periodValue
+        if (!pt.period) pt.period = periodValue;
+        var selected = (pt.period === periodValue) ? 'selected' : '';
+        periodOptions += '<option value="' + periodValue + '" ' + selected + '>' + periodText + '</option>';
+      }
+      
       html += '<div class="d-flex align-items-center mb-2">'
         + '<span class="badge badge-info mr-2">' + pt.typeText + ': ₵' + parseFloat(pt.amount).toFixed(2) + '</span>'
+        + '<select class="form-control form-control-sm payment-period-select ml-2" style="max-width:150px;" data-pt-idx="' + i + '">' + periodOptions + '</select>'
         + '<input type="text" class="form-control form-control-sm payment-desc-input ml-2" placeholder="Description (optional)" style="max-width:200px;" data-pt-idx="' + i + '" value="' + (pt.description ? pt.description.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : '') + '">' 
         + '<span class="remove-type ml-2" style="cursor:pointer;" data-pt-idx="' + i + '">&times;</span>'
         + '</div>';
@@ -203,14 +218,17 @@ $(function() {
         showToast('This payment type is already added for this member.', 'warning');
         return;
       }
-      // Auto-populate description
-      var paymentDate = $('#payment_date').val();
-      var autoDesc = getDefaultDescription(typeData.text, paymentDate);
+      // Auto-populate description with default period (current month)
+      var defaultPeriod = new Date().toISOString().slice(0, 7) + '-01'; // YYYY-MM-01 format
+      var defaultPeriodText = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      var autoDesc = getDefaultDescription(typeData.text, defaultPeriodText);
       bulkMembers[memberId].payments.push({
         typeId: typeData.id,
         typeText: typeData.text,
         amount: parseFloat(amount),
         description: autoDesc,
+        period: defaultPeriod,
+        periodText: defaultPeriodText,
         manualDesc: false
       });
       renderBulkTable();
@@ -232,6 +250,24 @@ $(function() {
       if (bulkMembers[memberId] && bulkMembers[memberId].payments[idx]) {
         bulkMembers[memberId].payments[idx].description = val;
         bulkMembers[memberId].payments[idx].manualDesc = true;
+      }
+    });
+    // Payment period change per payment type
+    $('#bulkTable tbody .payment-period-select').off('change').on('change', function() {
+      var $group = $(this).closest('.payment-types-group');
+      var memberId = $group.data('member-id');
+      var idx = $(this).data('pt-idx');
+      var periodValue = $(this).val();
+      var periodText = $(this).find('option:selected').text();
+      if (bulkMembers[memberId] && bulkMembers[memberId].payments[idx]) {
+        bulkMembers[memberId].payments[idx].period = periodValue;
+        bulkMembers[memberId].payments[idx].periodText = periodText;
+        // Auto-update description if not manually edited
+        if (!bulkMembers[memberId].payments[idx].manualDesc) {
+          var typeText = bulkMembers[memberId].payments[idx].typeText;
+          bulkMembers[memberId].payments[idx].description = getDefaultDescription(typeText, periodText);
+          renderBulkTable();
+        }
       }
     });
     // Remove member
@@ -263,12 +299,14 @@ $(function() {
   }
 
   // --- Auto-populate description for payment type ---
-  function getDefaultDescription(typeText, dateStr) {
+  function getDefaultDescription(typeText, periodText) {
     if (!typeText) return '';
-    let date = dateStr ? new Date(dateStr) : new Date();
-    let month = date.toLocaleString('default', { month: 'long' });
-    let year = date.getFullYear();
-    return `Payment for ${month} ${typeText}`;
+    if (periodText && periodText !== '') {
+      return typeText + ' for ' + periodText;
+    }
+    // Fallback to current month if no period provided
+    var currentMonth = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    return typeText + ' for ' + currentMonth;
   }
 
   // --- Patch add-type-btn to auto-populate description unless user has typed ---
@@ -310,9 +348,32 @@ $(function() {
       bulkMembers[memberId].payments[idx].manualDesc = true;
     }
   });
+  
+  // --- Track changes to payment period ---
+  $('#bulkTable tbody').on('change', '.payment-period-select', function() {
+    var $group = $(this).closest('.payment-types-group');
+    var memberId = $group.data('member-id');
+    var idx = $(this).data('pt-idx');
+    var periodValue = $(this).val();
+    var periodText = $(this).find('option:selected').text();
+    
+    if (bulkMembers[memberId] && bulkMembers[memberId].payments[idx]) {
+      bulkMembers[memberId].payments[idx].period = periodValue;
+      bulkMembers[memberId].payments[idx].periodText = periodText;
+      console.log('Updated period for member ' + memberId + ', payment ' + idx + ' to: ' + periodValue + ' (' + periodText + ')');
+      
+      // Update description if not manually edited
+      if (!bulkMembers[memberId].payments[idx].manualDesc) {
+        var typeText = bulkMembers[memberId].payments[idx].typeText;
+        bulkMembers[memberId].payments[idx].description = getDefaultDescription(typeText, periodText);
+        // Update the description input field
+        $group.find(".payment-desc-input[data-pt-idx='" + idx + "']").val(bulkMembers[memberId].payments[idx].description);
+      }
+    }
+  });
 
-  // --- Auto-update description if payment type or date changes and not manually edited ---
-  $('#payment_date').on('change', function() {
+  // --- Auto-update description if payment type, date, or period changes and not manually edited ---
+  $('#payment_date, #payment_period').on('change', function() {
     Object.values(bulkMembers).forEach(function(member) {
       member.payments.forEach(function(pt, i) {
         if (!pt.manualDesc) {
@@ -401,12 +462,46 @@ $(function() {
 
   // --- Submit bulk payment ---
   $('#submitBulkBtn').click(function() {
+    // --- Enhanced: Before building payload, ensure all payment period/description fields are synchronized from DOM ---
+    Object.values(bulkMembers).forEach(function(m) {
+      var $group = $(".payment-types-group[data-member-id='" + m.id + "']");
+      (m.payments || []).forEach(function(pt, idx) {
+        var $periodSel = $group.find(".payment-period-select[data-pt-idx='" + idx + "']");
+        var $descInput = $group.find(".payment-desc-input[data-pt-idx='" + idx + "']");
+        
+        // Always update period from DOM to ensure latest selection is captured
+        if ($periodSel.length) {
+          var newPeriod = $periodSel.val();
+          var newPeriodText = $periodSel.find('option:selected').text();
+          
+          // Log if there's a mismatch between model and DOM
+          if (pt.period !== newPeriod) {
+            console.log('Fixing period mismatch for member ' + m.id + ', payment ' + idx + ': ' + 
+                      (pt.period || 'undefined') + ' -> ' + newPeriod);
+          }
+          
+          pt.period = newPeriod;
+          pt.periodText = newPeriodText;
+        }
+        
+        // Always update description from DOM
+        if ($descInput.length) {
+          pt.description = $descInput.val();
+        }
+      });
+    });
+    
+    // Debug log to verify periods are correctly set
+    console.log('Bulk payment data before submission:', JSON.parse(JSON.stringify(bulkMembers)));
+
     var churchId = $('#church_id').val();
     var paymentDate = $('#payment_date').val();
     var memberIds = [];
     var sundayschoolIds = [];
     var amounts = {};
     var descriptions = {};
+    var periods = {};
+    var period_descriptions = {};
     var valid = true;
     var hasSRN = false, hasCRN = false;
     Object.values(bulkMembers).forEach(function(m) {
@@ -425,9 +520,13 @@ $(function() {
       var key = (m.type === 'sundayschool') ? ('ss_' + m.id) : String(m.id);
       amounts[key] = {};
       descriptions[key] = {};
+      periods[key] = {};
+      period_descriptions[key] = {};
       (m.payments || []).forEach(function(pt) {
         amounts[key][pt.typeId] = pt.amount;
         descriptions[key][pt.typeId] = pt.description || '';
+        periods[key][pt.typeId] = pt.period || '';
+        period_descriptions[key][pt.typeId] = pt.periodText || '';
       });
     });
     if (!valid) {
@@ -481,18 +580,24 @@ $(function() {
     $('#confirmSubmitBtn').off('click').on('click', function() {
       $(this).prop('disabled', true).text('Processing...');
       // Debug: log the payload before sending
+      var payloadData = {
+        church_id: churchId,
+        payment_date: paymentDate,
+        member_ids: memberIds,
+        sundayschool_ids: sundayschoolIds,
+        amounts: amounts,
+        descriptions: descriptions,
+        periods: periods,
+        period_descriptions: period_descriptions
+      };
+      
+      console.log('Sending bulk payment payload:', JSON.parse(JSON.stringify(payloadData)));
+      
       $.ajax({
         url: 'ajax_bulk_payment.php',
         type: 'POST',
         contentType: 'application/json',
-        data: JSON.stringify({
-          church_id: churchId,
-          payment_date: paymentDate,
-          member_ids: memberIds,
-          sundayschool_ids: sundayschoolIds,
-          amounts: amounts,
-          descriptions: descriptions
-        }),
+        data: JSON.stringify(payloadData),
         dataType: 'json',
         success: function(resp) {
           $('#confirmSubmitBtn').prop('disabled', false).text('Confirm & Submit');

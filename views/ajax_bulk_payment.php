@@ -39,6 +39,12 @@ $sundayschool_ids = $data['sundayschool_ids'] ?? [];
 $amounts = isset($data['amounts_json']) ? json_decode($data['amounts_json'], true) : ($data['amounts'] ?? []);
 $descriptions = $data['descriptions'] ?? [];
 $modes = $data['modes'] ?? [];
+$periods = $data['periods'] ?? [];
+$period_descriptions = $data['period_descriptions'] ?? [];
+
+
+
+
 $church_id = intval($data['church_id'] ?? 0);
 // Handle payment date - if only date is provided, append current time
 $payment_date = $data['payment_date'] ?? date('Y-m-d H:i:s');
@@ -124,9 +130,19 @@ class BulkPaymentProcessor {
                 }
                 $mode = isset($modes[$mid][$ptid]) ? $modes[$mid][$ptid] : 'Cash';
                 $desc = isset($descriptions[$mid][$ptid]) ? mb_substr($descriptions[$mid][$ptid], 0, 255) : '';
-                $this->summary[] = ["debug" => "Attempting insert: member_id=$mid, sundayschool_id=NULL, church_id=$church_id, payment_type_id=$ptid, amount=$amount, mode=$mode, payment_date=$payment_date, description=$desc"];
-                $stmt = $this->conn->prepare('INSERT INTO payments (member_id, sundayschool_id, church_id, payment_type_id, amount, mode, payment_date, description, recorded_by) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)');
-                $stmt->bind_param('iiidsssi', $mid, $church_id, $ptid, $amount, $mode, $payment_date, $desc, $GLOBALS['recorded_by']);
+                // Handle payment period - default to first day of current month if not provided
+                $period = isset($periods[$mid][$ptid]) ? $periods[$mid][$ptid] : date('Y-m-01');
+                $period_description = isset($period_descriptions[$mid][$ptid]) ? trim($period_descriptions[$mid][$ptid]) : '';
+                
+                // Ensure period_description is not empty - if empty, try to generate from period
+                if (empty($period_description) && !empty($period)) {
+                    $period_description = date('F Y', strtotime($period));
+                }
+                
+
+                $this->summary[] = ["debug" => "Attempting insert: member_id=$mid, sundayschool_id=NULL, church_id=$church_id, payment_type_id=$ptid, amount=$amount, mode=$mode, payment_date=$payment_date, payment_period=$period, description=$desc"];
+                $stmt = $this->conn->prepare('INSERT INTO payments (member_id, sundayschool_id, church_id, payment_type_id, amount, mode, payment_date, payment_period, payment_period_description, description, recorded_by) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $stmt->bind_param('iiidsssssi', $mid, $church_id, $ptid, $amount, $mode, $payment_date, $period, $period_description, $desc, $GLOBALS['recorded_by']);
                 try {
                     if ($stmt->execute()) {
                         $this->success_count++;
@@ -217,9 +233,17 @@ class BulkPaymentProcessor {
                 }
                 $mode = isset($modes['ss_'.$sid][$ptid]) ? $modes['ss_'.$sid][$ptid] : 'Cash';
                 $desc = isset($descriptions['ss_'.$sid][$ptid]) ? mb_substr($descriptions['ss_'.$sid][$ptid], 0, 255) : '';
-                $this->summary[] = ["debug" => "Attempting insert: member_id=NULL, sundayschool_id=$sid, church_id=$church_id, payment_type_id=$ptid, amount=$amount, mode=$mode, payment_date=$payment_date, description=$desc"];
-                $stmt = $this->conn->prepare('INSERT INTO payments (member_id, sundayschool_id, church_id, payment_type_id, amount, mode, payment_date, description, recorded_by) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?)');
-                $stmt->bind_param('iiidsssi', $sid, $church_id, $ptid, $amount, $mode, $payment_date, $desc, $GLOBALS['recorded_by']);
+                // Handle payment period - default to first day of current month if not provided
+                $period = isset($periods['ss_'.$sid][$ptid]) ? $periods['ss_'.$sid][$ptid] : date('Y-m-01');
+                $period_description = isset($period_descriptions['ss_'.$sid][$ptid]) ? trim($period_descriptions['ss_'.$sid][$ptid]) : '';
+                
+                // Ensure period_description is not empty - if empty, try to generate from period
+                if (empty($period_description) && !empty($period)) {
+                    $period_description = date('F Y', strtotime($period));
+                }
+                $this->summary[] = ["debug" => "Attempting insert: member_id=NULL, sundayschool_id=$sid, church_id=$church_id, payment_type_id=$ptid, amount=$amount, mode=$mode, payment_date=$payment_date, payment_period=$period, description=$desc"];
+                $stmt = $this->conn->prepare('INSERT INTO payments (member_id, sundayschool_id, church_id, payment_type_id, amount, mode, payment_date, payment_period, payment_period_description, description, recorded_by) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $stmt->bind_param('iiidsssssi', $sid, $church_id, $ptid, $amount, $mode, $payment_date, $period, $period_description, $desc, $GLOBALS['recorded_by']);
                 try {
                     if ($stmt->execute()) {
                         $this->success_count++;

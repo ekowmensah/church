@@ -25,11 +25,17 @@ $(function(){
                         </select>
                     </td>
                     <td><input type="date" class="form-control form-control-sm bulk-date-input" data-idx="${idx}" value="${p.date}" style="width:135px"></td>
+                    <td>
+                        <select class="form-control form-control-sm bulk-period-input" data-idx="${idx}" style="width:120px">
+                            ${$('#bulk_payment_period').html()}
+                        </select>
+                    </td>
                     <td><input type="text" class="form-control form-control-sm bulk-desc-input" data-idx="${idx}" value="${p.desc||''}" data-autodesc="${p._autodesc||''}" style="width:140px"></td>
                     <td><button type="button" class="btn btn-link text-danger btn-sm remove-payment-row" data-idx="${idx}"><i class="fa fa-trash"></i></button></td>
                 </tr>`);
-            // Set type selection after rendering and trigger change for autofill
+            // Set type and period selection after rendering and trigger change for autofill
             $tbody.find(`.bulk-type-input[data-idx="${idx}"]`).val(p.type_id).trigger('change');
+            $tbody.find(`.bulk-period-input[data-idx="${idx}"]`).val(p.period).trigger('change');
             $tbody.find(`.bulk-date-input[data-idx="${idx}"]`).trigger('change');
         });
         $('#bulkPaymentsTotal').text('₵'+total.toFixed(2));
@@ -43,14 +49,9 @@ $(function(){
     }
 
     // Utility: Generate auto-description for bulk payment row
-    function getBulkAutoDescription(typeText, dateVal) {
-        let month = '';
-        if (dateVal) {
-            let d = new Date(dateVal);
-            month = d.toLocaleString('default', { month: 'long' });
-        }
-        if (typeText && typeText !== '-- Select --' && month) {
-            return 'Payment for ' + month + ' ' + typeText;
+    function getBulkAutoDescription(typeText, periodText) {
+        if (typeText && typeText !== '-- Select --' && periodText && periodText !== '-- Select Period --') {
+            return 'Payment for ' + periodText + ' ' + typeText;
         }
         return '';
     }
@@ -62,17 +63,20 @@ $(function(){
         const amount = $('#bulk_amount').val();
         const mode = $('#bulk_mode').val();
         const date = $('#bulk_payment_date').val();
+        const period = $('#bulk_payment_period').val();
+        const periodText = $('#bulk_payment_period option:selected').text();
         const desc = $('#bulk_description').val();
-        if (!typeId || !amount || !mode || !date) {
-            alert('Please fill all fields.');
+        if (!typeId || !amount || !mode || !date || !period) {
+            alert('Please fill all required fields.');
             return;
         }
-        payments.push({ type_id: typeId, type_text: typeText, amount, mode, date, desc });
+        payments.push({ type_id: typeId, type_text: typeText, amount, mode, date, period, period_text: periodText, desc });
         renderPayments();
         // Clear fields
         $('#bulk_payment_type_id').val('');
         $('#bulk_amount').val('');
         $('#bulk_mode').val('');
+        $('#bulk_payment_period').val('');
         $('#bulk_description').val('');
     }
 
@@ -103,13 +107,18 @@ $(function(){
         const idx = $(this).data('idx');
         payments[idx].date = $(this).val();
     });
+    $(document).on('change', '.bulk-period-input', function(){
+        const idx = $(this).data('idx');
+        payments[idx].period = $(this).val();
+        payments[idx].period_text = $(this).find('option:selected').text();
+    });
     $(document).on('input change blur', '.bulk-desc-input', function(){
         const idx = $(this).data('idx');
         payments[idx].desc = $(this).val();
     });
 
-    // Auto-populate desc on type/date change for each row
-    $(document).on('change', '.bulk-type-input, .bulk-date-input', function(){
+    // Auto-populate desc on type/period change for each row
+    $(document).on('change', '.bulk-type-input, .bulk-period-input', function(){
         const idx = $(this).data('idx');
         const p = payments[idx];
         // Only auto-update if desc is empty or matches previous auto-desc
@@ -117,8 +126,8 @@ $(function(){
         const prevAuto = p._autodesc || '';
         const currentDesc = $desc.val();
         const typeText = $(`.bulk-type-input[data-idx="${idx}"] option:selected`).text();
-        const dateVal = $(`.bulk-date-input[data-idx="${idx}"]`).val();
-        const autoDesc = getBulkAutoDescription(typeText, dateVal);
+        const periodText = $(`.bulk-period-input[data-idx="${idx}"] option:selected`).text();
+        const autoDesc = getBulkAutoDescription(typeText, periodText);
         if (!currentDesc || currentDesc === prevAuto) {
             $desc.val(autoDesc);
             payments[idx].desc = autoDesc;
@@ -196,33 +205,45 @@ $(function(){
             church_id: member?.church_id || '',
             payment_date: payments[0]?.date || ''
         };
-        // --- Build descriptions and modes objects for backend ---
+        // --- Build descriptions, modes, periods, and period descriptions objects for backend ---
         let descriptions = {};
         let modes = {};
+        let periods = {};
+        let period_descriptions = {};
         if (isSRN) {
             let sid = member.sundayschool_id || member.id;
             postData.sundayschool_ids = [sid];
             postData.amounts['ss_' + sid] = {};
             descriptions['ss_' + sid] = {};
             modes['ss_' + sid] = {};
+            periods['ss_' + sid] = {};
+            period_descriptions['ss_' + sid] = {};
             payments.forEach(function(p) {
                 postData.amounts['ss_' + sid][p.type_id] = p.amount;
                 descriptions['ss_' + sid][p.type_id] = p.desc || '';
                 modes['ss_' + sid][p.type_id] = p.mode || 'Cash';
+                periods['ss_' + sid][p.type_id] = p.period || '';
+                period_descriptions['ss_' + sid][p.type_id] = p.period_text || '';
             });
         } else {
             postData.member_ids = [member.id];
             postData.amounts[member.id] = {};
             descriptions[member.id] = {};
             modes[member.id] = {};
+            periods[member.id] = {};
+            period_descriptions[member.id] = {};
             payments.forEach(function(p) {
                 postData.amounts[member.id][p.type_id] = p.amount;
                 descriptions[member.id][p.type_id] = p.desc || '';
                 modes[member.id][p.type_id] = p.mode || 'Cash';
+                periods[member.id][p.type_id] = p.period || '';
+                period_descriptions[member.id][p.type_id] = p.period_text || '';
             });
         }
         postData.descriptions = descriptions;
         postData.modes = modes;
+        postData.periods = periods;
+        postData.period_descriptions = period_descriptions;
 
 
         $.ajax({
