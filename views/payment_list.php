@@ -159,15 +159,21 @@ if ($date_to) {
 }
 if ($filter_period_from) {
     // Convert YYYY-MM to YYYY-MM-01 for proper date comparison
-    $period_from_date = $filter_period_from . '-01';
+    $period_from_date = $filter_period_from;
+    if (strlen($filter_period_from) === 7) { // Only append -01 if it's in YYYY-MM format
+        $period_from_date = $filter_period_from . '-01';
+    }
     $sql .= " AND p.payment_period >= ?";
     $params[] = $period_from_date;
     $types .= 's';
 }
 if ($filter_period_to) {
     // Convert YYYY-MM to YYYY-MM-last_day for proper date comparison
-    $last_day = date('t', strtotime($filter_period_to . '-01'));
-    $period_to_date = $filter_period_to . '-' . $last_day;
+    $period_to_date = $filter_period_to;
+    if (strlen($filter_period_to) === 7) { // Only calculate last day if it's in YYYY-MM format
+        $last_day = date('t', strtotime($filter_period_to . '-01'));
+        $period_to_date = $filter_period_to . '-' . $last_day;
+    }
     $sql .= " AND p.payment_period <= ?";
     $params[] = $period_to_date;
     $types .= 's';
@@ -302,14 +308,20 @@ if ($date_to) {
 }
 if ($filter_period_from) {
     // Convert YYYY-MM to YYYY-MM-01 for proper date comparison
-    $period_from_date = $filter_period_from . '-01';
+    $period_from_date = $filter_period_from;
+    if (strlen($filter_period_from) === 7) { // Only append -01 if it's in YYYY-MM format
+        $period_from_date = $filter_period_from . '-01';
+    }
     $count_params[] = $period_from_date;
     $count_types .= 's';
 }
 if ($filter_period_to) {
     // Convert YYYY-MM to YYYY-MM-last_day for proper date comparison
-    $last_day = date('t', strtotime($filter_period_to . '-01'));
-    $period_to_date = $filter_period_to . '-' . $last_day;
+    $period_to_date = $filter_period_to;
+    if (strlen($filter_period_to) === 7) { // Only calculate last day if it's in YYYY-MM format
+        $last_day = date('t', strtotime($filter_period_to . '-01'));
+        $period_to_date = $filter_period_to . '-' . $last_day;
+    }
     $count_params[] = $period_to_date;
     $count_types .= 's';
 }
