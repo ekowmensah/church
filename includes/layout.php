@@ -154,6 +154,9 @@
       }
     </style>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+    <!-- AdminLTE Select2 CSS -->
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/AdminLTE/plugins/select2/css/select2.min.css">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/AdminLTE/plugins/select2-bootstrap4-theme/select2-bootstrap4.min.css">
 
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/jquery/jquery.min.js"></script>
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
@@ -178,6 +181,9 @@
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-bs4/js/dataTables.bootstrap4.min.js"></script>
     <!-- FullCalendar (for dashboard calendar) -->
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@latest/main.min.js"></script>
+    
+    <!-- AdminLTE Select2 JS -->
+    <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/select2/js/select2.full.min.js"></script>
     
 </head>
 <body class="hold-transition sidebar-mini layout-fixed">
