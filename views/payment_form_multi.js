@@ -21,10 +21,7 @@ $(function(){
                         <select class="form-control form-control-sm bulk-mode-input" data-idx="${idx}" style="width:110px">
                             <option value="">-- Select --</option>
                             <option value="Cash"${p.mode==='Cash'?' selected':''}>Cash</option>
-                            <option value="Transfer"${p.mode==='Transfer'?' selected':''}>Transfer</option>
-                            <option value="POS"${p.mode==='POS'?' selected':''}>POS</option>
                             <option value="Cheque"${p.mode==='Cheque'?' selected':''}>Cheque</option>
-                            <option value="Other"${p.mode==='Other'?' selected':''}>Other</option>
                         </select>
                     </td>
                     <td><input type="date" class="form-control form-control-sm bulk-date-input" data-idx="${idx}" value="${p.date}" style="width:135px"></td>
@@ -199,29 +196,35 @@ $(function(){
             church_id: member?.church_id || '',
             payment_date: payments[0]?.date || ''
         };
-        // --- Build descriptions object for backend ---
+        // --- Build descriptions and modes objects for backend ---
         let descriptions = {};
+        let modes = {};
         if (isSRN) {
             let sid = member.sundayschool_id || member.id;
             postData.sundayschool_ids = [sid];
             postData.amounts['ss_' + sid] = {};
             descriptions['ss_' + sid] = {};
+            modes['ss_' + sid] = {};
             payments.forEach(function(p) {
                 postData.amounts['ss_' + sid][p.type_id] = p.amount;
                 descriptions['ss_' + sid][p.type_id] = p.desc || '';
+                modes['ss_' + sid][p.type_id] = p.mode || 'Cash';
             });
         } else {
             postData.member_ids = [member.id];
             postData.amounts[member.id] = {};
             descriptions[member.id] = {};
+            modes[member.id] = {};
             payments.forEach(function(p) {
                 postData.amounts[member.id][p.type_id] = p.amount;
                 descriptions[member.id][p.type_id] = p.desc || '';
+                modes[member.id][p.type_id] = p.mode || 'Cash';
             });
         }
         postData.descriptions = descriptions;
+        postData.modes = modes;
 
-        console.log('BULK SUBMIT', postData);
+
         $.ajax({
             url: 'ajax_bulk_payment.php',
             type: 'POST',

@@ -20,41 +20,7 @@ if ($editing) {
     foreach(['church_id','class_id','father_member_id','mother_member_id','father_is_member','mother_is_member'] as $f) {
         if (!isset($record[$f])) $record[$f] = '';
     }
-    
-    // Populate parent member data when editing
-    if ($record['father_is_member'] === 'yes' && !empty($record['father_member_id'])) {
-        $stmt = $conn->prepare('SELECT last_name, first_name, middle_name, phone, profession FROM members WHERE id = ?');
-        $stmt->bind_param('i', $record['father_member_id']);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        if ($row = $res->fetch_assoc()) {
-            $record['father_name'] = trim($row['last_name'].' '.$row['first_name'].' '.$row['middle_name']);
-            if ($record['father_name'] === '0') $record['father_name'] = '';
-            $record['father_contact'] = $row['phone'];
-            if ($record['father_contact'] === '0') $record['father_contact'] = '';
-            $record['father_occupation'] = $row['profession'];
-            if ($record['father_occupation'] === '0') $record['father_occupation'] = '';
-            // Debug output
-            // echo "<!-- Father Debug: Contact=" . htmlspecialchars($record['father_contact']) . ", Occupation=" . htmlspecialchars($record['father_occupation']) . " -->";
-        }
-        $stmt->close();
-    }
-    
-    if ($record['mother_is_member'] === 'yes' && !empty($record['mother_member_id'])) {
-        $stmt = $conn->prepare('SELECT last_name, first_name, middle_name, phone, profession FROM members WHERE id = ?');
-        $stmt->bind_param('i', $record['mother_member_id']);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        if ($row = $res->fetch_assoc()) {
-            $record['mother_name'] = trim($row['last_name'].' '.$row['first_name'].' '.$row['middle_name']);
-            if ($record['mother_name'] === '0') $record['mother_name'] = '';
-            $record['mother_contact'] = $row['phone'];
-            if ($record['mother_contact'] === '0') $record['mother_contact'] = '';
-            $record['mother_occupation'] = $row['profession'];
-            if ($record['mother_occupation'] === '0') $record['mother_occupation'] = '';
-        }
-        $stmt->close();
-    }
+    $stmt->close();
 }
 if ($_SERVER['REQUEST_METHOD']==='POST') {
     foreach($record as $k=>$v) if(isset($_POST[$k])) {
@@ -129,7 +95,7 @@ if (!isset($record['other_name'])) $record['other_name'] = '';
         if (!$error) {
         if ($editing) {
             $stmt = $conn->prepare('UPDATE sunday_school SET srn=?, photo=?, last_name=?, middle_name=?, first_name=?, dob=?, gender=?, dayborn=?, contact=?, gps_address=?, residential_address=?, organization=?, school_attend=?, father_name=?, father_contact=?, father_occupation=?, mother_name=?, mother_contact=?, mother_occupation=?, church_id=?, class_id=?, father_member_id=?, mother_member_id=?, father_is_member=?, mother_is_member=? WHERE id=?');
-            $stmt->bind_param('ssssssssssssssssssiiiisssi', $record['srn'],$record['photo'],$record['last_name'],$record['middle_name'],$record['first_name'],$record['dob'],$record['gender'],$record['dayborn'],$record['contact'],$record['gps_address'],$record['residential_address'],$record['organization'],$record['school_attend'],$record['father_name'],$record['father_contact'],$record['father_occupation'],$record['mother_name'],$record['mother_contact'],$record['mother_occupation'],$record['church_id'],$record['class_id'],$record['father_member_id'],$record['mother_member_id'],$record['father_is_member'],$record['mother_is_member'],$id);
+            $stmt->bind_param('sssssssssssssssiiiiisssssi', $record['srn'],$record['photo'],$record['last_name'],$record['middle_name'],$record['first_name'],$record['dob'],$record['gender'],$record['dayborn'],$record['contact'],$record['gps_address'],$record['residential_address'],$record['organization'],$record['school_attend'],$record['father_name'],$record['father_contact'],$record['father_occupation'],$record['mother_name'],$record['mother_contact'],$record['mother_occupation'],$record['church_id'],$record['class_id'],$record['father_member_id'],$record['mother_member_id'],$record['father_is_member'],$record['mother_is_member'],$id);
             $stmt->execute();
             $stmt->close();
             $success = 'Record updated.';
@@ -547,12 +513,11 @@ $(function(){
 </div>
 <script>
 $(function(){
-    // Initialize Select2 for organizations
     $('#organization').select2({
         placeholder: 'Select Organisation',
         allowClear: true,
         ajax: {
-            url: '../views/ajax_get_organizations_by_church.php',
+            url: '/myfreemanchurchgit/church/views/ajax_get_organizations_by_church.php',
             dataType: 'json',
             delay: 250,
             data: function(params) {
@@ -570,38 +535,6 @@ $(function(){
         minimumInputLength: 0,
         width: '100%'
     });
-    
-    // Load initial organizations for the selected church when editing
-    var churchId = $('#church_id').val();
-    if (churchId) {
-        $.ajax({
-            url: '/views/ajax_get_organizations_by_church.php',
-            dataType: 'json',
-            data: { church_id: churchId },
-            success: function(data) {
-                // Clear existing options except the pre-selected ones
-                $('#organization option').each(function() {
-                    if (!$(this).is(':selected')) {
-                        $(this).remove();
-                    }
-                });
-                
-                // Add all available organizations
-                if (data.results) {
-                    data.results.forEach(function(org) {
-                        // Only add if not already present
-                        if ($('#organization option[value="' + org.id + '"]').length === 0) {
-                            $('#organization').append(new Option(org.text, org.id, false, false));
-                        }
-                    });
-                }
-                
-                // Trigger change to refresh Select2
-                $('#organization').trigger('change');
-            }
-        });
-    }
-    
     // Reload organizations when church changes
     $('#church_id').on('change', function(){
         $('#organization').val(null).trigger('change');
@@ -642,11 +575,11 @@ $(function(){
         </div>
         <div class="form-group col-md-4">
             <label><i class="fa-solid fa-phone ss-icon"></i>Father's Contact</label>
-            <input type="text" name="father_contact" id="father_contact_member" class="form-control" readonly value="<?=($record['father_is_member']??'')=='yes'?htmlspecialchars($record['father_contact']):''?>">
+            <input type="text" name="father_contact" id="father_contact_member" class="form-control" readonly>
         </div>
         <div class="form-group col-md-4">
             <label><i class="fa-solid fa-briefcase ss-icon"></i>Father's Occupation</label>
-            <input type="text" name="father_occupation" id="father_occupation_member" class="form-control" readonly value="<?=($record['father_is_member']??'')=='yes'?htmlspecialchars($record['father_occupation']):''?>">
+            <input type="text" name="father_occupation" id="father_occupation_member" class="form-control" readonly>
         </div>
     </div>
     <div class="form-row" id="father_name_row">
@@ -714,11 +647,11 @@ $(function(){
         </div>
         <div class="form-group col-md-4">
             <label><i class="fa-solid fa-phone ss-icon"></i>Mother's Contact</label>
-            <input type="text" name="mother_contact" id="mother_contact_member" class="form-control" readonly value="<?=($record['mother_is_member']??'')=='yes'?htmlspecialchars($record['mother_contact']):''?>">
+            <input type="text" name="mother_contact" id="mother_contact_member" class="form-control" readonly>
         </div>
         <div class="form-group col-md-4">
             <label><i class="fa-solid fa-briefcase ss-icon"></i>Mother's Occupation</label>
-            <input type="text" name="mother_occupation" id="mother_occupation_member" class="form-control" readonly value="<?=($record['mother_is_member']??'')=='yes'?htmlspecialchars($record['mother_occupation']):''?>">
+            <input type="text" name="mother_occupation" id="mother_occupation_member" class="form-control" readonly>
         </div>
     </div>
     <div class="form-row" id="mother_name_row">
@@ -967,12 +900,9 @@ function toggleParentFields() {
     } else if (father_val==='yes') {
         $('#father_name_row').hide();
         $('#father_member_row').show();
-        // Don't clear values if editing and they already exist
-        if (!$('#father_contact_member').val()) {
-            $('#father_member_id').val(null).trigger('change');
-            $('#father_contact_member').val('');
-            $('#father_occupation_member').val('');
-        }
+        $('#father_member_id').val(null).trigger('change');
+        $('#father_contact_member').val('');
+        $('#father_occupation_member').val('');
         $('#father_member_id').select2({
             placeholder: 'Search Father by name or CRN',
             ajax: {
@@ -1004,12 +934,9 @@ function toggleParentFields() {
     } else if (mother_val==='yes') {
         $('#mother_name_row').hide();
         $('#mother_member_row').show();
-        // Don't clear values if editing and they already exist
-        if (!$('#mother_contact_member').val()) {
-            $('#mother_member_id').val(null).trigger('change');
-            $('#mother_contact_member').val('');
-            $('#mother_occupation_member').val('');
-        }
+        $('#mother_member_id').val(null).trigger('change');
+        $('#mother_contact_member').val('');
+        $('#mother_occupation_member').val('');
         $('#mother_member_id').select2({
             placeholder: 'Search Mother by name or CRN',
             ajax: {
@@ -1037,8 +964,17 @@ function toggleParentFields() {
 
 $(document).ready(function(){
     hideAllParentFields();
-    
-    // Pre-select is_member options first
+    toggleParentFields();
+    // Pre-select father/mother member if editing
+    var fatherMemberId = "<?=isset($record['father_member_id'])?$record['father_member_id']:''?>";
+    if(fatherMemberId){
+        $('#father_member_id').val(fatherMemberId).trigger('change');
+    }
+    var motherMemberId = "<?=isset($record['mother_member_id'])?$record['mother_member_id']:''?>";
+    if(motherMemberId){
+        $('#mother_member_id').val(motherMemberId).trigger('change');
+    }
+    // Pre-select is_member options
     var fatherIsMember = "<?=isset($record['father_is_member'])?$record['father_is_member']:''?>";
     if(fatherIsMember){
         $('#father_is_member').val(fatherIsMember);
@@ -1047,21 +983,6 @@ $(document).ready(function(){
     if(motherIsMember){
         $('#mother_is_member').val(motherIsMember);
     }
-    
-    // Then toggle fields based on selections
-    toggleParentFields();
-    
-    // Pre-select father/mother member if editing (after fields are visible)
-    setTimeout(function() {
-        var fatherMemberId = "<?=isset($record['father_member_id'])?$record['father_member_id']:''?>";
-        if(fatherMemberId && fatherIsMember === 'yes'){
-            $('#father_member_id').val(fatherMemberId).trigger('change');
-        }
-        var motherMemberId = "<?=isset($record['mother_member_id'])?$record['mother_member_id']:''?>";
-        if(motherMemberId && motherIsMember === 'yes'){
-            $('#mother_member_id').val(motherMemberId).trigger('change');
-        }
-    }, 500);
 });
 
 $('#father_member_id').on('select2:select', function(e) {

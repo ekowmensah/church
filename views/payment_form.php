@@ -197,12 +197,6 @@ ob_start();
                                                 <option value="">-- Select --</option>
                                                 <option value="Cash">Cash</option>
                                                 <option value="Cheque">Cheque</option>
-                                                <!-- <option value="Transfer">Transfer</option>
-                                                
-                                                <option value="POS">POS</option>
-                                                <option value="Online">Online</option>
-                                                <option value="Offline">Offline</option>
-                                                <option value="Other">Other</option> -->
                                             </select>
                                         </div>
                                         <div class="form-group col-md-2">

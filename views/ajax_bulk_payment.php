@@ -38,6 +38,7 @@ $member_ids = $data['member_ids'] ?? [];
 $sundayschool_ids = $data['sundayschool_ids'] ?? [];
 $amounts = isset($data['amounts_json']) ? json_decode($data['amounts_json'], true) : ($data['amounts'] ?? []);
 $descriptions = $data['descriptions'] ?? [];
+$modes = $data['modes'] ?? [];
 $church_id = intval($data['church_id'] ?? 0);
 // Handle payment date - if only date is provided, append current time
 $payment_date = $data['payment_date'] ?? date('Y-m-d H:i:s');
@@ -104,7 +105,7 @@ class BulkPaymentProcessor {
         $this->conn = $conn;
     }
     
-    public function process($member_ids, $sundayschool_ids, $amounts, $descriptions, $church_id, $payment_date) {
+    public function process($member_ids, $sundayschool_ids, $amounts, $descriptions, $modes, $church_id, $payment_date) {
         // Process member payments
         foreach ($member_ids as $mid) {
             $mid = intval($mid);
@@ -121,7 +122,7 @@ class BulkPaymentProcessor {
                     $this->summary[] = ["debug" => "Skipping member $mid, type $ptid: amount $amount."];
                     continue;
                 }
-                $mode = 'Cash';
+                $mode = isset($modes[$mid][$ptid]) ? $modes[$mid][$ptid] : 'Cash';
                 $desc = isset($descriptions[$mid][$ptid]) ? mb_substr($descriptions[$mid][$ptid], 0, 255) : '';
                 $this->summary[] = ["debug" => "Attempting insert: member_id=$mid, sundayschool_id=NULL, church_id=$church_id, payment_type_id=$ptid, amount=$amount, mode=$mode, payment_date=$payment_date, description=$desc"];
                 $stmt = $this->conn->prepare('INSERT INTO payments (member_id, sundayschool_id, church_id, payment_type_id, amount, mode, payment_date, description, recorded_by) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)');
@@ -214,7 +215,7 @@ class BulkPaymentProcessor {
                     $this->summary[] = ["debug" => "Skipping sunday school $sid, type $ptid: amount $amount."];
                     continue;
                 }
-                $mode = 'Cash';
+                $mode = isset($modes['ss_'.$sid][$ptid]) ? $modes['ss_'.$sid][$ptid] : 'Cash';
                 $desc = isset($descriptions['ss_'.$sid][$ptid]) ? mb_substr($descriptions['ss_'.$sid][$ptid], 0, 255) : '';
                 $this->summary[] = ["debug" => "Attempting insert: member_id=NULL, sundayschool_id=$sid, church_id=$church_id, payment_type_id=$ptid, amount=$amount, mode=$mode, payment_date=$payment_date, description=$desc"];
                 $stmt = $this->conn->prepare('INSERT INTO payments (member_id, sundayschool_id, church_id, payment_type_id, amount, mode, payment_date, description, recorded_by) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?)');
@@ -314,11 +315,7 @@ if (!empty($member_ids) && empty($sundayschool_ids)) {
 }
 
 $processor = new BulkPaymentProcessor($conn);
-if (!empty($sundayschool_ids)) {
-    $processor->process([], $sundayschool_ids, $amounts, $descriptions, $church_id, $payment_date);
-} else {
-    $processor->process($member_ids, [], $amounts, $descriptions, $church_id, $payment_date);
-}
+$result = $processor->process($member_ids, $sundayschool_ids, $amounts, $descriptions, $modes, $church_id, $payment_date);
 
 respond([
     'success' => $processor->error_count === 0,
