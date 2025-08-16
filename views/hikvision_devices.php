@@ -229,7 +229,11 @@ $devices_rs = $conn->query($query);
 // Some PHP environments (e.g., certain cPanel builds) do not allow foreach over mysqli_result
 // Convert to a plain array to ensure consistent rendering
 $devices = [];
-if ($devices_rs instanceof mysqli_result) {
+if ($devices_rs === false) {
+    // Surface query error to help diagnose blank list on production
+    $message = 'Failed to load devices: ' . $conn->error;
+    $messageType = 'error';
+} elseif ($devices_rs instanceof mysqli_result) {
     while ($row = $devices_rs->fetch_assoc()) {
         $devices[] = $row;
     }
