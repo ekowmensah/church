@@ -652,8 +652,9 @@ if (file_exists(__DIR__.'/uploads/logo_6866e9048867c.jpg')) {
                             
                             <div class="form-floating">
                                 <input type="text" class="form-control" id="crn" name="crn" 
-                                       placeholder="Church Registration Number" required 
-                                       value="<?php echo htmlspecialchars($_POST['crn'] ?? ''); ?>">
+       style="text-transform:uppercase;" 
+       placeholder="Church Registration Number" required 
+       value="<?php echo htmlspecialchars(strtoupper($_POST['crn'] ?? '')); ?>">
                                 <label for="crn">Church Registration Number</label>
                                 <i class="fas fa-id-card input-icon"></i>
                             </div>
@@ -733,6 +734,13 @@ if (file_exists(__DIR__.'/uploads/logo_6866e9048867c.jpg')) {
                 });
             });
 
+            // Force CRN input to uppercase on input and before submit
+            var crnInput = document.getElementById('crn');
+            if (crnInput) {
+                crnInput.addEventListener('input', function() {
+                    this.value = this.value.toUpperCase();
+                });
+            }
             // Form submission with loading state
             document.querySelectorAll('form').forEach(function(form) {
                 form.addEventListener('submit', function(e) {
