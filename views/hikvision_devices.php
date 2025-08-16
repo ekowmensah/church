@@ -225,19 +225,7 @@ $query = "SELECT d.*,
     FROM hikvision_devices d 
     LEFT JOIN churches c ON d.church_id = c.id
     ORDER BY d.name";
-$devices_rs = $conn->query($query);
-// Some PHP environments (e.g., certain cPanel builds) do not allow foreach over mysqli_result
-// Convert to a plain array to ensure consistent rendering
-$devices = [];
-if ($devices_rs === false) {
-    // Surface query error to help diagnose blank list on production
-    $message = 'Failed to load devices: ' . $conn->error;
-    $messageType = 'error';
-} elseif ($devices_rs instanceof mysqli_result) {
-    while ($row = $devices_rs->fetch_assoc()) {
-        $devices[] = $row;
-    }
-}
+$devices = $conn->query($query);
 
 // Get sync history
 $query = "
@@ -302,7 +290,15 @@ ob_start();
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($devices as $device): ?>
+<?php
+// Fix: Convert mysqli_result to array for compatibility
+$device_rows = [];
+if ($devices && $devices instanceof mysqli_result) {
+    while ($row = $devices->fetch_assoc()) {
+        $device_rows[] = $row;
+    }
+}
+foreach ($device_rows as $device): ?>
                         <tr>
                             <td><?= htmlspecialchars($device['name']) ?></td>
                             <td><?= htmlspecialchars($device['ip']) ?>:<?= htmlspecialchars($device['port']) ?></td>
@@ -353,7 +349,7 @@ ob_start();
                             </td>
                         </tr>
                     <?php endforeach; ?>
-                    <?php if (empty($devices)): ?>
+                    <?php if (empty($device_rows)): ?>
                         <tr>
                             <td colspan="<?= $is_super_admin ? 8 : 7 ?>" class="text-center">No devices found. Add your first device to get started.</td>
                         </tr>
