@@ -119,7 +119,7 @@ ob_start();
                                     <label for="single_payment_date">Date <span class="text-danger">*</span></label>
                                     <input type="date" class="form-control form-control-lg" id="single_payment_date" name="payment_date" value="<?= date('Y-m-d') ?>" readonly required>
                                 </div>
-                                <div class="form-group col-md-2">
+                                <div class="form-group col-md-6">
                                     <label for="single_payment_period">Period <span class="text-danger">*</span></label>
                                     <select class="form-control form-control-lg" id="single_payment_period" name="payment_period" required>
                                         <option value="">-- Select Period --</option>
