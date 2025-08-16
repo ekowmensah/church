@@ -130,7 +130,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv' && $can_export) {
             } elseif ($is_confirmed || $is_baptized) {
                 $status = 'Catechumen';
             } else {
-                $status = 'No Status';
+                $status = 'Catechumen';
             }
         }
         
@@ -683,7 +683,7 @@ ob_start();
                                         $status_class = 'warning';
                                         $show_info = true;
                                     } else {
-                                        $status = 'No Status';
+                                        $status = 'Catechumen';
                                         $status_class = 'secondary';
                                         $show_info = true;
                                     }

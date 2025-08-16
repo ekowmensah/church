@@ -181,7 +181,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 break;
                 
-            case 'delete_device':
+            case 'generate_api_key':
+                $device_id = intval($_POST['device_id']);
+                if (!$device_id) {
+                    $message = 'Invalid device ID.';
+                    $messageType = 'error';
+                    break;
+                }
+                // Generate a new API key
+                $api_key = bin2hex(random_bytes(32));
+                $expires_at = date('Y-m-d H:i:s', strtotime('+1 year'));
+                // Deactivate old keys
+                $conn->query("UPDATE hikvision_api_keys SET is_active = 0 WHERE device_id = $device_id");
+                // Insert new key
+                $stmt = $conn->prepare("INSERT INTO hikvision_api_keys (device_id, api_key, expires_at, is_active) VALUES (?, ?, ?, 1)");
+                $stmt->bind_param('iss', $device_id, $api_key, $expires_at);
+                if ($stmt->execute()) {
+                    $message = 'API Key generated successfully!';
+                    $messageType = 'success';
+                    // Store API key in session to show in modal
+                    $_SESSION['generated_api_key'] = $api_key;
+                } else {
+                    $message = 'Failed to generate API key: ' . $conn->error;
+                    $messageType = 'error';
+                }
+                $stmt->close();
+                break;
                 $device_id = intval($_POST['device_id']);
                 $church_id = get_user_church_id($conn);
                 
@@ -321,31 +346,34 @@ foreach ($device_rows as $device): ?>
                             </td>
                             <td>
                                 <div class="btn-group">
-                                    <button type="button" class="btn btn-sm btn-primary" onclick="testConnection(<?= $device['id'] ?>)" title="Test Connection">
-                                        <i class="fas fa-plug"></i>
-                                    </button>
-                                    <button type="button" class="btn btn-sm btn-info" onclick="syncDevice(<?= $device['id'] ?>)" title="Sync Attendance">
-                                        <i class="fas fa-sync"></i>
-                                    </button>
-                                    <button type="button" class="btn btn-sm btn-success" onclick="manageEnrollments(<?= $device['id'] ?>)" title="Manage Enrollments">
-                                        <i class="fas fa-users"></i>
-                                    </button>
-                                    <button type="button" class="btn btn-sm btn-warning" onclick="editDevice(<?= $device['id'] ?>)" title="Edit Device">
-                                        <i class="fas fa-edit"></i>
-                                    </button>
-                                    <?php if ($device['is_active']): ?>
-                                        <button type="button" class="btn btn-sm btn-secondary" onclick="toggleDevice(<?= $device['id'] ?>, <?= $device['is_active'] ?>)" title="Disable Device">
-                                            <i class="fas fa-power-off"></i>
-                                        </button>
-                                    <?php else: ?>
-                                        <button type="button" class="btn btn-sm btn-success" onclick="toggleDevice(<?= $device['id'] ?>, <?= $device['is_active'] ?>)" title="Enable Device">
-                                            <i class="fas fa-power-off"></i>
-                                        </button>
-                                    <?php endif; ?>
-                                    <button type="button" class="btn btn-sm btn-danger" onclick="deleteDevice(<?= $device['id'] ?>)" title="Delete Device">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </div>
+    <button type="button" class="btn btn-sm btn-primary" onclick="testConnection(<?= $device['id'] ?>)" title="Test Connection">
+        <i class="fas fa-plug"></i>
+    </button>
+    <button type="button" class="btn btn-sm btn-info" onclick="syncDevice(<?= $device['id'] ?>)" title="Sync Attendance">
+        <i class="fas fa-sync"></i>
+    </button>
+    <button type="button" class="btn btn-sm btn-success" onclick="manageEnrollments(<?= $device['id'] ?>)" title="Manage Enrollments">
+        <i class="fas fa-users"></i>
+    </button>
+    <button type="button" class="btn btn-sm btn-warning" onclick="editDevice(<?= $device['id'] ?>)" title="Edit Device">
+        <i class="fas fa-edit"></i>
+    </button>
+    <button type="button" class="btn btn-sm btn-secondary" onclick="openApiKeyModal(<?= $device['id'] ?>)" title="Generate API Key">
+        <i class="fas fa-key"></i>
+    </button>
+    <?php if ($device['is_active']): ?>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="toggleDevice(<?= $device['id'] ?>, <?= $device['is_active'] ?>)" title="Disable Device">
+            <i class="fas fa-power-off"></i>
+        </button>
+    <?php else: ?>
+        <button type="button" class="btn btn-sm btn-success" onclick="toggleDevice(<?= $device['id'] ?>, <?= $device['is_active'] ?>)" title="Enable Device">
+            <i class="fas fa-power-off"></i>
+        </button>
+    <?php endif; ?>
+    <button type="button" class="btn btn-sm btn-danger" onclick="deleteDevice(<?= $device['id'] ?>)" title="Delete Device">
+        <i class="fas fa-trash"></i>
+    </button>
+</div>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -413,31 +441,6 @@ foreach ($device_rows as $device): ?>
     </div>
 </div>
 
-
-<!-- Generate API Key Modal -->
-<div class="modal fade" id="apiKeyModal">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h4 class="modal-title">Generate API Key</h4>
-                <button type="button" class="close" data-dismiss="modal">&times;</button>
-            </div>
-            <form method="post">
-                <div class="modal-body">
-                    <input type="hidden" name="action" value="generate_api_key">
-                    <input type="hidden" name="device_id" id="api_device_id">
-                    
-                    <p>Are you sure you want to generate a new API key for this device?</p>
-                    <p class="text-warning">This will invalidate any existing API keys for this device.</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Generate Key</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
 
 <!-- Delete Device Modal -->
 <div class="modal fade" id="deleteDeviceModal">
@@ -695,6 +698,12 @@ foreach ($device_rows as $device): ?>
         });
     }
     
+    // Open API Key Modal
+    function openApiKeyModal(deviceId) {
+        document.getElementById('api_device_id').value = deviceId;
+        $('#apiKeyModal').modal('show');
+    }
+
     // Toggle device active status
     function toggleDevice(id, currentStatus) {
         console.log('Toggle device ID:', id, 'Current status:', currentStatus);
@@ -1008,6 +1017,42 @@ function editDevice(deviceId) {
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
+<!-- Generate API Key Modal -->
+<div class="modal fade" id="apiKeyModal">
+<?php
+$generated_api_key = isset($_SESSION['generated_api_key']) ? $_SESSION['generated_api_key'] : null;
+if ($generated_api_key) {
+    echo '<div class="alert alert-success m-3">API Key generated: <code style="font-size:1.15em;">' . htmlspecialchars($generated_api_key) . '</code><br><span class="text-danger">Copy and save this key now. You will not be able to see it again!</span></div>';
+    unset($_SESSION['generated_api_key']);
+} elseif (isset(
+    $message, $messageType) && $messageType === 'error') {
+    echo '<div class="alert alert-danger m-3">' . htmlspecialchars($message) . '</div>';
+}
+?>
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title">Generate API Key</h4>
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+            </div>
+            <form method="post">
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="generate_api_key">
+                    <input type="hidden" name="device_id" id="api_device_id">
+                    
+                    <p>Are you sure you want to generate a new API key for this device?</p>
+                    <p class="text-warning">This will invalidate any existing API keys for this device.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Generate Key</button>
                 </div>
             </form>
         </div>
