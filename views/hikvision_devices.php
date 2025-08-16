@@ -225,7 +225,15 @@ $query = "SELECT d.*,
     FROM hikvision_devices d 
     LEFT JOIN churches c ON d.church_id = c.id
     ORDER BY d.name";
-$devices = $conn->query($query);
+$devices_rs = $conn->query($query);
+// Some PHP environments (e.g., certain cPanel builds) do not allow foreach over mysqli_result
+// Convert to a plain array to ensure consistent rendering
+$devices = [];
+if ($devices_rs instanceof mysqli_result) {
+    while ($row = $devices_rs->fetch_assoc()) {
+        $devices[] = $row;
+    }
+}
 
 // Get sync history
 $query = "
