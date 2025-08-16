@@ -40,15 +40,28 @@ define_env_constant('HUBTEL_MERCHANT_ACCOUNT');
 
 function create_hubtel_checkout($params) {
     // Required params: amount, description, callbackUrl, returnUrl, customerName, customerPhone, clientReference
-    $api_key = getenv('HUBTEL_API_KEY') ?: (defined('HUBTEL_API_KEY') ? HUBTEL_API_KEY : null);
-    $api_secret = getenv('HUBTEL_API_SECRET') ?: (defined('HUBTEL_API_SECRET') ? HUBTEL_API_SECRET : null);
-    $merchant_account = getenv('HUBTEL_MERCHANT_ACCOUNT') ?: (defined('HUBTEL_MERCHANT_ACCOUNT') ? HUBTEL_MERCHANT_ACCOUNT : null);
+    // Helper to read env from multiple sources reliably
+    $readEnv = function ($key, $constFallback = null) {
+        $val = getenv($key);
+        if ($val === false || $val === null || $val === '') {
+            if (isset($_ENV[$key]) && $_ENV[$key] !== '') $val = $_ENV[$key];
+            elseif (isset($_SERVER[$key]) && $_SERVER[$key] !== '') $val = $_SERVER[$key];
+            elseif ($constFallback && defined($constFallback)) $val = constant($constFallback);
+        }
+        return ($val === false || $val === '') ? null : $val;
+    };
+
+    $api_key = $readEnv('HUBTEL_API_KEY', 'HUBTEL_API_KEY');
+    $api_secret = $readEnv('HUBTEL_API_SECRET', 'HUBTEL_API_SECRET');
+    $merchant_account = $readEnv('HUBTEL_MERCHANT_ACCOUNT', 'HUBTEL_MERCHANT_ACCOUNT');
     if (!$api_key || !$api_secret || !$merchant_account) {
         // Debug info
         $debug = [
-            'api_key' => getenv('HUBTEL_API_KEY'),
-            'api_secret' => getenv('HUBTEL_API_SECRET'),
-            'merchant_account' => getenv('HUBTEL_MERCHANT_ACCOUNT'),
+            'getenv_api_key' => getenv('HUBTEL_API_KEY'),
+            'env_api_key' => $_ENV['HUBTEL_API_KEY'] ?? null,
+            'server_api_key' => $_SERVER['HUBTEL_API_KEY'] ?? null,
+            'getenv_api_secret' => getenv('HUBTEL_API_SECRET'),
+            'getenv_merchant_account' => getenv('HUBTEL_MERCHANT_ACCOUNT'),
             'defined_api_key' => defined('HUBTEL_API_KEY') ? HUBTEL_API_KEY : null,
             'defined_api_secret' => defined('HUBTEL_API_SECRET') ? HUBTEL_API_SECRET : null,
             'defined_merchant_account' => defined('HUBTEL_MERCHANT_ACCOUNT') ? HUBTEL_MERCHANT_ACCOUNT : null,

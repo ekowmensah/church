@@ -176,12 +176,12 @@ $devices = $conn->query($query);
 $enrolled_members = [];
 if ($selected_device) {
     $query = "
-        SELECT e.id, e.member_id, e.hikvision_user_id, e.created_at, e.updated_at,
-               m.firstname, m.lastname, m.gender, m.phone
-        FROM member_hikvision_data e
+        SELECT e.*, 
+                m.first_name as firstname, m.last_name as lastname, m.gender, m.phone
+        FROM hikvision_enrollments e
         JOIN members m ON e.member_id = m.id
         WHERE e.device_id = ?
-        ORDER BY m.lastname, m.firstname
+        ORDER BY m.last_name, m.first_name
     ";
     $stmt = $conn->prepare($query);
     $stmt->bind_param('i', $selected_device);
@@ -189,31 +189,21 @@ if ($selected_device) {
     $enrolled_members = $stmt->get_result();
 }
 
-// Page title
-$pageTitle = 'Hikvision Member Enrollment';
-include '../includes/header.php';
+// Start output buffering
+ob_start();
 ?>
 
-<div class="content-wrapper">
-    <section class="content-header">
-        <div class="container-fluid">
-            <div class="row mb-2">
-                <div class="col-sm-6">
-                    <h1>Hikvision Biometric Enrollment</h1>
-                </div>
-                <div class="col-sm-6">
-                    <ol class="breadcrumb float-sm-right">
-                        <li class="breadcrumb-item"><a href="<?= BASE_URL ?>/dashboard.php">Home</a></li>
-                        <li class="breadcrumb-item"><a href="<?= BASE_URL ?>/views/hikvision_devices.php">Hikvision Devices</a></li>
-                        <li class="breadcrumb-item active">Member Enrollment</li>
-                    </ol>
-                </div>
-            </div>
-        </div>
-    </section>
+<!-- Page Header -->
+<div class="d-sm-flex align-items-center justify-content-between mb-4">
+    <h1 class="h3 mb-0 text-gray-800">Hikvision Member Enrollment</h1>
+    <ol class="breadcrumb float-sm-right">
+        <li class="breadcrumb-item"><a href="<?= BASE_URL ?>/dashboard.php">Home</a></li>
+        <li class="breadcrumb-item active">Hikvision Member Enrollment</li>
+    </ol>
+</div>
 
-    <section class="content">
-        <div class="container-fluid">
+<section class="content">
+    <div class="container-fluid">
             <?php if ($success): ?>
                 <div class="alert alert-success alert-dismissible">
                     <button type="button" class="close" data-dismiss="alert">&times;</button>
@@ -608,4 +598,7 @@ include '../includes/header.php';
     }
 </script>
 
-<?php include '../includes/footer.php'; ?>
+<?php
+$content = ob_get_clean();
+include __DIR__.'/../includes/template.php';
+?>
