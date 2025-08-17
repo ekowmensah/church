@@ -24,6 +24,30 @@ if (!$is_super_admin && !has_permission('manage_hikvision_devices')) {
 $message = '';
 $message_type = '';
 
+// === API KEY MANAGEMENT ===
+function getCurrentApiKey() {
+    $key_file = __DIR__ . '/../config/hikvision_api_key.txt';
+    if (file_exists($key_file)) {
+        return trim(file_get_contents($key_file));
+    }
+    return '';
+}
+
+function setNewApiKey() {
+    $key_file = __DIR__ . '/../config/hikvision_api_key.txt';
+    $new_key = bin2hex(random_bytes(32));
+    file_put_contents($key_file, $new_key);
+    return $new_key;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'manage_api_key') {
+    if (isset($_POST['rotate'])) {
+        $new_key = setNewApiKey();
+        $message = 'API Key rotated successfully!';
+        $message_type = 'success';
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action'])) {
         switch ($_POST['action']) {
@@ -289,6 +313,11 @@ ob_start();
                                                         <i class="fas fa-users"></i>
                                                     </a>
                                                     
+                                                    <!-- API Key Management -->
+                                                    <button type="button" class="btn btn-sm btn-outline-warning" title="View/Rotate API Key" data-toggle="tooltip" onclick="showApiKeyModal(<?php echo $device['id']; ?>)">
+                                                        <i class="fas fa-key"></i>
+                                                    </button>
+                                                    
                                                     <!-- Device Settings -->
                                                     <button type="button" class="btn btn-sm btn-outline-secondary" 
                                                             onclick="editDevice(<?php echo $device['id']; ?>)"
@@ -487,6 +516,8 @@ function toggleView(viewType) {
 </script>
 
 <?php 
+// API Key Modal (partial)
+include __DIR__.'/partials/hikvision_api_key_modal.php';
 $page_content = ob_get_clean();
 include '../includes/layout.php';
 ?>

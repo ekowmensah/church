@@ -5,7 +5,7 @@
 require_once __DIR__ . '/config/database.php';
 
 // === CONFIGURATION ===
-$EXPECTED_API_KEY = getenv('HIKVISION_API_KEY') ?: 'YOUR_GENERATED_API_KEY'; // Store securely in .env
+$EXPECTED_API_KEY = getenv('HIKVISION_API_KEY') ?: '0c6c5401ab9f1af81c7cbadee3279663a918a16407fbc84a0d4bd189789d9f49'; // Store securely in .env
 
 header('Content-Type: application/json');
 
