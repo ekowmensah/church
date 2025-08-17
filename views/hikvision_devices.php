@@ -1,1060 +1,492 @@
 <?php
-/**
- * Hikvision Devices Management
- * 
- * This page allows administrators to manage Hikvision face recognition devices,
- * including adding new devices, editing existing ones, generating API keys,
- * and viewing sync history.
- */
-require_once __DIR__.'/../config/config.php';
+//require_once '../includes/admin_auth.php';
+//require_once '../config/database.php';
+//require_once '../helpers/HikVisionService.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions.php';
-require_once __DIR__.'/../helpers/church_helper.php';
-require_once __DIR__.'/../includes/HikvisionService.php';
+require_once __DIR__.'/../helpers/HikVisionService.php';
 
-// Only allow logged-in users
-if (!is_logged_in()) {
-    header('Location: ' . BASE_URL . '/login.php');
-    exit;
-}
+$page_title = "HikVision Devices";
+$current_page = "hikvision_devices";
 
-// Check permissions with super admin bypass
-$is_super_admin = isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1;
+// Initialize variables from auth
+$is_super_admin = $_SESSION['is_super_admin'] ?? false;
+$church_id = $_SESSION['church_id'] ?? 1;
+
+// Check permissions
 if (!$is_super_admin && !has_permission('manage_hikvision_devices')) {
-    header('Location: ' . BASE_URL . '/views/user_dashboard.php');
+    header('HTTP/1.0 403 Forbidden');
+    include '../views/errors/403.php';
     exit;
-}
-
-$hikvisionService = new HikvisionService();
-$message = '';
-$messageType = '';
-
-// Handle success messages from redirects
-if (isset($_GET['success'])) {
-    switch ($_GET['success']) {
-        case 'device_added':
-            $message = 'Device added successfully!';
-            $messageType = 'success';
-            break;
-        case 'device_updated':
-            $message = 'Device updated successfully!';
-            $messageType = 'success';
-            break;
-    }
 }
 
 // Handle form submissions
+$message = '';
+$message_type = '';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action'])) {
         switch ($_POST['action']) {
             case 'add_device':
-                $device_name = trim($_POST['name']);
-                $ip_address = trim($_POST['ip_address']);
-                $port = intval($_POST['port']);
-                $username = trim($_POST['username']);
-                $password = trim($_POST['password']);
-                $location = trim($_POST['location']);
-                
-                // Get church_id from form (if super admin) or from user's church
-                if ($is_super_admin && isset($_POST['church_id']) && !empty($_POST['church_id'])) {
-                    $church_id = intval($_POST['church_id']);
-                    // Validate that the selected church exists
-                    $church_check = $conn->prepare('SELECT id FROM churches WHERE id = ?');
-                    $church_check->bind_param('i', $church_id);
-                    $church_check->execute();
-                    if ($church_check->get_result()->num_rows === 0) {
-                        $message = 'Selected church does not exist.';
-                        $messageType = 'error';
-                        $church_check->close();
-                        break;
-                    }
-                    $church_check->close();
-                } else {
-                    $church_id = get_user_church_id($conn);
-                    if (!$church_id) {
-                        $message = 'No church found. Please ensure at least one church exists in the system.';
-                        $messageType = 'error';
-                        break;
-                    }
-                }
-                
-                if (empty($device_name) || empty($ip_address) || empty($username) || empty($password)) {
-                    $message = 'Device name, IP address, username and password are required.';
-                    $messageType = 'error';
-                } else {
-                    $stmt = $conn->prepare("
-                        INSERT INTO hikvision_devices (name, ip_address, port, username, password, location, church_id, is_active) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)
-                    ");
-                    $stmt->bind_param('ssisssi', $device_name, $ip_address, $port, $username, $password, $location, $church_id);
-                    
-                    if ($stmt->execute()) {
-                        $message = 'Device added successfully!';
-                        $messageType = 'success';
-                        // Redirect to prevent duplicate submissions
-                        header('Location: ' . $_SERVER['PHP_SELF'] . '?success=device_added');
-                        exit;
-                    } else {
-                        $message = 'Error adding device: ' . $conn->error;
-                        $messageType = 'error';
-                    }
-                }
+                $result = addDevice($conn, $_POST, $church_id);
+                $message = $result['message'];
+                $message_type = $result['success'] ? 'success' : 'danger';
                 break;
-                
-            case 'edit_device':
-                $device_id = intval($_POST['device_id']);
-                $device_name = trim($_POST['name']);
-                $ip_address = trim($_POST['ip_address']);
-                $port = intval($_POST['port']);
-                $username = trim($_POST['username']);
-                $password = trim($_POST['password']);
-                $location = trim($_POST['location']);
-                
-                // For super admin, allow updating church_id
-                if ($is_super_admin && isset($_POST['church_id'])) {
-                    $church_id = intval($_POST['church_id']);
-                    // Validate church exists
-                    $church_check = $conn->prepare('SELECT id FROM churches WHERE id = ?');
-                    $church_check->bind_param('i', $church_id);
-                    $church_check->execute();
-                    if ($church_check->get_result()->num_rows === 0) {
-                        $message = 'Selected church does not exist.';
-                        $messageType = 'error';
-                        $church_check->close();
-                        break;
-                    }
-                    $church_check->close();
-                }
-                
-                if (empty($device_name) || empty($ip_address) || empty($username)) {
-                    $message = 'Device name, IP address, and username are required.';
-                    $messageType = 'error';
-                } else {
-                    // For super admin, allow updating church_id; for others, maintain existing church restriction
-                    if ($is_super_admin) {
-                        if (empty($password)) {
-                            $stmt = $conn->prepare("
-                                UPDATE hikvision_devices 
-                                SET name = ?, ip_address = ?, port = ?, username = ?, location = ?, church_id = ? 
-                                WHERE id = ?
-                            ");
-                            $stmt->bind_param('ssissii', $device_name, $ip_address, $port, $username, $location, $church_id, $device_id);
-                        } else {
-                            $stmt = $conn->prepare("
-                                UPDATE hikvision_devices 
-                                SET name = ?, ip_address = ?, port = ?, username = ?, password = ?, location = ?, church_id = ? 
-                                WHERE id = ?
-                            ");
-                            $stmt->bind_param('ssisssii', $device_name, $ip_address, $port, $username, $password, $location, $church_id, $device_id);
-                        }
-                    } else {
-                        // Regular users can only update devices in their church
-                        $church_id = get_user_church_id($conn);
-                        if (empty($password)) {
-                            $stmt = $conn->prepare("
-                                UPDATE hikvision_devices 
-                                SET name = ?, ip_address = ?, port = ?, username = ?, location = ? 
-                                WHERE id = ? AND church_id = ?
-                            ");
-                            $stmt->bind_param('ssissii', $device_name, $ip_address, $port, $username, $location, $device_id, $church_id);
-                        } else {
-                            $stmt = $conn->prepare("
-                                UPDATE hikvision_devices 
-                                SET name = ?, ip_address = ?, port = ?, username = ?, password = ?, location = ? 
-                                WHERE id = ? AND church_id = ?
-                            ");
-                            $stmt->bind_param('ssisssii', $device_name, $ip_address, $port, $username, $password, $location, $device_id, $church_id);
-                        }
-                    }
-                    
-                    if ($stmt->execute() && $stmt->affected_rows > 0) {
-                        $message = 'Device updated successfully!';
-                        $messageType = 'success';
-                        // Redirect to prevent duplicate submissions
-                        header('Location: ' . $_SERVER['PHP_SELF'] . '?success=device_updated');
-                        exit;
-                    } else {
-                        $message = 'Error updating device or device not found.';
-                        $messageType = 'error';
-                        $stmt->close();
-                    }
-                }
+            case 'test_connection':
+                $result = testDeviceConnection($conn, $_POST['device_id']);
+                $message = $result['message'];
+                $message_type = $result['success'] ? 'success' : 'danger';
                 break;
-                
-            case 'generate_api_key':
-                $device_id = intval($_POST['device_id']);
-                if (!$device_id) {
-                    $message = 'Invalid device ID.';
-                    $messageType = 'error';
-                    break;
-                }
-                // Generate a new API key
-                $api_key = bin2hex(random_bytes(32));
-                $expires_at = date('Y-m-d H:i:s', strtotime('+1 year'));
-                // Deactivate old keys
-                $conn->query("UPDATE hikvision_api_keys SET is_active = 0 WHERE device_id = $device_id");
-                // Insert new key
-                $stmt = $conn->prepare("INSERT INTO hikvision_api_keys (device_id, api_key, expires_at, is_active) VALUES (?, ?, ?, 1)");
-                $stmt->bind_param('iss', $device_id, $api_key, $expires_at);
-                if ($stmt->execute()) {
-                    $message = 'API Key generated successfully!';
-                    $messageType = 'success';
-                    // Store API key in session to show in modal
-                    $_SESSION['generated_api_key'] = $api_key;
-                } else {
-                    $message = 'Failed to generate API key: ' . $conn->error;
-                    $messageType = 'error';
-                }
-                $stmt->close();
-                break;
-                $device_id = intval($_POST['device_id']);
-                $church_id = get_user_church_id($conn);
-                
-                // Check if device has enrollments or logs
-                $stmt = $conn->prepare("
-                    SELECT 
-                        (SELECT COUNT(*) FROM member_hikvision_data WHERE device_id = ?) as enrollments,
-                        (SELECT COUNT(*) FROM hikvision_attendance_logs WHERE device_id = ?) as logs
-                ");
-                $stmt->bind_param('ii', $device_id, $device_id);
-                $stmt->execute();
-                $result = $stmt->get_result()->fetch_assoc();
-                $stmt->close();
-                
-                if ($result['enrollments'] > 0 || $result['logs'] > 0) {
-                    $message = 'Cannot delete device: It has ' . $result['enrollments'] . ' enrollments and ' . $result['logs'] . ' attendance logs. Disable it instead.';
-                    $messageType = 'error';
-                } else {
-                    $stmt = $conn->prepare("DELETE FROM hikvision_devices WHERE id = ? AND church_id = ?");
-                    $stmt->bind_param('ii', $device_id, $church_id);
-                    
-                    if ($stmt->execute() && $stmt->affected_rows > 0) {
-                        $message = 'Device deleted successfully!';
-                        $messageType = 'success';
-                    } else {
-                        $message = 'Error deleting device or device not found.';
-                        $messageType = 'error';
-                    }
-                }
+            case 'sync_attendance':
+                $result = syncDeviceAttendance($conn, $_POST['device_id'], $_POST['session_id'] ?? null);
+                $message = $result['message'];
+                $message_type = $result['success'] ? 'success' : 'warning';
                 break;
         }
     }
 }
 
-// Get all devices
-$query = "SELECT d.*, 
-    d.ip_address as ip,
-    c.name as church_name,
-    (SELECT COUNT(*) FROM hikvision_enrollments WHERE device_id = d.id) as enrollment_count,
-    (SELECT MAX(timestamp) FROM hikvision_attendance_logs WHERE device_id = d.id) as last_attendance
-    FROM hikvision_devices d 
-    LEFT JOIN churches c ON d.church_id = c.id
-    ORDER BY d.name";
-$devices = $conn->query($query);
+// Get ALL devices first to debug
+$all_devices_query = "SELECT d.*, c.name as church_name FROM hikvision_devices d LEFT JOIN churches c ON d.church_id = c.id ORDER BY d.id DESC";
+$all_devices_result = $conn->query($all_devices_query);
+$all_devices = $all_devices_result->fetch_all(MYSQLI_ASSOC);
 
-// Get sync history
-$query = "
-    SELECT h.*, d.name as device_name 
-    FROM hikvision_sync_history h
-    JOIN hikvision_devices d ON h.device_id = d.id
-    ORDER BY h.start_time DESC
-    LIMIT 10
-";
-$sync_history = $conn->query($query);
+// Show debug info directly on page
+$debug_info = "<strong>Debug Info:</strong><br>";
+$debug_info .= "Your church_id: $church_id<br>";
+$debug_info .= "Total devices in database: " . count($all_devices) . "<br>";
+if (!empty($all_devices)) {
+    $debug_info .= "Device church_ids: ";
+    foreach ($all_devices as $dev) {
+        $debug_info .= $dev['church_id'] . ", ";
+    }
+    $debug_info = rtrim($debug_info, ", ") . "<br>";
+}
+
+// Get devices - if super admin, show all; otherwise show for user's church
+if ($is_super_admin) {
+    $devices_query = "SELECT d.*, c.name as church_name FROM hikvision_devices d LEFT JOIN churches c ON d.church_id = c.id ORDER BY d.id DESC";
+    $devices_stmt = $conn->prepare($devices_query);
+    $devices_stmt->execute();
+    $devices = $devices_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+} else {
+    $devices_query = "SELECT d.*, c.name as church_name FROM hikvision_devices d LEFT JOIN churches c ON d.church_id = c.id WHERE d.church_id = ? ORDER BY d.id DESC";
+    $devices_stmt = $conn->prepare($devices_query);
+    $devices_stmt->bind_param("i", $church_id);
+    $devices_stmt->execute();
+    $devices = $devices_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
+
+// Get attendance sessions for sync dropdown
+$sessions_query = "SELECT id, title, service_date FROM attendance_sessions WHERE church_id = ? ORDER BY service_date DESC LIMIT 10";
+$sessions_stmt = $conn->prepare($sessions_query);
+$sessions_stmt->bind_param("i", $church_id);
+$sessions_stmt->execute();
+$sessions = $sessions_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+function addDevice($conn, $data, $default_church_id) {
+    $church_id = isset($data['church_id']) && is_numeric($data['church_id']) ? intval($data['church_id']) : $default_church_id;
+    try {
+        $stmt = $conn->prepare("
+            INSERT INTO hikvision_devices 
+            (church_id, device_name, device_model, ip_address, port, username, password, location) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->bind_param("isssisss", 
+            $church_id,
+            $data['device_name'],
+            $data['device_model'],
+            $data['ip_address'],
+            $data['port'],
+            $data['username'],
+            $data['password'],
+            $data['location']
+        );
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'Device added successfully'];
+        } else {
+            return ['success' => false, 'message' => 'Failed to add device: ' . $conn->error];
+        }
+    } catch (Exception $e) {
+        return ['success' => false, 'message' => 'Error: ' . $e->getMessage()];
+    }
+}
+
+function testDeviceConnection($conn, $device_id) {
+    try {
+        $service = new HikVisionService($conn, $device_id);
+        $result = $service->testConnection();
+        
+        if ($result['success']) {
+            return ['success' => true, 'message' => 'Device connection successful'];
+        } else {
+            return ['success' => false, 'message' => 'Connection failed: ' . $result['error']];
+        }
+    } catch (Exception $e) {
+        return ['success' => false, 'message' => 'Error: ' . $e->getMessage()];
+    }
+}
+
+function syncDeviceAttendance($conn, $device_id, $session_id) {
+    try {
+        $service = new HikVisionService($conn, $device_id);
+        $result = $service->syncAttendance($session_id);
+        
+        if ($result['success']) {
+            $message = "Sync completed. {$result['synced_count']} records processed.";
+            if (!empty($result['errors'])) {
+                $message .= " Errors: " . implode(', ', array_slice($result['errors'], 0, 3));
+            }
+            return ['success' => true, 'message' => $message];
+        } else {
+            return ['success' => false, 'message' => 'Sync failed: ' . $result['error']];
+        }
+    } catch (Exception $e) {
+        return ['success' => false, 'message' => 'Error: ' . $e->getMessage()];
+    }
+}
 
 ob_start();
 ?>
 
-<!-- Page Header -->
-<div class="d-sm-flex align-items-center justify-content-between mb-4">
-    <h1 class="h3 mb-0 text-gray-800">Hikvision Devices</h1>
-    <div>
-        <a href="<?= BASE_URL ?>/views/hikvision_enrollment.php" class="btn btn-sm btn-primary shadow-sm">
-            <i class="fas fa-user-plus fa-sm text-white-50"></i> Manage Enrollments
-        </a>
-        <button onclick="syncAllDevices()" class="btn btn-sm btn-info shadow-sm ml-2">
-            <i class="fas fa-sync fa-sm text-white-50"></i> Sync All Devices
-        </button>
-        <button type="button" class="btn btn-sm btn-success shadow-sm ml-2" data-toggle="modal" data-target="#addDeviceModal">
-            <i class="fas fa-plus fa-sm text-white-50"></i> Add Device
-        </button>
-    </div>
-</div>
-
-<!-- Alert Messages -->
-<?php if ($message): ?>
-    <div class="alert alert-<?= $messageType === 'success' ? 'success' : 'danger' ?> alert-dismissible fade show" role="alert">
-        <i class="fas fa-<?= $messageType === 'success' ? 'check-circle' : 'exclamation-circle' ?> mr-2"></i>
-        <?= $message ?>
-        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-            <span aria-hidden="true">&times;</span>
-        </button>
-    </div>
-<?php endif; ?>
-            
-<!-- Devices Card -->
-<div class="card shadow mb-4">
-    <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
-        <h6 class="m-0 font-weight-bold text-primary">Hikvision Biometric Devices</h6>
-    </div>
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-bordered" id="devicesTable" width="100%" cellspacing="0">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>IP Address</th>
-                        <th>Location</th>
-                        <?php if ($is_super_admin): ?>
-                            <th>Church</th>
-                        <?php endif; ?>
-                        <th>Status</th>
-                        <th>Enrollments</th>
-                        <th>Last Activity</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-<?php
-// Fix: Convert mysqli_result to array for compatibility
-$device_rows = [];
-if ($devices && $devices instanceof mysqli_result) {
-    while ($row = $devices->fetch_assoc()) {
-        $device_rows[] = $row;
-    }
-}
-foreach ($device_rows as $device): ?>
-                        <tr>
-                            <td><?= htmlspecialchars($device['name']) ?></td>
-                            <td><?= htmlspecialchars($device['ip']) ?>:<?= htmlspecialchars($device['port']) ?></td>
-                            <td><?= htmlspecialchars($device['location'] ?? 'N/A') ?></td>
-                            <?php if ($is_super_admin): ?>
-                                <td><?= htmlspecialchars($device['church_name'] ?? 'Unknown') ?></td>
-                            <?php endif; ?>
-                            <td>
-                                <?php if ($device['is_active']): ?>
-                                    <span class="badge badge-success">Active</span>
-                                <?php else: ?>
-                                    <span class="badge badge-danger">Inactive</span>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <span class="badge badge-info"><?= intval($device['enrollment_count']) ?></span>
-                            </td>
-                            <td>
-                                <?= $device['last_attendance'] ? date('Y-m-d H:i', strtotime($device['last_attendance'])) : 'Never' ?>
-                            </td>
-                            <td>
-                                <div class="btn-group">
-    <button type="button" class="btn btn-sm btn-primary" onclick="testConnection(<?= $device['id'] ?>)" title="Test Connection">
-        <i class="fas fa-plug"></i>
-    </button>
-    <button type="button" class="btn btn-sm btn-info" onclick="syncDevice(<?= $device['id'] ?>)" title="Sync Attendance">
-        <i class="fas fa-sync"></i>
-    </button>
-    <button type="button" class="btn btn-sm btn-success" onclick="manageEnrollments(<?= $device['id'] ?>)" title="Manage Enrollments">
-        <i class="fas fa-users"></i>
-    </button>
-    <button type="button" class="btn btn-sm btn-warning" onclick="editDevice(<?= $device['id'] ?>)" title="Edit Device">
-        <i class="fas fa-edit"></i>
-    </button>
-    <button type="button" class="btn btn-sm btn-secondary" onclick="openApiKeyModal(<?= $device['id'] ?>)" title="Generate API Key">
-        <i class="fas fa-key"></i>
-    </button>
-    <?php if ($device['is_active']): ?>
-        <button type="button" class="btn btn-sm btn-secondary" onclick="toggleDevice(<?= $device['id'] ?>, <?= $device['is_active'] ?>)" title="Disable Device">
-            <i class="fas fa-power-off"></i>
-        </button>
-    <?php else: ?>
-        <button type="button" class="btn btn-sm btn-success" onclick="toggleDevice(<?= $device['id'] ?>, <?= $device['is_active'] ?>)" title="Enable Device">
-            <i class="fas fa-power-off"></i>
-        </button>
-    <?php endif; ?>
-    <button type="button" class="btn btn-sm btn-danger" onclick="deleteDevice(<?= $device['id'] ?>)" title="Delete Device">
-        <i class="fas fa-trash"></i>
-    </button>
-</div>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                    <?php if (empty($device_rows)): ?>
-                        <tr>
-                            <td colspan="<?= $is_super_admin ? 8 : 7 ?>" class="text-center">No devices found. Add your first device to get started.</td>
-                        </tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-
-<!-- Sync History Card -->
-<div class="card shadow mb-4">
-    <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
-        <h6 class="m-0 font-weight-bold text-primary">Recent Sync History</h6>
-    </div>
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-bordered" id="syncHistoryTable" width="100%" cellspacing="0">
-                <thead>
-                    <tr>
-                        <th>Device</th>
-                        <th>Start Time</th>
-                        <th>End Time</th>
-                        <th>Status</th>
-                        <th>Records Synced</th>
-                        <th>Records Processed</th>
-                        <th>Error Message</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($sync_history && $sync_history->num_rows > 0): ?>
-                        <?php while ($history = $sync_history->fetch_assoc()): ?>
-                            <tr>
-                                <td><?= htmlspecialchars($history['device_name']) ?></td>
-                                <td><?= date('Y-m-d H:i:s', strtotime($history['start_time'])) ?></td>
-                                <td><?= $history['end_time'] ? date('Y-m-d H:i:s', strtotime($history['end_time'])) : 'In Progress' ?></td>
-                                <td>
-                                    <?php if ($history['status'] === 'completed'): ?>
-                                        <span class="badge badge-success">Completed</span>
-                                    <?php elseif ($history['status'] === 'in_progress'): ?>
-                                        <span class="badge badge-info">In Progress</span>
-                                    <?php elseif ($history['status'] === 'failed'): ?>
-                                        <span class="badge badge-danger">Failed</span>
-                                    <?php else: ?>
-                                        <span class="badge badge-secondary"><?= ucfirst($history['status']) ?></span>
-                                    <?php endif; ?>
-                                </td>
-                                <td><?= number_format($history['records_synced']) ?></td>
-                                <td><?= number_format($history['records_processed']) ?></td>
-                                <td><?= htmlspecialchars($history['error_message'] ?? '') ?></td>
-                            </tr>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <tr>
-                            <td colspan="7" class="text-center">No sync history found</td>
-                        </tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-
-
-<!-- Delete Device Modal -->
-<div class="modal fade" id="deleteDeviceModal">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h4 class="modal-title">Delete Device</h4>
-                <button type="button" class="close" data-dismiss="modal">&times;</button>
+<div class="content-header">
+        <div class="container-fluid">
+            <div class="row mb-2">
+                <div class="col-sm-6">
+                    <h1 class="m-0">HikVision Devices</h1>
+                </div>
+                <div class="col-sm-6">
+                    <ol class="breadcrumb float-sm-right">
+                        <li class="breadcrumb-item"><a href="../index.php">Home</a></li>
+                        <li class="breadcrumb-item active">HikVision Devices</li>
+                    </ol>
+                </div>
             </div>
-            <form method="post" id="deleteDeviceForm">
-                <div class="modal-body">
-                    <input type="hidden" name="action" value="delete_device">
-                    <input type="hidden" name="device_id" id="delete_device_id">
-                    
-                    <p>Are you sure you want to delete this device?</p>
-                    <p class="text-danger">This action cannot be undone. Devices with attendance records cannot be deleted.</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-danger">Delete</button>
-                </div>
-            </form>
         </div>
     </div>
-</div>
 
-<script>
-    $(document).ready(function() {
-        // Initialize DataTables
-        $('#devicesTable').DataTable({
-            "order": [[0, "asc"]],
-            "pageLength": 25
-        });
-        
-        $('#syncHistoryTable').DataTable({
-            "order": [[1, "desc"]],
-            "pageLength": 10
-        });
-    });
-    
-    // Edit device
-    function editDevice(id) {
-        // Show loading spinner
-        Swal.fire({
-            title: 'Loading device details...',
-            allowOutsideClick: false,
-            didOpen: () => {
-                Swal.showLoading();
-            }
-        });
-        
-        // Fetch device details via AJAX
-        console.log('Edit device ID:', id);
-        console.log('AJAX URL:', '<?= BASE_URL ?>/ajax/get_hikvision_device.php');
-        
-        $.ajax({
-            url: '<?= BASE_URL ?>/ajax/get_hikvision_device.php',
-            type: 'GET',
-            data: { id: id },
-            dataType: 'json',
-            success: function(response) {
-                Swal.close();
-                if (response.success) {
-                    const device = response.device;
-                    document.getElementById('edit_device_id').value = device.id;
-                    document.getElementById('edit_name').value = device.name;
-                    document.getElementById('edit_ip_address').value = device.ip;
-                    document.getElementById('edit_port').value = device.port;
-                    document.getElementById('edit_username').value = device.username;
-                    document.getElementById('edit_location').value = device.location;
-                    document.getElementById('edit_is_active').checked = device.is_active == 1;
-                    
-                    <?php if ($is_super_admin): ?>
-                    if (document.getElementById('edit_church_id')) {
-                        document.getElementById('edit_church_id').value = device.church_id;
-                    }
+    <section class="content">
+        <div class="container-fluid">
+            <?php if ($message): ?>
+                <div class="alert alert-<?php echo $message_type; ?> alert-dismissible fade show">
+                    <?php echo htmlspecialchars($message); ?>
+                    <button type="button" class="close" data-dismiss="alert">&times;</button>
+                </div>
+            <?php endif; ?>
+
+            <!-- Header with Actions -->
+            <div class="row mb-4">
+                <div class="col-md-8">
+                    <h2 class="text-dark mb-0">
+                        <i class="fas fa-video text-primary mr-2"></i>
+                        HikVision Devices Management
+                    </h2>
+                    <p class="text-muted mb-0">Manage face recognition devices and sync attendance data</p>
+                </div>
+                <div class="col-md-4 text-right">
+                    <button type="button" class="btn btn-primary btn-lg" data-toggle="modal" data-target="#addDeviceModal">
+                        <i class="fas fa-plus mr-1"></i> Add Device
+                    </button>
+                    <button type="button" class="btn btn-outline-info ml-2" onclick="location.reload()">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Devices List -->
+            <div class="card shadow-sm">
+                <div class="card-header bg-white border-bottom">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-list text-primary mr-2"></i>
+                            Registered Devices
+                            <span class="badge badge-primary ml-2"><?php echo count($devices); ?></span>
+                        </h5>
+                        <?php if (!empty($devices)): ?>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-secondary" onclick="toggleView('table')">
+                                <i class="fas fa-table"></i> Table
+                            </button>
+                            <button class="btn btn-outline-secondary" onclick="toggleView('cards')">
+                                <i class="fas fa-th-large"></i> Cards
+                            </button>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <?php if (empty($devices)): ?>
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i> No devices registered yet for church ID: <?php echo $church_id; ?>
+                            <br><small><?php echo $debug_info; ?></small>
+                        </div>
+                    <?php else: ?>
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Church</th>
+                                        <th>Device Name</th>
+                                        <th>Model</th>
+                                        <th>IP Address</th>
+                                        <th>Location</th>
+                                        <th>Status</th>
+                                        <th>Last Sync</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($devices as $device): ?>
+                                        <tr>
+                                            <td>
+    <?php echo htmlspecialchars($device['church_name'] ?? ''); ?>
+</td>
+                                            <td><?php echo htmlspecialchars($device['device_name']); ?></td>
+                                            <td><?php echo htmlspecialchars($device['device_model']); ?></td>
+                                            <td><?php echo htmlspecialchars($device['ip_address']) . ':' . $device['port']; ?></td>
+                                            <td><?php echo htmlspecialchars($device['location'] ?? 'N/A'); ?></td>
+                                            <td>
+                                                <?php
+                                                $status_class = [
+                                                    'connected' => 'success',
+                                                    'disconnected' => 'secondary',
+                                                    'error' => 'danger'
+                                                ];
+                                                $status = $device['sync_status'];
+                                                ?>
+                                                <span class="badge badge-<?php echo $status_class[$status] ?? 'secondary'; ?>">
+                                                    <?php echo ucfirst($status); ?>
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <?php 
+                                                echo $device['last_sync'] 
+                                                    ? date('M j, Y g:i A', strtotime($device['last_sync']))
+                                                    : 'Never';
+                                                ?>
+                                            </td>
+                                            <td>
+                                                <div class="btn-group" role="group">
+                                                    <!-- Test Connection -->
+                                                    <form method="POST" style="display: inline;">
+                                                        <input type="hidden" name="action" value="test_connection">
+                                                        <input type="hidden" name="device_id" value="<?php echo $device['id']; ?>">
+                                                        <button type="submit" class="btn btn-sm btn-outline-info" title="Test Connection" data-toggle="tooltip">
+                                                            <i class="fas fa-plug"></i>
+                                                        </button>
+                                                    </form>
+                                                    
+                                                    <!-- Sync Attendance -->
+                                                    <button type="button" class="btn btn-sm btn-outline-success" 
+                                                            onclick="showSyncModal(<?php echo $device['id']; ?>, '<?php echo htmlspecialchars($device['device_name']); ?>')"
+                                                            title="Sync Attendance" data-toggle="tooltip">
+                                                        <i class="fas fa-sync"></i>
+                                                    </button>
+                                                    
+                                                    <!-- Manage Users -->
+                                                    <a href="hikvision_enrollment.php?device_id=<?php echo $device['id']; ?>" 
+                                                       class="btn btn-sm btn-outline-primary" title="Manage Users" data-toggle="tooltip">
+                                                        <i class="fas fa-users"></i>
+                                                    </a>
+                                                    
+                                                    <!-- Device Settings -->
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary" 
+                                                            onclick="editDevice(<?php echo $device['id']; ?>)"
+                                                            title="Edit Device" data-toggle="tooltip">
+                                                        <i class="fas fa-cog"></i>
+                                                    </button>
+                                                    
+                                                    <!-- Delete Device -->
+                                                    <button type="button" class="btn btn-sm btn-outline-danger" 
+                                                            onclick="deleteDevice(<?php echo $device['id']; ?>, '<?php echo htmlspecialchars($device['device_name']); ?>')"
+                                                            title="Delete Device" data-toggle="tooltip">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
                     <?php endif; ?>
-                    
-                    $('#editDeviceModal').modal('show');
-                } else {
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Error',
-                        text: response.message || 'Failed to load device details'
-                    });
-                }
-            },
-            error: function() {
-                Swal.close();
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: 'Network error occurred while fetching device details'
-                });
-            }
-        });
-    }
-    
-    // Test connection to device
-    function testConnection(id) {
-        console.log('Test connection for device ID:', id);
-        console.log('AJAX URL:', '<?= BASE_URL ?>/ajax/test_hikvision_device.php');
-        
-        Swal.fire({
-            title: 'Testing connection...',
-            text: 'Please wait while we test the connection to the device',
-            allowOutsideClick: false,
-            didOpen: () => {
-                Swal.showLoading();
-            }
-        });
-        
-        $.ajax({
-            url: '<?= BASE_URL ?>/ajax/test_hikvision_device.php',
-            type: 'POST',
-            data: { device_id: id },
-            dataType: 'json',
-            success: function(response) {
-                Swal.close();
-                if (response.success) {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Connection Successful',
-                        text: response.message || 'Successfully connected to the device'
-                    });
-                } else {
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Connection Failed',
-                        text: response.message || 'Failed to connect to the device'
-                    });
-                }
-            },
-            error: function() {
-                Swal.close();
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: 'Network error occurred while testing connection'
-                });
-            }
-        });
-    }
-    
-    // Sync device attendance data
-    function syncDevice(id) {
-        Swal.fire({
-            title: 'Sync Device',
-            text: 'Are you sure you want to sync attendance data from this device?',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: 'Yes, sync now',
-            cancelButtonText: 'Cancel'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                Swal.fire({
-                    title: 'Syncing attendance data...',
-                    text: 'This may take a few moments',
-                    allowOutsideClick: false,
-                    didOpen: () => {
-                        Swal.showLoading();
-                    }
-                });
-                
-                $.ajax({
-                    url: '<?= BASE_URL ?>/ajax/sync_hikvision_device.php',
-                    type: 'POST',
-                    data: { device_id: id },
-                    dataType: 'json',
-                    success: function(response) {
-                        Swal.close();
-                        if (response.success) {
-                            Swal.fire({
-                                icon: 'success',
-                                title: 'Sync Initiated',
-                                text: response.message || 'Sync process has been initiated successfully',
-                                confirmButtonText: 'OK'
-                            }).then(() => {
-                                location.reload();
-                            });
-                        } else {
-                            Swal.fire({
-                                icon: 'error',
-                                title: 'Sync Failed',
-                                text: response.message || 'Failed to initiate sync process'
-                            });
-                        }
-                    },
-                    error: function() {
-                        Swal.close();
-                        Swal.fire({
-                            icon: 'error',
-                            title: 'Error',
-                            text: 'Network error occurred while syncing device'
-                        });
-                    }
-                });
-            }
-        });
-    }
-    
-    // Sync all devices
-    function syncAllDevices() {
-        Swal.fire({
-            title: 'Sync All Devices',
-            text: 'Are you sure you want to sync attendance data from all active devices?',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: 'Yes, sync all',
-            cancelButtonText: 'Cancel'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                Swal.fire({
-                    title: 'Syncing all devices...',
-                    text: 'This may take several minutes',
-                    allowOutsideClick: false,
-                    didOpen: () => {
-                        Swal.showLoading();
-                    }
-                });
-                
-                $.ajax({
-                    url: '<?= BASE_URL ?>/ajax/sync_all_hikvision_devices.php',
-                    type: 'POST',
-                    dataType: 'json',
-                    success: function(response) {
-                        Swal.close();
-                        if (response.success) {
-                            Swal.fire({
-                                icon: 'success',
-                                title: 'Sync Initiated',
-                                text: response.message || 'Sync process has been initiated for all active devices',
-                                confirmButtonText: 'OK'
-                            }).then(() => {
-                                location.reload();
-                            });
-                        } else {
-                            Swal.fire({
-                                icon: 'error',
-                                title: 'Sync Failed',
-                                text: response.message || 'Failed to initiate sync process'
-                            });
-                        }
-                    },
-                    error: function() {
-                        Swal.close();
-                        Swal.fire({
-                            icon: 'error',
-                            title: 'Error',
-                            text: 'Network error occurred while syncing devices'
-                        });
-                    }
-                });
-            }
-        });
-    }
-    
-    // Open API Key Modal
-    function openApiKeyModal(deviceId) {
-        document.getElementById('api_device_id').value = deviceId;
-        $('#apiKeyModal').modal('show');
-    }
-
-    // Toggle device active status
-    function toggleDevice(id, currentStatus) {
-        console.log('Toggle device ID:', id, 'Current status:', currentStatus);
-        console.log('AJAX URL:', '<?= BASE_URL ?>/ajax/toggle_hikvision_device.php');
-        
-        const newStatus = currentStatus == 1 ? 0 : 1;
-        const action = newStatus ? 'activate' : 'deactivate';
-        Swal.fire({
-            title: `${newStatus ? 'Activate' : 'Deactivate'} Device`,
-            text: `Are you sure you want to ${action} this device?`,
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: `Yes, ${action}`,
-            cancelButtonText: 'Cancel'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                $.ajax({
-                    url: '<?= BASE_URL ?>/ajax/toggle_hikvision_device.php',
-                    type: 'POST',
-                    data: { device_id: id },
-                    dataType: 'json',
-                    success: function(response) {
-                        if (response.success) {
-                            Swal.fire({
-                                icon: 'success',
-                                title: 'Success',
-                                text: response.message || `Device ${newStatus ? 'activated' : 'deactivated'} successfully`,
-                                confirmButtonText: 'OK'
-                            }).then(() => {
-                                location.reload();
-                            });
-                        } else {
-                            Swal.fire({
-                                icon: 'error',
-                                title: 'Error',
-                                text: response.message || `Failed to ${action} device`
-                            });
-                        }
-                    },
-                    error: function() {
-                        Swal.fire({
-                            icon: 'error',
-                            title: 'Error',
-                            text: 'Network error occurred'
-                        });
-                    }
-                });
-            }
-        });
-    }
-    
-    // Delete device
-    function deleteDevice(id) {
-        Swal.fire({
-            title: 'Delete Device',
-            text: 'Are you sure you want to delete this device? This action cannot be undone.',
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonText: 'Yes, delete it',
-            cancelButtonText: 'Cancel',
-            confirmButtonColor: '#d33'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                $.ajax({
-                    url: '<?= BASE_URL ?>/ajax/delete_hikvision_device.php',
-                    type: 'POST',
-                    data: { device_id: id },
-                    dataType: 'json',
-                    success: function(response) {
-                        if (response.success) {
-                            Swal.fire({
-                                icon: 'success',
-                                title: 'Success',
-                                text: response.message || 'Device deleted successfully',
-                                confirmButtonText: 'OK'
-                            }).then(() => {
-                                location.reload();
-                            });
-                        } else {
-                            Swal.fire({
-                                icon: 'error',
-                                title: 'Error',
-                                text: response.message || 'Failed to delete device'
-                            });
-                        }
-                    },
-                    error: function() {
-                        Swal.fire({
-                            icon: 'error',
-                            title: 'Error',
-                            text: 'Network error occurred while deleting device'
-                        });
-                    }
-                });
-            }
-        });
-    }
-    
-    // Manage enrollments
-    function manageEnrollments(id) {
-        window.location.href = '<?= BASE_URL ?>/views/hikvision_enrollment.php?device_id=' + id;
-    }
-</script>
-
-<?php
-$content = ob_get_clean();
-include __DIR__.'/../includes/template.php';
-?>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
 
 <!-- Add Device Modal -->
-<div class="modal fade" id="addDeviceModal">
-    <div class="modal-dialog">
+<div class="modal fade" id="addDeviceModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
-            <div class="modal-header">
-                <h4 class="modal-title">Add Hikvision Device</h4>
-                <button type="button" class="close" data-dismiss="modal">&times;</button>
-            </div>
-            <form method="post">
+            <form method="post" id="addDeviceForm" autocomplete="off">
+                <div class="modal-header">
+                    <h4 class="modal-title"><i class="fas fa-plus"></i> Add New Device</h4>
+                    <button type="button" class="close" data-dismiss="modal">&times;</button>
+                </div>
                 <div class="modal-body">
                     <input type="hidden" name="action" value="add_device">
                     
-                    <div class="form-group">
-                        <label for="name">Device Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="name" name="name" required>
+                    <div class="form-row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="device_name">Device Name</label>
+                                <input type="text" class="form-control" id="device_name" name="device_name" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="church_id">Church</label>
+                                <select class="form-control" id="church_id" name="church_id" required>
+                                    <?php
+                                    $churches_query = "SELECT id, name FROM churches ORDER BY name";
+                                    $churches_result = $conn->query($churches_query);
+                                    while ($church = $churches_result->fetch_assoc()):
+                                    ?>
+                                        <option value="<?php echo $church['id']; ?>" <?php echo ($church['id'] == $church_id) ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($church['name']); ?>
+                                        </option>
+                                    <?php endwhile; ?>
+                                </select>
+                            </div>
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label for="ip_address">IP Address <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="ip_address" name="ip_address" required>
+                    <div class="form-row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="device_model">Device Model</label>
+                                <input type="text" class="form-control" id="device_model" name="device_model" value="DS-K1T320MFWX">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="ip_address">IP Address</label>
+                                <input type="text" class="form-control" id="ip_address" name="ip_address" required 
+                                       pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$" placeholder="192.168.1.100">
+                            </div>
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label for="port">Port</label>
-                        <input type="number" class="form-control" id="port" name="port" value="80">
+                    <div class="form-row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="port">Port</label>
+                                <input type="number" class="form-control" id="port" name="port" value="80" min="1" max="65535">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="username">Username</label>
+                                <input type="text" class="form-control" id="username" name="username" required>
+                            </div>
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label for="username">Username <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="username" name="username" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="password">Password <span class="text-danger">*</span></label>
-                        <input type="password" class="form-control" id="password" name="password" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="location">Location</label>
-                        <input type="text" class="form-control" id="location" name="location">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Add Device</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<script>
-function testConnection(deviceId) {
-    console.log('Testing connection for device ID:', deviceId);
-    if (confirm('Test connection to this device?')) {
-        // Create a form and submit it
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = '<?= BASE_URL ?>/ajax/test_hikvision_device.php';
-        form.innerHTML = `
-            <input type="hidden" name="device_id" value="${deviceId}">
-        `;
-        document.body.appendChild(form);
-        form.submit();
-    }
-}
-
-function syncDevice(deviceId) {
-    console.log('Syncing device ID:', deviceId);
-    if (confirm('Sync attendance data from this device? This may take several minutes.')) {
-        // Create a form and submit it
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = '<?= BASE_URL ?>/ajax/sync_hikvision_device.php';
-        form.innerHTML = `
-            <input type="hidden" name="device_id" value="${deviceId}">
-            <input type="hidden" name="sync_type" value="manual">
-        `;
-        document.body.appendChild(form);
-        form.submit();
-    }
-}
-
-function deleteDevice(deviceId) {
-    console.log('Deleting device ID:', deviceId);
-    if (confirm('Are you sure you want to delete this device? This action cannot be undone.')) {
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = '<?= BASE_URL ?>/ajax/delete_hikvision_device.php';
-        form.innerHTML = `
-            <input type="hidden" name="device_id" value="${deviceId}">
-        `;
-        document.body.appendChild(form);
-        form.submit();
-    }
-}
-
-function toggleDevice(deviceId, newStatus) {
-    console.log('Toggling device ID:', deviceId, 'New status:', newStatus);
-    const action = newStatus ? 'enable' : 'disable';
-    if (confirm(`Are you sure you want to ${action} this device?`)) {
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = '<?= BASE_URL ?>/ajax/toggle_hikvision_device.php';
-        form.innerHTML = `
-            <input type="hidden" name="device_id" value="${deviceId}">
-            <input type="hidden" name="is_active" value="${newStatus}">
-        `;
-        document.body.appendChild(form);
-        form.submit();
-    }
-}
-
-function editDevice(deviceId) {
-    // Debug: Check if deviceId is properly passed
-    console.log('editDevice called with deviceId:', deviceId);
-    
-    if (!deviceId || deviceId === 'undefined' || deviceId === '') {
-        alert('Error: Device ID is missing or invalid');
-        return;
-    }
-    
-    // Fetch device data via AJAX
-    const url = '<?= BASE_URL ?>/ajax/get_hikvision_device.php?id=' + deviceId;
-    console.log('Fetching from URL:', url);
-    
-    fetch(url)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Populate the edit modal with device data
-                document.getElementById('edit_device_id').value = data.device.id;
-                document.getElementById('edit_name').value = data.device.name;
-                document.getElementById('edit_ip_address').value = data.device.ip_address;
-                document.getElementById('edit_port').value = data.device.port;
-                document.getElementById('edit_username').value = data.device.username;
-                document.getElementById('edit_location').value = data.device.location || '';
-                document.getElementById('edit_is_active').checked = data.device.is_active == 1;
-                
-                // Show the modal
-                $('#editDeviceModal').modal('show');
-            } else {
-                alert('Error loading device data: ' + data.message);
-            }
-        })
-        .catch(error => {
-            alert('Error loading device data: ' + error.message);
-        });
-}
-</script>
-
-<!-- Edit Device Modal -->
-<div class="modal fade" id="editDeviceModal">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h4 class="modal-title">Edit Hikvision Device</h4>
-                <button type="button" class="close" data-dismiss="modal">&times;</button>
-            </div>
-            <form method="post">
-                <div class="modal-body">
-                    <input type="hidden" name="action" value="edit_device">
-                    <input type="hidden" name="device_id" id="edit_device_id">
-                    
-                    <div class="form-group">
-                        <label for="edit_name">Device Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="edit_name" name="name" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="edit_ip_address">IP Address <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="edit_ip_address" name="ip_address" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="edit_port">Port</label>
-                        <input type="number" class="form-control" id="edit_port" name="port" value="80">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="edit_username">Username <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="edit_username" name="username" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="edit_password">Password (leave blank to keep current)</label>
-                        <input type="password" class="form-control" id="edit_password" name="password">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="edit_location">Location</label>
-                        <input type="text" class="form-control" id="edit_location" name="location">
-                    </div>
-                    
-                    <div class="form-group">
-                        <div class="custom-control custom-switch">
-                            <input type="checkbox" class="custom-control-input" id="edit_is_active" name="is_active">
-                            <label class="custom-control-label" for="edit_is_active">Active</label>
+                    <div class="form-row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="password">Password</label>
+                                <input type="password" class="form-control" id="password" name="password" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="location">Location</label>
+                                <input type="text" class="form-control" id="location" name="location" placeholder="Main Entrance, Side Door, etc.">
+                            </div>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Add Device
+                    </button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
-
-<!-- Generate API Key Modal -->
-<div class="modal fade" id="apiKeyModal">
-<?php
-$generated_api_key = isset($_SESSION['generated_api_key']) ? $_SESSION['generated_api_key'] : null;
-if ($generated_api_key) {
-    echo '<div class="alert alert-success m-3">API Key generated: <code style="font-size:1.15em;">' . htmlspecialchars($generated_api_key) . '</code><br><span class="text-danger">Copy and save this key now. You will not be able to see it again!</span></div>';
-    unset($_SESSION['generated_api_key']);
-} elseif (isset(
-    $message, $messageType) && $messageType === 'error') {
-    echo '<div class="alert alert-danger m-3">' . htmlspecialchars($message) . '</div>';
-}
-?>
+<!-- Sync Modal -->
+<div class="modal fade" id="syncModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header">
-                <h4 class="modal-title">Generate API Key</h4>
-                <button type="button" class="close" data-dismiss="modal">&times;</button>
-            </div>
-            <form method="post">
+            <form method="POST">
+                <div class="modal-header">
+                    <h4 class="modal-title">Sync Attendance</h4>
+                    <button type="button" class="close" data-dismiss="modal">&times;</button>
+                </div>
                 <div class="modal-body">
-                    <input type="hidden" name="action" value="generate_api_key">
-                    <input type="hidden" name="device_id" id="api_device_id">
+                    <input type="hidden" name="action" value="sync_attendance">
+                    <input type="hidden" name="device_id" id="sync_device_id">
                     
-                    <p>Are you sure you want to generate a new API key for this device?</p>
-                    <p class="text-warning">This will invalidate any existing API keys for this device.</p>
+                    <p>Sync attendance data from <strong id="sync_device_name"></strong></p>
+                    
+                    <div class="form-group">
+                        <label for="session_id">Link to Attendance Session (Optional)</label>
+                        <select class="form-control" name="session_id" id="session_id">
+                            <option value="">-- No specific session --</option>
+                            <?php foreach ($sessions as $session): ?>
+                                <option value="<?php echo $session['id']; ?>">
+                                    <?php echo htmlspecialchars($session['title']) . ' - ' . date('M j, Y', strtotime($session['service_date'])); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small class="form-text text-muted">
+                            If selected, attendance will be linked to this specific session.
+                        </small>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Generate Key</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-sync"></i> Start Sync
+                    </button>
                 </div>
             </form>
         </div>
     </div>
 </div>
+
+<script>
+// Initialize tooltips
+$(document).ready(function() {
+    $('[data-toggle="tooltip"]').tooltip();
+});
+
+function showSyncModal(deviceId, deviceName) {
+    document.getElementById('sync_device_id').value = deviceId;
+    document.getElementById('sync_device_name').textContent = deviceName;
+    $('#syncModal').modal('show');
+}
+
+function editDevice(deviceId) {
+    // TODO: Implement edit device functionality
+    alert('Edit device functionality coming soon!');
+}
+
+function deleteDevice(deviceId, deviceName) {
+    if (confirm('Are you sure you want to delete device "' + deviceName + '"? This action cannot be undone.')) {
+        // Create form and submit
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.innerHTML = '<input type="hidden" name="action" value="delete_device">' +
+                        '<input type="hidden" name="device_id" value="' + deviceId + '">';
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+function toggleView(viewType) {
+    // TODO: Implement card/table view toggle
+    console.log('Toggle to ' + viewType + ' view');
+}
+</script>
+
+<?php 
+$page_content = ob_get_clean();
+include '../includes/layout.php';
+?>

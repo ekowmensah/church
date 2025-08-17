@@ -104,8 +104,8 @@ $upcoming_events = $conn->query("SELECT COUNT(*) as cnt FROM events WHERE event_
 $events_this_month = $conn->query("SELECT COUNT(*) as cnt FROM events WHERE YEAR(event_date) = YEAR(CURDATE()) AND MONTH(event_date) = MONTH(CURDATE())")->fetch_assoc()['cnt'];
 
 // ZKTeco Device Statistics
-$active_devices = $conn->query("SELECT COUNT(*) as cnt FROM zkteco_devices WHERE is_active = 1")->fetch_assoc()['cnt'];
-$enrolled_members = $conn->query("SELECT COUNT(DISTINCT member_id) as cnt FROM member_biometric_data WHERE is_active = 1")->fetch_assoc()['cnt'];
+//$active_devices = $conn->query("SELECT COUNT(*) as cnt FROM zkteco_devices WHERE is_active = 1")->fetch_assoc()['cnt'];
+//$enrolled_members = $conn->query("SELECT COUNT(DISTINCT member_id) as cnt FROM member_biometric_data WHERE is_active = 1")->fetch_assoc()['cnt'];
 
 // Recent Activity Data
 $recent_members = $conn->query("SELECT m.id, CONCAT(m.last_name, ' ', m.first_name, ' ', m.middle_name) AS name, bc.name AS class, m.status, m.created_at FROM members m LEFT JOIN bible_classes bc ON m.class_id = bc.id ORDER BY m.created_at DESC, m.id DESC LIMIT 8");
@@ -603,7 +603,7 @@ $('#payment-type-filter-form').on('submit', function(e) {
                         </div>
                     </div>
                 </div>
-                <div class="col-12 mb-2">
+                <!-- <div class="col-12 mb-2">
                     <div class="card bg-gradient-dark text-white shadow-sm">
                         <div class="card-body p-3">
                             <div class="d-flex justify-content-between align-items-center">
@@ -616,7 +616,7 @@ $('#payment-type-filter-form').on('submit', function(e) {
                             </div>
                         </div>
                     </div>
-                </div>
+                </div> -->
             </div>
         </div>
     </div>

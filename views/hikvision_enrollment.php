@@ -1,464 +1,403 @@
 <?php
-/**
- * Hikvision Member Enrollment
- * 
- * This page allows administrators to enroll church members with Hikvision face recognition devices,
- * manage their enrollment status, and sync member data with the devices.
- */
-require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions.php';
-require_once __DIR__.'/../includes/admin_auth.php';
+require_once '../includes/admin_auth.php';
+require_once '../config/database.php';
+require_once '../helpers/HikVisionService.php';
 
-// Only allow users with appropriate permissions
-if (!has_permission('manage_hikvision_enrollment')) {
-    header('Location: ' . BASE_URL . '/dashboard.php');
+$page_title = "HikVision Face Enrollment";
+$current_page = "hikvision_enrollment";
+
+// Initialize variables from auth
+$is_super_admin = $_SESSION['is_super_admin'] ?? false;
+$church_id = $_SESSION['church_id'] ?? 1;
+
+// Check permissions
+if (!$is_super_admin && !has_permission('manage_hikvision_devices')) {
+    header('HTTP/1.0 403 Forbidden');
+    include '../views/errors/403.php';
     exit;
 }
 
-// Initialize variables
-$success = '';
-$error = '';
-$selected_device = $_GET['device_id'] ?? null;
+$device_id = $_GET['device_id'] ?? null;
+if (!$device_id) {
+    header('Location: hikvision_devices.php');
+    exit;
+}
+
+// Get device info
+$device_stmt = $conn->prepare("SELECT * FROM hikvision_devices WHERE id = ? AND church_id = ?");
+$device_stmt->bind_param("ii", $device_id, $church_id);
+$device_stmt->execute();
+$device = $device_stmt->get_result()->fetch_assoc();
+
+if (!$device) {
+    header('Location: hikvision_devices.php');
+    exit;
+}
+
+$message = '';
+$message_type = '';
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action'])) {
         switch ($_POST['action']) {
             case 'enroll_member':
-                // Enroll a member with a device
-                $member_id = $_POST['member_id'] ?? 0;
-                $device_id = $_POST['device_id'] ?? 0;
-                $hikvision_user_id = $_POST['hikvision_user_id'] ?? '';
-                
-                if (empty($member_id) || empty($device_id)) {
-                    $error = 'Member and device must be selected.';
-                } else {
-                    // Check if member is already enrolled with this device
-                    $stmt = $conn->prepare("
-                        SELECT id FROM member_hikvision_data 
-                        WHERE member_id = ? AND device_id = ?
-                    ");
-                    $stmt->bind_param('ii', $member_id, $device_id);
-                    $stmt->execute();
-                    $result = $stmt->get_result();
-                    
-                    if ($result->num_rows > 0) {
-                        // Update existing enrollment
-                        $enrollment = $result->fetch_assoc();
-                        $stmt = $conn->prepare("
-                            UPDATE member_hikvision_data 
-                            SET hikvision_user_id = ?, updated_at = NOW()
-                            WHERE id = ?
-                        ");
-                        $stmt->bind_param('si', $hikvision_user_id, $enrollment['id']);
-                    } else {
-                        // Create new enrollment
-                        $stmt = $conn->prepare("
-                            INSERT INTO member_hikvision_data 
-                            (member_id, device_id, hikvision_user_id, created_at)
-                            VALUES (?, ?, ?, NOW())
-                        ");
-                        $stmt->bind_param('iis', $member_id, $device_id, $hikvision_user_id);
-                    }
-                    
-                    if ($stmt->execute()) {
-                        // Get member name for success message
-                        $stmt = $conn->prepare("
-                            SELECT CONCAT(firstname, ' ', lastname) as name 
-                            FROM members WHERE id = ?
-                        ");
-                        $stmt->bind_param('i', $member_id);
-                        $stmt->execute();
-                        $member = $stmt->get_result()->fetch_assoc();
-                        
-                        $success = "Member '{$member['name']}' enrolled successfully with Hikvision ID: {$hikvision_user_id}";
-                    } else {
-                        $error = "Failed to enroll member: " . $conn->error;
-                    }
-                }
+                $result = enrollMember($conn, $device_id, $_POST['member_id']);
+                $message = $result['message'];
+                $message_type = $result['success'] ? 'success' : 'danger';
                 break;
-                
+            case 'enroll_face':
+                $result = enrollFace($conn, $device_id, $_POST['member_id'], $_FILES['face_image']);
+                $message = $result['message'];
+                $message_type = $result['success'] ? 'success' : 'danger';
+                break;
             case 'remove_enrollment':
-                // Remove a member's enrollment from a device
-                $enrollment_id = $_POST['enrollment_id'] ?? 0;
-                
-                if (empty($enrollment_id)) {
-                    $error = 'Invalid enrollment selected.';
-                } else {
-                    $stmt = $conn->prepare("DELETE FROM member_hikvision_data WHERE id = ?");
-                    $stmt->bind_param('i', $enrollment_id);
-                    
-                    if ($stmt->execute()) {
-                        $success = "Member enrollment removed successfully.";
-                    } else {
-                        $error = "Failed to remove enrollment: " . $conn->error;
-                    }
-                }
-                break;
-                
-            case 'bulk_enroll':
-                // Bulk enroll members
-                $member_ids = $_POST['member_ids'] ?? [];
-                $device_id = $_POST['bulk_device_id'] ?? 0;
-                $start_id = $_POST['start_id'] ?? 1000;
-                
-                if (empty($member_ids) || empty($device_id)) {
-                    $error = 'No members selected or invalid device.';
-                } else {
-                    $success_count = 0;
-                    $error_count = 0;
-                    $current_id = $start_id;
-                    
-                    foreach ($member_ids as $member_id) {
-                        // Check if member is already enrolled with this device
-                        $stmt = $conn->prepare("
-                            SELECT id, hikvision_user_id FROM member_hikvision_data 
-                            WHERE member_id = ? AND device_id = ?
-                        ");
-                        $stmt->bind_param('ii', $member_id, $device_id);
-                        $stmt->execute();
-                        $result = $stmt->get_result();
-                        
-                        if ($result->num_rows > 0) {
-                            // Skip if already enrolled
-                            $enrollment = $result->fetch_assoc();
-                            if (!empty($enrollment['hikvision_user_id'])) {
-                                continue;
-                            }
-                            
-                            // Update existing enrollment with new ID
-                            $hikvision_user_id = (string)$current_id;
-                            $stmt = $conn->prepare("
-                                UPDATE member_hikvision_data 
-                                SET hikvision_user_id = ?, updated_at = NOW()
-                                WHERE id = ?
-                            ");
-                            $stmt->bind_param('si', $hikvision_user_id, $enrollment['id']);
-                        } else {
-                            // Create new enrollment
-                            $hikvision_user_id = (string)$current_id;
-                            $stmt = $conn->prepare("
-                                INSERT INTO member_hikvision_data 
-                                (member_id, device_id, hikvision_user_id, created_at)
-                                VALUES (?, ?, ?, NOW())
-                            ");
-                            $stmt->bind_param('iis', $member_id, $device_id, $hikvision_user_id);
-                        }
-                        
-                        if ($stmt->execute()) {
-                            $success_count++;
-                            $current_id++;
-                        } else {
-                            $error_count++;
-                        }
-                    }
-                    
-                    if ($success_count > 0) {
-                        $success = "{$success_count} members enrolled successfully.";
-                        if ($error_count > 0) {
-                            $success .= " {$error_count} members failed to enroll.";
-                        }
-                    } else {
-                        $error = "Failed to enroll any members.";
-                    }
-                }
+                $result = removeEnrollment($conn, $device_id, $_POST['member_id']);
+                $message = $result['message'];
+                $message_type = $result['success'] ? 'success' : 'danger';
                 break;
         }
     }
 }
 
-// Get all active devices
-$query = "SELECT id, name FROM hikvision_devices WHERE is_active = 1 ORDER BY name";
-$devices = $conn->query($query);
+// Get enrolled members
+$enrolled_query = "
+    SELECT m.id, m.first_name, m.last_name, m.member_number,
+           mhd.hikvision_user_id, mhd.face_enrolled, mhd.enrollment_date
+    FROM members m
+    JOIN member_hikvision_data mhd ON m.id = mhd.member_id
+    WHERE mhd.device_id = ?
+    ORDER BY m.first_name, m.last_name
+";
+$enrolled_stmt = $conn->prepare($enrolled_query);
+$enrolled_stmt->bind_param("i", $device_id);
+$enrolled_stmt->execute();
+$enrolled_members = $enrolled_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-// Get enrolled members for selected device
-$enrolled_members = [];
-if ($selected_device) {
-    $query = "
-        SELECT e.*, 
-                m.first_name as firstname, m.last_name as lastname, m.gender, m.phone
-        FROM hikvision_enrollments e
-        JOIN members m ON e.member_id = m.id
-        WHERE e.device_id = ?
-        ORDER BY m.last_name, m.first_name
-    ";
-    $stmt = $conn->prepare($query);
-    $stmt->bind_param('i', $selected_device);
-    $stmt->execute();
-    $enrolled_members = $stmt->get_result();
+// Get non-enrolled members
+$non_enrolled_query = "
+    SELECT m.id, m.first_name, m.last_name, m.member_number
+    FROM members m
+    WHERE m.church_id = ?
+    AND m.id NOT IN (
+        SELECT member_id FROM member_hikvision_data WHERE device_id = ?
+    )
+    ORDER BY m.first_name, m.last_name
+    LIMIT 50
+";
+$non_enrolled_stmt = $conn->prepare($non_enrolled_query);
+$non_enrolled_stmt->bind_param("ii", $church_id, $device_id);
+$non_enrolled_stmt->execute();
+$non_enrolled_members = $non_enrolled_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+function enrollMember($conn, $device_id, $member_id) {
+    try {
+        // Get member info
+        $member_stmt = $conn->prepare("SELECT first_name, last_name FROM members WHERE id = ?");
+        $member_stmt->bind_param("i", $member_id);
+        $member_stmt->execute();
+        $member = $member_stmt->get_result()->fetch_assoc();
+        
+        if (!$member) {
+            return ['success' => false, 'message' => 'Member not found'];
+        }
+        
+        $service = new HikVisionService($conn, $device_id);
+        $full_name = $member['first_name'] . ' ' . $member['last_name'];
+        $result = $service->addUser($member_id, $full_name);
+        
+        if ($result['success']) {
+            return ['success' => true, 'message' => 'Member enrolled successfully. User ID: ' . $result['hikvision_user_id']];
+        } else {
+            return ['success' => false, 'message' => 'Enrollment failed: ' . $result['error']];
+        }
+    } catch (Exception $e) {
+        return ['success' => false, 'message' => 'Error: ' . $e->getMessage()];
+    }
 }
 
-// Start output buffering
-ob_start();
+function enrollFace($conn, $device_id, $member_id, $face_file) {
+    try {
+        if ($face_file['error'] !== UPLOAD_ERR_OK) {
+            return ['success' => false, 'message' => 'File upload error'];
+        }
+        
+        // Validate file type
+        $allowed_types = ['image/jpeg', 'image/jpg', 'image/png'];
+        if (!in_array($face_file['type'], $allowed_types)) {
+            return ['success' => false, 'message' => 'Only JPEG and PNG images are allowed'];
+        }
+        
+        // Create upload directory if not exists
+        $upload_dir = '../uploads/faces/';
+        if (!is_dir($upload_dir)) {
+            mkdir($upload_dir, 0755, true);
+        }
+        
+        // Save uploaded file
+        $file_extension = pathinfo($face_file['name'], PATHINFO_EXTENSION);
+        $filename = 'face_' . $member_id . '_' . time() . '.' . $file_extension;
+        $file_path = $upload_dir . $filename;
+        
+        if (!move_uploaded_file($face_file['tmp_name'], $file_path)) {
+            return ['success' => false, 'message' => 'Failed to save uploaded file'];
+        }
+        
+        $service = new HikVisionService($conn, $device_id);
+        $result = $service->enrollFace($member_id, $file_path);
+        
+        // Clean up uploaded file
+        unlink($file_path);
+        
+        if ($result['success']) {
+            return ['success' => true, 'message' => 'Face enrolled successfully'];
+        } else {
+            return ['success' => false, 'message' => 'Face enrollment failed: ' . $result['error']];
+        }
+    } catch (Exception $e) {
+        return ['success' => false, 'message' => 'Error: ' . $e->getMessage()];
+    }
+}
+
+function removeEnrollment($conn, $device_id, $member_id) {
+    try {
+        // Remove from database
+        $stmt = $conn->prepare("DELETE FROM member_hikvision_data WHERE member_id = ? AND device_id = ?");
+        $stmt->bind_param("ii", $member_id, $device_id);
+        
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'Enrollment removed successfully'];
+        } else {
+            return ['success' => false, 'message' => 'Failed to remove enrollment'];
+        }
+    } catch (Exception $e) {
+        return ['success' => false, 'message' => 'Error: ' . $e->getMessage()];
+    }
+}
+
+include '../includes/header.php';
 ?>
 
-<!-- Page Header -->
-<div class="d-sm-flex align-items-center justify-content-between mb-4">
-    <h1 class="h3 mb-0 text-gray-800">Hikvision Member Enrollment</h1>
-    <ol class="breadcrumb float-sm-right">
-        <li class="breadcrumb-item"><a href="<?= BASE_URL ?>/dashboard.php">Home</a></li>
-        <li class="breadcrumb-item active">Hikvision Member Enrollment</li>
-    </ol>
-</div>
+<div class="content-wrapper">
+    <div class="content-header">
+        <div class="container-fluid">
+            <div class="row mb-2">
+                <div class="col-sm-6">
+                    <h1 class="m-0">Face Enrollment - <?php echo htmlspecialchars($device['device_name']); ?></h1>
+                </div>
+                <div class="col-sm-6">
+                    <ol class="breadcrumb float-sm-right">
+                        <li class="breadcrumb-item"><a href="../index.php">Home</a></li>
+                        <li class="breadcrumb-item"><a href="hikvision_devices.php">HikVision Devices</a></li>
+                        <li class="breadcrumb-item active">Face Enrollment</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
 
-<section class="content">
-    <div class="container-fluid">
-            <?php if ($success): ?>
-                <div class="alert alert-success alert-dismissible">
+    <section class="content">
+        <div class="container-fluid">
+            <?php if ($message): ?>
+                <div class="alert alert-<?php echo $message_type; ?> alert-dismissible fade show">
+                    <?php echo htmlspecialchars($message); ?>
                     <button type="button" class="close" data-dismiss="alert">&times;</button>
-                    <?= $success ?>
                 </div>
             <?php endif; ?>
-            
-            <?php if ($error): ?>
-                <div class="alert alert-danger alert-dismissible">
-                    <button type="button" class="close" data-dismiss="alert">&times;</button>
-                    <?= $error ?>
-                </div>
-            <?php endif; ?>
-            
+
             <div class="row">
-                <div class="col-md-12">
-                    <div class="card">
+                <!-- Enroll New Member -->
+                <div class="col-md-6">
+                    <div class="card card-primary">
                         <div class="card-header">
-                            <h3 class="card-title">Select Device</h3>
+                            <h3 class="card-title"><i class="fas fa-user-plus"></i> Enroll New Member</h3>
                         </div>
                         <div class="card-body">
-                            <form method="get" class="form-inline">
-                                <div class="form-group mr-3">
-                                    <label for="device_id" class="mr-2">Device:</label>
-                                    <select name="device_id" id="device_id" class="form-control" onchange="this.form.submit()">
-                                        <option value="">-- Select Device --</option>
-                                        <?php if ($devices && $devices->num_rows > 0): ?>
-                                            <?php while ($device = $devices->fetch_assoc()): ?>
-                                                <option value="<?= $device['id'] ?>" <?= $selected_device == $device['id'] ? 'selected' : '' ?>>
-                                                    <?= htmlspecialchars($device['name']) ?>
-                                                </option>
-                                            <?php endwhile; ?>
-                                        <?php endif; ?>
-                                    </select>
+                            <?php if (empty($non_enrolled_members)): ?>
+                                <div class="alert alert-info">
+                                    <i class="fas fa-info-circle"></i> All members are already enrolled or no members found.
                                 </div>
-                            </form>
+                            <?php else: ?>
+                                <form method="POST">
+                                    <input type="hidden" name="action" value="enroll_member">
+                                    <div class="form-group">
+                                        <label for="member_id">Select Member</label>
+                                        <select class="form-control" name="member_id" required>
+                                            <option value="">-- Select Member --</option>
+                                            <?php foreach ($non_enrolled_members as $member): ?>
+                                                <option value="<?php echo $member['id']; ?>">
+                                                    <?php echo htmlspecialchars($member['first_name'] . ' ' . $member['last_name']); ?>
+                                                    (<?php echo htmlspecialchars($member['member_number']); ?>)
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-user-plus"></i> Enroll Member
+                                    </button>
+                                </form>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Device Info -->
+                <div class="col-md-6">
+                    <div class="card card-info">
+                        <div class="card-header">
+                            <h3 class="card-title"><i class="fas fa-info-circle"></i> Device Information</h3>
+                        </div>
+                        <div class="card-body">
+                            <table class="table table-sm">
+                                <tr>
+                                    <td><strong>Device Name:</strong></td>
+                                    <td><?php echo htmlspecialchars($device['device_name']); ?></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Model:</strong></td>
+                                    <td><?php echo htmlspecialchars($device['device_model']); ?></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>IP Address:</strong></td>
+                                    <td><?php echo htmlspecialchars($device['ip_address']) . ':' . $device['port']; ?></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Location:</strong></td>
+                                    <td><?php echo htmlspecialchars($device['location'] ?? 'N/A'); ?></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Status:</strong></td>
+                                    <td>
+                                        <span class="badge badge-<?php echo $device['sync_status'] === 'connected' ? 'success' : 'secondary'; ?>">
+                                            <?php echo ucfirst($device['sync_status']); ?>
+                                        </span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Enrolled Users:</strong></td>
+                                    <td><?php echo count($enrolled_members); ?> / <?php echo $device['max_users']; ?></td>
+                                </tr>
+                            </table>
                         </div>
                     </div>
                 </div>
             </div>
-            
-            <?php if ($selected_device): ?>
-                <div class="row">
-                    <div class="col-md-12">
-                        <div class="card">
-                            <div class="card-header">
-                                <h3 class="card-title">Enrolled Members</h3>
-                                <div class="card-tools">
-                                    <button type="button" class="btn btn-primary btn-sm" data-toggle="modal" data-target="#enrollMemberModal">
-                                        <i class="fas fa-user-plus"></i> Enroll Member
-                                    </button>
-                                    <button type="button" class="btn btn-success btn-sm" data-toggle="modal" data-target="#bulkEnrollModal">
-                                        <i class="fas fa-users"></i> Bulk Enroll
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="card-body">
-                                <table class="table table-bordered table-striped">
-                                    <thead>
-                                        <tr>
-                                            <th>Name</th>
-                                            <th>Gender</th>
-                                            <th>Phone</th>
-                                            <th>Hikvision ID</th>
-                                            <th>Biometric Type</th>
-                                            <th>Enrolled On</th>
-                                            <th>Last Updated</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php if ($enrolled_members && $enrolled_members->num_rows > 0): ?>
-                                            <?php while ($member = $enrolled_members->fetch_assoc()): ?>
-                                                <tr>
-                                                    <td><?= htmlspecialchars($member['firstname'] . ' ' . $member['lastname']) ?></td>
-                                                    <td><?= htmlspecialchars($member['gender']) ?></td>
-                                                    <td><?= htmlspecialchars($member['phone']) ?></td>
-                                                    <td><?= htmlspecialchars($member['hikvision_user_id']) ?></td>
-                                                    <td>Fingerprint</td>
-                                                    <td><?= date('Y-m-d', strtotime($member['created_at'])) ?></td>
-                                                    <td><?= $member['updated_at'] ? date('Y-m-d', strtotime($member['updated_at'])) : 'N/A' ?></td>
-                                                    <td>
-                                                        <button class="btn btn-info btn-sm" onclick="editEnrollment(<?= $member['id'] ?>, <?= $member['member_id'] ?>, '<?= htmlspecialchars($member['firstname'] . ' ' . $member['lastname']) ?>', '<?= htmlspecialchars($member['hikvision_user_id']) ?>')">
-                                                            <i class="fas fa-edit"></i> Edit
-                                                        </button>
-                                                        <button class="btn btn-danger btn-sm" onclick="removeEnrollment(<?= $member['id'] ?>, '<?= htmlspecialchars($member['firstname'] . ' ' . $member['lastname']) ?>')">
-                                                            <i class="fas fa-trash"></i> Remove
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            <?php endwhile; ?>
-                                        <?php else: ?>
-                                            <tr>
-                                                <td colspan="7" class="text-center">No enrolled members found</td>
-                                            </tr>
-                                        <?php endif; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
+
+            <!-- Enrolled Members -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title"><i class="fas fa-users"></i> Enrolled Members</h3>
                 </div>
-            <?php endif; ?>
+                <div class="card-body">
+                    <?php if (empty($enrolled_members)): ?>
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i> No members enrolled yet.
+                        </div>
+                    <?php else: ?>
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Member</th>
+                                        <th>Member Number</th>
+                                        <th>HikVision User ID</th>
+                                        <th>Face Status</th>
+                                        <th>Enrollment Date</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($enrolled_members as $member): ?>
+                                        <tr>
+                                            <td><?php echo htmlspecialchars($member['first_name'] . ' ' . $member['last_name']); ?></td>
+                                            <td><?php echo htmlspecialchars($member['member_number']); ?></td>
+                                            <td><code><?php echo htmlspecialchars($member['hikvision_user_id']); ?></code></td>
+                                            <td>
+                                                <?php if ($member['face_enrolled']): ?>
+                                                    <span class="badge badge-success"><i class="fas fa-check"></i> Enrolled</span>
+                                                <?php else: ?>
+                                                    <span class="badge badge-warning"><i class="fas fa-clock"></i> Pending</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td>
+                                                <?php 
+                                                echo $member['enrollment_date'] 
+                                                    ? date('M j, Y g:i A', strtotime($member['enrollment_date']))
+                                                    : 'N/A';
+                                                ?>
+                                            </td>
+                                            <td>
+                                                <div class="btn-group" role="group">
+                                                    <?php if (!$member['face_enrolled']): ?>
+                                                        <button type="button" class="btn btn-sm btn-success" 
+                                                                onclick="showFaceEnrollModal(<?php echo $member['id']; ?>, '<?php echo htmlspecialchars($member['first_name'] . ' ' . $member['last_name']); ?>')"
+                                                                title="Enroll Face">
+                                                            <i class="fas fa-camera"></i>
+                                                        </button>
+                                                    <?php endif; ?>
+                                                    
+                                                    <form method="POST" style="display: inline;" 
+                                                          onsubmit="return confirm('Are you sure you want to remove this enrollment?')">
+                                                        <input type="hidden" name="action" value="remove_enrollment">
+                                                        <input type="hidden" name="member_id" value="<?php echo $member['id']; ?>">
+                                                        <button type="submit" class="btn btn-sm btn-danger" title="Remove Enrollment">
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
         </div>
     </section>
 </div>
 
-<!-- Enroll Member Modal -->
-<div class="modal fade" id="enrollMemberModal">
+<!-- Face Enrollment Modal -->
+<div class="modal fade" id="faceEnrollModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header">
-                <h4 class="modal-title">Enroll Member</h4>
-                <button type="button" class="close" data-dismiss="modal">&times;</button>
-            </div>
-            <form method="post">
+            <form method="POST" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h4 class="modal-title">Enroll Face</h4>
+                    <button type="button" class="close" data-dismiss="modal">&times;</button>
+                </div>
                 <div class="modal-body">
-                    <input type="hidden" name="action" value="enroll_member">
-                    <input type="hidden" name="device_id" value="<?= $selected_device ?>">
+                    <input type="hidden" name="action" value="enroll_face">
+                    <input type="hidden" name="member_id" id="face_member_id">
+                    
+                    <p>Enroll face for <strong id="face_member_name"></strong></p>
                     
                     <div class="form-group">
-                        <label for="member_id">Select Member <span class="text-danger">*</span></label>
-                        <select class="form-control select2" id="member_id" name="member_id" style="width: 100%;" required>
-                            <option value="">-- Select Member --</option>
-                            <!-- Members will be loaded via AJAX -->
-                        </select>
+                        <label for="face_image">Select Face Image</label>
+                        <input type="file" class="form-control-file" name="face_image" id="face_image" 
+                               accept="image/jpeg,image/jpg,image/png" required>
+                        <small class="form-text text-muted">
+                            Upload a clear front-facing photo. Supported formats: JPEG, PNG. Max size: 5MB.
+                        </small>
                     </div>
                     
-                    <div class="form-group">
-                        <label for="hikvision_user_id">Hikvision User ID <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="hikvision_user_id" name="hikvision_user_id" required>
-                        <small class="form-text text-muted">This ID must match the ID used in the Hikvision device for fingerprint enrollment.</small>
+                    <div class="alert alert-info">
+                        <h6><i class="fas fa-lightbulb"></i> Tips for best results:</h6>
+                        <ul class="mb-0">
+                            <li>Use good lighting</li>
+                            <li>Face should be clearly visible</li>
+                            <li>Look directly at the camera</li>
+                            <li>Remove glasses if possible</li>
+                            <li>Neutral expression works best</li>
+                        </ul>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Enroll Member</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Edit Enrollment Modal -->
-<div class="modal fade" id="editEnrollmentModal">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h4 class="modal-title">Edit Enrollment</h4>
-                <button type="button" class="close" data-dismiss="modal">&times;</button>
-            </div>
-            <form method="post">
-                <div class="modal-body">
-                    <input type="hidden" name="action" value="enroll_member">
-                    <input type="hidden" name="device_id" value="<?= $selected_device ?>">
-                    <input type="hidden" name="member_id" id="edit_member_id">
-                    
-                    <div class="form-group">
-                        <label>Member</label>
-                        <input type="text" class="form-control" id="edit_member_name" readonly>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="edit_hikvision_user_id">Hikvision User ID <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="edit_hikvision_user_id" name="hikvision_user_id" required>
-                        <small class="form-text text-muted">This ID must match the ID used in the Hikvision device for fingerprint enrollment.</small>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Changes</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Remove Enrollment Modal -->
-<div class="modal fade" id="removeEnrollmentModal">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h4 class="modal-title">Remove Enrollment</h4>
-                <button type="button" class="close" data-dismiss="modal">&times;</button>
-            </div>
-            <form method="post">
-                <div class="modal-body">
-                    <input type="hidden" name="action" value="remove_enrollment">
-                    <input type="hidden" name="enrollment_id" id="remove_enrollment_id">
-                    
-                    <p>Are you sure you want to remove the enrollment for <span id="remove_member_name" class="font-weight-bold"></span>?</p>
-                    <p class="text-danger">This will remove the member's enrollment from the selected device.</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-danger">Remove</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Bulk Enroll Modal -->
-<div class="modal fade" id="bulkEnrollModal">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h4 class="modal-title">Bulk Enroll Members</h4>
-                <button type="button" class="close" data-dismiss="modal">&times;</button>
-            </div>
-            <form method="post">
-                <div class="modal-body">
-                    <input type="hidden" name="action" value="bulk_enroll">
-                    <input type="hidden" name="bulk_device_id" value="<?= $selected_device ?>">
-                    
-                    <div class="form-group">
-                        <label for="start_id">Starting Hikvision User ID</label>
-                        <input type="number" class="form-control" id="start_id" name="start_id" value="1000" min="1">
-                        <small class="form-text text-muted">Sequential IDs will be assigned starting from this number for fingerprint enrollment.</small>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Select Members</label>
-                        <div class="card">
-                            <div class="card-header">
-                                <div class="input-group">
-                                    <input type="text" class="form-control" id="member_search" placeholder="Search members...">
-                                    <div class="input-group-append">
-                                        <button type="button" class="btn btn-default" id="search_button">
-                                            <i class="fas fa-search"></i>
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="card-body" style="max-height: 300px; overflow-y: auto;">
-                                <div class="form-check mb-2">
-                                    <input class="form-check-input" type="checkbox" id="select_all">
-                                    <label class="form-check-label" for="select_all">
-                                        Select All
-                                    </label>
-                                </div>
-                                <hr>
-                                <div id="member_list">
-                                    <!-- Members will be loaded via AJAX -->
-                                    <div class="text-center">
-                                        <p>Loading members...</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Enroll Selected Members</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-camera"></i> Enroll Face
+                    </button>
                 </div>
             </form>
         </div>
@@ -466,139 +405,11 @@ ob_start();
 </div>
 
 <script>
-    $(document).ready(function() {
-        // Initialize Select2
-        $('.select2').select2({
-            ajax: {
-                url: '<?= BASE_URL ?>/ajax/search_members.php',
-                dataType: 'json',
-                delay: 250,
-                data: function(params) {
-                    return {
-                        q: params.term,
-                        page: params.page
-                    };
-                },
-                processResults: function(data, params) {
-                    params.page = params.page || 1;
-                    return {
-                        results: data.items,
-                        pagination: {
-                            more: (params.page * 30) < data.total_count
-                        }
-                    };
-                },
-                cache: true
-            },
-            placeholder: 'Search for a member',
-            minimumInputLength: 2,
-            templateResult: formatMember,
-            templateSelection: formatMemberSelection
-        });
-        
-        // Load members for bulk enrollment
-        loadMembers();
-        
-        // Search button click
-        $('#search_button').click(function() {
-            loadMembers($('#member_search').val());
-        });
-        
-        // Search on enter key
-        $('#member_search').keypress(function(e) {
-            if (e.which == 13) {
-                loadMembers($('#member_search').val());
-                e.preventDefault();
-            }
-        });
-        
-        // Select all checkbox
-        $('#select_all').change(function() {
-            $('.member-checkbox').prop('checked', $(this).prop('checked'));
-        });
-        
-        // Update select all when individual checkboxes change
-        $(document).on('change', '.member-checkbox', function() {
-            if ($('.member-checkbox:checked').length == $('.member-checkbox').length) {
-                $('#select_all').prop('checked', true);
-            } else {
-                $('#select_all').prop('checked', false);
-            }
-        });
-    });
-    
-    // Format member in dropdown
-    function formatMember(member) {
-        if (!member.id) {
-            return member.text;
-        }
-        
-        return $('<span>' + member.text + ' (' + member.phone + ')</span>');
-    }
-    
-    // Format selected member
-    function formatMemberSelection(member) {
-        return member.text;
-    }
-    
-    // Load members for bulk enrollment
-    function loadMembers(search = '') {
-        $('#member_list').html('<div class="text-center"><p>Loading members...</p></div>');
-        
-        $.ajax({
-            url: '<?= BASE_URL ?>/ajax/get_members.php',
-            type: 'GET',
-            data: {
-                search: search,
-                device_id: <?= $selected_device ?? 0 ?>
-            },
-            success: function(response) {
-                if (response.success) {
-                    var html = '';
-                    
-                    if (response.members.length === 0) {
-                        html = '<div class="text-center"><p>No members found</p></div>';
-                    } else {
-                        $.each(response.members, function(i, member) {
-                            html += '<div class="form-check mb-2">';
-                            html += '<input class="form-check-input member-checkbox" type="checkbox" name="member_ids[]" value="' + member.id + '" id="member_' + member.id + '">';
-                            html += '<label class="form-check-label" for="member_' + member.id + '">';
-                            html += member.name + ' (' + member.phone + ')';
-                            html += '</label>';
-                            html += '</div>';
-                        });
-                    }
-                    
-                    $('#member_list').html(html);
-                } else {
-                    $('#member_list').html('<div class="text-center"><p class="text-danger">Error loading members</p></div>');
-                }
-            },
-            error: function() {
-                $('#member_list').html('<div class="text-center"><p class="text-danger">Error loading members</p></div>');
-            }
-        });
-    }
-    
-    // Edit enrollment
-    function editEnrollment(id, memberId, memberName, hikvisionUserId) {
-        document.getElementById('edit_member_id').value = memberId;
-        document.getElementById('edit_member_name').value = memberName;
-        document.getElementById('edit_hikvision_user_id').value = hikvisionUserId;
-        
-        $('#editEnrollmentModal').modal('show');
-    }
-    
-    // Remove enrollment
-    function removeEnrollment(id, memberName) {
-        document.getElementById('remove_enrollment_id').value = id;
-        document.getElementById('remove_member_name').textContent = memberName;
-        
-        $('#removeEnrollmentModal').modal('show');
-    }
+function showFaceEnrollModal(memberId, memberName) {
+    document.getElementById('face_member_id').value = memberId;
+    document.getElementById('face_member_name').textContent = memberName;
+    $('#faceEnrollModal').modal('show');
+}
 </script>
 
-<?php
-$content = ob_get_clean();
-include __DIR__.'/../includes/template.php';
-?>
+<?php include '../includes/footer.php'; ?>
