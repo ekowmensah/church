@@ -2,7 +2,7 @@
 // api_hikvision_attendance.php
 // Receives attendance logs from the local sync agent and inserts into attendance_records
 
-require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/config/config.php';
 
 // === CONFIGURATION ===
 $EXPECTED_API_KEY = getenv('HIKVISION_API_KEY') ?: '0c6c5401ab9f1af81c7cbadee3279663a918a16407fbc84a0d4bd189789d9f49'; // Store securely in .env
