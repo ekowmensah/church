@@ -92,11 +92,14 @@ if ($clientReference) {
             }
             
             foreach ($paymentsToInsert as $paymentRow) {
+                log_debug('About to insert payment: '.json_encode($paymentRow));
                 $result = $paymentModel->add($conn, $paymentRow);
                 log_debug('Payment add result: '.var_export($result, true));
                 
                 // Send SMS notification for each payment
+                log_debug('Checking SMS trigger conditions - result: '.json_encode($result));
                 if ($result && isset($result['id'])) {
+                    log_debug('SMS trigger condition met, payment ID: '.$result['id']);
                     try {
                         // Get member details
                         $member_stmt = $conn->prepare('SELECT CONCAT(first_name, " ", last_name) as full_name, phone FROM members WHERE id = ?');
@@ -104,13 +107,16 @@ if ($clientReference) {
                         $member_stmt->execute();
                         $member = $member_stmt->get_result()->fetch_assoc();
                         
+                        log_debug('Member query result: '.json_encode($member));
                         if ($member && !empty($member['phone'])) {
+                            log_debug('Member has phone, proceeding with SMS');
                             // Get church name
                             $church_stmt = $conn->prepare('SELECT name FROM churches WHERE id = ?');
                             $church_stmt->bind_param('i', $paymentRow['church_id']);
                             $church_stmt->execute();
                             $church = $church_stmt->get_result()->fetch_assoc();
                             $church_name = $church['name'] ?? 'Church';
+                            log_debug('Church name: '.$church_name);
                             
                             $amount = number_format($paymentRow['amount'], 2);
                             $full_name = $member['full_name'];
@@ -118,6 +124,7 @@ if ($clientReference) {
                             
                             // Check if this is a harvest payment (payment_type_id = 4)
                             if ($paymentRow['payment_type_id'] == 4) {
+                                log_debug('Processing harvest payment SMS');
                                 // Calculate yearly harvest total
                                 $year = date('Y');
                                 $yearly_stmt = $conn->prepare('SELECT SUM(amount) as yearly_total FROM payments WHERE member_id = ? AND payment_type_id = 4 AND YEAR(payment_date) = ? AND status = "Completed"');
@@ -128,9 +135,11 @@ if ($clientReference) {
                                 
                                 $sms_message = "Hi $full_name, your payment of ₵$amount has been paid to $church_name as $description. Your Total Harvest amount for the year $year is ₵$yearly_total";
                             } else {
+                                log_debug('Processing regular payment SMS');
                                 $sms_message = "Hi $full_name, your payment of ₵$amount has been successfully processed for $church_name. Description: $description. Thank you!";
                             }
                             
+                            log_debug('About to send SMS: '.$sms_message);
                             $sms_result = send_sms($member['phone'], $sms_message);
                             log_debug('SMS sent for payment ID '.$result['id'].': '.json_encode($sms_result));
                             
@@ -142,10 +151,15 @@ if ($clientReference) {
                             $provider = 'arkesel';
                             $sms_log_stmt->bind_param('issssss', $paymentRow['member_id'], $member['phone'], $sms_message, $sms_type, $sms_status, $provider, $sms_response);
                             $sms_log_stmt->execute();
+                            log_debug('SMS logged to database');
+                        } else {
+                            log_debug('Member has no phone or member not found');
                         }
                     } catch (Exception $e) {
                         log_debug('SMS error for payment: '.$e->getMessage());
                     }
+                } else {
+                    log_debug('SMS trigger condition NOT met - no payment ID returned or result is false');
                 }
             }
         }
