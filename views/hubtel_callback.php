@@ -8,6 +8,12 @@ require_once __DIR__.'/../models/Payment.php';
 file_put_contents(__DIR__.'/../logs/hubtel_callback.log', date('c')."\n".file_get_contents('php://input')."\n", FILE_APPEND);
 
 $debug_log = __DIR__.'/../logs/hubtel_callback_debug.log';
+if (!file_exists($debug_log)) {
+    @touch($debug_log);
+    if (!file_exists($debug_log)) {
+        error_log('Failed to create debug log file: ' . $debug_log);
+    }
+}
 file_put_contents($debug_log, date('c')." Callback entered\n", FILE_APPEND);
 
 $data = json_decode(file_get_contents('php://input'), true);
