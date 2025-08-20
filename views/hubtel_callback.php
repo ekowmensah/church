@@ -51,6 +51,8 @@ if ($clientReference) {
         $intentModel->updateStatus($conn, $clientReference, $status);
         log_debug("Updated PaymentIntent status to $status");
         if ($status === 'Completed') {
+            require_once __DIR__.'/../includes/sms.php';
+            
             $paymentsToInsert = [];
             if (!empty($intent['bulk_breakdown'])) {
                 $bulk_items = json_decode($intent['bulk_breakdown'], true);
@@ -88,10 +90,64 @@ if ($clientReference) {
                     'mode' => 'Hubtel'
                 ];
             }
+            
             foreach ($paymentsToInsert as $paymentRow) {
-    $result = $paymentModel->add($conn, $paymentRow);
-    log_debug('Bulk payment add result: '.var_export($result, true));
-}
+                $result = $paymentModel->add($conn, $paymentRow);
+                log_debug('Payment add result: '.var_export($result, true));
+                
+                // Send SMS notification for each payment
+                if ($result && isset($result['id'])) {
+                    try {
+                        // Get member details
+                        $member_stmt = $conn->prepare('SELECT CONCAT(first_name, " ", last_name) as full_name, phone FROM members WHERE id = ?');
+                        $member_stmt->bind_param('i', $paymentRow['member_id']);
+                        $member_stmt->execute();
+                        $member = $member_stmt->get_result()->fetch_assoc();
+                        
+                        if ($member && !empty($member['phone'])) {
+                            // Get church name
+                            $church_stmt = $conn->prepare('SELECT name FROM churches WHERE id = ?');
+                            $church_stmt->bind_param('i', $paymentRow['church_id']);
+                            $church_stmt->execute();
+                            $church = $church_stmt->get_result()->fetch_assoc();
+                            $church_name = $church['name'] ?? 'Church';
+                            
+                            $amount = number_format($paymentRow['amount'], 2);
+                            $full_name = $member['full_name'];
+                            $description = $paymentRow['description'];
+                            
+                            // Check if this is a harvest payment (payment_type_id = 4)
+                            if ($paymentRow['payment_type_id'] == 4) {
+                                // Calculate yearly harvest total
+                                $year = date('Y');
+                                $yearly_stmt = $conn->prepare('SELECT SUM(amount) as yearly_total FROM payments WHERE member_id = ? AND payment_type_id = 4 AND YEAR(payment_date) = ? AND status = "Completed"');
+                                $yearly_stmt->bind_param('ii', $paymentRow['member_id'], $year);
+                                $yearly_stmt->execute();
+                                $yearly_result = $yearly_stmt->get_result()->fetch_assoc();
+                                $yearly_total = number_format($yearly_result['yearly_total'] ?? 0, 2);
+                                
+                                $sms_message = "Hi $full_name, your payment of ₵$amount has been paid to $church_name as $description. Your Total Harvest amount for the year $year is ₵$yearly_total";
+                            } else {
+                                $sms_message = "Hi $full_name, your payment of ₵$amount has been successfully processed for $church_name. Description: $description. Thank you!";
+                            }
+                            
+                            $sms_result = send_sms($member['phone'], $sms_message);
+                            log_debug('SMS sent for payment ID '.$result['id'].': '.json_encode($sms_result));
+                            
+                            // Log SMS to database
+                            $sms_status = (isset($sms_result['status']) && $sms_result['status'] === 'success') ? 'success' : 'fail';
+                            $sms_response = json_encode($sms_result);
+                            $sms_log_stmt = $conn->prepare('INSERT INTO sms_logs (member_id, phone, message, type, status, provider, sent_at, response) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)');
+                            $sms_type = 'payment_notification';
+                            $provider = 'arkesel';
+                            $sms_log_stmt->bind_param('issssss', $paymentRow['member_id'], $member['phone'], $sms_message, $sms_type, $sms_status, $provider, $sms_response);
+                            $sms_log_stmt->execute();
+                        }
+                    } catch (Exception $e) {
+                        log_debug('SMS error for payment: '.$e->getMessage());
+                    }
+                }
+            }
         }
     } else {
         log_debug('No PaymentIntent found for clientReference');
