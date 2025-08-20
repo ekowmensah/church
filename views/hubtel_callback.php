@@ -47,6 +47,7 @@ if ($clientReference) {
     $intent = $intentModel->getByReference($conn, $clientReference);
     if ($intent) {
         file_put_contents($debug_log, date('c')." Found PaymentIntent: ".json_encode($intent)."\n", FILE_APPEND);
+        file_put_contents($debug_log, date('c')." About to update status. Current status: $status\n", FILE_APPEND);
         $intentModel->updateStatus($conn, $clientReference, $status);
         file_put_contents($debug_log, date('c')." Updated PaymentIntent status to $status\n", FILE_APPEND);
         if ($status === 'Completed') {
