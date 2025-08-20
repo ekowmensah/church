@@ -29,7 +29,7 @@ if (!$is_super_admin && !has_permission('view_employment_status_report')) {
 $can_view = true; // Already validated above
 $can_export = $is_super_admin || has_permission('export_employment_status_report');
 
-require_once __DIR__.'/../../../includes/admin_auth.php';
+//require_once __DIR__.'/../../../includes/admin_auth.php';
 require_once __DIR__.'/../../../config/config.php';
 ob_start();
 

@@ -29,7 +29,7 @@ if (!$is_super_admin && !has_permission('view_organisational_health_report')) {
 $can_view = true; // Already validated above
 $can_export = $is_super_admin || has_permission('export_organisational_health_report');
 
-require_once __DIR__.'/../../../includes/admin_auth.php';
+//require_once __DIR__.'/../../../includes/admin_auth.php';
 require_once __DIR__.'/../../../config/config.php';
 
 // Filtering

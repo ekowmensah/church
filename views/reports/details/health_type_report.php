@@ -38,7 +38,7 @@ if (!$is_super_admin && !has_permission('view_health_type_report')) {
 $can_view = true; // Already validated above
 $can_export = $is_super_admin || has_permission('export_health_type_report');
 
-require_once __DIR__.'/../../../includes/admin_auth.php';
+//require_once __DIR__.'/../../../includes/admin_auth.php';
 require_once __DIR__.'/../../../config/config.php';
 
 // Filtering

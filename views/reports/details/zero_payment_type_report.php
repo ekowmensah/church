@@ -29,7 +29,7 @@ if (!$is_super_admin && !has_permission('view_zero_payment_type_report')) {
 $can_view = true; // Already validated above
 $can_export = $is_super_admin || has_permission('export_zero_payment_type_report');
 
-require_once dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'includes' . DIRECTORY_SEPARATOR . 'admin_auth.php';
+//require_once dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'includes' . DIRECTORY_SEPARATOR . 'admin_auth.php';
 require_once dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'config.php';
 ob_start();
 

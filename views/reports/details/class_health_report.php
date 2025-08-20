@@ -29,7 +29,7 @@ if (!$is_super_admin && !has_permission('view_class_health_report')) {
 $can_view = true; // Already validated above
 $can_export = $is_super_admin || has_permission('export_class_health_report');
 
-require_once dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'includes' . DIRECTORY_SEPARATOR . 'admin_auth.php';
+//require_once dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'includes' . DIRECTORY_SEPARATOR . 'admin_auth.php';
 require_once dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'config.php';
 
 // Filtering

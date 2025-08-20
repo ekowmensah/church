@@ -29,7 +29,7 @@ if (!$is_super_admin && !has_permission('view_bibleclass_payment_report')) {
 $can_view = true; // Already validated above
 $can_export = $is_super_admin || has_permission('export_bibleclass_payment_report');
 
-require_once dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'includes' . DIRECTORY_SEPARATOR . 'admin_auth.php';
+// Remove admin_auth.php include as it has incorrect permission check
 
 // Filtering
 $class_id = isset($_GET['class_id']) ? intval($_GET['class_id']) : 0;
