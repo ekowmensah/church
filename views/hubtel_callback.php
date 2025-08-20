@@ -85,7 +85,7 @@ if ($clientReference) {
             }
             foreach ($paymentsToInsert as $paymentRow) {
     $result = $paymentModel->add($conn, $paymentRow);
-    log_debug('Payment add result: '.var_export($result, true).'; Data: '.json_encode($paymentRow));
+    log_debug('Bulk payment add result: '.var_export($result, true));
 }
         }
     } else {
