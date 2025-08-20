@@ -1,4 +1,9 @@
 <?php
+// Minimal fallback logger for debugging
+function _test_log($msg) {
+    file_put_contents(__DIR__ . '/../logs/hubtel_callback_test.log', date('Y-m-d H:i:s') . ' ' . $msg . "\n", FILE_APPEND);
+}
+_test_log('hubtel_callback.php called');
 // Hubtel callback handler: receives payment status update from Hubtel
 // This is the endpoint you configure in Hubtel dashboard as the callbackUrl
 require_once __DIR__.'/../config/config.php';
