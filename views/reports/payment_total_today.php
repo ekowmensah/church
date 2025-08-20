@@ -42,11 +42,23 @@ $total_count = 0;
 $error = '';
 
 try {
-    $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM payments WHERE DATE(payment_date) = ?";
-    if (!$stmt = $conn->prepare($sql)) {
+    // Super admin sees all payments, regular users see only their own payments
+    $current_user_id = $_SESSION['user_id'] ?? 0;
+    
+    if ($is_super_admin) {
+        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM payments WHERE DATE(payment_date) = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('s', $date);
+    } else {
+        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM payments WHERE DATE(payment_date) = ? AND recorded_by = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('si', $date, $current_user_id);
+    }
+    
+    if (!$stmt) {
         throw new Exception('Database error: ' . $conn->error);
     }
-    $stmt->bind_param('s', $date);
+    
     $stmt->execute();
     $stmt->bind_result($total_amount, $total_count);
     $stmt->fetch();
@@ -75,7 +87,7 @@ ob_start();
             <div class="card report-card shadow-lg animate__animated animate__fadeIn my-4">
                 <div class="card-header bg-success text-white d-flex align-items-center justify-content-between py-3">
                     <div><i class="fas fa-coins summary-icon mr-2" data-toggle="tooltip" title="Today's Payment Total"></i>
-                        <span>Total Payment for <?= date('l, F j, Y', strtotime($date)) ?></span>
+                        <span><?= $is_super_admin ? 'Total Payment' : 'My Payments' ?> for <?= date('l, F j, Y', strtotime($date)) ?></span>
                     </div>
                     <div>
                         <?php if ($can_export): ?>
