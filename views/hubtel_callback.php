@@ -4,8 +4,6 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../models/PaymentIntent.php';
 require_once __DIR__.'/../models/Payment.php';
-require_once __DIR__.'/../includes/sms.php';
-require_once __DIR__.'/../includes/payment_sms_template.php';
 
 $debug_log = __DIR__.'/../logs/hubtel_callback_debug.log';
 
@@ -88,28 +86,6 @@ if ($clientReference) {
             foreach ($paymentsToInsert as $paymentRow) {
     $result = $paymentModel->add($conn, $paymentRow);
     log_debug('Payment add result: '.var_export($result, true).'; Data: '.json_encode($paymentRow));
-    // SMS notification
-    $phone = $intent['customer_phone'] ?? null;
-    $member_name = $intent['customer_name'] ?? '';
-    $church_name = 'Freeman Methodist Church - KM';
-    $description = $paymentRow['description'] ?? '';
-    $amount = $paymentRow['amount'] ?? '';
-    $payment_type_id = $paymentRow['payment_type_id'] ?? null;
-    $yearly_total = null;
-    if ($payment_type_id == 4 && $intent['member_id']) {
-        $yearly_total = get_member_yearly_harvest_total($conn, $intent['member_id']);
-    }
-    if ($phone) {
-        if ($payment_type_id == 4) {
-            $sms_message = get_harvest_payment_sms_message($member_name, $amount, $church_name, $description, $yearly_total);
-        } else {
-            $sms_message = get_payment_sms_message($member_name, $amount, $description);
-        }
-        $sms_result = send_sms($phone, $sms_message);
-        log_debug('SMS sent to ' . $phone . ': ' . json_encode($sms_result));
-    } else {
-        log_debug('No phone number found in intent for SMS notification.');
-    }
 }
         }
     } else {
