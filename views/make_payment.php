@@ -63,33 +63,75 @@ if ((!$class_name || !$phone) && $member_id) {
     <!-- Single Payment -->
     <div class="tab-pane fade show active" id="singlePanel" role="tabpanel" aria-labelledby="single-tab">
       <form id="singlePaymentForm" autocomplete="off">
-        <div class="form-group">
-          <label for="single_payment_type">Payment Type</label>
-          <select class="form-control" id="single_payment_type" name="payment_type_id" required>
-            <option value="">-- Select Type --</option>
-            <?php $types = $conn->query("SELECT id, name FROM payment_types WHERE active=1 ORDER BY name");
-              if ($types && $types->num_rows > 0): while($t = $types->fetch_assoc()): ?>
+        <div class="form-row">
+          <div class="form-group col-md-4">
+            <label for="single_payment_type">Payment Type <span class="text-danger">*</span></label>
+            <select class="form-control form-control-lg" id="single_payment_type" name="payment_type_id" required>
+              <option value="">-- Select Type --</option>
+              <?php $types = $conn->query("SELECT id, name FROM payment_types WHERE active=1 ORDER BY name");
+                if ($types && $types->num_rows > 0): while($t = $types->fetch_assoc()): ?>
                 <option value="<?= $t['id'] ?>"><?= htmlspecialchars($t['name']) ?></option>
-            <?php endwhile; endif; ?>
-          </select>
+              <?php endwhile; endif; ?>
+            </select>
+          </div>
+          <div class="form-group col-md-3">
+            <label for="single_amount">Amount (₵) <span class="text-danger">*</span></label>
+            <input type="number" step="0.01" min="1" class="form-control form-control-lg" id="single_amount" name="amount" placeholder="e.g. 100.00" required>
+          </div>
+          <div class="form-group col-md-3">
+            <label for="single_mode">Mode <span class="text-danger">*</span></label>
+            <select class="form-control form-control-lg" id="single_mode" name="mode" readonly required>
+             
+              <option value="Cash">Hubtel</option>
+             
+            </select>
+          </div>
+          <div class="form-group col-md-2">
+            <label for="single_payment_date">Date <span class="text-danger">*</span></label>
+            <input type="date" class="form-control form-control-lg" id="single_payment_date" name="payment_date" value="<?= date('Y-m-d') ?>" readonly required>
+          </div>
+          <div class="form-group col-md-6">
+            <label for="single_payment_period">Period <span class="text-danger">*</span></label>
+            <select class="form-control form-control-lg" id="single_payment_period" name="payment_period" required>
+              <option value="">-- Select Period --</option>
+              <?php
+              // Generate payment period options (current month and previous 12 months)
+              for ($i = 0; $i < 12; $i++) {
+                $date = date('Y-m-01', strtotime("-$i months"));
+                $display = date('F Y', strtotime($date));
+                $selected = ($i == 0) ? 'selected' : '';
+                echo "<option value=\"$date\" $selected>$display</option>";
+              }
+              ?>
+            </select>
+          </div>
         </div>
-        <div class="form-group">
-          <label for="single_amount">Amount (₵)</label>
-          <input type="number" min="1" step="0.01" class="form-control" id="single_amount" name="amount" placeholder="e.g. 100.00" required>
+        <div class="form-row">
+          <div class="form-group col-md-12">
+            <label for="single_description">Description</label>
+            <input type="text" class="form-control form-control-lg" id="single_description" name="description" placeholder="Optional" autocomplete="off">
+          </div>
         </div>
-        <div class="form-group">
-          <label for="payment_method">Payment Method</label>
-          <select class="form-control" id="payment_method" name="payment_method" required>
-            <option value="hubtel" selected>Hubtel</option>
-            <option value="paystack">Paystack</option>
-          </select>
-        </div>
-        <div class="form-group text-center mb-0">
-          <button type="submit" class="btn btn-success btn-block py-2" style="font-size:1.1rem;">
-            <i class="fas fa-credit-card mr-1"></i> Pay Now
-          </button>
+        <div class="form-row">
+          <div class="col-md-12 text-right">
+            <button type="submit" class="btn btn-success btn-lg px-4 shadow-sm" id="submitSinglePaymentBtn"><i class="fas fa-credit-card mr-1"></i> Pay Now</button>
+          </div>
         </div>
         <div id="single-payment-feedback" class="mt-2"></div>
+        <script>
+        // Auto-populate description field
+        function updateDescriptionField() {
+          var paymentType = $('#single_payment_type option:selected').text();
+          var periodText = $('#single_payment_period option:selected').text();
+          if (paymentType && paymentType !== '-- Select Type --' && periodText && periodText !== '-- Select Period --') {
+            $('#single_description').val('Payment for ' + periodText + ' ' + paymentType);
+          } else {
+            $('#single_description').val('');
+          }
+        }
+        $('#single_payment_type, #single_payment_period').on('change', updateDescriptionField);
+        $(document).ready(updateDescriptionField);
+        </script>
       </form>
     </div>
     <!-- Bulk Payment -->
@@ -101,11 +143,10 @@ if ((!$class_name || !$phone) && $member_id) {
         </div>
         <div class="card-body bg-light">
           <div class="row mb-3">
-            <div class="col-md-4">
-              <label for="bulk_payment_method" class="font-weight-bold">Payment Method</label>
-              <select class="form-control form-control-lg border-primary" id="bulk_payment_method" name="bulk_payment_method" required>
+            <div class="form-group" hidden>
+              <label for="payment_method">Payment Method</label>
+              <select class="form-control" id="payment_method" name="payment_method" required readonly>
                 <option value="hubtel" selected>Hubtel</option>
-                <option value="paystack">Paystack</option>
               </select>
             </div>
           </div>
@@ -125,14 +166,28 @@ if ((!$class_name || !$phone) && $member_id) {
                 <label for="bulk_amount" class="font-weight-bold">Amount (₵) <span class="text-danger">*</span></label>
                 <input type="number" step="0.01" min="1" class="form-control form-control-lg border-primary" id="bulk_amount" name="bulk_amount" placeholder="e.g. 100.00">
               </div>
-              <div class="form-group col-md-2 mb-2">
+              <div class="form-group col-md-2 mb-2" hidden>
                 <label for="bulk_payment_date" class="font-weight-bold">Date <span class="text-danger">*</span></label>
-                <input type="date" class="form-control form-control-lg border-primary" id="bulk_payment_date" name="bulk_payment_date" value="<?= date('Y-m-d') ?>">
+                <input type="date" class="form-control form-control-lg border-primary" id="bulk_payment_date" name="bulk_payment_date" value="<?= date('Y-m-d') ?>" readonly>
               </div>
-              <div class="form-group col-md-3 mb-2">
+              <div class="form-group col-md-4 mb-2">
+                <label for="bulk_payment_period" class="font-weight-bold">Period <span class="text-danger">*</span></label>
+                <select class="form-control form-control-lg border-primary" id="bulk_payment_period" name="bulk_payment_period">
+                  <option value="">-- Select Period --</option>
+                  <?php
+                  for ($i = 0; $i < 12; $i++) {
+                    $date = date('Y-m-01', strtotime("-$i months"));
+                    $display = date('F Y', strtotime($date));
+                    $selected = ($i == 0) ? 'selected' : '';
+                    echo "<option value=\"$date\" $selected>$display</option>";
+                  }
+                  ?>
+                </select>
+              </div>
+              <!-- <div class="form-group col-md-3 mb-2">
                 <label for="bulk_description" class="font-weight-bold">Description</label>
                 <input type="text" class="form-control form-control-lg border-primary" id="bulk_description" name="bulk_description" placeholder="Optional">
-              </div>
+              </div> -->
               
               <div class="form-group col-md-1 mb-2 text-right">
                 <button type="button" class="btn btn-success btn-lg px-3 shadow-sm mt-4 w-100" id="addToBulkBtn" style="min-width:44px;">
@@ -150,6 +205,7 @@ if ((!$class_name || !$phone) && $member_id) {
                   <th>Type</th>
                   <th>Amount</th>
                   <th>Date</th>
+                  <th>Payment Period</th>
                   <th>Description</th>
                   <th></th>
                 </tr>
@@ -215,14 +271,21 @@ $('#singlePaymentForm').on('submit', function(e){
     let endpoint = paymentMethod === 'paystack' ? '<?php echo BASE_URL; ?>/views/ajax_paystack_checkout.php' : '<?php echo BASE_URL; ?>/views/ajax_hubtel_checkout.php';
     let feedbackMsg = paymentMethod === 'paystack' ? 'Contacting Paystack...' : 'Contacting Hubtel...';
     $('#single-payment-feedback').html('<div class="alert alert-info">'+feedbackMsg+'</div>');
+    let periodText = $('#single_payment_period option:selected').text();
+    let periodValue = $('#single_payment_period').val();
     let payload = {
       amount: amount,
       description: typeName + ' Payment',
+      payment_type_id: typeId,
+      payment_type_name: typeName,
+      payment_period: periodValue,
+      payment_period_description: periodText,
       customerName: <?php echo json_encode($full_name); ?>,
       customerPhone: <?php echo json_encode($phone); ?>,
       member_id: <?php echo json_encode($member_id); ?>,
       church_id: <?php echo json_encode($church_id); ?>
     };
+
     if (paymentMethod === 'paystack') {
       payload.customerEmail = <?php echo json_encode($_SESSION['email'] ?? ''); ?>;
     }
@@ -233,7 +296,8 @@ $('#singlePaymentForm').on('submit', function(e){
         if (resp.success && resp.checkoutUrl) {
           window.location.href = resp.checkoutUrl;
         } else {
-          $('#single-payment-feedback').html('<div class="alert alert-danger">'+(resp.error || 'Could not initiate payment. Please try again.')+'</div>');
+          let debugMsg = resp.debug ? `<pre class='small bg-light p-2 border rounded mt-2'>${JSON.stringify(resp.debug, null, 2)}</pre>` : '';
+          $('#single-payment-feedback').html('<div class="alert alert-danger">'+(resp.error || 'Could not initiate payment. Please try again.')+debugMsg+'</div>');
         }
       },
       'json'
@@ -251,14 +315,77 @@ function updateBulkCartUI() {
   let total = 0;
   bulkCart.forEach(function(item, idx){
     total += item.amount;
-    $tbody.append(`<tr>
-      <td>${idx+1}</td>
-      <td>${item.typeName}</td>
-      <td>₵${item.amount.toLocaleString(undefined,{minimumFractionDigits:2})}</td>
-      <td>${item.date}</td>
-      <td>${item.desc || ''}</td>
-      <td><span class="remove-bulk-item text-danger" style="cursor:pointer;" data-idx="${idx}">&times;</span></td>
-    </tr>`);
+    $tbody.append(`
+      <tr data-idx="${idx}">
+        <td>${idx+1}</td>
+        <td>
+          <select class="form-control form-control-sm bulk-type-input" data-idx="${idx}">
+            ${$('#bulk_payment_type_id').html().replace('selected', '')}
+          </select>
+        </td>
+        <td><input type="number" step="0.01" min="1" class="form-control form-control-sm bulk-amount-input" data-idx="${idx}" value="${item.amount}"></td>
+        <td><input type="date" class="form-control form-control-sm" value="${item.date}" readonly></td>
+        <td>
+          <select class="form-control form-control-sm bulk-period-input" data-idx="${idx}">
+            ${$('#bulk_payment_period').html().replace('selected', '')}
+          </select>
+        </td>
+        <td><input type="text" class="form-control form-control-sm bulk-desc-input" data-idx="${idx}" value="${item.desc || ''}"></td>
+        <td><span class="remove-bulk-item text-danger ml-2" style="cursor:pointer;" data-idx="${idx}">&times;</span></td>
+      </tr>
+    `);
+    // Set current value for type and period
+    $tbody.find(`.bulk-type-input[data-idx="${idx}"]`).val(item.typeId);
+    $tbody.find(`.bulk-period-input[data-idx="${idx}"]`).val(item.period);
+  });
+  // Attach change handlers
+  // Track if user has manually edited description for each row
+  if (!window.bulkDescManualEdit) window.bulkDescManualEdit = {};
+
+  $tbody.find('.bulk-type-input').off('change').on('change', function(){
+    let idx = $(this).data('idx');
+    let typeId = $(this).val();
+    let typeName = $(this).find('option:selected').text();
+    bulkCart[idx].typeId = typeId;
+    bulkCart[idx].typeName = typeName;
+    // Only auto-update desc if not manually edited
+    if (!window.bulkDescManualEdit[idx]) {
+      let periodText = $tbody.find(`.bulk-period-input[data-idx="${idx}"] option:selected`).text();
+      if (typeName && typeName !== '-- Select Type --' && periodText && periodText !== '-- Select Period --') {
+        let desc = 'Payment for ' + periodText + ' ' + typeName;
+        bulkCart[idx].desc = desc;
+        $tbody.find(`.bulk-desc-input[data-idx="${idx}"]`).val(desc);
+      }
+    }
+    updateBulkCartUI();
+  });
+  $tbody.find('.bulk-amount-input').off('input').on('input', function(){
+    let idx = $(this).data('idx');
+    let amount = parseFloat($(this).val());
+    if (!isNaN(amount)) bulkCart[idx].amount = amount;
+    updateBulkCartUI();
+  });
+  $tbody.find('.bulk-period-input').off('change').on('change', function(){
+    let idx = $(this).data('idx');
+    let period = $(this).val();
+    let periodText = $(this).find('option:selected').text();
+    bulkCart[idx].period = period;
+    bulkCart[idx].periodText = periodText;
+    // Only auto-update desc if not manually edited
+    if (!window.bulkDescManualEdit[idx]) {
+      let typeName = $tbody.find(`.bulk-type-input[data-idx="${idx}"] option:selected`).text();
+      if (typeName && typeName !== '-- Select Type --' && periodText && periodText !== '-- Select Period --') {
+        let desc = 'Payment for ' + periodText + ' ' + typeName;
+        bulkCart[idx].desc = desc;
+        $tbody.find(`.bulk-desc-input[data-idx="${idx}"]`).val(desc);
+      }
+    }
+    updateBulkCartUI();
+  });
+  $tbody.find('.bulk-desc-input').off('input').on('input', function(){
+    let idx = $(this).data('idx');
+    bulkCart[idx].desc = $(this).val();
+    window.bulkDescManualEdit[idx] = true;
   });
   $('#bulkPaymentsTotal').text('₵'+total.toLocaleString(undefined,{minimumFractionDigits:2}));
   $('#submitBulkPaymentsBtn').prop('disabled', bulkCart.length===0);
@@ -285,6 +412,7 @@ $('#submitBulkPaymentsBtn').off('click').on('click', function(e){
         <td>${item.typeName}</td>
         <td>₵${item.amount.toLocaleString(undefined,{minimumFractionDigits:2})}</td>
         <td>${item.date}</td>
+        <td>${item.periodText || ''}</td>
         <td>${item.desc || ''}</td>
       </tr>
     `);
@@ -293,10 +421,10 @@ $('#submitBulkPaymentsBtn').off('click').on('click', function(e){
   $('#bulkPaymentConfirmModal').modal('show');
 });
 
-$('#confirmBulkPaymentBtn').off('click').on('click', function(){
+$(document).on('click', '#confirmBulkPaymentBtn', function(){
   console.log('Bulk payment: Confirm & Submit clicked');
   $('#bulkPaymentConfirmModal').modal('hide');
-  let paymentMethod = $('#bulk_payment_method').val();
+  let paymentMethod = $('#payment_method').val(); // Fix: use correct selector
   let endpoint = paymentMethod === 'paystack' ? '<?php echo BASE_URL; ?>/views/ajax_paystack_checkout.php' : '<?php echo BASE_URL; ?>/views/ajax_hubtel_checkout.php';
   let feedbackMsg = paymentMethod === 'paystack' ? 'Contacting Paystack...' : 'Contacting Hubtel...';
   $('#bulk-payment-feedback').html('<div class="alert alert-info">'+feedbackMsg+'</div>');
@@ -317,8 +445,11 @@ $('#confirmBulkPaymentBtn').off('click').on('click', function(){
     church_id: <?php echo json_encode($church_id); ?>,
     bulk_items: bulkCart.map(item => ({
       typeId: item.typeId,
+      typeName: item.typeName,
       amount: item.amount,
       date: item.date,
+      period: item.period,
+      periodText: item.periodText,
       desc: item.desc
     }))
   };
@@ -362,7 +493,7 @@ function submitBulkPaystack(endpoint, payload) {
       if (resp.success && resp.checkoutUrl) {
         window.location.href = resp.checkoutUrl;
       } else {
-        $('#bulk-payment-feedback').html('<div class="alert alert-danger">'+(resp.error || 'Could not initiate payment. Please try again.')+'</div>');
+        $('#bulk-payment-feedback').html('<div class="alert alert-danger">'+(resp.error || 'Could not initiate payment. Please try again.')+(resp.debug ? `<pre class='small bg-light p-2 border rounded mt-2'>${JSON.stringify(resp.debug, null, 2)}</pre>` : '')+'</div>');
       }
     },
     'json'
@@ -378,8 +509,21 @@ $('#addToBulkBtn').on('click', function(){
   let typeName = $('#bulk_payment_type_id option:selected').text();
   let amount = parseFloat($('#bulk_amount').val());
   let date = $('#bulk_payment_date').val();
+  if (!date) {
+    // Always set to today if empty
+    let now = new Date();
+    date = now.toISOString().slice(0, 10);
+    $('#bulk_payment_date').val(date);
+  }
+  let period = $('#bulk_payment_period').val();
+  let periodText = $('#bulk_payment_period option:selected').text();
+  // Auto-populate description if not manually entered
   let desc = $('#bulk_description').val();
-  console.log('typeId:', typeId, '| typeName:', typeName, '| amount:', amount, '| date:', date, '| desc:', desc);
+  if (!desc && typeName && periodText && typeName !== '-- Select Type --' && periodText !== '-- Select Period --') {
+    desc = 'Payment for ' + periodText + ' ' + typeName;
+    $('#bulk_description').val(desc);
+  }
+  console.log('typeId:', typeId, '| typeName:', typeName, '| amount:', amount, '| date:', date, '| period:', period, '| desc:', desc);
   if (!typeId) {
     console.log('No payment type selected');
   }
@@ -389,17 +533,22 @@ $('#addToBulkBtn').on('click', function(){
   if (!date) {
     console.log('No date selected');
   }
-  if (!typeId || !amount || amount < 1 || !date) {
-    $('#bulk-payment-feedback').html('<div class="alert alert-danger">Please select a payment type, enter a valid amount, and select a date.</div>');
+  if (!period) {
+    console.log('No period selected');
+  }
+  if (!typeId || !amount || amount < 1 || !date || !period) {
+    $('#bulk-payment-feedback').html('<div class="alert alert-danger">Please select a payment type, enter a valid amount, select a date, and select a period.</div>');
     return;
   }
-  bulkCart.push({typeId, typeName, amount, date, desc});
+  bulkCart.push({typeId, typeName, amount, date, period, periodText, desc});
   console.log('Added to bulkCart:', bulkCart);
   updateBulkCartUI();
-  // Reset form fields
+  // Reset form fields and set date to today
   $('#bulk_payment_type_id').val('');
   $('#bulk_amount').val('');
-  $('#bulk_payment_date').val('');
+  let today = new Date().toISOString().slice(0, 10);
+  $('#bulk_payment_date').val(today);
+  $('#bulk_payment_period').val('');
   $('#bulk_description').val('');
   $('#bulk-payment-feedback').empty();
 });
@@ -451,7 +600,7 @@ $('#bulkPaymentForm').on('submit', function(e){
   summaryHtml += `</ul><div class="font-weight-bold mt-2">Total: ₵${total.toLocaleString(undefined,{minimumFractionDigits:2})}</div>`;
   $('#confirmSummary').html(summaryHtml);
   $('#paymentConfirmModal').modal('show');
-  $('#confirmBulkPaymentBtn').off('click').on('click', function(){
+  $(document).on('click', '#confirmBulkPaymentBtn', function(){
   console.log('Bulk payment: Confirm & Submit clicked');
   $('#paymentConfirmModal').modal('hide');
   $('#bulk-payment-feedback').html('<div class="alert alert-info">Contacting Hubtel...</div>');
@@ -469,14 +618,30 @@ $('#bulkPaymentForm').on('submit', function(e){
       amount: total,
       description: description,
       customerName: <?php echo json_encode($full_name); ?>,
-      customerPhone: <?php echo json_encode($phone); ?>
+      customerPhone: <?php echo json_encode($phone); ?>,
+      member_id: <?php echo json_encode($member_id); ?>,
+      church_id: <?php echo json_encode($church_id); ?>,
+      bulk_items: JSON.stringify(bulkCart.map(function(item) {
+        return {
+          typeId: item.typeId,
+          typeName: item.typeName,
+          amount: item.amount,
+          date: item.date,
+          desc: item.desc,
+          payment_type_id: item.typeId,
+          payment_period: item.date || null,
+          payment_period_description: $('#bulk_payment_period option:selected').text() || null,
+          church_id: <?php echo json_encode($church_id); ?>,
+          recorded_by: <?php echo json_encode($_SESSION['user_id'] ?? null); ?>
+        };
+      }))
     },
     function(resp) {
       console.log('Hubtel AJAX response:', resp);
       if (resp.success && resp.checkoutUrl) {
         window.location.href = resp.checkoutUrl;
       } else {
-        $('#bulk-payment-feedback').html('<div class="alert alert-danger">'+(resp.error || 'Could not initiate payment. Please try again.')+'</div>');
+        $('#bulk-payment-feedback').html('<div class="alert alert-danger">'+(resp.error || 'Could not initiate payment. Please try again.')+(resp.debug ? `<pre class='small bg-light p-2 border rounded mt-2'>${JSON.stringify(resp.debug, null, 2)}</pre>` : '')+'</div>');
       }
     },
     'json'

@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jul 31, 2025 at 07:03 AM
+-- Generation Time: Aug 17, 2025 at 02:57 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -35,6 +35,13 @@ CREATE TABLE `adherents` (
   `marked_by` int(11) NOT NULL COMMENT 'User ID who marked the member as adherent',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp() COMMENT 'When this record was created'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks adherent status history for members';
+
+--
+-- Dumping data for table `adherents`
+--
+
+INSERT INTO `adherents` (`id`, `member_id`, `reason`, `date_became_adherent`, `marked_by`, `created_at`) VALUES
+(16, 130, 'NOTE', '2025-08-04', 3, '2025-08-04 21:19:57');
 
 -- --------------------------------------------------------
 
@@ -81,23 +88,6 @@ CREATE TABLE `attendance_sessions` (
 -- (See below for the actual view)
 --
 CREATE TABLE `attendance_with_zkteco` (
-`id` int(11)
-,`session_id` int(11)
-,`member_id` int(11)
-,`status` enum('present','absent')
-,`marked_by` int(11)
-,`created_at` timestamp
-,`sync_source` enum('manual','zkteco','hybrid')
-,`verification_type` varchar(20)
-,`device_timestamp` datetime
-,`device_id` int(11)
-,`device_name` varchar(100)
-,`device_location` varchar(255)
-,`first_name` varchar(100)
-,`last_name` varchar(100)
-,`crn` varchar(50)
-,`session_title` varchar(255)
-,`service_date` date
 );
 
 -- --------------------------------------------------------
@@ -122,41 +112,172 @@ CREATE TABLE `audit_log` (
 --
 
 INSERT INTO `audit_log` (`id`, `user_id`, `action`, `entity_type`, `entity_id`, `details`, `ip_address`, `created_at`) VALUES
-(774, 4, 'login_failed', 'user', 4, '{\"username\":\"tomsam@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 00:04:53'),
-(775, 3, 'create', 'role', 0, '{\"name\":\"admina\",\"description\":\"admin\"}', NULL, '2025-07-31 00:58:53'),
-(776, 3, 'create', 'role', 0, '{\"name\":\"something\",\"description\":\"\"}', NULL, '2025-07-31 01:04:30'),
-(777, 4, 'login_failed', 'user', 4, '{\"username\":\"tomsam@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 01:05:40'),
-(778, 3, 'create', 'role', 9, '{\"name\":\"Something\",\"description\":\"\"}', NULL, '2025-07-31 01:12:27'),
-(779, 3, 'delete', 'role', 9, '', NULL, '2025-07-31 01:29:55'),
-(780, 4, 'login_success', 'user', 4, '{\"username\":\"tomsam@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 01:31:44'),
-(781, 4, 'logout', 'user', 4, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-31 01:46:43'),
-(782, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-31 02:13:42'),
-(783, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 02:13:45'),
-(784, 4, 'login_success', 'user', 4, '{\"username\":\"tomsam@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 02:26:02'),
-(785, 4, 'logout', 'user', 4, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-31 02:31:49'),
-(786, 4, 'login_success', 'user', 4, '{\"username\":\"tomsam@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 02:32:01'),
-(787, 4, 'logout', 'user', 4, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-31 02:37:57'),
-(788, 4, 'login_success', 'user', 4, '{\"username\":\"tomsam@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 02:38:07'),
-(789, 4, 'logout', 'user', 4, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-31 02:40:33'),
-(790, 4, 'login_success', 'user', 4, '{\"username\":\"tomsam@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 02:40:47'),
-(791, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-31 02:48:56'),
-(792, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 02:58:44'),
-(793, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 02:59:53'),
-(794, 4, 'logout', 'user', 4, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-31 03:03:27'),
-(795, 4, 'login_success', 'user', 4, '{\"username\":\"tomsam@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 03:06:11'),
-(796, 4, 'login_success', 'user', 4, '{\"username\":\"tomsam@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 03:09:20'),
-(797, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-31 03:10:31'),
-(798, 4, 'logout', 'user', 4, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-31 03:20:58'),
-(799, 4, 'login_success', 'user', 4, '{\"username\":\"tomsam@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 03:21:31'),
-(800, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 04:03:35'),
-(801, 4, 'logout', 'user', 4, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-31 04:13:27'),
-(802, 3, 'create', 'permission', 0, '{\"name\":\"view_payments_by_user_report\"}', NULL, '2025-07-31 04:14:24'),
-(803, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 04:16:13'),
-(804, 4, 'login_success', 'user', 4, '{\"username\":\"tomsam@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 04:17:35'),
-(805, 4, 'logout', 'user', 4, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-31 04:28:21'),
-(806, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-31 04:29:14'),
-(807, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-07-31 04:37:34'),
-(808, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-07-31 04:58:36');
+(995, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"154.161.187.133\"}', '154.161.187.133', '2025-08-03 17:24:28'),
+(996, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"102.176.47.194\"}', '102.176.47.194', '2025-08-03 17:31:11'),
+(997, 3, 'logout', 'user', 3, '{\"ip\":\"154.161.187.133\",\"time\":\"2025-07-14T16:56:25Z\"}', '154.161.187.133', '2025-08-03 17:45:37'),
+(998, 3, 'logout', 'user', 3, '{\"ip\":\"102.176.47.194\",\"time\":\"2025-07-14T16:56:25Z\"}', '102.176.47.194', '2025-08-03 18:34:07'),
+(999, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"102.176.47.194\"}', '102.176.47.194', '2025-08-03 19:16:21'),
+(1000, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"102.176.47.194\"}', '102.176.47.194', '2025-08-03 20:45:30'),
+(1001, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"154.160.90.118\"}', '154.160.90.118', '2025-08-04 08:14:04'),
+(1002, 3, 'logout', 'user', 3, '{\"ip\":\"169.150.218.59\",\"time\":\"2025-07-14T16:56:25Z\"}', '169.150.218.59', '2025-08-04 08:49:17'),
+(1003, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"169.150.218.59\"}', '169.150.218.59', '2025-08-04 09:08:28'),
+(1004, 3, 'logout', 'user', 3, '{\"ip\":\"169.150.218.59\",\"time\":\"2025-07-14T16:56:25Z\"}', '169.150.218.59', '2025-08-04 09:22:36'),
+(1005, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"154.161.167.168\"}', '154.161.167.168', '2025-08-04 09:34:34'),
+(1006, 3, 'logout', 'user', 3, '{\"ip\":\"154.161.167.168\",\"time\":\"2025-07-14T16:56:25Z\"}', '154.161.167.168', '2025-08-04 10:36:50'),
+(1007, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"169.150.218.59\"}', '169.150.218.59', '2025-08-04 10:52:33'),
+(1008, 3, 'logout', 'user', 3, '{\"ip\":\"154.160.90.118\",\"time\":\"2025-07-14T16:56:25Z\"}', '154.160.90.118', '2025-08-04 11:33:58'),
+(1009, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"154.160.90.118\"}', '154.160.90.118', '2025-08-04 15:11:30'),
+(1010, 3, 'logout', 'user', 3, '{\"ip\":\"154.160.90.118\",\"time\":\"2025-07-14T16:56:25Z\"}', '154.160.90.118', '2025-08-04 15:42:46'),
+(1011, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"154.160.90.118\"}', '154.160.90.118', '2025-08-04 16:18:21'),
+(1012, 3, 'logout', 'user', 3, '{\"ip\":\"154.160.90.118\",\"time\":\"2025-07-14T16:56:25Z\"}', '154.160.90.118', '2025-08-04 16:53:17'),
+(1013, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-04 18:23:31'),
+(1014, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"154.161.191.37\"}', '154.161.191.37', '2025-08-04 18:41:10'),
+(1015, 3, 'logout', 'user', 3, '{\"ip\":\"154.161.191.37\",\"time\":\"2025-07-14T16:56:25Z\"}', '154.161.191.37', '2025-08-04 18:55:41'),
+(1016, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"154.161.191.37\"}', '154.161.191.37', '2025-08-04 19:16:27'),
+(1017, 3, 'logout', 'user', 3, '{\"ip\":\"154.161.191.37\",\"time\":\"2025-07-14T16:56:25Z\"}', '154.161.191.37', '2025-08-04 19:30:55'),
+(1018, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-04 20:16:24'),
+(1019, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-04 20:27:34'),
+(1020, 3, 'logout', 'user', 3, '{\"ip\":\"41.218.193.27\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.218.193.27', '2025-08-04 20:44:19'),
+(1021, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-04 20:44:28'),
+(1022, 3, 'logout', 'user', 3, '{\"ip\":\"41.218.193.27\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.218.193.27', '2025-08-04 20:56:26'),
+(1023, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-04 20:56:36'),
+(1024, 3, 'logout', 'user', 3, '{\"ip\":\"41.218.193.27\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.218.193.27', '2025-08-04 21:03:55'),
+(1025, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-04 21:05:19'),
+(1026, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"154.160.9.16\"}', '154.160.9.16', '2025-08-04 23:42:22'),
+(1027, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"154.160.90.118\"}', '154.160.90.118', '2025-08-05 08:33:23'),
+(1028, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"154.160.90.118\"}', '154.160.90.118', '2025-08-05 10:29:47'),
+(1029, 3, 'logout', 'user', 3, '{\"ip\":\"154.160.90.118\",\"time\":\"2025-07-14T16:56:25Z\"}', '154.160.90.118', '2025-08-05 11:51:36'),
+(1030, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"154.160.90.118\"}', '154.160.90.118', '2025-08-05 11:51:50'),
+(1031, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"154.160.90.118\"}', '154.160.90.118', '2025-08-05 14:11:52'),
+(1032, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"41.66.209.168\"}', '41.66.209.168', '2025-08-05 21:46:57'),
+(1033, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"154.160.5.157\"}', '154.160.5.157', '2025-08-05 22:03:59'),
+(1034, 3, 'logout', 'user', 3, '{\"ip\":\"41.66.209.168\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.66.209.168', '2025-08-05 22:05:41'),
+(1035, 3, 'logout', 'user', 3, '{\"ip\":\"154.160.5.157\",\"time\":\"2025-07-14T16:56:25Z\"}', '154.160.5.157', '2025-08-05 22:43:16'),
+(1036, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"154.160.5.157\"}', '154.160.5.157', '2025-08-05 23:21:59'),
+(1037, 3, 'update', 'role', 2, '{\"name\":\"ADMIN\",\"description\":\"\"}', NULL, '2025-08-06 00:19:49'),
+(1038, 3, 'create', 'role', 10, '{\"name\":\"SUNDAY SCHOOL\",\"description\":\"In charge of Sunday School Activities\"}', NULL, '2025-08-06 00:26:39'),
+(1039, 3, 'update', 'role', 3, '{\"name\":\"STEWARDS\",\"description\":\"\"}', NULL, '2025-08-06 00:46:32'),
+(1040, 3, 'update', 'role', 4, '{\"name\":\"Rev. Ministers\",\"description\":\"\"}', NULL, '2025-08-06 00:57:43'),
+(1041, 3, 'update', 'role', 8, '{\"name\":\"HEALTH\",\"description\":\"Medical team\"}', NULL, '2025-08-06 01:09:31'),
+(1042, 3, 'create', 'role', 11, '{\"name\":\"SUPPER ADMIN\",\"description\":\"In charge of digital platforms\"}', NULL, '2025-08-06 01:24:14'),
+(1043, 3, 'delete', 'role', 11, '', NULL, '2025-08-06 01:29:10'),
+(1044, 25, 'login_success', 'user', 25, '{\"username\":\"barnasco4uallgh@gmail.com\",\"ip\":\"154.160.5.157\"}', '154.160.5.157', '2025-08-06 01:30:08'),
+(1045, 26, 'login_success', 'user', 26, '{\"username\":\"ansam@gmail.com\",\"ip\":\"154.160.5.157\"}', '154.160.5.157', '2025-08-06 01:41:48'),
+(1046, 26, 'login_success', 'user', 26, '{\"username\":\"ansam@gmail.com\",\"ip\":\"154.160.5.157\"}', '154.160.5.157', '2025-08-06 01:46:44'),
+(1047, 26, 'login_success', 'user', 26, '{\"username\":\"ansam@gmail.com\",\"ip\":\"154.160.5.157\"}', '154.160.5.157', '2025-08-06 01:47:30'),
+(1048, 3, 'logout', 'user', 3, '{\"ip\":\"154.160.5.157\",\"time\":\"2025-07-14T16:56:25Z\"}', '154.160.5.157', '2025-08-06 01:48:25'),
+(1049, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"41.66.209.119\"}', '41.66.209.119', '2025-08-06 07:26:43'),
+(1050, 3, 'logout', 'user', 3, '{\"ip\":\"41.66.209.119\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.66.209.119', '2025-08-06 07:31:26'),
+(1051, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.66.209.119\"}', '41.66.209.119', '2025-08-06 07:31:54'),
+(1052, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"41.66.209.119\"}', '41.66.209.119', '2025-08-06 07:32:11'),
+(1053, 3, 'logout', 'user', 3, '{\"ip\":\"41.66.209.119\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.66.209.119', '2025-08-06 07:33:07'),
+(1054, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.66.209.119\"}', '41.66.209.119', '2025-08-06 07:33:22'),
+(1055, 25, 'login_success', 'user', 25, '{\"username\":\"barnasco4uallgh@gmail.com\",\"ip\":\"154.160.90.118\"}', '154.160.90.118', '2025-08-06 08:50:49'),
+(1056, 26, 'login_success', 'user', 26, '{\"username\":\"ansam@gmail.com\",\"ip\":\"154.160.90.118\"}', '154.160.90.118', '2025-08-06 08:55:16'),
+(1057, 25, 'logout', 'user', 25, '{\"ip\":\"154.160.90.118\",\"time\":\"2025-07-14T16:56:25Z\"}', '154.160.90.118', '2025-08-06 09:24:27'),
+(1058, 25, 'login_success', 'user', 25, '{\"username\":\"barnasco4uallgh@gmail.com\",\"ip\":\"154.160.90.118\"}', '154.160.90.118', '2025-08-06 16:22:22'),
+(1059, 25, 'logout', 'user', 25, '{\"ip\":\"154.160.90.118\",\"time\":\"2025-07-14T16:56:25Z\"}', '154.160.90.118', '2025-08-06 17:04:45'),
+(1060, NULL, 'login_failed', 'user', NULL, '{\"username\":\"nasam@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 18:40:23'),
+(1061, NULL, 'login_failed', 'user', NULL, '{\"username\":\"nasam@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 18:44:04'),
+(1062, 25, 'login_success', 'user', 25, '{\"username\":\"barnasco4uallgh@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 18:47:05'),
+(1063, 26, 'login_success', 'user', 26, '{\"username\":\"ansam@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 19:08:56'),
+(1064, 26, 'logout', 'user', 26, '{\"ip\":\"41.218.193.27\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.218.193.27', '2025-08-06 20:15:33'),
+(1065, 28, 'login_success', 'user', 28, '{\"username\":\"kpanford@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 20:15:43'),
+(1066, 25, 'logout', 'user', 25, '{\"ip\":\"41.218.193.27\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.218.193.27', '2025-08-06 20:25:43'),
+(1067, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 20:41:21'),
+(1068, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 20:52:50'),
+(1069, 3, 'logout', 'user', 3, '{\"ip\":\"41.218.193.27\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.218.193.27', '2025-08-06 20:58:35'),
+(1070, 25, 'login_success', 'user', 25, '{\"username\":\"barnasco4uallgh@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 20:59:14'),
+(1071, 25, 'logout', 'user', 25, '{\"ip\":\"41.218.193.27\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.218.193.27', '2025-08-06 21:00:12'),
+(1072, 26, 'login_success', 'user', 26, '{\"username\":\"ansam@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:00:29'),
+(1073, 26, 'logout', 'user', 26, '{\"ip\":\"41.218.193.27\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.218.193.27', '2025-08-06 21:17:23'),
+(1074, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:17:36'),
+(1075, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:17:56'),
+(1076, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:18:20'),
+(1077, 27, 'logout', 'user', 27, '{\"ip\":\"41.218.193.27\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.218.193.27', '2025-08-06 21:18:36'),
+(1078, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:18:49'),
+(1079, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:19:23'),
+(1080, 27, 'logout', 'user', 27, '{\"ip\":\"41.218.193.27\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.218.193.27', '2025-08-06 21:19:55'),
+(1081, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:20:06'),
+(1082, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:20:24'),
+(1083, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:20:45'),
+(1084, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:21:02'),
+(1085, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:21:24'),
+(1086, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:28:42'),
+(1087, 27, 'logout', 'user', 27, '{\"ip\":\"41.218.193.27\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.218.193.27', '2025-08-06 21:32:10'),
+(1088, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:32:36'),
+(1089, 27, 'logout', 'user', 27, '{\"ip\":\"41.218.193.27\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.218.193.27', '2025-08-06 21:33:53'),
+(1090, 28, 'login_success', 'user', 28, '{\"username\":\"kpanford@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:34:29'),
+(1091, 28, 'logout', 'user', 28, '{\"ip\":\"41.218.193.27\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.218.193.27', '2025-08-06 21:35:18'),
+(1092, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:36:46'),
+(1093, 27, 'logout', 'user', 27, '{\"ip\":\"41.218.193.27\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.218.193.27', '2025-08-06 21:42:57'),
+(1094, 28, 'login_success', 'user', 28, '{\"username\":\"kpanford@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:43:39'),
+(1095, 28, 'logout', 'user', 28, '{\"ip\":\"41.218.193.27\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.218.193.27', '2025-08-06 21:54:34'),
+(1096, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:54:44'),
+(1097, 27, 'logout', 'user', 27, '{\"ip\":\"41.218.193.27\",\"time\":\"2025-07-14T16:56:25Z\"}', '41.218.193.27', '2025-08-06 21:57:25'),
+(1098, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"41.218.193.27\"}', '41.218.193.27', '2025-08-06 21:57:38'),
+(1099, 25, 'login_success', 'user', 25, '{\"username\":\"barnasco4uallgh@gmail.com\",\"ip\":\"154.160.90.118\"}', '154.160.90.118', '2025-08-07 11:09:34'),
+(1100, 25, 'logout', 'user', 25, '{\"ip\":\"154.160.90.118\",\"time\":\"2025-07-14T16:56:25Z\"}', '154.160.90.118', '2025-08-07 11:13:29'),
+(1101, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"143.105.209.107\"}', '143.105.209.107', '2025-08-08 21:30:47'),
+(1102, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"143.105.209.107\"}', '143.105.209.107', '2025-08-08 21:40:15'),
+(1103, 3, 'logout', 'user', 3, '{\"ip\":\"143.105.209.107\",\"time\":\"2025-07-14T16:56:25Z\"}', '143.105.209.107', '2025-08-08 21:49:03'),
+(1104, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"143.105.209.107\"}', '143.105.209.107', '2025-08-08 22:26:03'),
+(1105, 3, 'logout', 'user', 3, '{\"ip\":\"143.105.209.107\",\"time\":\"2025-07-14T16:56:25Z\"}', '143.105.209.107', '2025-08-08 22:28:40'),
+(1106, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"143.105.209.107\"}', '143.105.209.107', '2025-08-08 22:28:55'),
+(1107, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"143.105.209.107\"}', '143.105.209.107', '2025-08-08 22:29:14'),
+(1108, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"143.105.209.107\"}', '143.105.209.107', '2025-08-08 22:29:29'),
+(1109, 3, 'logout', 'user', 3, '{\"ip\":\"143.105.209.107\",\"time\":\"2025-07-14T16:56:25Z\"}', '143.105.209.107', '2025-08-08 22:33:14'),
+(1110, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"143.105.209.107\"}', '143.105.209.107', '2025-08-08 22:33:26'),
+(1111, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"143.105.209.107\"}', '143.105.209.107', '2025-08-08 22:33:40'),
+(1112, 3, 'logout', 'user', 3, '{\"ip\":\"143.105.209.107\",\"time\":\"2025-07-14T16:56:25Z\"}', '143.105.209.107', '2025-08-08 22:36:36'),
+(1113, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"143.105.209.107\"}', '143.105.209.107', '2025-08-08 22:36:47'),
+(1114, 3, 'logout', 'user', 3, '{\"ip\":\"143.105.209.107\",\"time\":\"2025-07-14T16:56:25Z\"}', '143.105.209.107', '2025-08-08 22:36:54'),
+(1115, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"143.105.209.107\"}', '143.105.209.107', '2025-08-08 22:37:06'),
+(1116, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"143.105.209.107\"}', '143.105.209.107', '2025-08-08 22:37:21'),
+(1117, 3, 'logout', 'user', 3, '{\"ip\":\"143.105.209.107\",\"time\":\"2025-07-14T16:56:25Z\"}', '143.105.209.107', '2025-08-08 23:03:14'),
+(1118, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-09 07:33:53'),
+(1119, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-09 07:34:02'),
+(1120, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-09 07:34:50'),
+(1121, 27, 'logout', 'user', 27, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-09 07:37:38'),
+(1122, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-09 07:37:45'),
+(1123, 27, 'logout', 'user', 27, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-09 07:45:14'),
+(1124, 27, 'login_success', 'user', 27, '{\"username\":\"danielantwi512@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-09 07:45:21'),
+(1125, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-09 07:52:44'),
+(1126, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-09 07:55:04'),
+(1127, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-09 08:09:18'),
+(1128, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-09 13:07:25'),
+(1129, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-09 13:26:48'),
+(1130, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-09 13:29:12'),
+(1131, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-09 13:48:52'),
+(1132, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-09 13:57:11'),
+(1133, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-09 14:44:20'),
+(1134, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-09 14:44:28'),
+(1135, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-09 17:11:59'),
+(1136, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-12 09:50:30'),
+(1137, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-12 10:12:43'),
+(1138, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-12 10:20:55'),
+(1139, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-12 10:32:01'),
+(1140, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-12 10:32:22'),
+(1141, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-12 10:58:16'),
+(1142, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-12 10:59:41'),
+(1143, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-12 11:10:36'),
+(1144, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-12 11:11:18'),
+(1145, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-12 11:29:38'),
+(1146, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-12 11:29:49'),
+(1147, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-12 12:08:29'),
+(1148, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-12 12:10:12'),
+(1149, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-12 18:18:00'),
+(1150, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-12 19:33:22'),
+(1151, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-12 19:44:44'),
+(1152, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-12 20:45:14'),
+(1153, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-16 18:50:58'),
+(1154, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-16 18:59:01'),
+(1155, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-16 19:46:03'),
+(1156, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-16 19:47:55'),
+(1157, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-16 20:00:43'),
+(1158, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-16 20:46:23'),
+(1159, 3, 'logout', 'user', 3, '{\"ip\":\"::1\",\"time\":\"2025-07-14T16:56:25Z\"}', '::1', '2025-08-16 21:14:04'),
+(1160, 3, 'login_success', 'user', 3, '{\"username\":\"ekowme@gmail.com\",\"ip\":\"::1\"}', '::1', '2025-08-17 12:55:10');
 
 -- --------------------------------------------------------
 
@@ -178,26 +299,16 @@ CREATE TABLE `bible_classes` (
 --
 
 INSERT INTO `bible_classes` (`id`, `class_group_id`, `name`, `code`, `leader_id`, `church_id`) VALUES
-(7, NULL, 'REV. THOMAS BIRCH FREEMAN 01', 'F01', NULL, 7),
-(8, NULL, 'REV. THOMAS BIRCH FREEMAN 02', 'F02', NULL, 7),
-(9, NULL, 'SUNDAY SCHOOL 01', 'S01', NULL, 7),
-(10, NULL, 'OPAYIN DUNTU 02', 'D02', NULL, 7),
-(11, NULL, 'OPAYIN KOOMSON 02', 'K02', NULL, 7),
-(12, NULL, 'OPAYIN KOOMSON 03', 'K03', NULL, 7),
-(13, NULL, 'KOOMSON 04', 'K04', NULL, 7),
-(14, NULL, 'FREEMAN 04', 'F04', NULL, 7),
-(15, NULL, 'FREEMAN 06', 'F06', NULL, 7),
-(16, NULL, 'FREEMAN 08', 'F08', NULL, 7),
-(17, NULL, 'ABEDU 01', 'A01', NULL, 7),
-(18, NULL, 'ABEDU 02', 'A02', NULL, 7),
-(19, NULL, 'ABEDU 03', 'A03', NULL, 7),
-(20, NULL, 'ABEDU 07', 'A07', NULL, 7),
-(21, NULL, 'KOOMSON 06', 'K06', NULL, 7),
-(22, NULL, 'Test', '01', NULL, 7),
-(23, NULL, 'duntu 05', 'd05', NULL, 7),
-(24, NULL, 'sunday school', 's02', NULL, 7),
-(25, NULL, 'abedu 01', 'a09', NULL, 7),
-(26, NULL, 'abedu', '02', NULL, 7);
+(40, NULL, 'DUNTU 01', 'D01', NULL, 7),
+(41, NULL, 'DUNTU 02', 'D02', NULL, 7),
+(42, NULL, 'DUNTU 03', 'D03', NULL, 7),
+(43, NULL, 'FREEMAN 01', 'F01', NULL, 7),
+(44, NULL, 'FREEMAN 02', 'F02', NULL, 7),
+(45, NULL, 'FREEMAN 03', 'F03', NULL, 7),
+(46, NULL, 'KOOMSON 01', 'K01', NULL, 7),
+(47, NULL, 'KOOMSON 02', 'K02', NULL, 7),
+(48, NULL, 'KOOMSON 03', 'K03', NULL, 7),
+(49, NULL, 'SUNDAY SCHOOL 01', 'S01', NULL, 7);
 
 -- --------------------------------------------------------
 
@@ -282,13 +393,10 @@ CREATE TABLE `class_groups` (
 --
 
 INSERT INTO `class_groups` (`id`, `church_id`, `name`) VALUES
-(4, NULL, 'DUNTU'),
-(5, NULL, 'freeman'),
-(6, NULL, 'koomson'),
-(7, NULL, 'abedu'),
-(8, NULL, 'freeman'),
-(9, NULL, 'DUNTU'),
-(10, NULL, 'dkdkd');
+(15, NULL, 'FREEMAN'),
+(16, NULL, 'KOOMSON'),
+(17, NULL, 'DUNTU'),
+(18, NULL, 'SUNDAY SCHOOL');
 
 -- --------------------------------------------------------
 
@@ -353,14 +461,6 @@ CREATE TABLE `events` (
   `gallery` text DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
---
--- Dumping data for table `events`
---
-
-INSERT INTO `events` (`id`, `name`, `event_type_id`, `event_date`, `event_time`, `location`, `description`, `photo`, `gallery`) VALUES
-(1, 'Yearly Harvest', 3, '2025-07-31', '20:09:00', 'Freeman Methodist Church', 'Tell a friend to tell a friend.  Test Test', 'event_6884006bf10cd.png', '[]'),
-(2, 'MINI HARVEST', 3, '2025-07-31', '06:20:00', 'CHAPEL', '', '', '[]');
-
 -- --------------------------------------------------------
 
 --
@@ -408,6 +508,14 @@ CREATE TABLE `health_records` (
   `recorded_at` datetime DEFAULT NULL,
   `recorded_by` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `health_records`
+--
+
+INSERT INTO `health_records` (`id`, `member_id`, `sundayschool_id`, `vitals`, `notes`, `recorded_at`, `recorded_by`) VALUES
+(29, 122, NULL, '{\"weight\":\"38\",\"temperature\":\"32.5\",\"bp_systolic\":\"\",\"bp_diastolic\":\"\",\"bp_status\":\"low\",\"sugar\":\"\",\"sugar_status\":\"low\",\"hepatitis_b\":\"\",\"malaria\":\"\",\"bp\":\"\\/\"}', 'VERY GOOD', '2025-08-03 20:51:00', 3),
+(30, NULL, 12, '{\"weight\":\"23.5\",\"temperature\":\"31.2\",\"bp_systolic\":\"105\",\"bp_diastolic\":\"75\",\"bp_status\":\"normal\",\"sugar\":\"6\",\"sugar_status\":\"normal\",\"hepatitis_b\":\"not_tested\",\"malaria\":\"negative\",\"bp\":\"105\\/75\"}', 'very good', '2025-08-04 20:37:00', 3);
 
 -- --------------------------------------------------------
 
@@ -458,7 +566,16 @@ CREATE TABLE `members` (
 --
 
 INSERT INTO `members` (`id`, `first_name`, `middle_name`, `last_name`, `church_id`, `class_id`, `crn`, `name`, `dob`, `place_of_birth`, `day_born`, `gender`, `phone`, `telephone`, `email`, `address`, `gps_address`, `marital_status`, `home_town`, `region`, `photo`, `status`, `deactivated_at`, `password_hash`, `created_at`, `registration_token`, `employment_status`, `profession`, `baptized`, `confirmed`, `date_of_baptism`, `date_of_confirmation`, `membership_status`, `date_of_enrollment`, `sms_notifications_enabled`) VALUES
-(72, 'Ekow', 'Paa', 'Mensah', 7, 21, 'FMC-K0602-KM', NULL, '2010-07-29', 'kjhkhk', 'Wednesday', 'Male', '0545644749', '', 'ekowme@gmail.com', 'b241, owusu kofi str', 'dddkdkkd', 'Married', 'jkhkjhk', 'Central', 'member_6877d58922a24.jpg', 'active', '', '$2y$10$AMCxLerRJPccwALQOLrS1OKdpoiLw3mSuEvqBTh5SZuFxi3XHP0LK', '2025-07-10 14:30:29', NULL, 'Formal', 'teacher', 'Yes', 'Yes', '2025-07-11', '2025-07-11', '', '0000-00-00', 0);
+(122, 'BARNA', '', 'BAABIOLA', 7, 43, 'FMC-F0101-KM', NULL, '2010-08-04', 'TOWN', 'Wednesday', 'Male', '0242363905', '', 'bbarna@gmail.com', 'KWESIMINTSIM', 'WS-254-8569', 'Married', 'HOTOPO', 'Ashanti', 'member_689295453af76.png', 'active', '', '$2y$10$x/ET7vFGtowdU5z0tQWbEutqPyPPzgt0S.nDAk8W3zb4j.xfuytH6', '2025-08-03 19:20:16', NULL, 'Formal', 'ACCOUNTANT', 'Yes', 'Yes', '2022-05-03', '2023-05-09', '', '2020-02-05', 0),
+(123, 'DANNY', '', 'WISE', 7, 40, 'FMC-D0101-KM', NULL, '1999-12-31', 'ANAJI', 'Friday', 'Male', '0553143607', '', 'dwise@gmail.com', '', '', 'Married', 'TAKORADI', 'Western', '', 'active', '', '$2y$10$ZTgUMqwDdpB1kJ.51OAuJew.s3rWLmGVMbGHiAby05KOeKeEOAlyW', '2025-08-03 19:22:03', NULL, 'Informal', 'TRADER', 'Yes', 'No', '2000-12-23', '0000-00-00', '', '2000-01-23', 0),
+(124, 'JACK', '', 'JHAY', 7, 46, 'FMC-K0101-KM', NULL, '1997-03-31', 'TAKORADI', 'Monday', 'Male', '0551756789', '', 'jjhay@gmail.com', '', '', 'Married', 'TAKORADI', 'Western', '', 'active', '', '$2y$10$2TKVMhb7RJlkVLVGZiX7HO6a01JuieHyBLSYbQENtwhBjMbUvSm3K', '2025-08-03 19:25:01', NULL, 'Self Employed', 'COMMUNICATOR', 'Yes', 'Yes', '2000-02-08', '2000-10-23', '', '1999-10-20', 0),
+(125, 'NANA', '', 'OTU', 7, 41, 'FMC-F0201-KM', NULL, '9338-02-08', 'TAKORADI', 'Saturday', 'Male', '0202707072', '', 'notu@gmail.com', '', '', 'Married', 'TAKORADI', 'Western', '', 'active', '', '$2y$10$CCU7OlIoSVxq2/WVlY4VbO7K4fbjFy0KmrHipxIdrQ1g/ZEKqbrQm', '2025-08-04 18:37:15', NULL, 'Formal', 'TEACHER', 'Yes', 'Yes', '3930-02-09', '2984-08-31', '', '4889-12-31', 0),
+(127, 'KWAME', '', 'PANFORD', 7, 45, 'FMC-F0301-KM', NULL, '2000-12-31', 'KOJOKROM', 'Sunday', 'Male', '0541758561', '', 'kpanford@gmail.com', '', '', 'Married', 'TAKORADI', 'Western', '', 'active', '', '$2y$10$5yWDLhUfQor.WzijMfyDcOPLCVUOxrrf82A9IR6A4G3duBDShmhcG', '2025-08-04 18:42:37', NULL, 'Informal', 'TRADER', 'Yes', 'No', '2003-12-05', '0000-00-00', '', '2002-12-31', 0),
+(128, 'DANIEL', '', 'ANTWI', 7, 44, 'FMC-F0201-KM', NULL, '2021-06-08', 'Takoradi', 'Tuesday', 'Male', '0206376136', '', 'danielantwi512@gmail.com', '', '', 'Single', 'Takoradi', 'Western', '', 'active', '', '$2y$10$JmM7MthhIB03InfzU1DEne2hUJNHA1rNxrz9NjPWy9hv36pIJ.VkC', '2025-08-04 20:39:00', NULL, 'Self Employed', 'Shipper', 'Yes', 'Yes', '2004-02-04', '2021-02-03', '', '2000-01-02', 0),
+(129, 'WISDOM', '', 'ARTHUR', 7, 41, 'FMC-D0201-KM', NULL, '1998-12-23', 'Axim', 'Wednesday', 'Male', '0534234523', '', 'wisdomarthur@gmail.com', '', '', 'Single', 'Axim', 'Western North', '', 'active', '', '$2y$10$y5lgs3hTTtTSYnHc25IPKOjfdUqG47CPeVQ4sUu9K3a4RLJHUd7Qu', '2025-08-04 20:49:04', NULL, 'Student', 'TTU', 'Yes', 'No', '2000-12-04', '0000-00-00', '', '2000-01-04', 0),
+(130, 'ATTA', '', 'OPPONG', 7, 47, 'FMC-K0201-KM', NULL, '2001-02-02', 'ANAJI', 'Friday', 'Male', '0544567850', '', 'attaoppong@gmail.com', '', '', 'Single', 'ANAJI', 'Western', '', 'active', '', '$2y$10$uemZX48kMGl519rR9yj5s.rFHFssVp4aRF1ztutVctFRqNKHuk27G', '2025-08-04 21:00:44', NULL, 'Student', 'UCC', 'Yes', 'Yes', '2005-02-23', '2005-02-23', 'Adherent', '2001-12-01', 0),
+(131, 'SAM NAA AMA', '', '', 7, 49, 'FMC-S0104-KM', NULL, NULL, NULL, NULL, NULL, '0277384201', NULL, 'ansam@gmail.com', NULL, NULL, NULL, NULL, NULL, NULL, 'pending', '', '', '2025-08-06 01:39:02', 'a122d02c85b1aecaacd9bcc85a91aff8', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0),
+(132, 'Justina', '', 'Mensah', 7, 41, 'FMC-D0202-KM', NULL, '1990-05-08', 'Agogo', 'Tuesday', 'Female', '0234567899', '', 'ekowme@gmail.comm', '42 Mapple St', '', 'Married', 'Tonawanda', 'Bono', 'member_68975a5ce6cdc.jpg', 'active', '', '$2y$10$q6QP5jRzPqWLUiQI1PSiHOoQfOBNDf6gX1ZS96Tsqf7G4bejBzWRG', '2025-08-09 14:20:39', NULL, 'Formal', 'Teacher', 'No', 'No', '0000-00-00', '0000-00-00', '', '0000-00-00', 0);
 
 -- --------------------------------------------------------
 
@@ -499,29 +616,16 @@ CREATE TABLE `member_emergency_contacts` (
 --
 
 INSERT INTO `member_emergency_contacts` (`id`, `member_id`, `name`, `mobile`, `relationship`) VALUES
-(65, 69, 'dafsdfsd', '45343534', 'fadsfadsf'),
-(72, 70, 'tito', '3838383', 'ddldkfld'),
-(73, 71, 'tito', '4848484848', 'broooo'),
-(77, 73, 'FATIMATU AWUDU', '0554828663', 'sis'),
-(82, 83, 'GLADYS KANKAM', '0544842820', 'sister'),
-(83, 80, 'GLADYS KANKAM', '0544842820', 'sister'),
-(86, 86, 'FIIFI YAWSON', '0242363905', 'BRO'),
-(87, 85, 'NAAYAW', '01254789633', 'FATHER'),
-(88, 84, 'ABA MENS', '02587899663', 'MOTHER'),
-(92, 89, 'ghjgj', '7675765756', 'jhgjhgjh'),
-(95, 81, 'Nana Nkeyah', '0277384201', 'Son'),
-(96, 90, 'KWEKU NANA', '0275115850', 'SISTER'),
-(97, 90, 'YAWSON MERCY ABA', '0557295848', 'BROTHER'),
-(98, 88, 'Tito Nash', '0545644749', 'Brother'),
-(99, 94, 'tabitha', '0547257213', 'wife'),
-(100, 95, 'Barnabas ', '0243456574', 'Brother '),
-(101, 93, 'BARNABAS QUAYSON-OTOO', '0242363905', 'BRO'),
-(102, 97, 'James Evens', '7162381865', 'bro'),
-(0, 96, 'BARNABAS QUAYSON-OTOO', '0242363905', 'Father'),
-(0, 92, 'tito', '05456474484', 'brother'),
-(0, 82, 'JACOB F AYIEI', '0551756789', 'brother'),
-(0, 87, 'FIIFI YAWSON', '0242363905', 'BRO'),
-(0, 72, 'kjkhkh', '79798977', 'bkkjk');
+(0, 126, 'BARNABAS QUAYSON-OTOO', '0242363905', 'BROTHER'),
+(0, 129, 'AA', '0123334523', 'Son'),
+(0, 130, 'HB', '0233456678', 'DAUGHTER'),
+(0, 125, 'VB', '0234567788', 'VB'),
+(0, 127, 'VB', '0234567788', 'BB'),
+(0, 123, 'NANA', '0234556777', 'SON'),
+(0, 122, 'DAN OTU', '0277384201', 'BROTHER'),
+(0, 128, 'Bb', '0545678908', 'Father'),
+(0, 124, 'DAN', '0545678908', 'SON'),
+(0, 132, 'Tito', '1234567899', 'Brother');
 
 -- --------------------------------------------------------
 
@@ -557,6 +661,23 @@ CREATE TABLE `member_feedback_thread` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `member_hikvision_data`
+--
+
+CREATE TABLE `member_hikvision_data` (
+  `id` int(11) NOT NULL,
+  `member_id` int(11) NOT NULL,
+  `device_id` int(11) NOT NULL,
+  `hikvision_user_id` varchar(50) NOT NULL,
+  `face_enrolled` tinyint(1) DEFAULT 0,
+  `enrollment_date` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `member_organizations`
 --
 
@@ -573,41 +694,14 @@ CREATE TABLE `member_organizations` (
 --
 
 INSERT INTO `member_organizations` (`id`, `organization_id`, `member_id`, `role`, `joined_at`) VALUES
-(57, 1, 54, NULL, NULL),
-(58, 2, 54, NULL, NULL),
-(61, 2, 69, NULL, NULL),
-(65, 1, 70, NULL, NULL),
-(66, 2, 71, NULL, NULL),
-(76, 2, 83, NULL, NULL),
-(77, 7, 83, NULL, NULL),
-(78, 4, 83, NULL, NULL),
-(79, 7, 80, NULL, NULL),
-(85, 4, 86, NULL, NULL),
-(86, 4, 85, NULL, NULL),
-(87, 6, 85, NULL, NULL),
-(88, 2, 84, NULL, NULL),
-(100, 4, 81, NULL, NULL),
-(101, 5, 81, NULL, NULL),
-(102, 6, 81, NULL, NULL),
-(103, 2, 90, NULL, NULL),
-(104, 7, 90, NULL, NULL),
-(105, 4, 90, NULL, NULL),
-(106, 2, 88, NULL, NULL),
-(107, 1, 88, NULL, NULL),
-(108, 8, 93, NULL, NULL),
-(109, 8, 97, NULL, NULL),
-(0, 1, 96, NULL, NULL),
-(0, 4, 96, NULL, NULL),
-(0, 8, 92, NULL, NULL),
-(0, 3, 92, NULL, NULL),
-(0, 4, 82, NULL, NULL),
-(0, 6, 82, NULL, NULL),
-(0, 7, 87, NULL, NULL),
-(0, 4, 87, NULL, NULL),
-(0, 3, 87, NULL, NULL),
-(0, 2, 72, NULL, NULL),
-(0, 7, 97, NULL, NULL),
-(0, 4, 72, NULL, NULL);
+(0, 18, 125, NULL, NULL),
+(0, 20, 127, NULL, NULL),
+(0, 20, 123, NULL, NULL),
+(0, 18, 123, NULL, NULL),
+(0, 20, 122, NULL, NULL),
+(0, 18, 122, NULL, NULL),
+(0, 20, 124, NULL, NULL),
+(0, 19, 132, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -625,38 +719,14 @@ CREATE TABLE `member_roles_of_serving` (
 --
 
 INSERT INTO `member_roles_of_serving` (`member_id`, `role_id`) VALUES
-(70, 1),
-(70, 2),
-(71, 2),
-(80, 6),
-(80, 8),
-(81, 2),
-(81, 3),
-(81, 7),
-(81, 9),
-(83, 2),
-(83, 6),
-(83, 7),
-(84, 3),
-(85, 9),
-(86, 2),
-(86, 6),
-(88, 2),
-(88, 9),
-(90, 6),
-(90, 7),
-(90, 8),
-(97, 2),
-(97, 7),
-(97, 9),
-(92, 2),
-(82, 2),
-(82, 6),
-(82, 5),
-(87, 7),
-(87, 2),
-(87, 8),
-(72, 1);
+(129, 2),
+(130, 4),
+(125, 5),
+(127, 5),
+(123, 3),
+(128, 1),
+(124, 3),
+(132, 1);
 
 -- --------------------------------------------------------
 
@@ -769,7 +839,9 @@ INSERT INTO `menu_items` (`id`, `permission_name`, `label`, `icon`, `url`, `menu
 (78, 'approve_organization_memberships', 'Approve Member Organizations', '', 'views/organization_membership_approvals.php', 'Members', 0, 1),
 (79, '', 'Biometric Device', '', 'views/zkteco_devices.php', 'System', 0, 1),
 (80, '', 'Adherents', 'fas fa-user', 'views/adherent_list.php', 'Members', 0, 1),
-(81, '', 'Event Types', '', 'views/eventtype_list.php', 'Events', 5, 1);
+(81, '', 'Event Types', '', 'views/eventtype_list.php', 'Events', 5, 1),
+(82, 'register_event', 'Roles of Serving', '', 'views/roles_of_serving_list.php', 'Roles of Serving', 0, 1),
+(83, 'manage_hikvision_devices', 'HikVision Devices', '', 'views/hikvision_devices.php', 'System', 0, 1);
 
 -- --------------------------------------------------------
 
@@ -790,14 +862,10 @@ CREATE TABLE `organizations` (
 --
 
 INSERT INTO `organizations` (`id`, `church_id`, `name`, `description`, `leader_id`) VALUES
-(1, 7, 'Girls Guild', 'Girls Guild Group', NULL),
-(2, 7, 'choir', '', NULL),
-(3, 7, 'SUWMA', '', NULL),
-(4, 7, 'MYF', 'YOUTH', 44),
-(5, 7, 'singing band', 'SINGING GROUP', NULL),
-(6, 7, 'SUWMA', '', NULL),
-(7, 7, 'GIRLS FF', '', NULL),
-(8, 7, 'ddkdsk', 'dksdlkd', NULL);
+(18, 7, 'MYF', 'Youth Organization', NULL),
+(19, 7, 'MGF', 'Girls Group', NULL),
+(20, 7, 'BRIGADE', 'Boys and Girls Cadet', NULL),
+(21, 7, 'NONE', 'No Organization Joined', NULL);
 
 -- --------------------------------------------------------
 
@@ -824,8 +892,9 @@ CREATE TABLE `organization_membership_approvals` (
 --
 
 INSERT INTO `organization_membership_approvals` (`id`, `member_id`, `organization_id`, `requested_at`, `status`, `approved_by`, `approved_at`, `rejection_reason`, `notes`, `created_at`, `updated_at`) VALUES
-(4, 72, 7, '2025-07-31 04:45:50', 'rejected', 3, '2025-07-31 04:47:27', NULL, 'Test', '2025-07-31 04:45:50', '2025-07-31 04:47:27'),
-(5, 72, 4, '2025-07-31 04:45:50', 'approved', 3, '2025-07-31 04:47:37', NULL, 'Good', '2025-07-31 04:45:50', '2025-07-31 04:47:37');
+(12, 128, 20, '2025-08-04 20:41:49', 'pending', NULL, NULL, NULL, NULL, '2025-08-04 20:41:49', '2025-08-04 20:41:49'),
+(13, 129, 18, '2025-08-04 20:54:05', 'pending', NULL, NULL, NULL, NULL, '2025-08-04 20:54:05', '2025-08-04 20:54:05'),
+(14, 130, 18, '2025-08-04 21:03:36', 'pending', NULL, NULL, NULL, NULL, '2025-08-04 21:03:36', '2025-08-04 21:03:36');
 
 -- --------------------------------------------------------
 
@@ -848,6 +917,7 @@ CREATE TABLE `password_resets` (
 --
 
 INSERT INTO `password_resets` (`id`, `user_id`, `email`, `token`, `expires_at`, `used`, `created_at`) VALUES
+(0, 125, '', '8050a5e4b429fb1a3b50d1d1564ffdeb18aff1764f3d3c26d2f71bb1a3cc9f47', '2025-08-09 10:56:57', 0, '2025-08-09 07:56:58'),
 (1, 3, 'ekowme@gmail.com', 'f3d3f1301acba457d1a3537d8811df3ba4919ff9c2fa97e0b48e74d6deda749e', '2025-07-16 10:55:19', 0, '2025-07-16 07:55:19');
 
 -- --------------------------------------------------------
@@ -864,6 +934,8 @@ CREATE TABLE `payments` (
   `payment_type_id` int(11) DEFAULT NULL,
   `amount` decimal(10,2) DEFAULT NULL,
   `payment_date` datetime DEFAULT NULL,
+  `payment_period` date DEFAULT NULL,
+  `payment_period_description` varchar(100) DEFAULT NULL,
   `recorded_by` int(11) DEFAULT NULL,
   `mode` varchar(20) NOT NULL DEFAULT 'Offline',
   `description` varchar(255) DEFAULT NULL,
@@ -879,8 +951,32 @@ CREATE TABLE `payments` (
 -- Dumping data for table `payments`
 --
 
-INSERT INTO `payments` (`id`, `member_id`, `sundayschool_id`, `church_id`, `payment_type_id`, `amount`, `payment_date`, `recorded_by`, `mode`, `description`, `reversal_requested_at`, `reversal_requested_by`, `reversal_approved_at`, `reversal_approved_by`, `reversal_undone_at`, `reversal_undone_by`) VALUES
-(419, 72, NULL, 7, 4, 10.00, '2025-07-31 02:12:37', 3, 'Cash', 'harvest for July', NULL, NULL, NULL, NULL, NULL, NULL);
+INSERT INTO `payments` (`id`, `member_id`, `sundayschool_id`, `church_id`, `payment_type_id`, `amount`, `payment_date`, `payment_period`, `payment_period_description`, `recorded_by`, `mode`, `description`, `reversal_requested_at`, `reversal_requested_by`, `reversal_approved_at`, `reversal_approved_by`, `reversal_undone_at`, `reversal_undone_by`) VALUES
+(571, 129, NULL, 7, 1, 6.00, '2025-08-12 15:09:48', '2025-08-01', 'August 2025', 3, 'Cheque', 'Payment for March 2025 TITHE', NULL, NULL, NULL, NULL, NULL, NULL),
+(572, 129, NULL, 7, 3, 6.00, '2025-08-12 15:11:44', '2024-10-01', 'October 2024', 3, 'Cheque', 'Payment for October 2024 WELFARE', NULL, NULL, NULL, NULL, NULL, NULL),
+(573, 129, NULL, 7, 1, 8.00, '2025-08-12 15:20:08', '2025-08-01', 'August 2025', 3, 'Cash', 'TITHE for September 2024', NULL, NULL, NULL, NULL, NULL, NULL);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `payment_intents`
+--
+
+CREATE TABLE `payment_intents` (
+  `id` int(11) NOT NULL,
+  `client_reference` varchar(50) NOT NULL,
+  `checkout_id` varchar(100) DEFAULT NULL,
+  `transaction_id` varchar(100) DEFAULT NULL,
+  `amount` decimal(10,2) NOT NULL,
+  `description` varchar(255) NOT NULL,
+  `customer_name` varchar(100) NOT NULL,
+  `customer_phone` varchar(20) NOT NULL,
+  `customer_email` varchar(100) DEFAULT NULL,
+  `member_id` int(11) DEFAULT NULL,
+  `status` varchar(20) DEFAULT 'pending',
+  `created_at` datetime NOT NULL,
+  `updated_at` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -896,6 +992,13 @@ CREATE TABLE `payment_reversal_log` (
   `action_at` datetime NOT NULL DEFAULT current_timestamp(),
   `reason` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `payment_reversal_log`
+--
+
+INSERT INTO `payment_reversal_log` (`id`, `payment_id`, `action`, `actor_id`, `action_at`, `reason`) VALUES
+(0, 483, 'request', 3, '2025-08-05 07:56:19', 'Requested by user');
 
 -- --------------------------------------------------------
 
@@ -915,12 +1018,9 @@ CREATE TABLE `payment_types` (
 --
 
 INSERT INTO `payment_types` (`id`, `name`, `description`, `active`) VALUES
-(1, 'Tithe', '', 1),
-(3, 'Offertory', '', 1),
-(4, 'harvest', '', 1),
-(5, 'welfare', '', 1),
-(6, 'education fund', '', 1),
-(7, 'Sample Payment', '', 1);
+(1, 'TITHE', 'Monthly Promise', 1),
+(3, 'WELFARE', 'for donations', 1),
+(4, 'HARVEST', 'Promise', 1);
 
 -- --------------------------------------------------------
 
@@ -940,6 +1040,7 @@ CREATE TABLE `permissions` (
 --
 
 INSERT INTO `permissions` (`id`, `name`, `group`, `description`) VALUES
+(0, 'manage_hikvision_devices', NULL, 'Enroll members in Hikvision devices'),
 (77, 'view_dashboard', 'Dashboard', 'View the main dashboard'),
 (78, 'view_member', 'Members', 'View member records'),
 (79, 'create_member', 'Members', 'Create new member records'),
@@ -2655,7 +2756,76 @@ INSERT INTO `permission_audit_log` (`id`, `actor_user_id`, `action`, `target_typ
 (0, 4, 'deny', 'user', 4, NULL, '2025-07-31 04:01:31', 'denied'),
 (0, 4, 'deny', 'user', 4, NULL, '2025-07-31 04:02:28', 'denied'),
 (0, 4, 'deny', 'user', 4, NULL, '2025-07-31 04:02:40', 'denied'),
-(0, 4, 'deny', 'user', 4, NULL, '2025-07-31 04:17:35', 'denied');
+(0, 4, 'deny', 'user', 4, NULL, '2025-07-31 04:17:35', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:33:53', 'denied'),
+(0, 27, 'deny', 'user', 27, 310, '2025-08-09 07:33:53', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:34:02', 'denied'),
+(0, 27, 'deny', 'user', 27, 310, '2025-08-09 07:34:02', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:34:50', 'denied'),
+(0, 27, 'deny', 'user', 27, 164, '2025-08-09 07:36:34', 'denied'),
+(0, 27, 'deny', 'user', 27, 165, '2025-08-09 07:36:34', 'denied'),
+(0, 27, 'deny', 'user', 27, 166, '2025-08-09 07:36:34', 'denied'),
+(0, 27, 'deny', 'user', 27, 295, '2025-08-09 07:37:04', 'denied'),
+(0, 27, 'deny', 'user', 27, 295, '2025-08-09 07:37:06', 'denied'),
+(0, 27, 'deny', 'user', 27, 163, '2025-08-09 07:37:24', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:37:26', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:37:28', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:37:30', 'denied'),
+(0, 27, 'deny', 'user', 27, 163, '2025-08-09 07:37:32', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:37:45', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:38:15', 'denied'),
+(0, 27, 'deny', 'user', 27, 150, '2025-08-09 07:38:15', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:38:19', 'denied'),
+(0, 27, 'deny', 'user', 27, 150, '2025-08-09 07:38:19', 'denied'),
+(0, 27, 'deny', 'user', 27, 133, '2025-08-09 07:38:33', 'denied'),
+(0, 27, 'deny', 'user', 27, 133, '2025-08-09 07:38:37', 'denied'),
+(0, 27, 'deny', 'user', 27, 110, '2025-08-09 07:38:39', 'denied'),
+(0, 27, 'deny', 'user', 27, 110, '2025-08-09 07:38:42', 'denied'),
+(0, 27, 'deny', 'user', 27, 111, '2025-08-09 07:38:42', 'denied'),
+(0, 27, 'deny', 'user', 27, 112, '2025-08-09 07:38:42', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:38:42', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:38:42', 'denied'),
+(0, 27, 'deny', 'user', 27, 110, '2025-08-09 07:39:19', 'denied'),
+(0, 27, 'deny', 'user', 27, 111, '2025-08-09 07:40:24', 'denied'),
+(0, 27, 'deny', 'user', 27, 133, '2025-08-09 07:40:30', 'denied'),
+(0, 27, 'deny', 'user', 27, 133, '2025-08-09 07:40:33', 'denied'),
+(0, 27, 'deny', 'user', 27, 111, '2025-08-09 07:40:36', 'denied'),
+(0, 27, 'deny', 'user', 27, 112, '2025-08-09 07:40:36', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:40:36', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:40:36', 'denied'),
+(0, 27, 'deny', 'user', 27, 111, '2025-08-09 07:40:44', 'denied'),
+(0, 27, 'deny', 'user', 27, 284, '2025-08-09 07:40:59', 'denied'),
+(0, 27, 'deny', 'user', 27, 284, '2025-08-09 07:41:03', 'denied'),
+(0, 27, 'deny', 'user', 27, 111, '2025-08-09 07:42:02', 'denied'),
+(0, 27, 'deny', 'user', 27, 112, '2025-08-09 07:42:02', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:42:02', 'denied');
+INSERT INTO `permission_audit_log` (`id`, `actor_user_id`, `action`, `target_type`, `target_id`, `permission_id`, `timestamp`, `details`) VALUES
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:42:02', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:43:12', 'denied'),
+(0, 27, 'deny', 'user', 27, 111, '2025-08-09 07:43:30', 'denied'),
+(0, 27, 'deny', 'user', 27, 112, '2025-08-09 07:43:30', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:43:30', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:43:30', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:45:21', 'denied'),
+(0, 27, 'deny', 'user', 27, 111, '2025-08-09 07:45:34', 'denied'),
+(0, 27, 'deny', 'user', 27, 112, '2025-08-09 07:45:34', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:45:34', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:45:34', 'denied'),
+(0, 27, 'deny', 'user', 27, 111, '2025-08-09 07:45:36', 'denied'),
+(0, 27, 'deny', 'user', 27, 111, '2025-08-09 07:45:39', 'denied'),
+(0, 27, 'deny', 'user', 27, 112, '2025-08-09 07:45:39', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:45:39', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:45:39', 'denied'),
+(0, 27, 'deny', 'user', 27, 111, '2025-08-09 07:45:41', 'denied'),
+(0, 27, 'deny', 'user', 27, 111, '2025-08-09 07:47:46', 'denied'),
+(0, 27, 'deny', 'user', 27, 112, '2025-08-09 07:47:46', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:47:46', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:47:46', 'denied'),
+(0, 27, 'deny', 'user', 27, 111, '2025-08-09 07:47:52', 'denied'),
+(0, 27, 'deny', 'user', 27, 111, '2025-08-09 07:51:06', 'denied'),
+(0, 27, 'deny', 'user', 27, 112, '2025-08-09 07:51:06', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:51:06', 'denied'),
+(0, 27, 'deny', 'user', 27, NULL, '2025-08-09 07:51:06', 'denied');
 
 -- --------------------------------------------------------
 
@@ -2687,13 +2857,14 @@ CREATE TABLE `roles` (
 
 INSERT INTO `roles` (`id`, `name`, `description`) VALUES
 (1, 'Super Admin', NULL),
-(2, 'Admin', NULL),
-(3, 'Steward', NULL),
-(4, 'Rev. Ministers', NULL),
+(2, 'ADMIN', ''),
+(3, 'STEWARDS', ''),
+(4, 'Rev. Ministers', ''),
 (5, 'Class Leader', NULL),
 (6, 'Organizational Leader', NULL),
 (7, 'Cashier', NULL),
-(8, 'Health', NULL);
+(8, 'HEALTH', 'Medical team'),
+(10, 'SUNDAY SCHOOL', 'In charge of Sunday School Activities');
 
 -- --------------------------------------------------------
 
@@ -2714,16 +2885,12 @@ CREATE TABLE `roles_of_serving` (
 --
 
 INSERT INTO `roles_of_serving` (`id`, `name`, `description`, `created_at`, `updated_at`) VALUES
-(1, 'Reverend Minister', '', '2025-07-09 15:38:48', '2025-07-09 15:38:48'),
-(2, 'Bible Class Leader', '', '2025-07-09 15:54:04', '2025-07-09 15:54:04'),
-(3, 'STEWARDS', '', '2025-07-14 20:23:44', '2025-07-14 20:23:44'),
-(4, 'ORGANIZATIONAL LEARDER', '', '2025-07-14 20:24:18', '2025-07-14 20:24:18'),
-(5, 'ORGANIZATIONAL executive', '', '2025-07-14 20:24:42', '2025-07-14 20:24:42'),
-(6, 'cleaner', '', '2025-07-14 20:25:01', '2025-07-14 20:25:01'),
-(7, 'bands man', '', '2025-07-14 20:25:14', '2025-07-14 20:25:14'),
-(8, 'media team', '', '2025-07-14 20:25:27', '2025-07-14 20:25:27'),
-(9, 'cashers', '', '2025-07-14 20:25:46', '2025-07-14 20:25:46'),
-(10, 'Hour', 'ffsfs', '2025-07-18 22:04:10', '2025-07-18 22:04:10');
+(1, 'BIBLE CLASS LEADER', 'Leading one of the bible class', '2025-08-04 18:55:13', '2025-08-04 18:55:13'),
+(2, 'STEWARDS', 'In charge of church\'s business', '2025-08-04 20:25:45', '2025-08-04 20:25:45'),
+(3, 'ADMINISTRATOR', 'In charge of the administrative works of the church', '2025-08-04 20:27:59', '2025-08-04 20:27:59'),
+(4, 'ORGANIZATIONAL LEARDER', 'A leader of an organization', '2025-08-04 20:28:49', '2025-08-04 20:28:49'),
+(5, 'CASH CHECKERS', 'Members who counts the church\'s monies', '2025-08-04 20:30:36', '2025-08-04 20:30:36'),
+(6, 'NONE', 'Member has no actives  serve for the church', '2025-08-04 20:54:33', '2025-08-04 20:54:33');
 
 -- --------------------------------------------------------
 
@@ -2983,355 +3150,378 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES
 (1, 317),
 (1, 318),
 (1, 319),
-(5, 77),
-(5, 78),
-(5, 79),
-(5, 80),
-(5, 81),
-(5, 89),
-(5, 90),
-(5, 91),
-(5, 92),
-(5, 93),
-(5, 94),
-(5, 95),
-(5, 96),
-(5, 98),
-(5, 99),
-(5, 100),
-(5, 107),
-(5, 108),
-(5, 109),
-(5, 110),
-(5, 111),
-(5, 112),
-(5, 113),
-(5, 114),
-(5, 115),
-(5, 116),
-(5, 117),
-(5, 118),
-(5, 119),
-(5, 120),
-(5, 121),
-(5, 122),
-(5, 123),
-(5, 124),
-(5, 125),
-(5, 126),
-(5, 127),
-(5, 128),
-(5, 129),
-(5, 130),
-(5, 131),
-(5, 132),
-(5, 133),
-(5, 134),
-(5, 135),
-(5, 136),
-(5, 137),
-(5, 138),
-(5, 139),
-(5, 140),
-(5, 141),
-(5, 142),
-(5, 143),
-(5, 144),
-(5, 145),
-(5, 146),
-(5, 147),
-(5, 148),
-(5, 149),
-(5, 150),
-(5, 151),
-(5, 152),
-(5, 153),
-(5, 154),
-(5, 155),
-(5, 156),
-(5, 157),
-(5, 158),
-(5, 159),
-(5, 160),
-(5, 161),
-(5, 162),
-(5, 193),
-(5, 197),
-(5, 203),
-(5, 218),
-(5, 219),
-(5, 220),
-(5, 222),
-(5, 267),
-(5, 268),
-(5, 272),
-(5, 273),
-(5, 274),
-(5, 275),
-(5, 276),
-(5, 277),
-(5, 278),
-(5, 279),
-(5, 280),
-(5, 281),
-(5, 282),
-(5, 283),
-(5, 284),
-(5, 285),
-(5, 286),
-(5, 287),
-(5, 288),
-(5, 289),
-(5, 290),
-(5, 291),
-(5, 292),
-(5, 293),
-(5, 294),
-(5, 295),
-(5, 296),
-(5, 297),
-(5, 298),
-(5, 310),
-(5, 316),
-(11, 77),
-(11, 78),
-(11, 79),
-(11, 80),
-(11, 81),
-(11, 82),
-(11, 83),
-(11, 84),
-(11, 85),
-(11, 86),
-(11, 87),
-(11, 88),
-(11, 89),
-(11, 90),
-(11, 91),
-(11, 92),
-(11, 93),
-(11, 94),
-(11, 95),
-(11, 96),
-(11, 97),
-(11, 98),
-(11, 99),
-(11, 100),
-(11, 101),
-(11, 102),
-(11, 103),
-(11, 104),
-(11, 105),
-(11, 106),
-(11, 107),
-(11, 108),
-(11, 109),
-(11, 110),
-(11, 111),
-(11, 112),
-(11, 113),
-(11, 114),
-(11, 115),
-(11, 116),
-(11, 117),
-(11, 118),
-(11, 119),
-(11, 120),
-(11, 121),
-(11, 122),
-(11, 123),
-(11, 124),
-(11, 125),
-(11, 126),
-(11, 127),
-(11, 128),
-(11, 129),
-(11, 130),
-(11, 131),
-(11, 132),
-(11, 133),
-(11, 134),
-(11, 135),
-(11, 136),
-(11, 137),
-(11, 138),
-(11, 139),
-(11, 140),
-(11, 141),
-(11, 142),
-(11, 143),
-(11, 144),
-(11, 145),
-(11, 146),
-(11, 147),
-(11, 148),
-(11, 149),
-(11, 150),
-(11, 151),
-(11, 152),
-(11, 153),
-(11, 154),
-(11, 155),
-(11, 156),
-(11, 157),
-(11, 158),
-(11, 159),
-(11, 160),
-(11, 161),
-(11, 162),
-(11, 163),
-(11, 164),
-(11, 165),
-(11, 166),
-(11, 167),
-(11, 168),
-(11, 169),
-(11, 170),
-(11, 171),
-(11, 172),
-(11, 173),
-(11, 174),
-(11, 175),
-(11, 176),
-(11, 177),
-(11, 178),
-(11, 179),
-(11, 180),
-(11, 181),
-(11, 182),
-(11, 183),
-(11, 184),
-(11, 185),
-(11, 186),
-(11, 187),
-(11, 188),
-(11, 189),
-(11, 190),
-(11, 191),
-(11, 192),
-(11, 193),
-(11, 194),
-(11, 195),
-(11, 196),
-(11, 197),
-(11, 198),
-(11, 199),
-(11, 200),
-(11, 201),
-(11, 202),
-(11, 203),
-(11, 204),
-(11, 205),
-(11, 206),
-(11, 207),
-(11, 208),
-(11, 209),
-(11, 210),
-(11, 211),
-(11, 212),
-(11, 213),
-(11, 214),
-(11, 215),
-(11, 216),
-(11, 217),
-(11, 218),
-(11, 219),
-(11, 220),
-(11, 221),
-(11, 222),
-(11, 223),
-(11, 224),
-(11, 225),
-(11, 226),
-(11, 227),
-(11, 228),
-(11, 229),
-(11, 230),
-(11, 231),
-(11, 232),
-(11, 233),
-(11, 234),
-(11, 235),
-(11, 236),
-(11, 237),
-(11, 238),
-(11, 239),
-(11, 240),
-(11, 241),
-(11, 242),
-(11, 243),
-(11, 244),
-(11, 245),
-(11, 246),
-(11, 247),
-(11, 248),
-(11, 249),
-(11, 250),
-(11, 251),
-(11, 252),
-(11, 253),
-(11, 254),
-(11, 255),
-(11, 256),
-(11, 257),
-(11, 258),
-(11, 259),
-(11, 260),
-(11, 261),
-(11, 262),
-(11, 263),
-(11, 264),
-(11, 265),
-(11, 266),
-(11, 267),
-(11, 268),
-(11, 269),
-(11, 270),
-(11, 271),
-(11, 272),
-(11, 273),
-(11, 274),
-(11, 275),
-(11, 276),
-(11, 277),
-(11, 278),
-(11, 279),
-(11, 280),
-(11, 281),
-(11, 282),
-(11, 283),
-(11, 284),
-(11, 285),
-(11, 286),
-(11, 287),
-(11, 288),
-(11, 289),
-(11, 290),
-(11, 291),
-(11, 292),
-(11, 293),
-(11, 294),
-(11, 295),
-(11, 296),
-(11, 297),
-(11, 299),
-(11, 300),
-(11, 301),
-(11, 302),
-(11, 303),
-(11, 304),
-(11, 305),
-(11, 306),
-(11, 307),
-(11, 308),
-(11, 309),
-(11, 310),
-(11, 311),
-(11, 312),
-(11, 313),
-(11, 314),
-(11, 315),
-(11, 316),
+(10, 77),
+(10, 96),
+(10, 84),
+(10, 78),
+(10, 94),
+(10, 95),
+(10, 93),
+(10, 91),
+(10, 89),
+(10, 102),
+(10, 101),
+(10, 103),
+(10, 106),
+(10, 104),
+(10, 100),
+(10, 99),
+(10, 98),
+(10, 105),
+(10, 109),
+(10, 118),
+(10, 117),
+(10, 108),
+(10, 107),
+(10, 114),
+(10, 121),
+(10, 120),
+(10, 152),
+(10, 132),
+(10, 154),
+(10, 156),
+(10, 155),
+(10, 125),
+(10, 161),
+(10, 131),
+(10, 162),
+(10, 171),
+(10, 177),
+(10, 180),
+(10, 179),
+(10, 175),
+(10, 182),
+(10, 184),
+(10, 183),
+(10, 188),
+(10, 185),
+(10, 181),
+(10, 187),
+(10, 186),
+(10, 190),
+(10, 192),
+(10, 191),
+(10, 193),
+(10, 189),
+(10, 194),
+(10, 196),
+(10, 195),
+(10, 201),
+(10, 202),
+(10, 205),
+(10, 204),
+(10, 197),
+(10, 203),
+(10, 214),
+(10, 222),
+(10, 219),
+(10, 221),
+(10, 220),
+(10, 224),
+(10, 223),
+(10, 218),
+(10, 226),
+(10, 228),
+(10, 227),
+(10, 231),
+(10, 232),
+(10, 229),
+(10, 225),
+(10, 230),
+(10, 233),
+(10, 270),
+(10, 259),
+(10, 301),
+(10, 297),
+(10, 299),
+(10, 315),
+(10, 320),
+(3, 85),
+(3, 97),
+(3, 79),
+(3, 86),
+(3, 80),
+(3, 92),
+(3, 82),
+(3, 83),
+(3, 87),
+(3, 96),
+(3, 88),
+(3, 84),
+(3, 78),
+(3, 94),
+(3, 95),
+(3, 93),
+(3, 91),
+(3, 89),
+(3, 146),
+(3, 153),
+(3, 132),
+(3, 157),
+(3, 167),
+(3, 164),
+(3, 166),
+(3, 165),
+(3, 170),
+(3, 168),
+(3, 169),
+(3, 163),
+(3, 173),
+(3, 171),
+(3, 175),
+(3, 182),
+(3, 184),
+(3, 183),
+(3, 188),
+(3, 185),
+(3, 181),
+(3, 187),
+(3, 186),
+(3, 190),
+(3, 192),
+(3, 191),
+(3, 193),
+(3, 189),
+(3, 194),
+(3, 196),
+(3, 195),
+(3, 201),
+(3, 202),
+(3, 205),
+(3, 204),
+(3, 197),
+(3, 203),
+(3, 210),
+(3, 211),
+(3, 208),
+(3, 213),
+(3, 214),
+(3, 207),
+(3, 217),
+(3, 206),
+(3, 209),
+(3, 212),
+(3, 216),
+(3, 215),
+(3, 222),
+(3, 219),
+(3, 221),
+(3, 220),
+(3, 224),
+(3, 223),
+(3, 218),
+(3, 231),
+(3, 232),
+(3, 229),
+(3, 225),
+(3, 230),
+(3, 234),
+(3, 236),
+(3, 235),
+(3, 233),
+(3, 237),
+(3, 254),
+(3, 270),
+(3, 259),
+(3, 300),
+(3, 301),
+(3, 297),
+(3, 299),
+(3, 310),
+(4, 77),
+(4, 97),
+(4, 86),
+(4, 81),
+(4, 80),
+(4, 90),
+(4, 83),
+(4, 87),
+(4, 96),
+(4, 88),
+(4, 78),
+(4, 94),
+(4, 95),
+(4, 93),
+(4, 91),
+(4, 89),
+(4, 103),
+(4, 106),
+(4, 104),
+(4, 100),
+(4, 99),
+(4, 98),
+(4, 105),
+(4, 124),
+(4, 119),
+(4, 108),
+(4, 107),
+(4, 121),
+(4, 120),
+(4, 153),
+(4, 157),
+(4, 133),
+(4, 159),
+(4, 131),
+(4, 162),
+(4, 167),
+(4, 168),
+(4, 163),
+(4, 177),
+(4, 180),
+(4, 179),
+(4, 175),
+(4, 183),
+(4, 188),
+(4, 185),
+(4, 181),
+(4, 187),
+(4, 186),
+(4, 191),
+(4, 193),
+(4, 189),
+(4, 194),
+(4, 196),
+(4, 195),
+(4, 199),
+(4, 201),
+(4, 202),
+(4, 205),
+(4, 204),
+(4, 197),
+(4, 203),
+(4, 214),
+(4, 222),
+(4, 219),
+(4, 221),
+(4, 220),
+(4, 224),
+(4, 223),
+(4, 218),
+(4, 227),
+(4, 229),
+(4, 225),
+(4, 230),
+(4, 233),
+(4, 270),
+(6, 92),
+(6, 91),
+(6, 98),
+(6, 109),
+(6, 108),
+(6, 121),
+(6, 120),
+(6, 156),
+(6, 157),
+(6, 155),
+(6, 177),
+(6, 180),
+(6, 179),
+(6, 175),
+(8, 77),
+(8, 79),
+(8, 78),
+(8, 93),
+(8, 89),
+(8, 144),
+(8, 129),
+(8, 150),
+(8, 151),
+(8, 156),
+(8, 125),
+(8, 198),
+(8, 200),
+(8, 199),
+(8, 201),
+(8, 202),
+(8, 205),
+(8, 204),
+(8, 197),
+(8, 203),
+(8, 214),
+(8, 272),
+(8, 273),
+(8, 274),
+(8, 275),
+(8, 276),
+(8, 277),
+(8, 278),
+(8, 279),
+(8, 280),
+(8, 281),
+(8, 282),
+(8, 283),
+(8, 284),
+(8, 285),
+(8, 286),
+(8, 287),
+(8, 288),
+(8, 289),
+(8, 290),
+(8, 291),
+(8, 292),
+(8, 293),
+(8, 294),
+(8, 295),
+(8, 296),
+(8, 310),
+(7, 77),
+(7, 78),
+(7, 94),
+(7, 91),
+(7, 89),
+(7, 102),
+(7, 101),
+(7, 103),
+(7, 106),
+(7, 104),
+(7, 100),
+(7, 99),
+(7, 98),
+(7, 105),
+(7, 110),
+(7, 112),
+(7, 115),
+(7, 116),
+(7, 109),
+(7, 122),
+(7, 298),
+(7, 118),
+(7, 117),
+(7, 119),
+(7, 108),
+(7, 107),
+(7, 114),
+(7, 121),
+(7, 120),
+(7, 214),
+(7, 219),
+(7, 225),
+(7, 272),
+(7, 273),
+(7, 274),
+(7, 275),
+(7, 276),
+(7, 277),
+(7, 278),
+(7, 279),
+(7, 280),
+(7, 281),
+(7, 282),
+(7, 283),
+(7, 284),
+(7, 285),
+(7, 286),
+(7, 287),
+(7, 288),
+(7, 289),
+(7, 290),
+(7, 291),
+(7, 292),
+(7, 293),
+(7, 294),
+(7, 295),
+(7, 296),
+(7, 310),
 (2, 77),
 (2, 85),
 (2, 97),
@@ -3367,7 +3557,6 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES
 (2, 111),
 (2, 115),
 (2, 116),
-(2, 109),
 (2, 122),
 (2, 113),
 (2, 298),
@@ -3462,6 +3651,18 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES
 (2, 204),
 (2, 197),
 (2, 203),
+(2, 210),
+(2, 211),
+(2, 208),
+(2, 213),
+(2, 214),
+(2, 207),
+(2, 217),
+(2, 206),
+(2, 209),
+(2, 212),
+(2, 216),
+(2, 215),
 (2, 222),
 (2, 219),
 (2, 221),
@@ -3477,345 +3678,119 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES
 (2, 229),
 (2, 225),
 (2, 230),
+(2, 244),
+(2, 248),
+(2, 247),
+(2, 251),
+(2, 250),
+(2, 242),
+(2, 237),
+(2, 256),
+(2, 258),
+(2, 253),
+(2, 254),
+(2, 263),
+(2, 267),
+(2, 268),
+(2, 260),
+(2, 264),
+(2, 262),
+(2, 271),
+(2, 261),
+(2, 266),
+(2, 269),
+(2, 265),
+(2, 270),
+(2, 259),
+(2, 272),
+(2, 273),
+(2, 274),
+(2, 275),
+(2, 276),
+(2, 277),
+(2, 278),
+(2, 279),
+(2, 280),
+(2, 281),
+(2, 282),
+(2, 283),
+(2, 284),
+(2, 285),
+(2, 286),
+(2, 287),
+(2, 288),
+(2, 289),
+(2, 290),
+(2, 291),
+(2, 292),
+(2, 293),
+(2, 294),
+(2, 295),
+(2, 296),
+(2, 300),
+(2, 301),
+(2, 297),
+(2, 299),
+(2, 305),
+(2, 303),
+(2, 302),
+(2, 306),
+(2, 307),
+(2, 304),
 (2, 310),
-(6, 77),
-(6, 115),
-(6, 109),
-(6, 122),
-(6, 298),
-(6, 118),
-(6, 117),
-(6, 119),
-(6, 108),
-(6, 107),
-(6, 114),
-(6, 121),
-(6, 120),
-(6, 180),
-(6, 175),
-(6, 318),
-(6, 319),
-(6, 317),
-(10, 77),
-(10, 85),
-(10, 97),
-(10, 79),
-(10, 86),
-(10, 81),
-(10, 80),
-(10, 92),
-(10, 90),
-(10, 82),
-(10, 83),
-(10, 87),
-(10, 96),
-(10, 88),
-(10, 84),
-(10, 78),
-(10, 94),
-(10, 95),
-(10, 93),
-(10, 91),
-(10, 89),
-(10, 102),
-(10, 101),
-(10, 103),
-(10, 106),
-(10, 104),
-(10, 100),
-(10, 99),
-(10, 98),
-(10, 105),
-(10, 110),
-(10, 112),
-(10, 111),
-(10, 115),
-(10, 116),
-(10, 109),
-(10, 122),
-(10, 113),
-(10, 118),
-(10, 124),
-(10, 117),
-(10, 119),
-(10, 108),
-(10, 107),
-(10, 114),
-(10, 121),
-(10, 120),
-(10, 123),
-(10, 136),
-(10, 135),
-(10, 134),
-(10, 138),
-(10, 139),
-(10, 140),
-(10, 141),
-(10, 126),
-(10, 142),
-(10, 143),
-(10, 144),
-(10, 145),
-(10, 146),
-(10, 147),
-(10, 148),
-(10, 127),
-(10, 128),
-(10, 149),
-(10, 129),
-(10, 150),
-(10, 151),
-(10, 152),
-(10, 153),
-(10, 132),
-(10, 154),
-(10, 156),
-(10, 157),
-(10, 155),
-(10, 158),
-(10, 133),
-(10, 159),
-(10, 160),
-(10, 125),
-(10, 161),
-(10, 130),
-(10, 131),
-(10, 162),
-(10, 167),
-(10, 164),
-(10, 166),
-(10, 165),
-(10, 170),
-(10, 168),
-(10, 169),
-(10, 163),
-(10, 177),
-(10, 180),
-(10, 179),
-(10, 175),
-(10, 182),
-(10, 184),
-(10, 183),
-(10, 188),
-(10, 185),
-(10, 181),
-(10, 187),
-(10, 186),
-(10, 190),
-(10, 192),
-(10, 191),
-(10, 193),
-(10, 189),
-(10, 194),
-(10, 196),
-(10, 195),
-(10, 200),
-(10, 199),
-(10, 201),
-(10, 202),
-(10, 205),
-(10, 204),
-(10, 197),
-(10, 203),
-(10, 214),
-(10, 222),
-(10, 219),
-(10, 221),
-(10, 220),
-(10, 224),
-(10, 223),
-(10, 218),
-(10, 226),
-(10, 228),
-(10, 227),
-(10, 231),
-(10, 232),
-(10, 229),
-(10, 225),
-(10, 230),
-(10, 234),
-(10, 236),
-(10, 235),
-(10, 233),
-(10, 246),
-(10, 249),
-(10, 241),
-(10, 243),
-(10, 238),
-(10, 245),
-(10, 240),
-(10, 244),
-(10, 239),
-(10, 248),
-(10, 252),
-(10, 247),
-(10, 251),
-(10, 250),
-(10, 242),
-(10, 237),
-(10, 255),
-(10, 257),
-(10, 256),
-(10, 258),
-(10, 253),
-(10, 254),
-(10, 263),
-(10, 267),
-(10, 268),
-(10, 260),
-(10, 264),
-(10, 262),
-(10, 271),
-(10, 261),
-(10, 266),
-(10, 269),
-(10, 265),
-(10, 270),
-(10, 259),
-(10, 301),
-(10, 297),
-(10, 299),
-(10, 310),
-(10, 311),
-(10, 314),
-(10, 313),
-(10, 312),
-(10, 309),
-(10, 308),
-(10, 315),
-(4, 77),
-(4, 97),
-(4, 86),
-(4, 81),
-(4, 80),
-(4, 90),
-(4, 83),
-(4, 87),
-(4, 96),
-(4, 88),
-(4, 78),
-(4, 94),
-(4, 95),
-(4, 93),
-(4, 91),
-(4, 89),
-(4, 101),
-(4, 103),
-(4, 106),
-(4, 104),
-(4, 100),
-(4, 99),
-(4, 98),
-(4, 105),
-(4, 124),
-(4, 119),
-(4, 108),
-(4, 107),
-(4, 121),
-(4, 120),
-(4, 133),
-(4, 167),
-(4, 168),
-(4, 163),
-(4, 177),
-(4, 180),
-(4, 179),
-(4, 175),
-(4, 183),
-(4, 188),
-(4, 185),
-(4, 181),
-(4, 187),
-(4, 186),
-(4, 191),
-(4, 193),
-(4, 189),
-(4, 194),
-(4, 196),
-(4, 195),
-(4, 199),
-(4, 201),
-(4, 202),
-(4, 205),
-(4, 204),
-(4, 197),
-(4, 203),
-(4, 214),
-(4, 222),
-(4, 219),
-(4, 221),
-(4, 220),
-(4, 224),
-(4, 223),
-(4, 218),
-(4, 227),
-(4, 229),
-(4, 225),
-(4, 230),
-(4, 233),
-(4, 270),
-(7, 77),
-(7, 78),
-(7, 94),
-(7, 91),
-(7, 89),
-(7, 102),
-(7, 101),
-(7, 103),
-(7, 106),
-(7, 104),
-(7, 100),
-(7, 99),
-(7, 98),
-(7, 105),
-(7, 110),
-(7, 112),
-(7, 115),
-(7, 116),
-(7, 109),
-(7, 122),
-(7, 298),
-(7, 118),
-(7, 117),
-(7, 119),
-(7, 108),
-(7, 107),
-(7, 114),
-(7, 121),
-(7, 120),
-(7, 167),
-(7, 164),
-(7, 166),
-(7, 165),
-(7, 170),
-(7, 168),
-(7, 169),
-(7, 163),
-(7, 214),
-(7, 310),
-(8, 77),
-(8, 144),
-(8, 129),
-(8, 150),
-(8, 151),
-(8, 156),
-(8, 125),
-(8, 198),
-(8, 200),
-(8, 199),
-(8, 201),
-(8, 202),
-(8, 205),
-(8, 204),
-(8, 197),
-(8, 203),
-(8, 214),
-(8, 277),
-(8, 280),
-(8, 281),
-(8, 282),
-(8, 284),
-(8, 310);
+(2, 311),
+(2, 314),
+(2, 313),
+(2, 312),
+(2, 309),
+(2, 308),
+(2, 318),
+(2, 315),
+(2, 316),
+(2, 319),
+(2, 317),
+(2, 320),
+(5, 77),
+(5, 97),
+(5, 79),
+(5, 86),
+(5, 91),
+(5, 110),
+(5, 298),
+(5, 117),
+(5, 108),
+(5, 107),
+(5, 121),
+(5, 143),
+(5, 144),
+(5, 171),
+(5, 272),
+(5, 273),
+(5, 274),
+(5, 275),
+(5, 276),
+(5, 277),
+(5, 278),
+(5, 279),
+(5, 280),
+(5, 281),
+(5, 282),
+(5, 283),
+(5, 284),
+(5, 285),
+(5, 286),
+(5, 287),
+(5, 288),
+(5, 289),
+(5, 290),
+(5, 291),
+(5, 292),
+(5, 293),
+(5, 294),
+(5, 295),
+(5, 296),
+(5, 310),
+(1, 0);
 
 -- --------------------------------------------------------
 
@@ -3841,7 +3816,85 @@ CREATE TABLE `sms_logs` (
 --
 
 INSERT INTO `sms_logs` (`id`, `member_id`, `phone`, `message`, `template_name`, `type`, `status`, `provider`, `sent_at`, `response`) VALUES
-(0, NULL, '0545644749', 'Hi Ekow Mensah, your payment of ₵10.00 has been paid to Freeman Methodist Church - KM as harvest for July. Your Total Harvest amount for the year 2025 is ₵10.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-07-31 00:12:38', '{\n    \"data\": [\n        {\n            \"id\": \"802390c9-61bf-4c6f-bf0a-2a2c47624566\",\n            \"recipient\": \"233545644749\"\n        }\n    ],\n    \"status\": \"success\"\n}');
+(1, NULL, '0242363905', 'Hi BARNA, click on the link to complete your registration: https://myfreeman.mensweb.xyz/views/complete_registration.php?token=11702e69111b026eb9856ffacbb3cd68', NULL, 'registration', 'success', 'arkesel', '2025-08-03 19:20:24', '{\n    \"data\": [\n        {\n            \"id\": \"731de2d9-3e4b-443e-9c08-cb366b6b0aa4\",\n            \"recipient\": \"233242363905\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(2, NULL, '0553143607', 'Hi DANNY, click on the link to complete your registration: https://myfreeman.mensweb.xyz/views/complete_registration.php?token=c4ba7c8d58c9b647283139bb3fa24285', NULL, 'registration', 'success', 'arkesel', '2025-08-03 19:22:11', '{\n    \"data\": [\n        {\n            \"id\": \"7e9c83b3-56ba-4962-9963-4b777b5bef98\",\n            \"recipient\": \"233553143607\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(3, NULL, '0551756789', 'Hi JACK, click on the link to complete your registration: https://myfreeman.mensweb.xyz/views/complete_registration.php?token=d39d9298e842527fb8e4f62c38fc1d60', NULL, 'registration', 'success', 'arkesel', '2025-08-03 19:25:09', '{\n    \"data\": [\n        {\n            \"id\": \"2e13c19e-d823-4b03-a95d-82610ae3f1fc\",\n            \"recipient\": \"233551756789\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(4, NULL, '0545644749', 'Hello, {name}', 'Birthday', NULL, 'sent', 'unknown', '2025-08-04 09:54:57', '{\"data\":[{\"id\":\"deb92d7f-b434-4d18-8d5c-28ac7c63eabb\",\"recipient\":\"233545644749\"}],\"status\":\"success\"}'),
+(5, NULL, '0242363905', 'Hi BARNA BAABIOLA, your payment of â‚µ60.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is â‚µ60.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-04 15:13:30', '{\n    \"data\": [\n        {\n            \"id\": \"978d020c-a2e6-4dcf-b452-ba15e39705ac\",\n            \"recipient\": \"233242363905\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(6, NULL, '0242363905', 'Hi BARNA BAABIOLA, your payment of â‚µ50.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is â‚µ110.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-04 16:20:20', '{\n    \"data\": [\n        {\n            \"id\": \"80aca5e3-f54c-4b4f-b208-98e34540dc0c\",\n            \"recipient\": \"233242363905\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(7, NULL, '0242363905', 'Hi BARNA BAABIOLA, your payment of â‚µ20.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is â‚µ130.00', NULL, 'harvest_payment', 'fail', 'arkesel', '2025-08-04 16:39:46', '{\n    \"status\": \"error\",\n    \"message\": \"HTTP Error: 500\",\n    \"http_code\": 500,\n    \"debug\": {\n        \"time\": \"2025-08-04 16:39:46\",\n        \"url\": \"https:\\/\\/sms.arkesel.com\\/api\\/v2\\/sms\\/send\",\n        \"payload\": {\n            \"sender\": \"MyFreeman\",\n            \"message\": \"Hi BARNA BAABIOLA, your payment of \\u20b520.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is \\u20b5130.00\",\n            \"recipients\": [\n                \"233242363905\"\n            ]\n        },\n        \"request_headers\": [\n            \"api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\",\n            \"Content-Type: application\\/json\",\n            \"Accept: application\\/json\"\n        ],\n        \"http_status\": 500,\n        \"response_headers\": \"HTTP\\/1.1 500 Internal Server Error\\r\\nServer: nginx\\r\\nDate: Mon, 04 Aug 2025 16:39:46 GMT\\r\\nContent-Type: application\\/json\\r\\nTransfer-Encoding: chunked\\r\\nConnection: keep-alive\\r\\nCache-Control: private, must-revalidate\\r\\npragma: no-cache\\r\\nexpires: -1\\r\\nAccess-Control-Allow-Origin: *\\r\\n\\r\\n\",\n        \"response_body\": \"{\\n    \\\"message\\\": \\\"Server Error\\\"\\n}\",\n        \"curl_error\": \"\",\n        \"curl_info\": {\n            \"total_time\": 0.65458899999999997643129745483747683465480804443359375,\n            \"connect_time\": 0.02614199999999999857180910112219862639904022216796875,\n            \"namelookup_time\": 0.0001179999999999999950837936690817286944366060197353363037109375,\n            \"pretransfer_time\": 0.0628269999999999939621631028785486705601215362548828125,\n            \"starttransfer_time\": 0.654563000000000005940137270954437553882598876953125,\n            \"redirect_time\": 0,\n            \"redirect_count\": 0,\n            \"size_upload\": 249,\n            \"size_download\": 33,\n            \"speed_download\": 50,\n            \"speed_upload\": 380,\n            \"download_content_length\": -1,\n            \"upload_content_length\": 249,\n            \"content_type\": \"application\\/json\"\n        },\n        \"verbose_log\": \"*   Trying 5.161.241.15...\\n* TCP_NODELAY set\\n* Connected to sms.arkesel.com (5.161.241.15) port 443 (#0)\\n* ALPN, offering http\\/1.1\\n* successfully set certificate verify locations:\\n*   CAfile: \\/etc\\/pki\\/tls\\/certs\\/ca-bundle.crt\\n  CApath: none\\n* SSL connection using TLSv1.3 \\/ TLS_AES_256_GCM_SHA384\\n* ALPN, server accepted to use http\\/1.1\\n* Server certificate:\\n*  subject: CN=sms.arkesel.com\\n*  start date: Aug  3 01:24:33 2025 GMT\\n*  expire date: Nov  1 01:24:32 2025 GMT\\n*  subjectAltName: host \\\"sms.arkesel.com\\\" matched cert\'s \\\"sms.arkesel.com\\\"\\n*  issuer: C=US; O=Let\'s Encrypt; CN=E6\\n*  SSL certificate verify ok.\\n> POST \\/api\\/v2\\/sms\\/send HTTP\\/1.1\\r\\nHost: sms.arkesel.com\\r\\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\\r\\nContent-Type: application\\/json\\r\\nAccept: application\\/json\\r\\nContent-Length: 249\\r\\n\\r\\n* upload completely sent off: 249 out of 249 bytes\\n< HTTP\\/1.1 500 Internal Server Error\\r\\n< Server: nginx\\r\\n< Date: Mon, 04 Aug 2025 16:39:46 GMT\\r\\n< Content-Type: application\\/json\\r\\n< Transfer-Encoding: chunked\\r\\n< Connection: keep-alive\\r\\n< Cache-Control: private, must-revalidate\\r\\n< pragma: no-cache\\r\\n< expires: -1\\r\\n< Access-Control-Allow-Origin: *\\r\\n< \\r\\n* Connection #0 to host sms.arkesel.com left intact\\n\"\n    }\n}'),
+(8, NULL, '0202707072', 'Hi NANA, click on the link to complete your registration: https://myfreeman.mensweb.xyz/views/complete_registration.php?token=2dc4bf43dda64e2ec41701f389adf5ba', NULL, 'registration', 'success', 'arkesel', '2025-08-04 18:37:23', '{\n    \"data\": [\n        {\n            \"id\": \"502a14bf-7d8b-41ff-9e00-e3eab6ddb9ad\",\n            \"recipient\": \"233202707072\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(9, NULL, '0541758561', 'Hi KWAME, click on the link to complete your registration: https://myfreeman.mensweb.xyz/views/complete_registration.php?token=71f0b86cc49a06647ec0784d0e8b7897', NULL, 'registration', 'success', 'arkesel', '2025-08-04 18:42:37', '{\n    \"data\": [\n        {\n            \"id\": \"d492ba74-4840-45cc-aa17-2e63ab99c2a4\",\n            \"recipient\": \"233541758561\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(10, NULL, '0541758561', 'Hi KWAME, click on the link to complete your registration: https://myfreeman.mensweb.xyz/views/complete_registration.php?token=5ff689a47bd0dedaf13c4dd4d9a21644', NULL, 'registration', 'success', 'arkesel', '2025-08-04 18:42:45', '{\n    \"data\": [\n        {\n            \"id\": \"16147f5a-3941-4417-8857-364be89382e9\",\n            \"recipient\": \"233541758561\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(11, NULL, '0206376136', 'Hi DANIEL, click on the link to complete your registration: https://myfreeman.mensweb.xyz/views/complete_registration.php?token=729e04460aaab263d3432a1c1ab29e01', NULL, 'registration', 'success', 'arkesel', '2025-08-04 20:39:08', '{\n    \"data\": [\n        {\n            \"id\": \"29e8e898-6377-407e-a005-77842cd5a51b\",\n            \"recipient\": \"233206376136\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(12, NULL, '05342345123', 'Hi WISDOM, click on the link to complete your registration: https://myfreeman.mensweb.xyz/views/complete_registration.php?token=9cc4688c2af522300bb7147e2973234f', NULL, 'registration', 'fail', 'arkesel', '2025-08-04 20:49:10', '{\n    \"status\": \"error\",\n    \"message\": \"HTTP Error: 422\",\n    \"http_code\": 422,\n    \"debug\": {\n        \"time\": \"2025-08-04 20:49:10\",\n        \"url\": \"https:\\/\\/sms.arkesel.com\\/api\\/v2\\/sms\\/send\",\n        \"payload\": {\n            \"sender\": \"MyFreeman\",\n            \"message\": \"Hi WISDOM, click on the link to complete your registration: https:\\/\\/myfreeman.mensweb.xyz\\/views\\/complete_registration.php?token=9cc4688c2af522300bb7147e2973234f\",\n            \"recipients\": [\n                \"05342345123\"\n            ]\n        },\n        \"request_headers\": [\n            \"api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\",\n            \"Content-Type: application\\/json\",\n            \"Accept: application\\/json\"\n        ],\n        \"http_status\": 422,\n        \"response_headers\": \"HTTP\\/1.1 422 Unprocessable Content\\r\\nServer: nginx\\r\\nDate: Mon, 04 Aug 2025 20:49:10 GMT\\r\\nContent-Type: application\\/json\\r\\nTransfer-Encoding: chunked\\r\\nConnection: keep-alive\\r\\nCache-Control: private, must-revalidate\\r\\npragma: no-cache\\r\\nexpires: -1\\r\\nX-RateLimit-Limit: 1500\\r\\nX-RateLimit-Remaining: 1350\\r\\nAccess-Control-Allow-Origin: *\\r\\nSet-Cookie: arkesel_sms_messenger_session=1i9LzcbSDwtU0ORtJSWN88aR63Cgeqrh4fTS5ec2; expires=Mon, 04-Aug-2025 22:49:10 GMT; Max-Age=7200; path=\\/; secure; httponly; samesite=lax\\r\\n\\r\\n\",\n        \"response_body\": \"{\\\"message\\\":\\\"No valid number in recipients!\\\",\\\"status\\\":\\\"error\\\"}\",\n        \"curl_error\": \"\",\n        \"curl_info\": {\n            \"total_time\": 3.029999999999999804600747665972448885440826416015625,\n            \"connect_time\": 0.025762000000000000177191594730174983851611614227294921875,\n            \"namelookup_time\": 1.800000000000000045601543374740316494353464804589748382568359375e-5,\n            \"pretransfer_time\": 0.0636110000000000008757439218243234790861606597900390625,\n            \"starttransfer_time\": 3.029977000000000142421185955754481256008148193359375,\n            \"redirect_time\": 0,\n            \"redirect_count\": 0,\n            \"size_upload\": 228,\n            \"size_download\": 61,\n            \"speed_download\": 20,\n            \"speed_upload\": 75,\n            \"download_content_length\": -1,\n            \"upload_content_length\": 228,\n            \"content_type\": \"application\\/json\"\n        },\n        \"verbose_log\": \"* Hostname sms.arkesel.com was found in DNS cache\\n*   Trying 5.161.241.15...\\n* TCP_NODELAY set\\n* Connected to sms.arkesel.com (5.161.241.15) port 443 (#0)\\n* ALPN, offering http\\/1.1\\n* successfully set certificate verify locations:\\n*   CAfile: \\/etc\\/pki\\/tls\\/certs\\/ca-bundle.crt\\n  CApath: none\\n* SSL connection using TLSv1.3 \\/ TLS_AES_256_GCM_SHA384\\n* ALPN, server accepted to use http\\/1.1\\n* Server certificate:\\n*  subject: CN=sms.arkesel.com\\n*  start date: Aug  3 01:24:33 2025 GMT\\n*  expire date: Nov  1 01:24:32 2025 GMT\\n*  subjectAltName: host \\\"sms.arkesel.com\\\" matched cert\'s \\\"sms.arkesel.com\\\"\\n*  issuer: C=US; O=Let\'s Encrypt; CN=E6\\n*  SSL certificate verify ok.\\n> POST \\/api\\/v2\\/sms\\/send HTTP\\/1.1\\r\\nHost: sms.arkesel.com\\r\\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\\r\\nContent-Type: application\\/json\\r\\nAccept: application\\/json\\r\\nContent-Length: 228\\r\\n\\r\\n* upload completely sent off: 228 out of 228 bytes\\n< HTTP\\/1.1 422 Unprocessable Content\\r\\n< Server: nginx\\r\\n< Date: Mon, 04 Aug 2025 20:49:10 GMT\\r\\n< Content-Type: application\\/json\\r\\n< Transfer-Encoding: chunked\\r\\n< Connection: keep-alive\\r\\n< Cache-Control: private, must-revalidate\\r\\n< pragma: no-cache\\r\\n< expires: -1\\r\\n< X-RateLimit-Limit: 1500\\r\\n< X-RateLimit-Remaining: 1350\\r\\n< Access-Control-Allow-Origin: *\\r\\n< Set-Cookie: arkesel_sms_messenger_session=1i9LzcbSDwtU0ORtJSWN88aR63Cgeqrh4fTS5ec2; expires=Mon, 04-Aug-2025 22:49:10 GMT; Max-Age=7200; path=\\/; secure; httponly; samesite=lax\\r\\n< \\r\\n* Connection #0 to host sms.arkesel.com left intact\\n\"\n    }\n}'),
+(13, NULL, '0544567850', 'Hi ATTA, click on the link to complete your registration: https://myfreeman.mensweb.xyz/views/complete_registration.php?token=c2a3f53eb2ab7aab274ba49c0a98a215', NULL, 'registration', 'success', 'arkesel', '2025-08-04 21:00:53', '{\n    \"data\": [\n        {\n            \"id\": \"bc1fe21e-e772-406d-930c-afa2db3c9b55\",\n            \"recipient\": \"233544567850\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(14, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of â‚µ50.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is â‚µ50.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-05 10:35:33', '{\n    \"data\": [\n        {\n            \"id\": \"3772b27f-b8e9-40a9-ac9f-da0b8332f43a\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(15, NULL, '0242363905', 'Hi BARNA BAABIOLA, your payment of â‚µ10.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is â‚µ140.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-05 11:09:46', '{\n    \"data\": [\n        {\n            \"id\": \"7799e17a-b61f-4e61-bb55-51d81c055927\",\n            \"recipient\": \"233242363905\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(16, NULL, '0551756789', 'Hi JACK JHAY, your payment of â‚µ30.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is â‚µ30.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-05 11:09:50', '{\n    \"data\": [\n        {\n            \"id\": \"f9a15df2-ffac-4fe3-a8ed-e10fe491234d\",\n            \"recipient\": \"233551756789\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(17, NULL, '0206376136', 'Hi DANIEL ANTWI, your payment of â‚µ15.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is â‚µ15.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-05 11:09:55', '{\n    \"data\": [\n        {\n            \"id\": \"e26509bb-311a-4d83-bd5a-0f9d466b274b\",\n            \"recipient\": \"233206376136\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(18, NULL, '0242363905', 'Hi BARNA BAABIOLA, your payment of â‚µ20.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is â‚µ160.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-05 15:28:18', '{\n    \"data\": [\n        {\n            \"id\": \"d6ff838d-dd74-4d98-8940-71af850ab75a\",\n            \"recipient\": \"233242363905\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(19, NULL, '0242363905', 'Hi BARNA BAABIOLA, your payment of â‚µ54.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is â‚µ214.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-05 15:28:56', '{\n    \"data\": [\n        {\n            \"id\": \"764922c7-c646-437f-b071-483f15a35043\",\n            \"recipient\": \"233242363905\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(20, NULL, '0553143607', 'Hi DANNY WISE, your payment of â‚µ50.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is â‚µ50.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-06 16:24:10', '{\n    \"data\": [\n        {\n            \"id\": \"9043b9b1-11ab-40e4-b76c-45023cfb1ab4\",\n            \"recipient\": \"233553143607\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(21, NULL, '0202707072', 'Hi NANA OTU, your payment of â‚µ230.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is â‚µ230.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-06 21:38:25', '{\n    \"data\": [\n        {\n            \"id\": \"61c28ab3-bef1-4cc0-9f07-8000daafe747\",\n            \"recipient\": \"233202707072\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(22, NULL, '0553143607', 'Hi DANNY WISE, your payment of â‚µ237.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is â‚µ287.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-06 22:05:01', '{\n    \"data\": [\n        {\n            \"id\": \"6669666d-fd21-4a17-be22-5f62fa6d4fda\",\n            \"recipient\": \"233553143607\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(23, NULL, '0541758561', 'Dear KWAME  PANFORD, your payment of ₵7.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-09 07:42:02', '{\n    \"data\": [\n        {\n            \"id\": \"1c49a16c-639f-46c4-af8c-6627a392be3d\",\n            \"recipient\": \"233541758561\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(24, NULL, '0553143607', 'Hi DANNY WISE, your payment of ₵8.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is ₵295.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-09 07:46:43', '{\n    \"data\": [\n        {\n            \"id\": \"06472089-8128-4ed3-a9c2-970c23186b7d\",\n            \"recipient\": \"233553143607\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(25, NULL, '0553143607', 'Dear DANNY  WISE, your payment of ₵4.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-09 07:46:52', '{\n    \"data\": [\n        {\n            \"id\": \"3fbb67e6-cdd5-41f1-a40b-f889717bebc2\",\n            \"recipient\": \"233553143607\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(26, NULL, '0553143607', 'Dear DANNY  WISE, your payment of ₵5.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-09 07:47:01', '{\n    \"data\": [\n        {\n            \"id\": \"1667fcee-e16b-49ea-ab5b-18fbb6515b58\",\n            \"recipient\": \"233553143607\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(27, NULL, '0551756789', 'Hi JACK JHAY, your payment of ₵3.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is ₵33.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-09 07:50:47', '{\n    \"data\": [\n        {\n            \"id\": \"862f7b97-cf1a-4e77-86a3-89b19762f484\",\n            \"recipient\": \"233551756789\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(28, NULL, '0551756789', 'Dear JACK  JHAY, your payment of ₵1.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-09 07:50:56', '{\n    \"data\": [\n        {\n            \"id\": \"7335393d-3b77-48df-b34f-f06501eba302\",\n            \"recipient\": \"233551756789\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(29, NULL, '0551756789', 'Dear JACK  JHAY, your payment of ₵2.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-09 07:51:06', '{\n    \"data\": [\n        {\n            \"id\": \"762b5257-aaf6-4261-80c0-9e186e6516c0\",\n            \"recipient\": \"233551756789\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(30, NULL, '1234567890', 'Hi Justina, click on the link to complete your registration: http://localhost/myfreemanchurchgit/church/views/complete_registration.php?token=fb3e3309fdd71b10f47b25a248b9d150', NULL, 'registration', 'fail', 'arkesel', '2025-08-09 14:20:47', '{\n    \"status\": \"error\",\n    \"message\": \"HTTP Error: 422\",\n    \"http_code\": 422,\n    \"debug\": {\n        \"time\": \"2025-08-09 16:20:47\",\n        \"url\": \"https:\\/\\/sms.arkesel.com\\/api\\/v2\\/sms\\/send\",\n        \"payload\": {\n            \"sender\": \"MyFreeman\",\n            \"message\": \"Hi Justina, click on the link to complete your registration: http:\\/\\/localhost\\/myfreemanchurchgit\\/church\\/views\\/complete_registration.php?token=fb3e3309fdd71b10f47b25a248b9d150\",\n            \"recipients\": [\n                \"1234567890\"\n            ]\n        },\n        \"request_headers\": [\n            \"api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\",\n            \"Content-Type: application\\/json\",\n            \"Accept: application\\/json\"\n        ],\n        \"http_status\": 422,\n        \"response_headers\": \"HTTP\\/1.1 422 Unprocessable Content\\r\\nServer: nginx\\r\\nDate: Sat, 09 Aug 2025 14:20:47 GMT\\r\\nContent-Type: application\\/json\\r\\nTransfer-Encoding: chunked\\r\\nConnection: keep-alive\\r\\nCache-Control: private, must-revalidate\\r\\npragma: no-cache\\r\\nexpires: -1\\r\\nX-RateLimit-Limit: 1500\\r\\nX-RateLimit-Remaining: 1456\\r\\nAccess-Control-Allow-Origin: *\\r\\nSet-Cookie: arkesel_sms_messenger_session=jBn9x7dE0bM3mYI6OtrOpRcpwUaDKlrocXk6OTzr; expires=Sat, 09-Aug-2025 16:20:47 GMT; Max-Age=7200; path=\\/; secure; httponly; samesite=lax\\r\\n\\r\\n\",\n        \"response_body\": \"{\\\"message\\\":\\\"No valid number in recipients!\\\",\\\"status\\\":\\\"error\\\"}\",\n        \"curl_error\": \"\",\n        \"curl_info\": {\n            \"total_time\": 3.750503,\n            \"connect_time\": 0.189423,\n            \"namelookup_time\": 0.002134,\n            \"pretransfer_time\": 0.54456,\n            \"starttransfer_time\": 3.750466,\n            \"redirect_time\": 0,\n            \"redirect_count\": 0,\n            \"size_upload\": 243,\n            \"size_download\": 61,\n            \"speed_download\": 16,\n            \"speed_upload\": 64,\n            \"download_content_length\": -1,\n            \"upload_content_length\": 243,\n            \"content_type\": \"application\\/json\"\n        },\n        \"verbose_log\": \"*   Trying 5.161.241.15:443...\\n* Connected to sms.arkesel.com (5.161.241.15) port 443\\n* ALPN: curl offers h2,http\\/1.1\\n*  CAfile: C:\\\\xampp\\\\apache\\\\bin\\\\curl-ca-bundle.crt\\n*  CApath: none\\n* SSL connection using TLSv1.3 \\/ TLS_AES_256_GCM_SHA384\\n* ALPN: server accepted http\\/1.1\\n* Server certificate:\\n*  subject: CN=sms.arkesel.com\\n*  start date: Aug  3 01:24:33 2025 GMT\\n*  expire date: Nov  1 01:24:32 2025 GMT\\n*  subjectAltName: host \\\"sms.arkesel.com\\\" matched cert\'s \\\"sms.arkesel.com\\\"\\n*  issuer: C=US; O=Let\'s Encrypt; CN=E6\\n*  SSL certificate verify ok.\\n* using HTTP\\/1.1\\n> POST \\/api\\/v2\\/sms\\/send HTTP\\/1.1\\r\\nHost: sms.arkesel.com\\r\\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\\r\\nContent-Type: application\\/json\\r\\nAccept: application\\/json\\r\\nContent-Length: 243\\r\\n\\r\\n* old SSL session ID is stale, removing\\n< HTTP\\/1.1 422 Unprocessable Content\\r\\n< Server: nginx\\r\\n< Date: Sat, 09 Aug 2025 14:20:47 GMT\\r\\n< Content-Type: application\\/json\\r\\n< Transfer-Encoding: chunked\\r\\n< Connection: keep-alive\\r\\n< Cache-Control: private, must-revalidate\\r\\n< pragma: no-cache\\r\\n< expires: -1\\r\\n< X-RateLimit-Limit: 1500\\r\\n< X-RateLimit-Remaining: 1456\\r\\n< Access-Control-Allow-Origin: *\\r\\n< Set-Cookie: arkesel_sms_messenger_session=jBn9x7dE0bM3mYI6OtrOpRcpwUaDKlrocXk6OTzr; expires=Sat, 09-Aug-2025 16:20:47 GMT; Max-Age=7200; path=\\/; secure; httponly; samesite=lax\\r\\n< \\r\\n* Connection #0 to host sms.arkesel.com left intact\\n\"\n    }\n}'),
+(31, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵60.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is ₵110.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 10:24:58', '{\n    \"data\": [\n        {\n            \"id\": \"d62d76a5-c4bb-49ff-aea8-f1e5d472ac37\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(32, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵1.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is ₵111.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 10:26:00', '{\n    \"data\": [\n        {\n            \"id\": \"161460ba-d800-42e0-8284-1b534752ab3b\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(33, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵2.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 10:26:09', '{\n    \"data\": [\n        {\n            \"id\": \"68e7f813-5ed3-4ff7-8ec8-09aafbec632c\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(34, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵3.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 10:26:17', '{\n    \"data\": [\n        {\n            \"id\": \"3bc0bfc0-7724-42d6-aa98-6a035a9798a7\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(35, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵1.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is ₵112.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 10:33:00', '{\n    \"data\": [\n        {\n            \"id\": \"11c2c887-bdf3-4de5-af40-db4976a74ef2\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(36, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵2.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 10:33:10', '{\n    \"data\": [\n        {\n            \"id\": \"55d89c30-7aed-4e0d-a4a0-b9243d370784\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(37, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵2.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is ₵114.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 10:37:27', '{\n    \"data\": [\n        {\n            \"id\": \"5d100904-473a-42bd-9714-6c0c9ed5999c\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(38, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵1.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 10:37:36', '{\n    \"data\": [\n        {\n            \"id\": \"37d80181-c449-4eda-beab-464b7491a837\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(39, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵3.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is ₵117.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 10:39:18', '{\n    \"data\": [\n        {\n            \"id\": \"81dd0086-4c7f-458e-a9c1-1b4b202132d1\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(40, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵5.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is ₵122.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 10:44:02', '{\n    \"data\": [\n        {\n            \"id\": \"1512dd47-1fe5-4299-bcba-07cd508685f9\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(41, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵3.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is ₵115.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 10:46:23', '{\n    \"data\": [\n        {\n            \"id\": \"88b546b2-530a-4d0b-9621-bbe7ecf866b1\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(42, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵1.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is ₵116.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 10:46:56', '{\n    \"data\": [\n        {\n            \"id\": \"1242ab02-2398-4675-8c11-96dc8c661112\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(43, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵1.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is ₵116.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 10:49:55', '{\n    \"data\": [\n        {\n            \"id\": \"e999099e-0ad9-4a5e-a279-958d315cb287\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(44, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵10.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is ₵126.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 10:51:08', '{\n    \"data\": [\n        {\n            \"id\": \"82e61306-628e-4e91-bde7-6f655aea33de\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(45, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵4.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 10:51:17', '{\n    \"data\": [\n        {\n            \"id\": \"19f7b0a7-237c-4deb-978d-f0e7f30f7eb5\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(46, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵5.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 10:51:27', '{\n    \"data\": [\n        {\n            \"id\": \"2504b1a8-7c32-4728-9f1c-305a87c9db04\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(47, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵7.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 10:52:15', '{\n    \"data\": [\n        {\n            \"id\": \"14c51023-34b4-4abb-9b2c-dbc11adc1612\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(48, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵1.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is ₵127.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 10:57:29', '{\n    \"data\": [\n        {\n            \"id\": \"49bde22d-3f33-4284-befa-f8f6ec52fee8\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(49, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵1.00 has been paid to Freeman Methodist Church - KM as Payment for August 2025 HARVEST. Your Total Harvest amount for the year 2025 is ₵128.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 11:17:29', '{\n    \"data\": [\n        {\n            \"id\": \"d8a52f64-e677-4cd1-aead-a6a90a92e479\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(50, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵10.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 11:21:23', '{\n    \"data\": [\n        {\n            \"id\": \"f2d1ceb7-bc7d-4fad-ae33-5a8450dd45ca\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(51, NULL, '0206376136', 'Hi DANIEL ANTWI, your payment of ₵6.00 has been paid to Freeman Methodist Church - KM as HARVEST for March 2025. Your Total Harvest amount for the year 2025 is ₵21.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 11:35:55', '{\n    \"data\": [\n        {\n            \"id\": \"e39dec34-10b9-47c8-9497-3045a753cc15\",\n            \"recipient\": \"233206376136\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(52, NULL, '0242363905', 'Dear BARNA  BAABIOLA, your payment of ₵5.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 11:36:05', '{\n    \"data\": [\n        {\n            \"id\": \"6951f8c5-1779-4682-af7b-50833816342f\",\n            \"recipient\": \"233242363905\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(53, NULL, '0206376136', 'Dear DANIEL  ANTWI, your payment of ₵6.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 11:36:14', '{\n    \"data\": [\n        {\n            \"id\": \"9b1aac56-e633-4892-9096-8a906ada1d13\",\n            \"recipient\": \"233206376136\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(54, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵10.00 has been paid to Freeman Methodist Church - KM as Payment for December 2024 HARVEST. Your Total Harvest amount for the year 2025 is ₵10.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 11:58:30', '{\n    \"data\": [\n        {\n            \"id\": \"d74b2d3b-deaa-4740-9446-8068d4916a87\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(55, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵1.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 12:00:28', '{\n    \"data\": [\n        {\n            \"id\": \"ab8a92a9-387e-4f65-b732-cb022adfc689\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(56, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵10.00 has been paid to Freeman Methodist Church - KM as HARVEST for October 2024. Your Total Harvest amount for the year 2025 is ₵20.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 12:03:07', '{\n    \"data\": [\n        {\n            \"id\": \"bf07bbcf-7590-4013-a214-f95e778f05c1\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(57, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵1.00 has been paid to Freeman Methodist Church - KM as Payment for September 2024 HARVEST. Your Total Harvest amount for the year 2025 is ₵1.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 12:11:04', '{\n    \"data\": [\n        {\n            \"id\": \"07f23be8-d3d0-42b8-8f93-455565d8ecc2\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(58, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵3.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 12:12:46', '{\n    \"data\": [\n        {\n            \"id\": \"1db4b57d-b0ab-4d77-b7ab-55c7eb7bc107\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(59, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵2.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 12:12:55', '{\n    \"data\": [\n        {\n            \"id\": \"f723f122-0bd6-4be7-9cb2-4e7b388ffdcf\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(60, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵1.00 has been paid to Freeman Methodist Church - KM as Payment for March 2025 HARVEST. Your Total Harvest amount for the year 2025 is ₵1.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 12:17:49', '{\n    \"data\": [\n        {\n            \"id\": \"d4c037a2-d779-43d6-a045-53e8df84f3f8\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(61, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵1.00 has been paid to Freeman Methodist Church - KM as Payment for September 2024 HARVEST. Your Total Harvest amount for the year 2025 is ₵1.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 12:22:17', '{\n    \"data\": [\n        {\n            \"id\": \"cb4711e4-7075-4ee5-8e9d-cdb15902f887\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(62, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵5.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 12:24:25', '{\n    \"data\": [\n        {\n            \"id\": \"bc243883-a610-4c50-ac82-17af241f1750\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(63, NULL, '0206376136', 'Dear JOHN  ABBAN, your payment of ₵6.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 12:26:39', '{\n    \"data\": [\n        {\n            \"id\": \"f3ea512d-85da-4a2c-9aa0-4d205ec97a99\",\n            \"recipient\": \"233206376136\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(64, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵1.00 has been paid to Freeman Methodist Church - KM as Payment for August 2025 HARVEST. Your Total Harvest amount for the year 2025 is ₵1.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 12:29:47', '{\n    \"data\": [\n        {\n            \"id\": \"1320bd79-3ffe-4f4f-987e-75fbe4c72b99\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(65, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵5.00 has been paid to Freeman Methodist Church - KM as Payment for April 2025 HARVEST. Your Total Harvest amount for the year 2025 is ₵6.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 12:33:16', '{\n    \"data\": [\n        {\n            \"id\": \"4046742c-e031-4ef9-8e67-c0da0e8b5834\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(66, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵3.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 12:33:25', '{\n    \"data\": [\n        {\n            \"id\": \"ba1a46ba-259e-4297-b748-dfed80a1eee9\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(67, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵5.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 12:39:17', '{\n    \"data\": [\n        {\n            \"id\": \"be66ec2f-8df1-408f-b181-4fda1bac3937\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(68, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵1.00 has been paid to Freeman Methodist Church - KM as Payment for November 2024 HARVEST. Your Total Harvest amount for the year 2025 is ₵1.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 12:46:00', '{\n    \"data\": [\n        {\n            \"id\": \"6cd89e92-2a90-4cf6-b921-cedbb85e0bc0\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(69, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵6.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 12:50:46', '{\n    \"data\": [\n        {\n            \"id\": \"580133e6-a82e-4316-94db-0b179c4267b1\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(70, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵1.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 12:52:24', '{\n    \"data\": [\n        {\n            \"id\": \"fade22d7-b595-41f1-b018-b93d45fcb2d9\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(71, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵3.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 12:53:30', '{\n    \"data\": [\n        {\n            \"id\": \"1109acd3-52f2-458f-9744-83b5038d6ce6\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(72, NULL, '0534234523', 'Hi WISDOM ARTHUR, your payment of ₵6.00 has been paid to Freeman Methodist Church - KM as Payment for November 2024 HARVEST. Your Total Harvest amount for the year 2025 is ₵7.00', NULL, 'harvest_payment', 'success', 'arkesel', '2025-08-12 12:56:01', '{\n    \"data\": [\n        {\n            \"id\": \"4b55b7eb-db42-4872-aeab-a1a9612236d8\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(73, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵1.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 13:00:38', '{\n    \"data\": [\n        {\n            \"id\": \"f4c1ef60-7df8-48db-8c87-d66aac940259\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(74, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵4.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 13:00:47', '{\n    \"data\": [\n        {\n            \"id\": \"e511ba44-30e3-471d-acc5-c1fc1a611f3f\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(75, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵6.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 13:04:28', '{\n    \"data\": [\n        {\n            \"id\": \"2f5c34f9-cb41-4616-8d07-c07b80cf3c6b\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(76, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵5.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 13:04:37', '{\n    \"data\": [\n        {\n            \"id\": \"12fa6c69-9c38-4eb3-a32d-bb28a8e912b3\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(77, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵6.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 13:10:02', '{\n    \"data\": [\n        {\n            \"id\": \"23550fb5-cdac-4ecd-9db3-dc6b416a8f19\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(78, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵6.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 13:11:54', '{\n    \"data\": [\n        {\n            \"id\": \"c46da685-8110-463f-8510-dbeb88ae6a44\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}'),
+(79, NULL, '0534234523', 'Dear WISDOM  ARTHUR, your payment of ₵8.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!', NULL, 'payment', 'success', 'arkesel', '2025-08-12 13:20:22', '{\n    \"data\": [\n        {\n            \"id\": \"41021cc1-82a2-4ceb-9478-26bda3e578e2\",\n            \"recipient\": \"233534234523\"\n        }\n    ],\n    \"status\": \"success\"\n}');
 
 -- --------------------------------------------------------
 
@@ -3910,8 +3963,31 @@ CREATE TABLE `sunday_school` (
 --
 
 INSERT INTO `sunday_school` (`id`, `srn`, `church_id`, `class_id`, `photo`, `last_name`, `middle_name`, `first_name`, `dob`, `contact`, `gps_address`, `residential_address`, `organization`, `school_attend`, `father_name`, `father_contact`, `father_occupation`, `mother_name`, `mother_contact`, `mother_occupation`, `father_member_id`, `father_is_member`, `mother_member_id`, `mother_is_member`, `created_at`, `updated_at`, `transferred_at`, `transferred_to_member_id`, `dayborn`, `gender`) VALUES
-(7, 'FMC-S0101-KM', 7, 9, 'ss_687a8e7bdcbcadaniel.jpg', 'Mensah', '', 'Ekow', '2025-07-09', '0545647477', '', '', '', 'METHODIST PRIMARY SCHOOL', 'John Kuma', '0545644748', 'Teacher', 'EUNICE', '0242109740', 'TRADER', 86, 'yes', NULL, 'no', '2025-07-12 10:49:58', '2025-07-18 18:12:11', NULL, NULL, NULL, NULL),
-(8, 'FMC-S0102-KM', 7, 9, 'ss_6878d2df7b6f111passport.jpg', 'Duntu', '', 'ROSEZALIN', '2021-06-28', '0242363905', 'ST. JUDE STREET MUSSEY APOWA', 'WS', 'junior choir', 'ST. ANTHONY', '', '', '', '', '', '', NULL, 'yes', NULL, 'no', '2025-07-14 21:21:50', '2025-07-31 02:02:01', NULL, NULL, NULL, NULL);
+(12, 'FMC-S0101-KM', 7, 49, '', 'SAM', 'NAA', 'AMA', '2017-05-08', '0277384201', 'WH-123-4698', 'APOWA', '', 'ST. FRANCIS SCHOOL ANAJI', 'KOJO', '0254879654', 'Farmer', 'Mensah Justina', '0234567899', '0', NULL, 'no', 132, 'yes', '2025-08-04 20:20:57', '2025-08-09 14:42:51', NULL, NULL, 'Monday', 'female'),
+(14, 'FMC-S0103-KM', 7, 49, '', 'ABBAN', '', 'JOHN', '2007-02-23', '0206376136', '', '', '18,19,20', 'TAKORADI TECHNICAL UNIVERSITY', 'ANTWI DANIEL', '0206376136', 'Shipper', 'Mensah Justina', '0234567899', '0', 128, 'yes', 132, 'yes', '2025-08-05 21:53:15', '2025-08-09 14:41:49', NULL, NULL, 'Friday', 'male');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `sync_activity_log`
+--
+
+CREATE TABLE `sync_activity_log` (
+  `id` int(11) NOT NULL,
+  `activity_type` varchar(50) NOT NULL COMMENT 'Type of sync activity (attendance_sync, device_status_update, test_connection)',
+  `processed_records` int(11) DEFAULT 0 COMMENT 'Number of records processed',
+  `error_count` int(11) DEFAULT 0 COMMENT 'Number of errors encountered',
+  `sync_timestamp` datetime NOT NULL COMMENT 'Timestamp from sync agent',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp() COMMENT 'Server timestamp when logged',
+  `details` text DEFAULT NULL COMMENT 'Additional details or error messages'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Log table for sync agent activity monitoring';
+
+--
+-- Dumping data for table `sync_activity_log`
+--
+
+INSERT INTO `sync_activity_log` (`id`, `activity_type`, `processed_records`, `error_count`, `sync_timestamp`, `created_at`, `details`) VALUES
+(1, 'system_init', 0, 0, '2025-08-09 16:39:16', '2025-08-09 16:39:16', 'Sync activity log table created');
 
 -- --------------------------------------------------------
 
@@ -3949,7 +4025,10 @@ CREATE TABLE `users` (
 
 INSERT INTO `users` (`id`, `member_id`, `church_id`, `name`, `email`, `phone`, `password_hash`, `status`, `created_at`, `photo`) VALUES
 (3, NULL, 1, 'Ekow Mensah', 'ekowme@gmail.com', '', '$2y$10$cy/HU5EM4JuScA6iVUyfDeRVgx0AKndOQodY1IPfG0iiTES5pY5A6', 'active', '2025-07-03 17:33:41', 'user_3_1751642143.jpg'),
-(4, NULL, 0, 'Thomas Sam', 'tomsam@gmail.com', '1234567890', '$2y$10$gLFYKB90XkrYEFxdwBuKiOtR8uZ1z7fjqjUamW.kMZA8p07bYQM36', 'active', '2025-07-30 23:02:45', NULL);
+(25, 122, 7, 'BARNA BAABIOLA', 'barnasco4uallgh@gmail.com', '0242363905', '$2y$10$DW5TNxH5i.OTIbPobKpoU.AWozW.7trn7y797nvd92nHJWk3xWt.G', 'active', '2025-08-06 01:27:28', NULL),
+(26, 131, 7, 'SAM NAA AMA', 'ansam@gmail.com', '0277384201', '$2y$10$MLst2sPen.2w5eQ97HlfCu/dWXh3SWNylpfAEZep20g0zPFHdJ9zG', 'active', '2025-08-06 01:39:02', NULL),
+(27, 128, 7, 'DANIEL ANTWI', 'danielantwi512@gmail.com', '0206376136', '$2y$10$aNiH/Ns8oBqrZqsQQYlPFe/wpG3b2Vf6qljv9OyuixijWcxd1PUYy', 'active', '2025-08-06 07:29:07', NULL),
+(28, 127, 7, 'KWAME PANFORD', 'kpanford@gmail.com', '0541758561', '$2y$10$LU5hwNLMqWGdNdkkdqkVUe4R.0RmQvtFCbVlFEApJ3dzq6n4pAE6y', 'active', '2025-08-06 20:14:37', NULL);
 
 -- --------------------------------------------------------
 
@@ -4010,7 +4089,11 @@ CREATE TABLE `user_roles` (
 
 INSERT INTO `user_roles` (`user_id`, `role_id`) VALUES
 (3, 1),
-(4, 8);
+(26, 2),
+(26, 10),
+(28, 7),
+(25, 1),
+(27, 5);
 
 -- --------------------------------------------------------
 
@@ -4037,87 +4120,12 @@ CREATE TABLE `visitors` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- --------------------------------------------------------
-
 --
--- Table structure for table `zkteco_devices`
+-- Dumping data for table `visitors`
 --
 
-CREATE TABLE `zkteco_devices` (
-  `id` int(11) NOT NULL,
-  `device_name` varchar(100) NOT NULL,
-  `ip_address` varchar(15) NOT NULL,
-  `port` int(11) DEFAULT 4370,
-  `location` varchar(255) DEFAULT NULL,
-  `church_id` int(11) DEFAULT NULL,
-  `is_active` tinyint(1) DEFAULT 1,
-  `last_sync` timestamp NULL DEFAULT NULL,
-  `device_model` varchar(50) DEFAULT 'MB460',
-  `firmware_version` varchar(50) DEFAULT NULL,
-  `total_users` int(11) DEFAULT 0,
-  `total_records` int(11) DEFAULT 0,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Stores ZKTeco biometric device configuration and status information';
-
--- --------------------------------------------------------
-
---
--- Table structure for table `zkteco_raw_logs`
---
-
-CREATE TABLE `zkteco_raw_logs` (
-  `id` int(11) NOT NULL,
-  `device_id` int(11) NOT NULL,
-  `zk_user_id` varchar(50) NOT NULL,
-  `timestamp` datetime NOT NULL,
-  `verification_type` enum('fingerprint','face','card','password','unknown') DEFAULT 'unknown',
-  `in_out_mode` enum('check_in','check_out','break_out','break_in','overtime_in','overtime_out','unknown') DEFAULT 'unknown',
-  `raw_data` text DEFAULT NULL,
-  `processed` tinyint(1) DEFAULT 0,
-  `processed_at` timestamp NULL DEFAULT NULL,
-  `session_id` int(11) DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Stores raw attendance logs retrieved from ZKTeco devices before processing';
-
--- --------------------------------------------------------
-
---
--- Table structure for table `zkteco_session_mapping_rules`
---
-
-CREATE TABLE `zkteco_session_mapping_rules` (
-  `id` int(11) NOT NULL,
-  `device_id` int(11) NOT NULL,
-  `session_pattern` varchar(255) NOT NULL,
-  `time_window_before` int(11) DEFAULT 120,
-  `time_window_after` int(11) DEFAULT 120,
-  `auto_create_session` tinyint(1) DEFAULT 0,
-  `default_session_title` varchar(255) DEFAULT NULL,
-  `is_active` tinyint(1) DEFAULT 1,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Rules for automatically mapping ZKTeco attendance data to attendance sessions';
-
--- --------------------------------------------------------
-
---
--- Table structure for table `zkteco_sync_history`
---
-
-CREATE TABLE `zkteco_sync_history` (
-  `id` int(11) NOT NULL,
-  `device_id` int(11) NOT NULL,
-  `sync_type` enum('manual','automatic','scheduled') DEFAULT 'manual',
-  `sync_status` enum('success','partial','failed') DEFAULT 'failed',
-  `records_synced` int(11) DEFAULT 0,
-  `records_processed` int(11) DEFAULT 0,
-  `sync_start` timestamp NOT NULL DEFAULT current_timestamp(),
-  `sync_end` timestamp NULL DEFAULT NULL,
-  `error_message` text DEFAULT NULL,
-  `sync_details` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`sync_details`)),
-  `initiated_by` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Tracks synchronization history and status for ZKTeco devices';
+INSERT INTO `visitors` (`id`, `church_id`, `name`, `phone`, `email`, `address`, `purpose`, `gender`, `home_town`, `region`, `occupation`, `marital_status`, `want_member`, `visit_date`, `invited_by`, `created_at`) VALUES
+(0, 7, 'NANA KOJO', '0242363905', '', '123 ST. BARS STREEL', 'TO WORSHIP WITH US', 'Male', 'WINDO', 'Savannah', 'DRIVER', 'Single', 'Yes', '2025-08-05', 124, '2025-08-05 22:19:45');
 
 -- --------------------------------------------------------
 
@@ -4250,6 +4258,14 @@ ALTER TABLE `member_feedback_thread`
   ADD PRIMARY KEY (`id`);
 
 --
+-- Indexes for table `member_hikvision_data`
+--
+ALTER TABLE `member_hikvision_data`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `device_id` (`device_id`,`hikvision_user_id`),
+  ADD KEY `member_id` (`member_id`);
+
+--
 -- Indexes for table `member_transfers`
 --
 ALTER TABLE `member_transfers`
@@ -4285,7 +4301,17 @@ ALTER TABLE `password_resets`
 --
 ALTER TABLE `payments`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_member_type_amount_date` (`member_id`,`payment_type_id`,`amount`,`payment_date`);
+  ADD KEY `idx_member_type_amount_date` (`member_id`,`payment_type_id`,`amount`,`payment_date`),
+  ADD KEY `idx_payments_payment_period` (`payment_period`);
+
+--
+-- Indexes for table `payment_intents`
+--
+ALTER TABLE `payment_intents`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `client_reference` (`client_reference`),
+  ADD KEY `member_id` (`member_id`),
+  ADD KEY `status` (`status`);
 
 --
 -- Indexes for table `payment_reversal_log`
@@ -4342,6 +4368,17 @@ ALTER TABLE `sunday_school`
   ADD PRIMARY KEY (`id`);
 
 --
+-- Indexes for table `sync_activity_log`
+--
+ALTER TABLE `sync_activity_log`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_activity_type` (`activity_type`),
+  ADD KEY `idx_sync_timestamp` (`sync_timestamp`),
+  ADD KEY `idx_created_at` (`created_at`),
+  ADD KEY `idx_activity_date` (`activity_type`,`created_at`),
+  ADD KEY `idx_error_tracking` (`error_count`,`created_at`);
+
+--
 -- Indexes for table `template_permissions`
 --
 ALTER TABLE `template_permissions`
@@ -4362,33 +4399,6 @@ ALTER TABLE `visitors`
   ADD PRIMARY KEY (`id`);
 
 --
--- Indexes for table `zkteco_devices`
---
-ALTER TABLE `zkteco_devices`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_device_ip` (`ip_address`),
-  ADD KEY `idx_device_church` (`church_id`),
-  ADD KEY `idx_device_active` (`is_active`);
-
---
--- Indexes for table `zkteco_raw_logs`
---
-ALTER TABLE `zkteco_raw_logs`
-  ADD PRIMARY KEY (`id`);
-
---
--- Indexes for table `zkteco_session_mapping_rules`
---
-ALTER TABLE `zkteco_session_mapping_rules`
-  ADD PRIMARY KEY (`id`);
-
---
--- Indexes for table `zkteco_sync_history`
---
-ALTER TABLE `zkteco_sync_history`
-  ADD PRIMARY KEY (`id`);
-
---
 -- AUTO_INCREMENT for dumped tables
 --
 
@@ -4396,7 +4406,7 @@ ALTER TABLE `zkteco_sync_history`
 -- AUTO_INCREMENT for table `adherents`
 --
 ALTER TABLE `adherents`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
 
 --
 -- AUTO_INCREMENT for table `attendance_records`
@@ -4414,13 +4424,13 @@ ALTER TABLE `attendance_sessions`
 -- AUTO_INCREMENT for table `audit_log`
 --
 ALTER TABLE `audit_log`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=809;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1161;
 
 --
 -- AUTO_INCREMENT for table `bible_classes`
 --
 ALTER TABLE `bible_classes`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=27;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=50;
 
 --
 -- AUTO_INCREMENT for table `calendar_events`
@@ -4444,13 +4454,13 @@ ALTER TABLE `churches`
 -- AUTO_INCREMENT for table `class_groups`
 --
 ALTER TABLE `class_groups`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=19;
 
 --
 -- AUTO_INCREMENT for table `deleted_members`
 --
 ALTER TABLE `deleted_members`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=127;
 
 --
 -- AUTO_INCREMENT for table `events`
@@ -4474,13 +4484,13 @@ ALTER TABLE `event_types`
 -- AUTO_INCREMENT for table `health_records`
 --
 ALTER TABLE `health_records`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=22;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=31;
 
 --
 -- AUTO_INCREMENT for table `members`
 --
 ALTER TABLE `members`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=98;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=133;
 
 --
 -- AUTO_INCREMENT for table `member_biometric_data`
@@ -4501,6 +4511,12 @@ ALTER TABLE `member_feedback_thread`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
+-- AUTO_INCREMENT for table `member_hikvision_data`
+--
+ALTER TABLE `member_hikvision_data`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `member_transfers`
 --
 ALTER TABLE `member_transfers`
@@ -4510,55 +4526,84 @@ ALTER TABLE `member_transfers`
 -- AUTO_INCREMENT for table `menu_items`
 --
 ALTER TABLE `menu_items`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=82;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=84;
 
 --
 -- AUTO_INCREMENT for table `organizations`
 --
 ALTER TABLE `organizations`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=24;
 
 --
 -- AUTO_INCREMENT for table `organization_membership_approvals`
 --
 ALTER TABLE `organization_membership_approvals`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
 
 --
 -- AUTO_INCREMENT for table `payments`
 --
 ALTER TABLE `payments`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=420;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=574;
+
+--
+-- AUTO_INCREMENT for table `payment_intents`
+--
+ALTER TABLE `payment_intents`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `payment_types`
+--
+ALTER TABLE `payment_types`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `roles`
 --
 ALTER TABLE `roles`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
+
+--
+-- AUTO_INCREMENT for table `roles_of_serving`
+--
+ALTER TABLE `roles_of_serving`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+
+--
+-- AUTO_INCREMENT for table `sms_logs`
+--
+ALTER TABLE `sms_logs`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=80;
+
+--
+-- AUTO_INCREMENT for table `sunday_school`
+--
+ALTER TABLE `sunday_school`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
+
+--
+-- AUTO_INCREMENT for table `sync_activity_log`
+--
+ALTER TABLE `sync_activity_log`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=30;
 
 --
--- AUTO_INCREMENT for table `zkteco_devices`
+-- Constraints for dumped tables
 --
-ALTER TABLE `zkteco_devices`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
 
 --
--- AUTO_INCREMENT for table `zkteco_session_mapping_rules`
+-- Constraints for table `member_hikvision_data`
 --
-ALTER TABLE `zkteco_session_mapping_rules`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT for table `zkteco_sync_history`
---
-ALTER TABLE `zkteco_sync_history`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+ALTER TABLE `member_hikvision_data`
+  ADD CONSTRAINT `member_hikvision_data_ibfk_1` FOREIGN KEY (`member_id`) REFERENCES `members` (`id`),
+  ADD CONSTRAINT `member_hikvision_data_ibfk_2` FOREIGN KEY (`device_id`) REFERENCES `hikvision_devices` (`id`);
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

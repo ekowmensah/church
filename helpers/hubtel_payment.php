@@ -40,7 +40,6 @@ define_env_constant('HUBTEL_MERCHANT_ACCOUNT');
 
 function create_hubtel_checkout($params) {
     // Required params: amount, description, callbackUrl, returnUrl, customerName, customerPhone, clientReference
-    // Helper to read env from multiple sources reliably
     $readEnv = function ($key, $constFallback = null) {
         $val = getenv($key);
         if ($val === false || $val === null || $val === '') {
@@ -55,7 +54,6 @@ function create_hubtel_checkout($params) {
     $api_secret = $readEnv('HUBTEL_API_SECRET', 'HUBTEL_API_SECRET');
     $merchant_account = $readEnv('HUBTEL_MERCHANT_ACCOUNT', 'HUBTEL_MERCHANT_ACCOUNT');
     if (!$api_key || !$api_secret || !$merchant_account) {
-        // Debug info
         $debug = [
             'getenv_api_key' => getenv('HUBTEL_API_KEY'),
             'env_api_key' => $_ENV['HUBTEL_API_KEY'] ?? null,
@@ -71,18 +69,24 @@ function create_hubtel_checkout($params) {
         ];
         return ['success' => false, 'error' => 'Hubtel API credentials not set', 'debug' => $debug];
     }
-   
-    $url = 'https://api.hubtel.com/v1/merchantaccount/onlinecheckout/invoice/create';
+
+    $url = 'https://payproxyapi.hubtel.com/items/initiate';
     $data = [
-        'amount' => $params['amount'],
+        'totalAmount' => $params['amount'],
         'description' => $params['description'],
         'callbackUrl' => $params['callbackUrl'],
         'returnUrl' => $params['returnUrl'],
         'merchantAccountNumber' => $merchant_account,
         'clientReference' => $params['clientReference'],
-        'customerName' => $params['customerName'],
-        'customerPhoneNumber' => $params['customerPhone'],
+        'cancellationUrl' => $params['returnUrl'], // Use returnUrl for cancellation for now
     ];
+    // Optionally add customer info to description
+    if (!empty($params['customerName'])) {
+        $data['description'] .= ' - ' . $params['customerName'];
+    }
+    if (!empty($params['customerPhone'])) {
+        $data['description'] .= ' (' . $params['customerPhone'] . ')';
+    }
     $ch = curl_init($url);
     $request_body = json_encode($data);
     $headers = [
@@ -106,20 +110,11 @@ function create_hubtel_checkout($params) {
             'response' => $response
         ]];
     }
-    if ($http_code === 200 && $response) {
-        $json = json_decode($response, true);
-        if (isset($json['data']['checkoutUrl'])) {
-            return ['success' => true, 'checkoutUrl' => $json['data']['checkoutUrl']];
-        } else {
-            return ['success' => false, 'error' => $json['message'] ?? 'Unknown error', 'debug' => [
-                'request_body' => $request_body,
-                'headers' => $headers,
-                'http_code' => $http_code,
-                'response' => $response
-            ]];
-        }
+    $json = $response ? json_decode($response, true) : null;
+    if ($http_code === 200 && $json && isset($json['data']['checkoutUrl'])) {
+        return ['success' => true, 'checkoutUrl' => $json['data']['checkoutUrl']];
     } else {
-        return ['success' => false, 'error' => 'Unknown error', 'debug' => [
+        return ['success' => false, 'error' => $json['message'] ?? 'Unknown error', 'debug' => [
             'request_body' => $request_body,
             'headers' => $headers,
             'http_code' => $http_code,
