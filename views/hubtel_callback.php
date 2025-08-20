@@ -62,9 +62,9 @@ if ($clientReference) {
                             'client_reference' => $clientReference,
                             'status' => $status,
                             'church_id' => $item['church_id'] ?? $intent['church_id'],
-                            'payment_type_id' => $item['payment_type_id'] ?? null,
-                            'payment_period' => $item['payment_period'] ?? null,
-                            'payment_period_description' => $item['payment_period_description'] ?? null,
+                            'payment_type_id' => $item['payment_type_id'] ?? ($item['typeId'] ?? null),
+                            'payment_period' => $item['payment_period'] ?? ($item['period'] ?? null),
+                            'payment_period_description' => $item['payment_period_description'] ?? ($item['periodText'] ?? null),
                             'recorded_by' => 'Self',
                             'mode' => 'Hubtel'
                         ]);
