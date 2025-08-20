@@ -353,7 +353,9 @@ $(function(){
         $('#findMemberBtn').prop('disabled', true);
         $('#crn-spinner').removeClass('d-none');
         $('#crn-feedback').text('Searching...');
+        console.log('Making AJAX request to ajax_get_person_by_id.php with ID:', crn);
         $.get('ajax_get_person_by_id.php', {id: crn}, function(resp) {
+            console.log('AJAX response received:', resp);
             $('#findMemberBtn').prop('disabled', false);
             $('#crn-spinner').addClass('d-none');
             if (resp.success) {
@@ -435,7 +437,9 @@ $(function(){
                 $('#member-summary').addClass('d-none').empty();
                 $('#payment-panels').addClass('d-none');
             }
-        }, 'json').fail(function(){
+        }, 'json').fail(function(xhr, status, error){
+            console.log('AJAX request failed:', {xhr: xhr, status: status, error: error});
+            console.log('Response text:', xhr.responseText);
             $('#findMemberBtn').prop('disabled', false);
             $('#crn-spinner').addClass('d-none');
             $('#crn-feedback').text('Network/server error.');
@@ -482,6 +486,7 @@ $(function(){
         var payload = {payments: [{type_id: type_id, amount: amount, mode: mode, date: date, desc: desc, period: period, period_text: period_text, type_text: $('#single_payment_type_id option:selected').text()}]};
         if (member_id) payload.member_id = member_id;
         if (sundayschool_id) payload.sundayschool_id = sundayschool_id;
+        console.log('Making AJAX request to ajax_bulk_payments_single_member.php with payload:', payload);
         $.ajax({
             url: 'ajax_bulk_payments_single_member.php',
             type: 'POST',
@@ -490,6 +495,7 @@ $(function(){
             dataType: 'json',
             timeout: 30000, // 30 second timeout for SMS processing
             success: function(resp){
+                console.log('Payment AJAX response received:', resp);
                 let typeMap = {};
                 $('#single_payment_type_id option').each(function(){
                     if ($(this).val()) typeMap[$(this).val()] = $(this).text();
@@ -516,6 +522,9 @@ $(function(){
                 }
             },
             error: function(xhr, status, err){
+                console.log('Payment AJAX request failed:', {xhr: xhr, status: status, error: err});
+                console.log('Response text:', xhr.responseText);
+                console.log('Response status:', xhr.status);
                 let msg = 'Network/server error.';
                 if (status === 'timeout') {
                     msg = 'Payment processing is taking longer than expected. Please check the payment list to verify if your payment was recorded.';
