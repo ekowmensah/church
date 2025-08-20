@@ -69,6 +69,22 @@ if ($clientReference) {
                             'mode' => 'Hubtel'
                         ]);
                         file_put_contents($debug_log, date('c')." Bulk payment add result: ".var_export($result, true)."\n", FILE_APPEND);
+                        // --- SMS Notification ---
+                        require_once __DIR__.'/../includes/payment_sms_template.php';
+                        require_once __DIR__.'/../models/Member.php';
+                        $memberModel = new Member();
+                        $member = $memberModel->findById($conn, $item['member_id'] ?? $intent['member_id']);
+                        if ($member && !empty($member['phone']) && $member['sms_notifications_enabled']) {
+                            $sms_message = '';
+                            if (($item['typeId'] ?? null) == 4) { // Harvest
+                                $yearly_total = get_member_yearly_harvest_total($conn, $member['id']);
+                                $sms_message = get_harvest_payment_sms_message($member['name'], $item['amount'], 'Freeman Methodist Church - KM', $item['desc'] ?? '', $yearly_total);
+                            } else {
+                                $sms_message = get_payment_sms_message($member['name'], $item['amount'], $item['typeName'] ?? '', $item['date'] ?? null);
+                            }
+                            require_once __DIR__.'/../includes/sms.php';
+                            log_sms($member['phone'], $sms_message, $result, 'payment');
+                        }
                     }
                 }
             } else {
@@ -87,7 +103,23 @@ if ($clientReference) {
                     'mode' => 'Hubtel'
                 ]);
                 file_put_contents($debug_log, date('c')." Single payment add result: ".var_export($result, true)."\n", FILE_APPEND);
-            }
+                // --- SMS Notification ---
+                require_once __DIR__.'/../includes/payment_sms_template.php';
+                require_once __DIR__.'/../models/Member.php';
+                $memberModel = new Member();
+                $member = $memberModel->findById($conn, $intent['member_id']);
+                if ($member && !empty($member['phone']) && $member['sms_notifications_enabled']) {
+                    $sms_message = '';
+                    if (($intent['payment_type_id'] ?? null) == 4) { // Harvest
+                        $yearly_total = get_member_yearly_harvest_total($conn, $member['id']);
+                        $sms_message = get_harvest_payment_sms_message($member['name'], $intent['amount'], 'Freeman Methodist Church - KM', $intent['description'] ?? '', $yearly_total);
+                    } else {
+                        $sms_message = get_payment_sms_message($member['name'], $intent['amount'], $intent['description'] ?? '', $intent['payment_date'] ?? null);
+                    }
+                    require_once __DIR__.'/../includes/sms.php';
+                    log_sms($member['phone'], $sms_message, $result, 'payment');
+                }
+            
         }
     }
 }
