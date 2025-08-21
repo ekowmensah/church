@@ -862,11 +862,22 @@ ob_start();
                                     <?php endif; ?>
                                 </td>
                                 <td class="align-middle">
-                                    <?php if (!empty($row['recorded_by_username'])): ?>
-                                        <span class="badge badge-secondary"><i class="fas fa-user-edit mr-1"></i><?= htmlspecialchars($row['recorded_by_username']) ?></span>
-                                    <?php else: ?>
-                                        <span class="text-muted">N/A</span>
-                                    <?php endif; ?>
+                                    <?php
+    // Show 'Online Payment' if recorded_by is the string 'Online Payment'
+    if (isset($row['recorded_by']) && $row['recorded_by'] === 'Online Payment') {
+        echo '<span class="badge badge-info"><i class="fas fa-globe mr-1"></i>Online Payment</span>';
+    }
+    // If recorded_by is a non-numeric value and not empty (for legacy or other online entries)
+    elseif (isset($row['recorded_by']) && !is_numeric($row['recorded_by']) && !empty($row['recorded_by'])) {
+        echo '<span class="badge badge-info"><i class="fas fa-globe mr-1"></i>' . htmlspecialchars($row['recorded_by']) . '</span>';
+    }
+    // Otherwise, show the username if available
+    elseif (!empty($row['recorded_by_username'])) {
+        echo '<span class="badge badge-secondary"><i class="fas fa-user-edit mr-1"></i>' . htmlspecialchars($row['recorded_by_username']) . '</span>';
+    } else {
+        echo '<span class="text-muted">N/A</span>';
+    }
+?>
                                 </td>
                                 <td class="align-middle text-center">
                                     <div class="btn-group" role="group">
