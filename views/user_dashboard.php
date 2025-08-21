@@ -327,7 +327,7 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
                 <div class="card-body text-center">
                     <div class="mb-2"><i class="fas fa-coins fa-2x"></i></div>
                     <div class="h5 mb-1 font-weight-bold">Total Payments</div>
-                    <div class="display-4 font-weight-bold mb-1">₵ <?= number_format($total_cash_payments,2); ?></div>
+                    <div class="h3 font-weight-bold mb-1">₵ <?= number_format($total_cash_payments,2); ?></div>
                     <div class="small">All Time</div>
                 </div>
             </div>
@@ -337,7 +337,7 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
                 <div class="card-body text-center">
                     <div class="mb-2"><i class="fas fa-calendar-day fa-2x"></i></div>
                     <div class="h5 mb-1 font-weight-bold">Payments Today</div>
-                    <div class="display-4 font-weight-bold mb-1">₵ <?= number_format($cash_payments_today,2); ?></div>
+                    <div class="h3 font-weight-bold mb-1">₵ <?= number_format($cash_payments_today,2); ?></div>
                     <div class="small">Today</div>
                 </div>
             </div>
@@ -347,7 +347,7 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
                 <div class="card-body text-center">
                     <div class="mb-2"><i class="fas fa-calendar-week fa-2x"></i></div>
                     <div class="h5 mb-1 font-weight-bold">Payments This Week</div>
-                    <div class="display-4 font-weight-bold mb-1">₵ <?= number_format($cash_payments_week,2); ?></div>
+                    <div class="h3 font-weight-bold mb-1">₵ <?= number_format($cash_payments_week,2); ?></div>
                     <div class="small">This Week</div>
                 </div>
             </div>
@@ -357,7 +357,7 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
                 <div class="card-body text-center">
                     <div class="mb-2"><i class="fas fa-calendar-alt fa-2x"></i></div>
                     <div class="h5 mb-1 font-weight-bold">Payments This Month</div>
-                    <div class="display-4 font-weight-bold mb-1">₵ <?= number_format($cash_payments_month,2); ?></div>
+                    <div class="h3 font-weight-bold mb-1">₵ <?= number_format($cash_payments_month,2); ?></div>
                     <div class="small">This Month</div>
                 </div>
             </div>
@@ -367,7 +367,7 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
                 <div class="card-body text-center">
                     <div class="mb-2"><i class="fas fa-calendar-minus fa-2x"></i></div>
                     <div class="h5 mb-1 font-weight-bold">Payments Last Month</div>
-                    <div class="display-4 font-weight-bold mb-1">₵ <?= number_format($cash_payments_last_month,2); ?></div>
+                    <div class="h3 font-weight-bold mb-1">₵ <?= number_format($cash_payments_last_month,2); ?></div>
                     <div class="small">Last Month</div>
                 </div>
             </div>
