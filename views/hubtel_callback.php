@@ -69,8 +69,8 @@ if ($clientReference) {
                             'payment_type_id' => $item['payment_type_id'] ?? null,
                             'payment_period' => $item['payment_period'] ?? null,
                             'payment_period_description' => $item['payment_period_description'] ?? null,
-                            'recorded_by' => 'Self',
-                            'mode' => 'Hubtel'
+                            'recorded_by' => 'Online Payment',
+                            'mode' => 'Online'
                         ];
                     }
                 }
@@ -86,8 +86,8 @@ if ($clientReference) {
                     'payment_type_id' => $intent['payment_type_id'],
                     'payment_period' => $intent['payment_period'],
                     'payment_period_description' => $intent['payment_period_description'],
-                    'recorded_by' => 'Self',
-                    'mode' => 'Hubtel'
+                    'recorded_by' => 'Online Payment',
+                    'mode' => 'Online'
                 ];
             }
             
