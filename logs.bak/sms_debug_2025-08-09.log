@@ -1,0 +1,592 @@
+{
+    "time": "2025-08-09 09:41:56",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Dear KWAME  PANFORD, your payment of \u20b57.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!",
+        "recipients": [
+            "233541758561"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nDate: Sat, 09 Aug 2025 07:41:56 GMT\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: private, must-revalidate\r\npragma: no-cache\r\nexpires: -1\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1350\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=UCzFIoSnzOINWdMnu4Xc4mYWjzlgis6qsrOwvqPE; expires=Sat, 09-Aug-2025 09:41:55 GMT; Max-Age=7199; path=\/; secure; httponly; samesite=lax\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"6b1fc8cf-0b43-4d0d-a5f1-535610841930\",\"recipient\":\"233541758561\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 4.84357,
+        "connect_time": 0.425418,
+        "namelookup_time": 0.214901,
+        "pretransfer_time": 1.176654,
+        "starttransfer_time": 4.843528,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 192,
+        "size_download": 102,
+        "speed_download": 21,
+        "speed_upload": 39,
+        "download_content_length": -1,
+        "upload_content_length": 192,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 5.161.241.15:443...\n* Connected to sms.arkesel.com (5.161.241.15) port 443\n* ALPN: curl offers h2,http\/1.1\n*  CAfile: C:\\xampp\\apache\\bin\\curl-ca-bundle.crt\n*  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN: server accepted http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Aug  3 01:24:33 2025 GMT\n*  expire date: Nov  1 01:24:32 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n* using HTTP\/1.1\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 192\r\n\r\n* old SSL session ID is stale, removing\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Date: Sat, 09 Aug 2025 07:41:56 GMT\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: private, must-revalidate\r\n< pragma: no-cache\r\n< expires: -1\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1350\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=UCzFIoSnzOINWdMnu4Xc4mYWjzlgis6qsrOwvqPE; expires=Sat, 09-Aug-2025 09:41:55 GMT; Max-Age=7199; path=\/; secure; httponly; samesite=lax\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-08-09 09:42:02",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Dear KWAME  PANFORD, your payment of \u20b57.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!",
+        "recipients": [
+            "233541758561"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nDate: Sat, 09 Aug 2025 07:42:01 GMT\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: private, must-revalidate\r\npragma: no-cache\r\nexpires: -1\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1288\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=MTOMla6kzpWI4Re1fsQhCy90wwFeM6WtyHda93il; expires=Sat, 09-Aug-2025 09:42:01 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"1c49a16c-639f-46c4-af8c-6627a392be3d\",\"recipient\":\"233541758561\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 5.848997,
+        "connect_time": 0.246097,
+        "namelookup_time": 0.024645,
+        "pretransfer_time": 0.959569,
+        "starttransfer_time": 5.848964,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 192,
+        "size_download": 102,
+        "speed_download": 17,
+        "speed_upload": 32,
+        "download_content_length": -1,
+        "upload_content_length": 192,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 5.161.241.15:443...\n* Connected to sms.arkesel.com (5.161.241.15) port 443\n* ALPN: curl offers h2,http\/1.1\n*  CAfile: C:\\xampp\\apache\\bin\\curl-ca-bundle.crt\n*  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN: server accepted http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Aug  3 01:24:33 2025 GMT\n*  expire date: Nov  1 01:24:32 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n* using HTTP\/1.1\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 192\r\n\r\n* old SSL session ID is stale, removing\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Date: Sat, 09 Aug 2025 07:42:01 GMT\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: private, must-revalidate\r\n< pragma: no-cache\r\n< expires: -1\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1288\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=MTOMla6kzpWI4Re1fsQhCy90wwFeM6WtyHda93il; expires=Sat, 09-Aug-2025 09:42:01 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-08-09 09:46:43",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Hi DANNY WISE, your payment of \u20b58.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is \u20b5295.00",
+        "recipients": [
+            "233553143607"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nDate: Sat, 09 Aug 2025 07:46:43 GMT\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: private, must-revalidate\r\npragma: no-cache\r\nexpires: -1\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1475\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=fgnJqXCdYQy2roPmhHzhe0MRmDnwZyAj7nEk77iK; expires=Sat, 09-Aug-2025 09:46:43 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"06472089-8128-4ed3-a9c2-970c23186b7d\",\"recipient\":\"233553143607\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 4.237044,
+        "connect_time": 0.254892,
+        "namelookup_time": 0.00247,
+        "pretransfer_time": 0.727408,
+        "starttransfer_time": 4.237013,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 244,
+        "size_download": 102,
+        "speed_download": 24,
+        "speed_upload": 57,
+        "download_content_length": -1,
+        "upload_content_length": 244,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 5.161.241.15:443...\n* Connected to sms.arkesel.com (5.161.241.15) port 443\n* ALPN: curl offers h2,http\/1.1\n*  CAfile: C:\\xampp\\apache\\bin\\curl-ca-bundle.crt\n*  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN: server accepted http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Aug  3 01:24:33 2025 GMT\n*  expire date: Nov  1 01:24:32 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n* using HTTP\/1.1\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 244\r\n\r\n* old SSL session ID is stale, removing\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Date: Sat, 09 Aug 2025 07:46:43 GMT\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: private, must-revalidate\r\n< pragma: no-cache\r\n< expires: -1\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1475\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=fgnJqXCdYQy2roPmhHzhe0MRmDnwZyAj7nEk77iK; expires=Sat, 09-Aug-2025 09:46:43 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-08-09 09:46:48",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Dear DANNY  WISE, your payment of \u20b54.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!",
+        "recipients": [
+            "233553143607"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nDate: Sat, 09 Aug 2025 07:46:48 GMT\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: private, must-revalidate\r\npragma: no-cache\r\nexpires: -1\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1438\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=t6ZsQWUhShukgyj05uIKSRbeurTE3CwnN5oc2xtl; expires=Sat, 09-Aug-2025 09:46:47 GMT; Max-Age=7199; path=\/; secure; httponly; samesite=lax\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"59213df9-1a34-421c-815a-c0205f3c3376\",\"recipient\":\"233553143607\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 4.277437,
+        "connect_time": 0.203739,
+        "namelookup_time": 0.003512,
+        "pretransfer_time": 0.792947,
+        "starttransfer_time": 4.277407,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 189,
+        "size_download": 102,
+        "speed_download": 23,
+        "speed_upload": 44,
+        "download_content_length": -1,
+        "upload_content_length": 189,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 5.161.241.15:443...\n* Connected to sms.arkesel.com (5.161.241.15) port 443\n* ALPN: curl offers h2,http\/1.1\n*  CAfile: C:\\xampp\\apache\\bin\\curl-ca-bundle.crt\n*  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN: server accepted http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Aug  3 01:24:33 2025 GMT\n*  expire date: Nov  1 01:24:32 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n* using HTTP\/1.1\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 189\r\n\r\n* old SSL session ID is stale, removing\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Date: Sat, 09 Aug 2025 07:46:48 GMT\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: private, must-revalidate\r\n< pragma: no-cache\r\n< expires: -1\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1438\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=t6ZsQWUhShukgyj05uIKSRbeurTE3CwnN5oc2xtl; expires=Sat, 09-Aug-2025 09:46:47 GMT; Max-Age=7199; path=\/; secure; httponly; samesite=lax\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-08-09 09:46:52",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Dear DANNY  WISE, your payment of \u20b54.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!",
+        "recipients": [
+            "233553143607"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nDate: Sat, 09 Aug 2025 07:46:52 GMT\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: private, must-revalidate\r\npragma: no-cache\r\nexpires: -1\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1401\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=BFwG3F6bRe4sapek4hay0cZYP64p9yA8bI9gXDFX; expires=Sat, 09-Aug-2025 09:46:52 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"3fbb67e6-cdd5-41f1-a40b-f889717bebc2\",\"recipient\":\"233553143607\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 4.394711,
+        "connect_time": 0.218025,
+        "namelookup_time": 0.020533,
+        "pretransfer_time": 0.845888,
+        "starttransfer_time": 4.39468,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 189,
+        "size_download": 102,
+        "speed_download": 23,
+        "speed_upload": 43,
+        "download_content_length": -1,
+        "upload_content_length": 189,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 5.161.241.15:443...\n* Connected to sms.arkesel.com (5.161.241.15) port 443\n* ALPN: curl offers h2,http\/1.1\n*  CAfile: C:\\xampp\\apache\\bin\\curl-ca-bundle.crt\n*  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN: server accepted http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Aug  3 01:24:33 2025 GMT\n*  expire date: Nov  1 01:24:32 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n* using HTTP\/1.1\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 189\r\n\r\n* old SSL session ID is stale, removing\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Date: Sat, 09 Aug 2025 07:46:52 GMT\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: private, must-revalidate\r\n< pragma: no-cache\r\n< expires: -1\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1401\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=BFwG3F6bRe4sapek4hay0cZYP64p9yA8bI9gXDFX; expires=Sat, 09-Aug-2025 09:46:52 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-08-09 09:46:57",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Dear DANNY  WISE, your payment of \u20b55.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!",
+        "recipients": [
+            "233553143607"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nDate: Sat, 09 Aug 2025 07:46:57 GMT\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: private, must-revalidate\r\npragma: no-cache\r\nexpires: -1\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1356\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=8asXWXuBPfzVCvg9ZxdLuMurKzmLIIcUFVAwTiNm; expires=Sat, 09-Aug-2025 09:46:57 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"3f5b25fb-8633-40bc-9719-e86e696bd937\",\"recipient\":\"233553143607\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 4.656383,
+        "connect_time": 0.540293,
+        "namelookup_time": 0.316113,
+        "pretransfer_time": 1.153387,
+        "starttransfer_time": 4.656356,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 191,
+        "size_download": 102,
+        "speed_download": 21,
+        "speed_upload": 41,
+        "download_content_length": -1,
+        "upload_content_length": 191,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 5.161.241.15:443...\n* Connected to sms.arkesel.com (5.161.241.15) port 443\n* ALPN: curl offers h2,http\/1.1\n*  CAfile: C:\\xampp\\apache\\bin\\curl-ca-bundle.crt\n*  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN: server accepted http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Aug  3 01:24:33 2025 GMT\n*  expire date: Nov  1 01:24:32 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n* using HTTP\/1.1\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 191\r\n\r\n* old SSL session ID is stale, removing\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Date: Sat, 09 Aug 2025 07:46:57 GMT\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: private, must-revalidate\r\n< pragma: no-cache\r\n< expires: -1\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1356\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=8asXWXuBPfzVCvg9ZxdLuMurKzmLIIcUFVAwTiNm; expires=Sat, 09-Aug-2025 09:46:57 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-08-09 09:47:01",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Dear DANNY  WISE, your payment of \u20b55.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!",
+        "recipients": [
+            "233553143607"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nDate: Sat, 09 Aug 2025 07:47:01 GMT\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: private, must-revalidate\r\npragma: no-cache\r\nexpires: -1\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1315\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=phWb5keaGTMKVBEJWBiG3DcY0lAlmGBYX5FPUp4z; expires=Sat, 09-Aug-2025 09:47:01 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"1667fcee-e16b-49ea-ab5b-18fbb6515b58\",\"recipient\":\"233553143607\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 4.296877,
+        "connect_time": 0.195945,
+        "namelookup_time": 0.002451,
+        "pretransfer_time": 0.757413,
+        "starttransfer_time": 4.296852,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 191,
+        "size_download": 102,
+        "speed_download": 23,
+        "speed_upload": 44,
+        "download_content_length": -1,
+        "upload_content_length": 191,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 5.161.241.15:443...\n* Connected to sms.arkesel.com (5.161.241.15) port 443\n* ALPN: curl offers h2,http\/1.1\n*  CAfile: C:\\xampp\\apache\\bin\\curl-ca-bundle.crt\n*  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN: server accepted http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Aug  3 01:24:33 2025 GMT\n*  expire date: Nov  1 01:24:32 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n* using HTTP\/1.1\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 191\r\n\r\n* old SSL session ID is stale, removing\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Date: Sat, 09 Aug 2025 07:47:01 GMT\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: private, must-revalidate\r\n< pragma: no-cache\r\n< expires: -1\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1315\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=phWb5keaGTMKVBEJWBiG3DcY0lAlmGBYX5FPUp4z; expires=Sat, 09-Aug-2025 09:47:01 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-08-09 09:50:47",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Hi JACK JHAY, your payment of \u20b53.00 has been paid to Freeman Methodist Church - KM as Payment for August HARVEST. Your Total Harvest amount for the year 2025 is \u20b533.00",
+        "recipients": [
+            "233551756789"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nDate: Sat, 09 Aug 2025 07:50:47 GMT\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: private, must-revalidate\r\npragma: no-cache\r\nexpires: -1\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1435\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=AF7uxCSz6BnosHU78CCrXFT27aNyEjoHw58H9ZIB; expires=Sat, 09-Aug-2025 09:50:47 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"862f7b97-cf1a-4e77-86a3-89b19762f484\",\"recipient\":\"233551756789\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 4.19747,
+        "connect_time": 0.218405,
+        "namelookup_time": 0.003106,
+        "pretransfer_time": 0.730787,
+        "starttransfer_time": 4.197438,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 242,
+        "size_download": 102,
+        "speed_download": 24,
+        "speed_upload": 57,
+        "download_content_length": -1,
+        "upload_content_length": 242,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 5.161.241.15:443...\n* Connected to sms.arkesel.com (5.161.241.15) port 443\n* ALPN: curl offers h2,http\/1.1\n*  CAfile: C:\\xampp\\apache\\bin\\curl-ca-bundle.crt\n*  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN: server accepted http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Aug  3 01:24:33 2025 GMT\n*  expire date: Nov  1 01:24:32 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n* using HTTP\/1.1\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 242\r\n\r\n* old SSL session ID is stale, removing\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Date: Sat, 09 Aug 2025 07:50:47 GMT\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: private, must-revalidate\r\n< pragma: no-cache\r\n< expires: -1\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1435\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=AF7uxCSz6BnosHU78CCrXFT27aNyEjoHw58H9ZIB; expires=Sat, 09-Aug-2025 09:50:47 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-08-09 09:50:51",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Dear JACK  JHAY, your payment of \u20b51.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!",
+        "recipients": [
+            "233551756789"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nDate: Sat, 09 Aug 2025 07:50:51 GMT\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: private, must-revalidate\r\npragma: no-cache\r\nexpires: -1\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1390\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=ZmtoADwryYHNVzfI2NNfb6Q9dzA06guRf1GiFR6R; expires=Sat, 09-Aug-2025 09:50:51 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"f605278d-c72d-407c-9dc6-b1165bdff491\",\"recipient\":\"233551756789\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 4.236528,
+        "connect_time": 0.200378,
+        "namelookup_time": 0.005021,
+        "pretransfer_time": 0.723272,
+        "starttransfer_time": 4.236493,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 188,
+        "size_download": 102,
+        "speed_download": 24,
+        "speed_upload": 44,
+        "download_content_length": -1,
+        "upload_content_length": 188,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 5.161.241.15:443...\n* Connected to sms.arkesel.com (5.161.241.15) port 443\n* ALPN: curl offers h2,http\/1.1\n*  CAfile: C:\\xampp\\apache\\bin\\curl-ca-bundle.crt\n*  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN: server accepted http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Aug  3 01:24:33 2025 GMT\n*  expire date: Nov  1 01:24:32 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n* using HTTP\/1.1\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 188\r\n\r\n* old SSL session ID is stale, removing\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Date: Sat, 09 Aug 2025 07:50:51 GMT\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: private, must-revalidate\r\n< pragma: no-cache\r\n< expires: -1\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1390\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=ZmtoADwryYHNVzfI2NNfb6Q9dzA06guRf1GiFR6R; expires=Sat, 09-Aug-2025 09:50:51 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-08-09 09:50:56",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Dear JACK  JHAY, your payment of \u20b51.00 for August TITHE has been received by Freeman Methodist Church - KM. Thank You!",
+        "recipients": [
+            "233551756789"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nDate: Sat, 09 Aug 2025 07:50:56 GMT\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: private, must-revalidate\r\npragma: no-cache\r\nexpires: -1\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1333\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=tnQXcOeAYTtF3jJbGogzM9InslV103dZ3UbC4ilq; expires=Sat, 09-Aug-2025 09:50:56 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"7335393d-3b77-48df-b34f-f06501eba302\",\"recipient\":\"233551756789\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 4.443862,
+        "connect_time": 0.213857,
+        "namelookup_time": 0.024484,
+        "pretransfer_time": 0.898575,
+        "starttransfer_time": 4.443838,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 188,
+        "size_download": 102,
+        "speed_download": 22,
+        "speed_upload": 42,
+        "download_content_length": -1,
+        "upload_content_length": 188,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 5.161.241.15:443...\n* Connected to sms.arkesel.com (5.161.241.15) port 443\n* ALPN: curl offers h2,http\/1.1\n*  CAfile: C:\\xampp\\apache\\bin\\curl-ca-bundle.crt\n*  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN: server accepted http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Aug  3 01:24:33 2025 GMT\n*  expire date: Nov  1 01:24:32 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n* using HTTP\/1.1\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 188\r\n\r\n* old SSL session ID is stale, removing\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Date: Sat, 09 Aug 2025 07:50:56 GMT\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: private, must-revalidate\r\n< pragma: no-cache\r\n< expires: -1\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1333\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=tnQXcOeAYTtF3jJbGogzM9InslV103dZ3UbC4ilq; expires=Sat, 09-Aug-2025 09:50:56 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-08-09 09:51:00",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Dear JACK  JHAY, your payment of \u20b52.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!",
+        "recipients": [
+            "233551756789"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nDate: Sat, 09 Aug 2025 07:51:00 GMT\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: private, must-revalidate\r\npragma: no-cache\r\nexpires: -1\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1297\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=a8dWLPlW4wvuS27Q7HvzOSrqxYldAqdTivQk1p1I; expires=Sat, 09-Aug-2025 09:51:00 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"2f69222a-93e8-4b20-beb6-e49b55974edf\",\"recipient\":\"233551756789\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 4.235343,
+        "connect_time": 0.217019,
+        "namelookup_time": 0.002567,
+        "pretransfer_time": 0.71272,
+        "starttransfer_time": 4.235316,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 190,
+        "size_download": 102,
+        "speed_download": 24,
+        "speed_upload": 44,
+        "download_content_length": -1,
+        "upload_content_length": 190,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 5.161.241.15:443...\n* Connected to sms.arkesel.com (5.161.241.15) port 443\n* ALPN: curl offers h2,http\/1.1\n*  CAfile: C:\\xampp\\apache\\bin\\curl-ca-bundle.crt\n*  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN: server accepted http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Aug  3 01:24:33 2025 GMT\n*  expire date: Nov  1 01:24:32 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n* using HTTP\/1.1\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 190\r\n\r\n* old SSL session ID is stale, removing\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Date: Sat, 09 Aug 2025 07:51:00 GMT\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: private, must-revalidate\r\n< pragma: no-cache\r\n< expires: -1\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1297\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=a8dWLPlW4wvuS27Q7HvzOSrqxYldAqdTivQk1p1I; expires=Sat, 09-Aug-2025 09:51:00 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-08-09 09:51:06",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Dear JACK  JHAY, your payment of \u20b52.00 for August WELFARE has been received by Freeman Methodist Church - KM. Thank You!",
+        "recipients": [
+            "233551756789"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nDate: Sat, 09 Aug 2025 07:51:06 GMT\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: private, must-revalidate\r\npragma: no-cache\r\nexpires: -1\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1239\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=zymS6PMFIVZEpssgr8skYiewu51R7XFg2UvfPadE; expires=Sat, 09-Aug-2025 09:51:06 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"762b5257-aaf6-4261-80c0-9e186e6516c0\",\"recipient\":\"233551756789\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 5.735594,
+        "connect_time": 0.246635,
+        "namelookup_time": 0.002731,
+        "pretransfer_time": 0.754795,
+        "starttransfer_time": 5.735536,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 190,
+        "size_download": 102,
+        "speed_download": 17,
+        "speed_upload": 33,
+        "download_content_length": -1,
+        "upload_content_length": 190,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 5.161.241.15:443...\n* Connected to sms.arkesel.com (5.161.241.15) port 443\n* ALPN: curl offers h2,http\/1.1\n*  CAfile: C:\\xampp\\apache\\bin\\curl-ca-bundle.crt\n*  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN: server accepted http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Aug  3 01:24:33 2025 GMT\n*  expire date: Nov  1 01:24:32 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n* using HTTP\/1.1\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 190\r\n\r\n* old SSL session ID is stale, removing\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Date: Sat, 09 Aug 2025 07:51:06 GMT\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: private, must-revalidate\r\n< pragma: no-cache\r\n< expires: -1\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1239\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=zymS6PMFIVZEpssgr8skYiewu51R7XFg2UvfPadE; expires=Sat, 09-Aug-2025 09:51:06 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-08-09 09:57:02",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Dear NANA OTU, to reset your password, click: http:\/\/localhost\/myfreemanchurchgit\/church\/reset_password.php?token=8050a5e4b429fb1a3b50d1d1564ffdeb18aff1764f3d3c26d2f71bb1a3cc9f47\nThis link will expire in 1 hour.",
+        "recipients": [
+            "233202707072"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nDate: Sat, 09 Aug 2025 07:57:02 GMT\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: private, must-revalidate\r\npragma: no-cache\r\nexpires: -1\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1317\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=WFErZbOI7bHVmm6gRtIuC8GLgZqI7caMKnms6cMU; expires=Sat, 09-Aug-2025 09:57:02 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"d2dc12de-10fa-4804-9887-60fc325ee8b8\",\"recipient\":\"233202707072\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 4.597863,
+        "connect_time": 0.580239,
+        "namelookup_time": 0.386966,
+        "pretransfer_time": 1.096385,
+        "starttransfer_time": 4.597827,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 282,
+        "size_download": 102,
+        "speed_download": 22,
+        "speed_upload": 61,
+        "download_content_length": -1,
+        "upload_content_length": 282,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 5.161.241.15:443...\n* Connected to sms.arkesel.com (5.161.241.15) port 443\n* ALPN: curl offers h2,http\/1.1\n*  CAfile: C:\\xampp\\apache\\bin\\curl-ca-bundle.crt\n*  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN: server accepted http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Aug  3 01:24:33 2025 GMT\n*  expire date: Nov  1 01:24:32 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n* using HTTP\/1.1\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 282\r\n\r\n* old SSL session ID is stale, removing\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Date: Sat, 09 Aug 2025 07:57:02 GMT\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: private, must-revalidate\r\n< pragma: no-cache\r\n< expires: -1\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1317\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=WFErZbOI7bHVmm6gRtIuC8GLgZqI7caMKnms6cMU; expires=Sat, 09-Aug-2025 09:57:02 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-08-09 16:20:44",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Hi Justina, click on the link to complete your registration: http:\/\/localhost\/myfreemanchurchgit\/church\/views\/complete_registration.php?token=fb3e3309fdd71b10f47b25a248b9d150",
+        "recipients": [
+            "1234567890"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 422,
+    "response_headers": "HTTP\/1.1 422 Unprocessable Content\r\nServer: nginx\r\nDate: Sat, 09 Aug 2025 14:20:43 GMT\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: private, must-revalidate\r\npragma: no-cache\r\nexpires: -1\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1498\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=moqhxLOrHo2WdjGZkP2v5UvmHiKgmVXBo6SAUYBL; expires=Sat, 09-Aug-2025 16:20:43 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n\r\n",
+    "response_body": "{\"message\":\"No valid number in recipients!\",\"status\":\"error\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 4.10284,
+        "connect_time": 0.410694,
+        "namelookup_time": 0.209605,
+        "pretransfer_time": 0.835047,
+        "starttransfer_time": 4.102802,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 243,
+        "size_download": 61,
+        "speed_download": 14,
+        "speed_upload": 59,
+        "download_content_length": -1,
+        "upload_content_length": 243,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 5.161.241.15:443...\n* Connected to sms.arkesel.com (5.161.241.15) port 443\n* ALPN: curl offers h2,http\/1.1\n*  CAfile: C:\\xampp\\apache\\bin\\curl-ca-bundle.crt\n*  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN: server accepted http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Aug  3 01:24:33 2025 GMT\n*  expire date: Nov  1 01:24:32 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n* using HTTP\/1.1\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 243\r\n\r\n* old SSL session ID is stale, removing\n< HTTP\/1.1 422 Unprocessable Content\r\n< Server: nginx\r\n< Date: Sat, 09 Aug 2025 14:20:43 GMT\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: private, must-revalidate\r\n< pragma: no-cache\r\n< expires: -1\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1498\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=moqhxLOrHo2WdjGZkP2v5UvmHiKgmVXBo6SAUYBL; expires=Sat, 09-Aug-2025 16:20:43 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-08-09 16:20:47",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Hi Justina, click on the link to complete your registration: http:\/\/localhost\/myfreemanchurchgit\/church\/views\/complete_registration.php?token=fb3e3309fdd71b10f47b25a248b9d150",
+        "recipients": [
+            "1234567890"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 422,
+    "response_headers": "HTTP\/1.1 422 Unprocessable Content\r\nServer: nginx\r\nDate: Sat, 09 Aug 2025 14:20:47 GMT\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: private, must-revalidate\r\npragma: no-cache\r\nexpires: -1\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 1456\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=jBn9x7dE0bM3mYI6OtrOpRcpwUaDKlrocXk6OTzr; expires=Sat, 09-Aug-2025 16:20:47 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n\r\n",
+    "response_body": "{\"message\":\"No valid number in recipients!\",\"status\":\"error\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 3.750503,
+        "connect_time": 0.189423,
+        "namelookup_time": 0.002134,
+        "pretransfer_time": 0.54456,
+        "starttransfer_time": 3.750466,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 243,
+        "size_download": 61,
+        "speed_download": 16,
+        "speed_upload": 64,
+        "download_content_length": -1,
+        "upload_content_length": 243,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 5.161.241.15:443...\n* Connected to sms.arkesel.com (5.161.241.15) port 443\n* ALPN: curl offers h2,http\/1.1\n*  CAfile: C:\\xampp\\apache\\bin\\curl-ca-bundle.crt\n*  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN: server accepted http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Aug  3 01:24:33 2025 GMT\n*  expire date: Nov  1 01:24:32 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n* using HTTP\/1.1\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 243\r\n\r\n* old SSL session ID is stale, removing\n< HTTP\/1.1 422 Unprocessable Content\r\n< Server: nginx\r\n< Date: Sat, 09 Aug 2025 14:20:47 GMT\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: private, must-revalidate\r\n< pragma: no-cache\r\n< expires: -1\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 1456\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=jBn9x7dE0bM3mYI6OtrOpRcpwUaDKlrocXk6OTzr; expires=Sat, 09-Aug-2025 16:20:47 GMT; Max-Age=7200; path=\/; secure; httponly; samesite=lax\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}
+{
+    "time": "2025-08-09 16:25:37",
+    "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send",
+    "payload": {
+        "sender": "MyFreeman",
+        "message": "Dear Justina, your registration is complete. CRN: FMC-D0202-KM, Password: 123456",
+        "recipients": [
+            "233234567899"
+        ]
+    },
+    "request_headers": [
+        "api-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "Content-Type: application\/json",
+        "Accept: application\/json"
+    ],
+    "http_status": 200,
+    "response_headers": "HTTP\/1.1 200 OK\r\nServer: nginx\r\nDate: Sat, 09 Aug 2025 14:25:37 GMT\r\nContent-Type: application\/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\nCache-Control: private, must-revalidate\r\npragma: no-cache\r\nexpires: -1\r\nX-RateLimit-Limit: 1500\r\nX-RateLimit-Remaining: 982\r\nAccess-Control-Allow-Origin: *\r\nSet-Cookie: arkesel_sms_messenger_session=mily5zWSzMLLaG1mQSAcwVbbKj5KqVPI08UfOq8J; expires=Sat, 09-Aug-2025 16:25:36 GMT; Max-Age=7199; path=\/; secure; httponly; samesite=lax\r\n\r\n",
+    "response_body": "{\"data\":[{\"id\":\"3b34249a-b0b7-4033-9223-a8ff371b4c5e\",\"recipient\":\"233234567899\"}],\"status\":\"success\"}",
+    "curl_error": "",
+    "curl_info": {
+        "total_time": 4.120958,
+        "connect_time": 0.219589,
+        "namelookup_time": 0.001957,
+        "pretransfer_time": 0.580604,
+        "starttransfer_time": 4.120926,
+        "redirect_time": 0,
+        "redirect_count": 0,
+        "size_upload": 145,
+        "size_download": 102,
+        "speed_download": 24,
+        "speed_upload": 35,
+        "download_content_length": -1,
+        "upload_content_length": 145,
+        "content_type": "application\/json"
+    },
+    "verbose_log": "*   Trying 5.161.241.15:443...\n* Connected to sms.arkesel.com (5.161.241.15) port 443\n* ALPN: curl offers h2,http\/1.1\n*  CAfile: C:\\xampp\\apache\\bin\\curl-ca-bundle.crt\n*  CApath: none\n* SSL connection using TLSv1.3 \/ TLS_AES_256_GCM_SHA384\n* ALPN: server accepted http\/1.1\n* Server certificate:\n*  subject: CN=sms.arkesel.com\n*  start date: Aug  3 01:24:33 2025 GMT\n*  expire date: Nov  1 01:24:32 2025 GMT\n*  subjectAltName: host \"sms.arkesel.com\" matched cert's \"sms.arkesel.com\"\n*  issuer: C=US; O=Let's Encrypt; CN=E6\n*  SSL certificate verify ok.\n* using HTTP\/1.1\n> POST \/api\/v2\/sms\/send HTTP\/1.1\r\nHost: sms.arkesel.com\r\napi-key: cHZtY1B3SW5sZ05iUEJOVmZ1QXA\r\nContent-Type: application\/json\r\nAccept: application\/json\r\nContent-Length: 145\r\n\r\n* old SSL session ID is stale, removing\n< HTTP\/1.1 200 OK\r\n< Server: nginx\r\n< Date: Sat, 09 Aug 2025 14:25:37 GMT\r\n< Content-Type: application\/json\r\n< Transfer-Encoding: chunked\r\n< Connection: keep-alive\r\n< Cache-Control: private, must-revalidate\r\n< pragma: no-cache\r\n< expires: -1\r\n< X-RateLimit-Limit: 1500\r\n< X-RateLimit-Remaining: 982\r\n< Access-Control-Allow-Origin: *\r\n< Set-Cookie: arkesel_sms_messenger_session=mily5zWSzMLLaG1mQSAcwVbbKj5KqVPI08UfOq8J; expires=Sat, 09-Aug-2025 16:25:36 GMT; Max-Age=7199; path=\/; secure; httponly; samesite=lax\r\n< \r\n* Connection #0 to host sms.arkesel.com left intact\n"
+}

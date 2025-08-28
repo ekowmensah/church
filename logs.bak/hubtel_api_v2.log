@@ -1,0 +1,19 @@
+{
+    "timestamp": "2025-08-15 15:36:43",
+    "request": {
+        "totalAmount": 1,
+        "description": "Test Payment",
+        "callbackUrl": "http:\/\/localhost\/myfreemanchurchgit\/church\/views\/hubtel_callback_v2.php",
+        "returnUrl": "http:\/\/localhost\/myfreemanchurchgit\/church\/views\/test_hubtel_return.php",
+        "merchantAccountNumber": "2019196",
+        "cancellationUrl": "http:\/\/localhost\/myfreemanchurchgit\/church\/views\/test_hubtel_return.php?cancelled=1",
+        "clientReference": "CH-20250815153642-d69c19",
+        "payeeName": "Test User",
+        "payeeMobileNumber": "0545644749"
+    },
+    "response_headers": "HTTP\/2 401 \r\ndate: Fri, 15 Aug 2025 13:36:43 GMT\r\ncontent-length: 0\r\nserver: cloudflare\r\nrequest-context: appId=cid-v1:ccc7c99e-5eb6-4f30-97aa-2be983618b49\r\ncf-cache-status: DYNAMIC\r\nstrict-transport-security: max-age=31536000; includeSubDomains\r\nx-content-type-options: nosniff\r\ncf-ray: 96f9151f1fa14e60-LHR\r\n\r\n",
+    "response": null,
+    "http_code": 401,
+    "curl_error": "" 
+}
+
