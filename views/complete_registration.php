@@ -166,7 +166,7 @@ if ($safe_member_id > 0) {
             $_SESSION['member_name'] = $first_name.' '.$last_name;
             $_SESSION['role'] = 'member';
             $base_url = rtrim(dirname(dirname($_SERVER['SCRIPT_NAME'])), '/\\');
-            if ($base_url === '' || $base_url === '.') $base_url = '/myfreeman';
+            if ($base_url === '' || $base_url === '.') $base_url = BASE_URL;
             // Set flag to show toast after redirect
             $_SESSION['show_registration_toast'] = true;
             header('Location: ' . BASE_URL . '/views/member_dashboard.php');
@@ -525,7 +525,7 @@ ob_start();
 
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.full.min.js"></script>
                 <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
-                <script src="/myfreeman/assets/registration.js"></script>
+                <script src="<?= BASE_URL ?>/assets/registration.js"></script>
 <script>
 $(function(){
     // Click to copy CRN

@@ -127,7 +127,18 @@ ob_start();
             <button type="button" class="btn btn-success btn-sm" data-toggle="modal" data-target="#nextRecurringModal">
     <i class="fas fa-sync-alt"></i> Create Next Recurring Session
 </button>
-<?php ob_start(); ?>
+        <?php endif; ?>
+    </div>
+</div>
+
+<?php
+// Initialize modal_html variable
+$modal_html = '';
+
+// Check if there is at least one recurring session for modal
+$recurring_check = $conn->query("SELECT * FROM attendance_sessions WHERE is_recurring = 1 ORDER BY service_date DESC LIMIT 1");
+if ($recurring_check && $recurring_check->num_rows > 0): 
+    ob_start(); ?>
 <div class="modal fade" id="nextRecurringModal" tabindex="-1" role="dialog" aria-labelledby="nextRecurringModalLabel" aria-hidden="true">
   <div class="modal-dialog" role="document">
     <div class="modal-content">
@@ -159,8 +170,8 @@ ob_start();
     </div>
   </div>
 </div>
-<?php $modal_html = ob_get_clean(); ?>
-        <?php endif; ?>
+<?php $modal_html = ob_get_clean(); 
+endif; ?>
     </div>
 </div>
 <?php if ($success_msg): ?>

@@ -36,7 +36,7 @@ $visitors = $conn->query("SELECT v.*, m.crn AS invited_crn, CONCAT(m.last_name, 
 ob_start();
 ?>
 
-<link rel="stylesheet" href="/myfreeman/assets/css/visitor_list_custom.css?v=2">
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/visitor_list_custom.css?v=2">
 <style>
   .dataTables_filter input { border-radius: 20px; border: 1px solid #ced4da; }
 </style>

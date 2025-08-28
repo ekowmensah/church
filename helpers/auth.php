@@ -9,7 +9,7 @@ function is_logged_in() {
 
 function require_login() {
     if (!is_logged_in()) {
-        header('Location: /myfreeman/login.php');
+        header('Location: ' . BASE_URL . '/login.php');
         exit;
     }
 }
@@ -23,4 +23,5 @@ function get_logged_in_user() {
         'email' => $_SESSION['email']
     ];
 }
+
 ?>

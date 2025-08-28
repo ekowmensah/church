@@ -208,6 +208,9 @@ ob_start();
                     <p class="text-muted mb-0">Manage face recognition devices and sync attendance data</p>
                 </div>
                 <div class="col-md-4 text-right">
+                    <a href="member_hikvision_mapping.php" class="btn btn-success btn-lg mr-2">
+                        <i class="fas fa-user-friends mr-1"></i> User Mapping
+                    </a>
                     <button type="button" class="btn btn-primary btn-lg" data-toggle="modal" data-target="#addDeviceModal">
                         <i class="fas fa-plus mr-1"></i> Add Device
                     </button>

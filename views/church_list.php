@@ -94,9 +94,9 @@ ob_start();
     </div>
 </div>
 <!-- DataTables JS -->
-<link rel="stylesheet" href="/myfreeman/assets/vendor/datatables/dataTables.bootstrap4.min.css">
-<script src="/myfreeman/assets/vendor/datatables/jquery.dataTables.min.js"></script>
-<script src="/myfreeman/assets/vendor/datatables/dataTables.bootstrap4.min.js"></script>
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/vendor/datatables/dataTables.bootstrap4.min.css">
+<script src="<?= BASE_URL ?>/assets/vendor/datatables/jquery.dataTables.min.js"></script>
+<script src="<?= BASE_URL ?>/assets/vendor/datatables/dataTables.bootstrap4.min.js"></script>
 <script>
 $(document).ready(function() {
     $('#churchTable').DataTable({

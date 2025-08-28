@@ -515,7 +515,7 @@ ob_start();
 
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.full.min.js"></script>
                 <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
-                <script src="/myfreeman/assets/registration.js"></script>
+                <script src="<?= BASE_URL ?>/assets/registration.js"></script>
 <script>
 $(function(){
     // Click to copy CRN
@@ -703,7 +703,7 @@ $(function(){
 <?php
 $page_content = ob_get_clean();
 $base_url = rtrim(dirname(dirname($_SERVER['SCRIPT_NAME'])), '/\\');
-if ($base_url === '' || $base_url === '.') $base_url = '/myfreeman';
+if ($base_url === '' || $base_url === '.') $base_url = BASE_URL;
 $logo_url = $base_url . '/assets/logo.png';
 require_once __DIR__.'/../includes/layout.php';
 ?>

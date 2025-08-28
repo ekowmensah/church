@@ -181,7 +181,7 @@ if (!in_array($mode, $allowed_modes)) {
         
         // Use cURL to make non-blocking request to SMS queue
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, 'http://localhost' . dirname($_SERVER['REQUEST_URI']) . '/ajax_queue_sms.php');
+        curl_setopt($ch, CURLOPT_URL, BASE_URL . '/ajax_queue_sms.php');
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($sms_queue_data));
         curl_setopt($ch, CURLOPT_HTTPHEADER, [

@@ -15,7 +15,7 @@ $device_ip = '192.168.5.201'; // Hikvision device IP
 $device_port = 80;
 $username = 'admin';
 $password = '223344AD';
-$cloud_api_url = 'https://myfreeman.mensweb.xyz/api_hikvision_attendance.php';
+$cloud_api_url = 'http://localhost/myfreemanchurchgit/church/api_hikvision_attendance.php';
 $api_key = '0c6c5401ab9f1af81c7cbadee3279663a918a16407fbc84a0d4bd189789d9f49';
 $last_sync_file = __DIR__ . '/hikvision_last_sync.txt';
 
@@ -26,27 +26,29 @@ if (!$last_sync_time) {
 }
 
 // === FETCH ATTENDANCE LOGS FROM DEVICE ===
-// Try POST to /AcsEvent (no /search) first
-$endpoint_post = "/ISAPI/AccessControl/AcsEvent";
+$endpoint_post = "/ISAPI/AccessControl/AcsEvent?format=json";
 $url_post = "http://{$device_ip}:{$device_port}{$endpoint_post}";
 $startTime = $last_sync_time;
 $endTime = date('Y-m-d\TH:i:s');
-// 1. Standard XML (with declaration)
-$xml_body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<AcsEventCond>\n  <searchID>1</searchID>\n  <startTime>{$startTime}</startTime>\n  <endTime>{$endTime}</endTime>\n  <maxResults>1000</maxResults>\n</AcsEventCond>";
 
-// 2. No XML declaration
-$xml_body_no_decl = "<AcsEventCond>\n  <searchID>1</searchID>\n  <startTime>{$startTime}</startTime>\n  <endTime>{$endTime}</endTime>\n  <maxResults>1000</maxResults>\n</AcsEventCond>";
+// Use JSON format instead of XML (device expects JSON based on error)
+$json_body = json_encode([
+    "AcsEventCond" => [
+        "searchID" => "1",
+        "searchResultPosition" => 0,
+        "startTime" => $startTime,
+        "endTime" => $endTime,
+        "maxResults" => 1000,
+        "major" => 5,  // Access control events
+        "minor" => 75  // Card reader events
+    ]
+]);
 
-// 3. Minimal/compact XML (no whitespace)
-$xml_body_compact = "<AcsEventCond><searchID>1</searchID><startTime>{$startTime}</startTime><endTime>{$endTime}</endTime><maxResults>1000</maxResults></AcsEventCond>";
-
-// 4. Alternate root tag
-$xml_body_alt_root = "<AcsEventSearchDescription><searchID>1</searchID><startTime>{$startTime}</startTime><endTime>{$endTime}</endTime><maxResults>1000</maxResults></AcsEventSearchDescription>";
-echo "[DEBUG] XML body length: " . strlen($xml_body) . "\n";
-file_put_contents(__DIR__ . '/debug_xml_body.txt', $xml_body);
-// === 1. Standard XML (with declaration, application/xml) ===
+echo "[DEBUG] JSON body: $json_body\n";
+file_put_contents(__DIR__ . '/debug_json_body.txt', $json_body);
+// === TRY JSON FORMAT ===
 echo "\n[DEBUG] POSTing to: $url_post\n";
-echo "[DEBUG] Request body (standard):\n$xml_body\n";
+echo "[DEBUG] Request body (JSON):\n$json_body\n";
 $ch = curl_init();
 curl_setopt($ch, CURLOPT_URL, $url_post);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -55,185 +57,78 @@ curl_setopt($ch, CURLOPT_HTTPAUTH, CURLAUTH_DIGEST);
 curl_setopt($ch, CURLOPT_USERPWD, "$username:$password");
 curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    'Content-Type: application/xml'
+    'Content-Type: application/json'
 ]);
-curl_setopt($ch, CURLOPT_POSTFIELDS, $xml_body);
+curl_setopt($ch, CURLOPT_POSTFIELDS, $json_body);
 $response = curl_exec($ch);
 $error = curl_error($ch);
-echo "[DEBUG] Raw response (POST standard):\n$response\n";
+echo "[DEBUG] Raw response (POST JSON):\n$response\n";
 curl_close($ch);
 
 if ($error) {
-    echo "[ERROR] Failed to connect to device (POST standard): $error\n";
+    echo "[ERROR] Failed to connect to device (POST JSON): $error\n";
     exit(1);
 }
 
-libxml_use_internal_errors(true);
-$xml = simplexml_load_string($response);
-if ($xml !== false && isset($xml->AcsEvent)) {
-    echo "[DEBUG] Success with POST (standard)\n";
-    // ... (continue with cloud sync logic as before)
+$response_data = json_decode($response, true);
+if ($response_data && isset($response_data['AcsEvent'])) {
+    echo "[DEBUG] Success with POST (JSON)\n";
+    
+    $events = $response_data['AcsEvent'];
+    
+    // Check if there are actually any events to process
+    if (isset($events['numOfMatches']) && $events['numOfMatches'] == 0) {
+        echo "[INFO] No new logs to sync (numOfMatches: 0).\n";
+        file_put_contents($last_sync_file, $endTime);
+        exit(0);
+    }
+    
+    // Extract events and push to cPanel API
+    $logs = [];
+    
+    // Handle both single event and array of events
+    if (isset($events['InfoList'])) {
+        // Multiple events in InfoList
+        foreach ($events['InfoList'] as $event) {
+            $logs[] = [
+                'device_id' => $device_ip,
+                'hikvision_user_id' => $event['employeeNoString'] ?? $event['cardNo'] ?? null,
+                'timestamp' => $event['time'] ?? null,
+                'event_type' => 'access_control'
+            ];
+        }
+    } elseif (isset($events['time'])) {
+        // Single event with actual data
+        $logs[] = [
+            'device_id' => $device_ip,
+            'hikvision_user_id' => $events['employeeNoString'] ?? $events['cardNo'] ?? null,
+            'timestamp' => $events['time'] ?? null,
+            'event_type' => 'access_control'
+        ];
+    }
+    
+    if (!empty($logs)) {
+        $payload = json_encode(['logs' => $logs]);
+        $ch_api = curl_init("http://localhost/myfreemanchurchgit/church/api/hikvision/push-logs.php?key=$api_key");
+        curl_setopt($ch_api, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch_api, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        curl_setopt($ch_api, CURLOPT_POST, true);
+        curl_setopt($ch_api, CURLOPT_POSTFIELDS, $payload);
+        $api_resp = curl_exec($ch_api);
+        $api_err = curl_error($ch_api);
+        curl_close($ch_api);
+        if ($api_err) {
+            echo "[ERROR] Failed to push logs to cPanel: $api_err\n";
+        } else {
+            echo "[INFO] Pushed ".count($logs)." logs to cPanel.\n";
+            file_put_contents($last_sync_file, $endTime);
+        }
+    } else {
+        echo "[INFO] No new logs to sync.\n";
+    }
     exit(0);
 }
 
-// === 2. No XML declaration ===
-echo "[DEBUG] Trying POST with no XML declaration...\n";
-echo "[DEBUG] Request body (no decl):\n$xml_body_no_decl\n";
-$ch2 = curl_init();
-curl_setopt($ch2, CURLOPT_URL, $url_post);
-curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch2, CURLOPT_TIMEOUT, 30);
-curl_setopt($ch2, CURLOPT_HTTPAUTH, CURLAUTH_DIGEST);
-curl_setopt($ch2, CURLOPT_USERPWD, "$username:$password");
-curl_setopt($ch2, CURLOPT_POST, true);
-curl_setopt($ch2, CURLOPT_HTTPHEADER, [
-    'Content-Type: application/xml'
-]);
-curl_setopt($ch2, CURLOPT_POSTFIELDS, $xml_body_no_decl);
-$response2 = curl_exec($ch2);
-$error2 = curl_error($ch2);
-echo "[DEBUG] Raw response (POST no decl):\n$response2\n";
-curl_close($ch2);
-$xml2 = simplexml_load_string($response2);
-if ($xml2 !== false && isset($xml2->AcsEvent)) {
-    echo "[DEBUG] Success with POST (no decl)\n";
-    // ... (continue with cloud sync logic as before)
-    exit(0);
-}
-
-// === 3. Minimal/compact XML ===
-echo "[DEBUG] Trying POST with minimal/compact XML...\n";
-echo "[DEBUG] Request body (compact):\n$xml_body_compact\n";
-$ch3 = curl_init();
-curl_setopt($ch3, CURLOPT_URL, $url_post);
-curl_setopt($ch3, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch3, CURLOPT_TIMEOUT, 30);
-curl_setopt($ch3, CURLOPT_HTTPAUTH, CURLAUTH_DIGEST);
-curl_setopt($ch3, CURLOPT_USERPWD, "$username:$password");
-curl_setopt($ch3, CURLOPT_POST, true);
-curl_setopt($ch3, CURLOPT_HTTPHEADER, [
-    'Content-Type: application/xml'
-]);
-curl_setopt($ch3, CURLOPT_POSTFIELDS, $xml_body_compact);
-$response3 = curl_exec($ch3);
-$error3 = curl_error($ch3);
-echo "[DEBUG] Raw response (POST compact):\n$response3\n";
-curl_close($ch3);
-$xml3 = simplexml_load_string($response3);
-if ($xml3 !== false && isset($xml3->AcsEvent)) {
-    echo "[DEBUG] Success with POST (compact)\n";
-    // ... (continue with cloud sync logic as before)
-    exit(0);
-}
-
-// === 4. Alternate root tag ===
-echo "[DEBUG] Trying POST with alternate root tag...\n";
-echo "[DEBUG] Request body (alt root):\n$xml_body_alt_root\n";
-$ch4 = curl_init();
-curl_setopt($ch4, CURLOPT_URL, $url_post);
-curl_setopt($ch4, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch4, CURLOPT_TIMEOUT, 30);
-curl_setopt($ch4, CURLOPT_HTTPAUTH, CURLAUTH_DIGEST);
-curl_setopt($ch4, CURLOPT_USERPWD, "$username:$password");
-curl_setopt($ch4, CURLOPT_POST, true);
-curl_setopt($ch4, CURLOPT_HTTPHEADER, [
-    'Content-Type: application/xml'
-]);
-curl_setopt($ch4, CURLOPT_POSTFIELDS, $xml_body_alt_root);
-$response4 = curl_exec($ch4);
-$error4 = curl_error($ch4);
-echo "[DEBUG] Raw response (POST alt root):\n$response4\n";
-curl_close($ch4);
-$xml4 = simplexml_load_string($response4);
-if ($xml4 !== false && isset($xml4->AcsEvent)) {
-    echo "[DEBUG] Success with POST (alt root)\n";
-    // ... (continue with cloud sync logic as before)
-    exit(0);
-}
-
-// === 5. Try Content-Type: text/xml with compact XML ===
-echo "[DEBUG] Trying POST with Content-Type: text/xml...\n";
-$ch5 = curl_init();
-curl_setopt($ch5, CURLOPT_URL, $url_post);
-curl_setopt($ch5, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch5, CURLOPT_TIMEOUT, 30);
-curl_setopt($ch5, CURLOPT_HTTPAUTH, CURLAUTH_DIGEST);
-curl_setopt($ch5, CURLOPT_USERPWD, "$username:$password");
-curl_setopt($ch5, CURLOPT_POST, true);
-curl_setopt($ch5, CURLOPT_HTTPHEADER, [
-    'Content-Type: text/xml'
-]);
-curl_setopt($ch5, CURLOPT_POSTFIELDS, $xml_body_compact);
-$response5 = curl_exec($ch5);
-$error5 = curl_error($ch5);
-echo "[DEBUG] Raw response (POST text/xml):\n$response5\n";
-curl_close($ch5);
-$xml5 = simplexml_load_string($response5);
-if ($xml5 !== false && isset($xml5->AcsEvent)) {
-    echo "[DEBUG] Success with POST (text/xml)\n";
-    // ... (continue with cloud sync logic as before)
-    exit(0);
-}
-
-echo "[ERROR] All POST attempts failed.\n";
+// If JSON format failed, show error details
+echo "[ERROR] JSON request failed. Response: $response\n";
 exit(1);
-
-    curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch2, CURLOPT_TIMEOUT, 30);
-    curl_setopt($ch2, CURLOPT_HTTPAUTH, CURLAUTH_DIGEST);
-    curl_setopt($ch2, CURLOPT_USERPWD, "$username:$password");
-    curl_setopt($ch2, CURLOPT_POST, true);
-    curl_setopt($ch2, CURLOPT_HTTPHEADER, [
-        'Content-Type: application/xml'
-    ]);
-    curl_setopt($ch2, CURLOPT_POSTFIELDS, $xml_body2);
-    $response2 = curl_exec($ch2);
-    $error2 = curl_error($ch2);
-    echo "[DEBUG] Raw response (POST major/minor):\n$response2\n";
-    curl_close($ch2);
-    if ($error2) {
-        echo "[ERROR] Failed to connect to device (POST major/minor): $error2\n";
-        exit(1);
-    }
-    $xml2 = simplexml_load_string($response2);
-    if ($xml2 !== false && isset($xml2->AcsEvent)) {
-        echo "[DEBUG] Success with POST to /AcsEvent with major/minor\n";
-        $logs = [];
-        foreach ($xml2->AcsEvent as $event) {
-            $logs[] = json_decode(json_encode($event), true);
-        }
-        if (empty($logs)) {
-            echo "[INFO] No new logs to sync.\n";
-            exit(0);
-        }
-        // ... (continue with cloud sync logic as before)
-    }
-// Try again with all-lowercase tags (acseventcond, acsevent)
-echo "[DEBUG] Trying POST with all-lowercase tags...\n";
-$xml_body3 = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<acseventcond>\n  <searchid>1</searchid>\n  <starttime>{$startTime}</starttime>\n  <endtime>{$endTime}</endtime>\n  <major>5</major>\n  <minor>75</minor>\n  <maxresults>1000</maxresults>\n</acseventcond>";
-echo "[DEBUG] Request body (lowercase tags):\n$xml_body3\n";
-file_put_contents(__DIR__ . '/debug_xml_body_lowercase.txt', $xml_body3);
-$ch3 = curl_init();
-curl_setopt($ch3, CURLOPT_URL, $url_post);
-curl_setopt($ch3, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch3, CURLOPT_TIMEOUT, 30);
-curl_setopt($ch3, CURLOPT_HTTPAUTH, CURLAUTH_DIGEST);
-curl_setopt($ch3, CURLOPT_USERPWD, "$username:$password");
-curl_setopt($ch3, CURLOPT_POST, true);
-curl_setopt($ch3, CURLOPT_HTTPHEADER, [
-    'Content-Type: application/xml'
-]);
-curl_setopt($ch3, CURLOPT_POSTFIELDS, $xml_body3);
-$response3 = curl_exec($ch3);
-$error3 = curl_error($ch3);
-echo "[DEBUG] Raw response (POST lowercase tags):\n$response3\n";
-curl_close($ch3);
-if ($error3) {
-    echo "[ERROR] Failed to connect to device (POST lowercase): $error3\n";
-    exit(1);
-}
-$xml3 = simplexml_load_string($response3);
-if ($xml3 !== false && (isset($xml3->acsevent) || isset($xml3->AcsEvent))) {
-    echo "[DEBUG] Success with POST to /AcsEvent with lowercase tags\n";
-    // ... (continue with cloud sync logic as before)
-}

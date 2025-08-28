@@ -5,7 +5,7 @@ require_once __DIR__.'/../helpers/permissions.php';
 
 // Check authentication
 if (!is_logged_in()) {
-    header('Location: /myfreeman/login.php');
+    header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
 
