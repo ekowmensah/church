@@ -77,12 +77,12 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
         ];
     }
 
-    // Use the same API domain as the working checkout endpoint
-    // The checkout uses payproxyapi.hubtel.com, so status should too
-    $url = "https://payproxyapi.hubtel.com/items/status/{$client_reference}";
+    // Use the correct Hubtel transaction status API endpoint from documentation
+    // URL format: https://api-txnstatus.hubtel.com/transactions/{POS_Sales_ID}/status
+    $url = "https://api-txnstatus.hubtel.com/transactions/{$transaction_id}/status";
     
-    // Alternative: try query parameter approach if path doesn't work
-    // $url = "https://payproxyapi.hubtel.com/items/status?clientReference=" . urlencode($client_reference);
+    // Add clientReference as mandatory query parameter (preferred by Hubtel)
+    $url .= "?clientReference=" . urlencode($client_reference);
     
     // Try different authentication methods since transaction status API may differ from checkout API
     $auth_methods = [
