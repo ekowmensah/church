@@ -78,11 +78,16 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
     }
 
     // Use the correct Hubtel transaction status API endpoint from documentation
-    // URL format: https://api-txnstatus.hubtel.com/transactions/{POS_Sales_ID}/status
-    $url = "https://api-txnstatus.hubtel.com/transactions/{$transaction_id}/status";
+    // Try using merchant account as POS_Sales_ID since transaction_id lookup fails
+    $url = "https://api-txnstatus.hubtel.com/transactions/{$merchant_account}/status";
     
     // Add clientReference as mandatory query parameter (preferred by Hubtel)
     $url .= "?clientReference=" . urlencode($client_reference);
+    
+    // Also try hubtelTransactionId as query parameter
+    if ($transaction_id && $transaction_id !== $client_reference) {
+        $url .= "&hubtelTransactionId=" . urlencode($transaction_id);
+    }
     
     // Try different authentication methods since transaction status API may differ from checkout API
     $auth_methods = [
