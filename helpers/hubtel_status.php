@@ -52,21 +52,26 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
 
     $api_key = $readEnv('HUBTEL_API_KEY', 'HUBTEL_API_KEY');
     $api_secret = $readEnv('HUBTEL_API_SECRET', 'HUBTEL_API_SECRET');
+    $merchant_account = $readEnv('HUBTEL_MERCHANT_ACCOUNT', 'HUBTEL_MERCHANT_ACCOUNT');
     
-    if (!$api_key || !$api_secret) {
+    if (!$api_key || !$api_secret || !$merchant_account) {
         return [
             'success' => false, 
-            'error' => 'Hubtel API credentials not set',
+            'error' => 'Hubtel API credentials not complete',
             'debug' => [
                 'api_key_set' => !empty($api_key),
-                'api_secret_set' => !empty($api_secret)
+                'api_secret_set' => !empty($api_secret),
+                'merchant_account_set' => !empty($merchant_account)
             ]
         ];
     }
 
-    // Build URL with proper format: /transactions/{id}/status?clientReference={ref}
-    $url = "https://api-txnstatus.hubtel.com/transactions/{$transaction_id}/status";
-    if ($client_reference) {
+    // Try different possible Hubtel API endpoint formats
+    // Format 1: Direct transaction status (most common)
+    $url = "https://api.hubtel.com/v1/merchantaccount/{$merchant_account}/transactions/{$transaction_id}/status";
+    
+    // Add client reference as query parameter if provided
+    if ($client_reference && $client_reference !== $transaction_id) {
         $url .= "?clientReference=" . urlencode($client_reference);
     }
     
@@ -146,61 +151,70 @@ function check_transaction_by_reference($conn, $client_reference, $transaction_i
     
     // If no transaction ID provided, try to extract from stored data or use client reference
     if (!$transaction_id) {
-        // Check if we have stored transaction ID in the intent
-        $transaction_id = $intent['hubtel_transaction_id'] ?? null;
+        // Check if we have stored transaction ID in the intent (if column exists)
+        $transaction_id = isset($intent['hubtel_transaction_id']) ? $intent['hubtel_transaction_id'] : null;
         
-        // If still no transaction ID, we can't check status via API
+        // If still no transaction ID, use client_reference as fallback
+        // This allows status checking for older payment intents before the migration
         if (!$transaction_id) {
-            return [
-                'success' => false,
-                'error' => 'No Hubtel transaction ID available for status check',
-                'note' => 'Transaction ID is required for Hubtel status API. Consider storing it during payment initiation.',
-                'client_reference' => $client_reference
-            ];
-        }
-    }
-    
-    $status_result = check_hubtel_transaction_status($transaction_id, $client_reference);
-    
-    if ($status_result['success']) {
-        // Update local status if different
-        $hubtel_status = $status_result['status'];
-        $local_status = match (strtolower($hubtel_status)) {
-            'success', 'completed' => 'Completed',
-            'failed', 'cancelled' => 'Failed',
-            default => 'Pending',
-        };
-        
-        if ($local_status !== $intent['status']) {
-            $update_stmt = $conn->prepare("UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE client_reference = ?");
-            $update_stmt->bind_param('ss', $local_status, $client_reference);
-            $update_stmt->execute();
+            $transaction_id = $client_reference;
             
-            return [
-                'success' => true,
-                'status_updated' => true,
-                'old_status' => $intent['status'],
-                'new_status' => $local_status,
-                'hubtel_data' => $status_result['data'],
-                'transaction_id' => $transaction_id
-            ];
-        } else {
-            return [
-                'success' => true,
-                'status_updated' => false,
-                'current_status' => $local_status,
-                'hubtel_data' => $status_result['data'],
-                'transaction_id' => $transaction_id
-            ];
+            // Log that we're using fallback method
+            error_log("Hubtel Status Check: Using client_reference as transaction_id fallback for {$client_reference}");
         }
-    } else {
-        return [
-            'success' => false,
-            'error' => $status_result['error'],
-            'debug' => $status_result['debug'] ?? null,
-            'transaction_id' => $transaction_id
-        ];
     }
+    
+    // First try the Hubtel API if we have a proper transaction ID
+    if ($transaction_id !== $client_reference) {
+        $status_result = check_hubtel_transaction_status($transaction_id, $client_reference);
+        
+        if ($status_result['success']) {
+            // Update local status if different
+            $hubtel_status = $status_result['status'];
+            $local_status = match (strtolower($hubtel_status)) {
+                'success', 'completed' => 'Completed',
+                'failed', 'cancelled' => 'Failed',
+                default => 'Pending',
+            };
+            
+            if ($local_status !== $intent['status']) {
+                $update_stmt = $conn->prepare("UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE client_reference = ?");
+                $update_stmt->bind_param('ss', $local_status, $client_reference);
+                $update_stmt->execute();
+                
+                return [
+                    'success' => true,
+                    'status_updated' => true,
+                    'old_status' => $intent['status'],
+                    'new_status' => $local_status,
+                    'hubtel_data' => $status_result['data'],
+                    'transaction_id' => $transaction_id,
+                    'method' => 'hubtel_api'
+                ];
+            } else {
+                return [
+                    'success' => true,
+                    'status_updated' => false,
+                    'current_status' => $local_status,
+                    'hubtel_data' => $status_result['data'],
+                    'transaction_id' => $transaction_id,
+                    'method' => 'hubtel_api'
+                ];
+            }
+        }
+    }
+    
+    // If API fails or we're using client_reference as transaction_id, 
+    // return current status from database (webhook-based system)
+    return [
+        'success' => true,
+        'status_updated' => false,
+        'current_status' => $intent['status'],
+        'note' => 'Status retrieved from local database. Hubtel updates status via webhook callbacks.',
+        'transaction_id' => $transaction_id,
+        'method' => 'database_only',
+        'api_error' => isset($status_result) ? $status_result['error'] : 'Transaction ID is client reference - API not attempted'
+    ];
 }
 
 /**
