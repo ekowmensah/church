@@ -66,66 +66,74 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
         ];
     }
 
-    // Try different possible Hubtel API endpoint formats
-    // The checkoutId from checkout creation is different from transaction ID
-    // Use the checkout status endpoint instead
-    $url = "https://api.hubtel.com/v1/merchantaccount/{$merchant_account}/checkout/{$transaction_id}/status";
+    // Use the correct Hubtel transaction status endpoint
+    $endpoints = [
+        // Correct endpoint for transaction status
+        "https://api-txnstatus.hubtel.com/transactions/{$transaction_id}/status",
+        // Fallback endpoints in case the primary fails
+        "https://api.hubtel.com/v1/merchantaccount/{$merchant_account}/transactions/{$transaction_id}/status",
+        "https://api.hubtel.com/v1/merchantaccount/{$merchant_account}/checkout/{$transaction_id}/status"
+    ];
     
-    // Add client reference as query parameter if provided
-    if ($client_reference && $client_reference !== $transaction_id) {
-        $url .= "?clientReference=" . urlencode($client_reference);
+    $last_error = null;
+    $last_http_code = null;
+    
+    foreach ($endpoints as $base_url) {
+        $url = $base_url;
+        
+        // Add client reference as query parameter if provided
+        if ($client_reference && $client_reference !== $transaction_id) {
+            $url .= "?clientReference=" . urlencode($client_reference);
+        }
+        
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Authorization: Basic ' . base64_encode($api_key . ':' . $api_secret),
+            'Accept: application/json'
+        ]);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Church Management System/1.0');
+        
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_error = curl_errno($ch) ? curl_error($ch) : null;
+        curl_close($ch);
+        
+        // If successful, return immediately
+        if (!$curl_error && $http_code === 200) {
+            $data = $response ? json_decode($response, true) : null;
+            if ($data) {
+                return [
+                    'success' => true,
+                    'data' => $data,
+                    'http_code' => $http_code,
+                    'status' => $data['status'] ?? 'unknown',
+                    'amount' => $data['amount'] ?? null,
+                    'reference' => $data['clientReference'] ?? null,
+                    'endpoint_used' => $url
+                ];
+            }
+        }
+        
+        // Store error info for fallback
+        $last_error = $curl_error;
+        $last_http_code = $http_code;
     }
     
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Authorization: Basic ' . base64_encode($api_key . ':' . $api_secret),
-        'Accept: application/json'
-    ]);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'Church Management System/1.0');
-    
-    $response = curl_exec($ch);
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curl_error = curl_errno($ch) ? curl_error($ch) : null;
-    curl_close($ch);
-    
-    if ($curl_error) {
-        return [
-            'success' => false,
-            'error' => 'Network error: ' . $curl_error,
-            'debug' => [
-                'url' => $url,
-                'http_code' => $http_code,
-                'curl_error' => $curl_error
-            ]
-        ];
-    }
-    
-    $data = $response ? json_decode($response, true) : null;
-    
-    if ($http_code === 200 && $data) {
-        return [
-            'success' => true,
-            'data' => $data,
-            'http_code' => $http_code,
-            'status' => $data['status'] ?? 'unknown',
-            'amount' => $data['amount'] ?? null,
-            'reference' => $data['clientReference'] ?? null
-        ];
-    } else {
-        return [
-            'success' => false,
-            'error' => $data['message'] ?? 'HTTP ' . $http_code . ' error from Hubtel API',
-            'debug' => [
-                'url' => $url,
-                'http_code' => $http_code,
-                'response' => $response,
-                'data' => $data
-            ]
-        ];
-    }
+    // If we get here, all endpoints failed
+    return [
+        'success' => false,
+        'error' => 'All Hubtel API endpoints returned HTTP ' . $last_http_code . ' error',
+        'debug' => [
+            'endpoints_tried' => $endpoints,
+            'last_http_code' => $last_http_code,
+            'last_error' => $last_error,
+            'transaction_id' => $transaction_id,
+            'client_reference' => $client_reference
+        ]
+    ];
 }
 
 /**
