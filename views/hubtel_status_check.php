@@ -79,15 +79,26 @@ ob_start();
 ?>
 
 <div class="container-fluid">
-    <div class="d-sm-flex align-items-center justify-content-between mb-4">
-        <div>
-            <h1 class="h3 mb-0 text-gray-800">Hubtel Payment Status Check</h1>
-            <p class="mb-0 text-muted">Verify and update payment transaction statuses</p>
-        </div>
-        <div>
-            <a href="payment_list.php" class="btn btn-secondary btn-sm">
-                <i class="fas fa-arrow-left"></i> Back to Payments
-            </a>
+    <!-- Modern Header with Gradient Background -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-lg" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <div class="card-body text-white py-4">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <h1 class="h2 mb-2 font-weight-bold">
+                                <i class="fas fa-chart-line mr-3"></i>Hubtel Payment Status
+                            </h1>
+                            <p class="mb-0 opacity-75 lead">Real-time payment verification and status management</p>
+                        </div>
+                        <div class="text-right">
+                            <a href="payment_list.php" class="btn btn-light btn-lg shadow-sm">
+                                <i class="fas fa-arrow-left mr-2"></i>Back to Payments
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -101,22 +112,39 @@ ob_start();
     <?php endif; ?>
 
     <!-- Single Status Check -->
-    <div class="card shadow mb-4">
-        <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">Single Transaction Status Check</h6>
+    <div class="card border-0 shadow-lg mb-4">
+        <div class="card-header border-0 py-4" style="background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);">
+            <div class="d-flex align-items-center">
+                <div class="icon-circle bg-white text-primary mr-3" style="width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                    <i class="fas fa-search fa-lg"></i>
+                </div>
+                <div>
+                    <h5 class="m-0 font-weight-bold text-white">Single Transaction Check</h5>
+                    <p class="m-0 text-white opacity-75">Verify individual payment status</p>
+                </div>
+            </div>
         </div>
-        <div class="card-body">
+        <div class="card-body p-4">
             <form method="POST" class="row">
                 <input type="hidden" name="action" value="check_single">
-                <div class="col-md-8 mb-3">
-                    <label for="client_reference" class="form-label">Client Reference</label>
-                    <input type="text" class="form-control" id="client_reference" name="client_reference" 
-                           placeholder="Enter client reference (e.g., PAY-xxxxx)" required>
-                    <small class="form-text text-muted">Enter the client reference from the payment intent</small>
+                <div class="col-md-8 mb-4">
+                    <label for="client_reference" class="form-label font-weight-bold text-dark">Payment Reference</label>
+                    <div class="input-group input-group-lg">
+                        <div class="input-group-prepend">
+                            <span class="input-group-text bg-light border-right-0">
+                                <i class="fas fa-hashtag text-muted"></i>
+                            </span>
+                        </div>
+                        <input type="text" class="form-control border-left-0 shadow-sm" id="client_reference" name="client_reference" 
+                               placeholder="Enter payment reference (e.g., PAY-xxxxx)" required style="font-family: 'Courier New', monospace;">
+                    </div>
+                    <small class="form-text text-muted mt-2">
+                        <i class="fas fa-info-circle mr-1"></i>Enter the client reference from the payment transaction
+                    </small>
                 </div>
-                <div class="col-md-4 mb-3 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-search"></i> Check Status
+                <div class="col-md-4 mb-4 d-flex align-items-end">
+                    <button type="submit" class="btn btn-lg btn-primary shadow-sm w-100" style="background: linear-gradient(45deg, #667eea, #764ba2); border: none;">
+                        <i class="fas fa-search mr-2"></i>Check Status
                     </button>
                 </div>
             </form>
@@ -287,26 +315,43 @@ ob_start();
     </div>
 
     <!-- Bulk Status Check -->
-    <div class="card shadow mb-4">
-        <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">Bulk Status Check</h6>
+    <div class="card border-0 shadow-lg mb-4">
+        <div class="card-header border-0 py-4" style="background: linear-gradient(90deg, #fa709a 0%, #fee140 100%);">
+            <div class="d-flex align-items-center">
+                <div class="icon-circle bg-white text-warning mr-3" style="width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                    <i class="fas fa-sync fa-lg"></i>
+                </div>
+                <div>
+                    <h5 class="m-0 font-weight-bold text-white">Bulk Status Check</h5>
+                    <p class="m-0 text-white opacity-75">Update multiple pending payments</p>
+                </div>
+            </div>
         </div>
-        <div class="card-body">
+        <div class="card-body p-4">
             <form method="POST" class="row">
                 <input type="hidden" name="action" value="bulk_check">
-                <div class="col-md-8 mb-3">
-                    <label for="limit" class="form-label">Number of Records to Check</label>
-                    <select class="form-control" id="limit" name="limit">
-                        <option value="10">10 records</option>
-                        <option value="25" selected>25 records</option>
-                        <option value="50">50 records</option>
-                        <option value="100">100 records</option>
-                    </select>
-                    <small class="form-text text-muted">Check the most recent pending payment intents</small>
+                <div class="col-md-8 mb-4">
+                    <label for="limit" class="form-label font-weight-bold text-dark">Batch Size</label>
+                    <div class="input-group input-group-lg">
+                        <div class="input-group-prepend">
+                            <span class="input-group-text bg-light border-right-0">
+                                <i class="fas fa-list-ol text-muted"></i>
+                            </span>
+                        </div>
+                        <select class="form-control border-left-0 shadow-sm" id="limit" name="limit">
+                            <option value="10">🔢 10 records</option>
+                            <option value="25" selected>🔢 25 records (Recommended)</option>
+                            <option value="50">🔢 50 records</option>
+                            <option value="100">🔢 100 records</option>
+                        </select>
+                    </div>
+                    <small class="form-text text-muted mt-2">
+                        <i class="fas fa-clock mr-1"></i>Process the most recent pending payment transactions
+                    </small>
                 </div>
-                <div class="col-md-4 mb-3 d-flex align-items-end">
-                    <button type="submit" class="btn btn-warning">
-                        <i class="fas fa-sync"></i> Bulk Check
+                <div class="col-md-4 mb-4 d-flex align-items-end">
+                    <button type="submit" class="btn btn-lg btn-warning shadow-sm w-100" style="background: linear-gradient(45deg, #fa709a, #fee140); border: none; color: white;">
+                        <i class="fas fa-sync mr-2"></i>Start Bulk Check
                     </button>
                 </div>
             </form>
@@ -403,55 +448,113 @@ ob_start();
     </div>
 
     <!-- Pending Payment Intents -->
-    <div class="card shadow mb-4">
-        <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">Recent Pending Payment Intents</h6>
+    <div class="card border-0 shadow-lg mb-4">
+        <div class="card-header border-0 py-4" style="background: linear-gradient(90deg, #a8edea 0%, #fed6e3 100%);">
+            <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center">
+                    <div class="icon-circle bg-white text-info mr-3" style="width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-clock fa-lg"></i>
+                    </div>
+                    <div>
+                        <h5 class="m-0 font-weight-bold text-dark">Pending Payments</h5>
+                        <p class="m-0 text-muted">Recent transactions awaiting confirmation</p>
+                    </div>
+                </div>
+                <div class="badge badge-pill badge-primary badge-lg px-3 py-2">
+                    <?= count($pending_intents) ?> pending
+                </div>
+            </div>
         </div>
-        <div class="card-body">
+        <div class="card-body p-0">
             <?php if (empty($pending_intents)): ?>
-                <div class="text-center text-muted py-4">
-                    <i class="fas fa-check-circle fa-3x mb-3"></i>
-                    <p>No pending payment intents found.</p>
+                <div class="text-center py-5">
+                    <div class="mb-4">
+                        <i class="fas fa-check-circle text-success" style="font-size: 4rem;"></i>
+                    </div>
+                    <h4 class="text-success font-weight-bold">All Clear!</h4>
+                    <p class="text-muted lead">No pending payment transactions found.</p>
+                    <div class="mt-4">
+                        <span class="badge badge-success badge-pill px-4 py-2">
+                            <i class="fas fa-thumbs-up mr-2"></i>System Up to Date
+                        </span>
+                    </div>
                 </div>
             <?php else: ?>
                 <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead class="thead-light">
+                    <table class="table table-hover mb-0">
+                        <thead style="background: linear-gradient(90deg, #f8f9fa 0%, #e9ecef 100%);">
                             <tr>
-                                <th>Client Reference</th>
-                                <th>Member</th>
-                                <th>Church</th>
-                                <th>Amount</th>
-                                <th>Description</th>
-                                <th>Created</th>
-                                <th>Actions</th>
+                                <th class="border-0 font-weight-bold text-dark py-3">
+                                    <i class="fas fa-hashtag mr-2 text-primary"></i>Reference
+                                </th>
+                                <th class="border-0 font-weight-bold text-dark py-3">
+                                    <i class="fas fa-user mr-2 text-success"></i>Member
+                                </th>
+                                <th class="border-0 font-weight-bold text-dark py-3">
+                                    <i class="fas fa-church mr-2 text-info"></i>Church
+                                </th>
+                                <th class="border-0 font-weight-bold text-dark py-3">
+                                    <i class="fas fa-money-bill mr-2 text-warning"></i>Amount
+                                </th>
+                                <th class="border-0 font-weight-bold text-dark py-3">
+                                    <i class="fas fa-file-alt mr-2 text-secondary"></i>Description
+                                </th>
+                                <th class="border-0 font-weight-bold text-dark py-3">
+                                    <i class="fas fa-calendar mr-2 text-danger"></i>Created
+                                </th>
+                                <th class="border-0 font-weight-bold text-dark py-3 text-center">
+                                    <i class="fas fa-cogs mr-2 text-dark"></i>Actions
+                                </th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($pending_intents as $intent): ?>
-                            <tr>
-                                <td><code><?= htmlspecialchars($intent['client_reference']) ?></code></td>
-                                <td>
+                            <tr class="border-left-0 border-right-0" style="border-top: 1px solid #f1f3f4;">
+                                <td class="py-3">
+                                    <div class="d-flex align-items-center">
+                                        <div class="bg-primary text-white rounded-circle mr-3" style="width: 8px; height: 8px;"></div>
+                                        <code class="bg-light px-2 py-1 rounded"><?= htmlspecialchars($intent['client_reference']) ?></code>
+                                    </div>
+                                </td>
+                                <td class="py-3">
                                     <?php if ($intent['member_name']): ?>
-                                        <?= htmlspecialchars($intent['member_name']) ?>
-                                        <br><small class="text-muted"><?= htmlspecialchars($intent['crn']) ?></small>
+                                        <div class="font-weight-bold text-dark"><?= htmlspecialchars($intent['member_name']) ?></div>
+                                        <small class="text-muted">
+                                            <i class="fas fa-id-card mr-1"></i><?= htmlspecialchars($intent['crn']) ?>
+                                        </small>
                                     <?php else: ?>
-                                        <span class="text-muted">Unknown Member</span>
+                                        <span class="text-muted font-italic">
+                                            <i class="fas fa-user-slash mr-1"></i>Unknown Member
+                                        </span>
                                     <?php endif; ?>
                                 </td>
-                                <td><?= htmlspecialchars($intent['church_name'] ?? 'Unknown') ?></td>
-                                <td>₵<?= number_format($intent['amount'], 2) ?></td>
-                                <td><?= htmlspecialchars($intent['description']) ?></td>
-                                <td>
-                                    <?= date('M j, Y', strtotime($intent['created_at'])) ?>
-                                    <br><small class="text-muted"><?= date('H:i', strtotime($intent['created_at'])) ?></small>
+                                <td class="py-3">
+                                    <span class="badge badge-info badge-pill px-3 py-2">
+                                        <?= htmlspecialchars($intent['church_name'] ?? 'Unknown') ?>
+                                    </span>
                                 </td>
-                                <td>
+                                <td class="py-3">
+                                    <div class="font-weight-bold text-success h5 mb-0">
+                                        ₵<?= number_format($intent['amount'], 2) ?>
+                                    </div>
+                                </td>
+                                <td class="py-3">
+                                    <div class="text-truncate" style="max-width: 200px;" title="<?= htmlspecialchars($intent['description']) ?>">
+                                        <?= htmlspecialchars($intent['description']) ?>
+                                    </div>
+                                </td>
+                                <td class="py-3">
+                                    <div class="font-weight-bold text-dark"><?= date('M j, Y', strtotime($intent['created_at'])) ?></div>
+                                    <small class="text-muted">
+                                        <i class="fas fa-clock mr-1"></i><?= date('H:i', strtotime($intent['created_at'])) ?>
+                                    </small>
+                                </td>
+                                <td class="py-3 text-center">
                                     <form method="POST" class="d-inline">
                                         <input type="hidden" name="action" value="check_single">
                                         <input type="hidden" name="client_reference" value="<?= htmlspecialchars($intent['client_reference']) ?>">
-                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Check Status">
-                                            <i class="fas fa-sync"></i>
+                                        <button type="submit" class="btn btn-sm btn-primary shadow-sm rounded-pill" title="Check Status">
+                                            <i class="fas fa-sync mr-1"></i>Check
                                         </button>
                                     </form>
                                 </td>
