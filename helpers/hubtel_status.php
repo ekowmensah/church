@@ -67,8 +67,9 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
     }
 
     // Try different possible Hubtel API endpoint formats
-    // Format 1: Direct transaction status (most common)
-    $url = "https://api.hubtel.com/v1/merchantaccount/{$merchant_account}/transactions/{$transaction_id}/status";
+    // The checkoutId from checkout creation is different from transaction ID
+    // Use the checkout status endpoint instead
+    $url = "https://api.hubtel.com/v1/merchantaccount/{$merchant_account}/checkout/{$transaction_id}/status";
     
     // Add client reference as query parameter if provided
     if ($client_reference && $client_reference !== $transaction_id) {
