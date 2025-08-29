@@ -54,14 +54,25 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
     $api_secret = $readEnv('HUBTEL_API_SECRET', 'HUBTEL_API_SECRET');
     $merchant_account = $readEnv('HUBTEL_MERCHANT_ACCOUNT', 'HUBTEL_MERCHANT_ACCOUNT');
     
-    if (!$api_key || !$api_secret || !$merchant_account) {
+    // Debug credentials loading
+    $auth_string = base64_encode($api_key . ':' . $api_secret);
+    file_put_contents(__DIR__.'/../logs/hubtel_debug.log', date('c') . " - Auth Debug: " . json_encode([
+        'api_key_length' => strlen($api_key ?? ''),
+        'api_secret_length' => strlen($api_secret ?? ''),
+        'auth_header' => 'Basic ' . substr($auth_string, 0, 20) . '...',
+        'merchant_account' => $merchant_account
+    ]) . "\n", FILE_APPEND);
+    
+    if (!$api_key || !$api_secret) {
         return [
             'success' => false, 
             'error' => 'Hubtel API credentials not complete',
             'debug' => [
                 'api_key_set' => !empty($api_key),
                 'api_secret_set' => !empty($api_secret),
-                'merchant_account_set' => !empty($merchant_account)
+                'merchant_account_set' => !empty($merchant_account),
+                'api_key_length' => strlen($api_key ?? ''),
+                'api_secret_length' => strlen($api_secret ?? '')
             ]
         ];
     }
