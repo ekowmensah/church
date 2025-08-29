@@ -244,7 +244,8 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
             <div class="card bg-light shadow-sm">
                 <div class="card-body text-center p-2">
                     <div class="text-secondary small">Christian Community</div>
-                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-users mr-1 text-primary"></i><?= number_format($total_members) ?></div>
+                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-users mr-1 text-primary"></i><?= number_format($registered_members) ?></div>
+                    <div class="text-muted small">Total Registered</div>
                 </div>
             </div>
         </div>
