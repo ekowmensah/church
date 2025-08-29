@@ -36,7 +36,7 @@ $success = '';
 
 // Pagination settings
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
-$per_page = 20;
+$per_page = isset($_GET['per_page']) ? max(10, min(500, intval($_GET['per_page']))) : 20;
 $offset = ($page - 1) * $per_page;
 
 // Search and filter parameters
@@ -312,32 +312,48 @@ ob_start();
 
 <?php if ($pending_members && $pending_members->num_rows > 0): ?>
 <div class="card mb-4 shadow">
-    <div class="card-header py-3 d-flex justify-content-between align-items-center">
-        <h6 class="m-0 font-weight-bold text-primary">
-            Pending Members (<?= number_format($total_records) ?> total)
-        </h6>
-        <div class="d-flex align-items-center">
-            <span class="text-muted mr-3">Page <?= $page ?> of <?= $total_pages ?></span>
-            <div class="btn-group" role="group">
-                <button type="button" class="btn btn-sm btn-outline-primary" id="select-all-btn">
-                    <i class="fas fa-check-square"></i> Select All
-                </button>
+    <div class="card-header py-3">
+        <div class="d-flex justify-content-between align-items-center flex-wrap">
+            <div class="d-flex align-items-center mb-2 mb-md-0">
+                <h6 class="m-0 font-weight-bold text-primary mr-3">
+                    Pending Members (<?= number_format($total_records) ?> total)
+                </h6>
+                <div class="d-flex align-items-center">
+                    <label class="mb-0 mr-2 text-muted small">Show:</label>
+                    <select class="form-control form-control-sm mr-2" id="perPageSelect" style="width: auto;">
+                        <option value="10" <?= $per_page == 10 ? 'selected' : '' ?>>10</option>
+                        <option value="20" <?= $per_page == 20 ? 'selected' : '' ?>>20</option>
+                        <option value="50" <?= $per_page == 50 ? 'selected' : '' ?>>50</option>
+                        <option value="100" <?= $per_page == 100 ? 'selected' : '' ?>>100</option>
+                        <option value="200" <?= $per_page == 200 ? 'selected' : '' ?>>200</option>
+                        <option value="500" <?= $per_page == 500 ? 'selected' : '' ?>>500</option>
+                    </select>
+                    <span class="text-muted small">per page</span>
+                </div>
+            </div>
+            <div class="d-flex align-items-center">
+                <span class="text-muted mr-3 small">Page <?= $page ?> of <?= $total_pages ?></span>
                 <div class="btn-group" role="group">
-                    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" 
-                            data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                        Bulk Actions
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="select-all-btn">
+                        <i class="fas fa-check-square"></i> Select All
                     </button>
-                    <div class="dropdown-menu">
-                        <a class="dropdown-item" href="#" id="bulk-register-btn">
-                            <i class="fas fa-user-check"></i> Bulk Register
-                        </a>
-                        <a class="dropdown-item" href="#" id="bulk-resend-btn">
-                            <i class="fas fa-paper-plane"></i> Resend Links
-                        </a>
-                        <div class="dropdown-divider"></div>
-                        <a class="dropdown-item text-danger" href="#" id="bulk-delete-btn">
-                            <i class="fas fa-trash"></i> Delete Selected
-                        </a>
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" 
+                                data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                            Bulk Actions
+                        </button>
+                        <div class="dropdown-menu">
+                            <a class="dropdown-item" href="#" id="bulk-register-btn">
+                                <i class="fas fa-user-check"></i> Bulk Register
+                            </a>
+                            <a class="dropdown-item" href="#" id="bulk-resend-btn">
+                                <i class="fas fa-paper-plane"></i> Resend Links
+                            </a>
+                            <div class="dropdown-divider"></div>
+                            <a class="dropdown-item text-danger" href="#" id="bulk-delete-btn">
+                                <i class="fas fa-trash"></i> Delete Selected
+                            </a>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -428,14 +444,26 @@ ob_start();
     <div class="card-footer">
         <nav aria-label="Pending members pagination">
             <ul class="pagination justify-content-center mb-0">
+<?php
+                // Build query parameters for pagination links
+                $query_params = [];
+                if ($search) $query_params[] = 'search=' . urlencode($search);
+                if ($church_filter) $query_params[] = 'church_id=' . $church_filter;
+                if ($class_filter) $query_params[] = 'class_id=' . $class_filter;
+                if ($date_from) $query_params[] = 'date_from=' . $date_from;
+                if ($date_to) $query_params[] = 'date_to=' . $date_to;
+                if ($per_page != 20) $query_params[] = 'per_page=' . $per_page;
+                $query_string = $query_params ? '&' . implode('&', $query_params) : '';
+                ?>
+                
                 <?php if ($page > 1): ?>
                     <li class="page-item">
-                        <a class="page-link" href="?page=1<?= $search ? '&search=' . urlencode($search) : '' ?><?= $church_filter ? '&church_id=' . $church_filter : '' ?><?= $class_filter ? '&class_id=' . $class_filter : '' ?><?= $date_from ? '&date_from=' . $date_from : '' ?><?= $date_to ? '&date_to=' . $date_to : '' ?>">
+                        <a class="page-link" href="?page=1<?= $query_string ?>">
                             <i class="fas fa-angle-double-left"></i>
                         </a>
                     </li>
                     <li class="page-item">
-                        <a class="page-link" href="?page=<?= $page - 1 ?><?= $search ? '&search=' . urlencode($search) : '' ?><?= $church_filter ? '&church_id=' . $church_filter : '' ?><?= $class_filter ? '&class_id=' . $class_filter : '' ?><?= $date_from ? '&date_from=' . $date_from : '' ?><?= $date_to ? '&date_to=' . $date_to : '' ?>">
+                        <a class="page-link" href="?page=<?= $page - 1 ?><?= $query_string ?>">
                             <i class="fas fa-angle-left"></i>
                         </a>
                     </li>
@@ -448,7 +476,7 @@ ob_start();
                 for ($i = $start_page; $i <= $end_page; $i++):
                 ?>
                     <li class="page-item <?= $i == $page ? 'active' : '' ?>">
-                        <a class="page-link" href="?page=<?= $i ?><?= $search ? '&search=' . urlencode($search) : '' ?><?= $church_filter ? '&church_id=' . $church_filter : '' ?><?= $class_filter ? '&class_id=' . $class_filter : '' ?><?= $date_from ? '&date_from=' . $date_from : '' ?><?= $date_to ? '&date_to=' . $date_to : '' ?>">
+                        <a class="page-link" href="?page=<?= $i ?><?= $query_string ?>">
                             <?= $i ?>
                         </a>
                     </li>
@@ -456,12 +484,12 @@ ob_start();
                 
                 <?php if ($page < $total_pages): ?>
                     <li class="page-item">
-                        <a class="page-link" href="?page=<?= $page + 1 ?><?= $search ? '&search=' . urlencode($search) : '' ?><?= $church_filter ? '&church_id=' . $church_filter : '' ?><?= $class_filter ? '&class_id=' . $class_filter : '' ?><?= $date_from ? '&date_from=' . $date_from : '' ?><?= $date_to ? '&date_to=' . $date_to : '' ?>">
+                        <a class="page-link" href="?page=<?= $page + 1 ?><?= $query_string ?>">
                             <i class="fas fa-angle-right"></i>
                         </a>
                     </li>
                     <li class="page-item">
-                        <a class="page-link" href="?page=<?= $total_pages ?><?= $search ? '&search=' . urlencode($search) : '' ?><?= $church_filter ? '&church_id=' . $church_filter : '' ?><?= $class_filter ? '&class_id=' . $class_filter : '' ?><?= $date_from ? '&date_from=' . $date_from : '' ?><?= $date_to ? '&date_to=' . $date_to : '' ?>">
+                        <a class="page-link" href="?page=<?= $total_pages ?><?= $query_string ?>">
                             <i class="fas fa-angle-double-right"></i>
                         </a>
                     </li>
@@ -577,6 +605,24 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize bulk action buttons state
     updateBulkActionButtons();
+    
+    // Per page selector functionality
+    const perPageSelect = document.getElementById('perPageSelect');
+    if (perPageSelect) {
+        perPageSelect.addEventListener('change', function() {
+            // Get current URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            
+            // Set the new per_page value
+            urlParams.set('per_page', this.value);
+            
+            // Remove page parameter to reset to page 1
+            urlParams.delete('page');
+            
+            // Redirect with new parameters
+            window.location.href = window.location.pathname + '?' + urlParams.toString();
+        });
+    }
     
     // Individual resend link functionality
     document.querySelectorAll('.resend-link-btn').forEach(function(btn) {
