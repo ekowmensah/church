@@ -101,6 +101,14 @@ $params = [
 
 $result = create_hubtel_checkout($params);
 if ($result['success']) {
+    // Debug log what we're getting from Hubtel
+    $debugData = [
+        'client_reference' => $clientReference,
+        'hubtel_transaction_id' => $result['transaction_id'] ?? null,
+        'full_result' => $result
+    ];
+    file_put_contents(__DIR__.'/../logs/hubtel_debug.log', date('c') . " - Payment Creation Debug (v1): " . json_encode($debugData) . "\n", FILE_APPEND);
+    
     require_once __DIR__.'/../models/PaymentIntent.php';
     $intentModel = new PaymentIntent();
     $status = 'Pending';
