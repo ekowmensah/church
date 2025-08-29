@@ -128,24 +128,38 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
         
         if (!$curl_error && $http_code === 200) {
             $data = $response ? json_decode($response, true) : null;
-            if ($data && isset($data['responseCode']) && $data['responseCode'] === '0000') {
-                // Parse the new Hubtel API response structure
-                $transactionData = $data['data'] ?? [];
+            
+            // Log the full response for debugging
+            file_put_contents(__DIR__.'/../logs/hubtel_debug.log', date('c') . " - Full API Response: " . json_encode($data, JSON_PRETTY_PRINT) . "\n", FILE_APPEND);
+            
+            if ($data) {
+                // Handle different response structures
+                $transactionData = $data['data'] ?? $data;
+                $responseCode = $data['responseCode'] ?? $data['ResponseCode'] ?? null;
+                
+                // Extract status from various possible locations
+                $status = $transactionData['status'] ?? 
+                         $transactionData['Status'] ?? 
+                         $transactionData['transactionStatus'] ?? 
+                         $data['status'] ?? 
+                         'unknown';
+                
                 return [
                     'success' => true,
                     'data' => $data,
                     'http_code' => $http_code,
-                    'status' => $transactionData['status'] ?? 'unknown',
-                    'amount' => $transactionData['amount'] ?? null,
-                    'reference' => $transactionData['clientReference'] ?? null,
-                    'transaction_id' => $transactionData['transactionId'] ?? null,
+                    'status' => $status,
+                    'amount' => $transactionData['amount'] ?? $transactionData['Amount'] ?? null,
+                    'reference' => $transactionData['clientReference'] ?? $transactionData['ClientReference'] ?? null,
+                    'transaction_id' => $transactionData['transactionId'] ?? $transactionData['TransactionId'] ?? null,
                     'external_transaction_id' => $transactionData['externalTransactionId'] ?? null,
                     'payment_method' => $transactionData['paymentMethod'] ?? null,
                     'charges' => $transactionData['charges'] ?? null,
                     'amount_after_charges' => $transactionData['amountAfterCharges'] ?? null,
                     'date' => $transactionData['date'] ?? null,
                     'endpoint_used' => $url,
-                    'auth_method_used' => $auth_header
+                    'auth_method_used' => $auth_header,
+                    'response_code' => $responseCode
                 ];
             }
         }
@@ -211,10 +225,14 @@ function check_transaction_by_reference($conn, $client_reference, $transaction_i
             // Update local status if different
             $hubtel_status = $status_result['status'];
             $local_status = match (strtolower($hubtel_status)) {
-                'success', 'completed' => 'Completed',
-                'failed', 'cancelled' => 'Failed',
+                'success', 'completed', 'successful', 'paid' => 'Completed',
+                'failed', 'cancelled', 'canceled', 'declined', 'error' => 'Failed',
+                'pending', 'processing', 'initiated', 'unknown' => 'Pending',
                 default => 'Pending',
             };
+            
+            // Log status mapping for debugging
+            file_put_contents(__DIR__.'/../logs/hubtel_debug.log', date('c') . " - Status Mapping: '{$hubtel_status}' -> '{$local_status}' (was: '{$intent['status']}')\n", FILE_APPEND);
             
             if ($local_status !== $intent['status']) {
                 $update_stmt = $conn->prepare("UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE client_reference = ?");
