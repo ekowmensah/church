@@ -119,8 +119,9 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
         $last_response = $response;
         $last_http_code = $http_code;
         
-        // Log each auth attempt
+        // Log each auth attempt with raw response
         file_put_contents(__DIR__.'/../logs/hubtel_debug.log', date('c') . " - Auth Method: " . substr($auth_header, 0, 30) . "... HTTP: $http_code\n", FILE_APPEND);
+        file_put_contents(__DIR__.'/../logs/hubtel_debug.log', date('c') . " - Raw Response: " . $response . "\n", FILE_APPEND);
         
         if (!$curl_error && $http_code === 200) {
             $data = $response ? json_decode($response, true) : null;
