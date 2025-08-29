@@ -86,66 +86,80 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
         $url .= "?clientReference=" . urlencode($client_reference);
     }
     
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    // Try different authentication methods since transaction status API may differ from checkout API
+    $auth_methods = [
+        // Method 1: Basic auth with API key:secret
         'Authorization: Basic ' . base64_encode($api_key . ':' . $api_secret),
-        'Accept: application/json'
-    ]);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'Church Management System/1.0');
+        // Method 2: Basic auth with merchant account:API key (some Hubtel APIs use this)
+        'Authorization: Basic ' . base64_encode($merchant_account . ':' . $api_key),
+        // Method 3: API key as bearer token
+        'Authorization: Bearer ' . $api_key
+    ];
     
-    $response = curl_exec($ch);
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curl_error = curl_errno($ch) ? curl_error($ch) : null;
-    curl_close($ch);
+    $last_response = null;
+    $last_http_code = null;
     
-    if ($curl_error) {
-        return [
-            'success' => false,
-            'error' => 'Network error: ' . $curl_error,
-            'debug' => [
-                'url' => $url,
-                'http_code' => $http_code,
-                'curl_error' => $curl_error
-            ]
-        ];
+    foreach ($auth_methods as $auth_header) {
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            $auth_header,
+            'Accept: application/json'
+        ]);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Church Management System/1.0');
+        
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_error = curl_errno($ch) ? curl_error($ch) : null;
+        curl_close($ch);
+        
+        // Store for debugging
+        $last_response = $response;
+        $last_http_code = $http_code;
+        
+        // Log each auth attempt
+        file_put_contents(__DIR__.'/../logs/hubtel_debug.log', date('c') . " - Auth Method: " . substr($auth_header, 0, 30) . "... HTTP: $http_code\n", FILE_APPEND);
+        
+        if (!$curl_error && $http_code === 200) {
+            $data = $response ? json_decode($response, true) : null;
+            if ($data && isset($data['responseCode']) && $data['responseCode'] === '0000') {
+                // Parse the new Hubtel API response structure
+                $transactionData = $data['data'] ?? [];
+                return [
+                    'success' => true,
+                    'data' => $data,
+                    'http_code' => $http_code,
+                    'status' => $transactionData['status'] ?? 'unknown',
+                    'amount' => $transactionData['amount'] ?? null,
+                    'reference' => $transactionData['clientReference'] ?? null,
+                    'transaction_id' => $transactionData['transactionId'] ?? null,
+                    'external_transaction_id' => $transactionData['externalTransactionId'] ?? null,
+                    'payment_method' => $transactionData['paymentMethod'] ?? null,
+                    'charges' => $transactionData['charges'] ?? null,
+                    'amount_after_charges' => $transactionData['amountAfterCharges'] ?? null,
+                    'date' => $transactionData['date'] ?? null,
+                    'endpoint_used' => $url,
+                    'auth_method_used' => $auth_header
+                ];
+            }
+        }
     }
     
-    $data = $response ? json_decode($response, true) : null;
-    
-    if ($http_code === 200 && $data && isset($data['responseCode']) && $data['responseCode'] === '0000') {
-        // Parse the new Hubtel API response structure
-        $transactionData = $data['data'] ?? [];
-        return [
-            'success' => true,
-            'data' => $data,
-            'http_code' => $http_code,
-            'status' => $transactionData['status'] ?? 'unknown',
-            'amount' => $transactionData['amount'] ?? null,
-            'reference' => $transactionData['clientReference'] ?? null,
-            'transaction_id' => $transactionData['transactionId'] ?? null,
-            'external_transaction_id' => $transactionData['externalTransactionId'] ?? null,
-            'payment_method' => $transactionData['paymentMethod'] ?? null,
-            'charges' => $transactionData['charges'] ?? null,
-            'amount_after_charges' => $transactionData['amountAfterCharges'] ?? null,
-            'date' => $transactionData['date'] ?? null,
-            'endpoint_used' => $url
-        ];
-    } else {
-        return [
-            'success' => false,
-            'error' => $data['message'] ?? 'HTTP ' . $http_code . ' error from Hubtel API',
-            'debug' => [
-                'url' => $url,
-                'http_code' => $http_code,
-                'response' => $response,
-                'data' => $data,
-                'response_code' => $data['responseCode'] ?? null
-            ]
-        ];
-    }
+    // If all auth methods failed
+    return [
+        'success' => false,
+        'error' => 'All authentication methods failed. HTTP ' . $last_http_code . ' error from Hubtel API',
+        'debug' => [
+            'url' => $url,
+            'last_http_code' => $last_http_code,
+            'last_response' => $last_response,
+            'auth_methods_tried' => count($auth_methods),
+            'transaction_id' => $transaction_id,
+            'client_reference' => $client_reference
+        ]
+    ];
 }
 
 /**
