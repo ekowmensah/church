@@ -112,11 +112,18 @@ function create_hubtel_checkout($params) {
     }
     $json = $response ? json_decode($response, true) : null;
     if ($http_code === 200 && $json && isset($json['data']['checkoutUrl'])) {
+        // Try different possible transaction ID field names from Hubtel
+        $transaction_id = $json['data']['transactionId'] 
+            ?? $json['data']['TransactionId'] 
+            ?? $json['data']['invoiceToken'] 
+            ?? $json['data']['InvoiceToken']
+            ?? null;
+            
         return [
             'success' => true, 
             'checkoutUrl' => $json['data']['checkoutUrl'],
-            'transaction_id' => $json['data']['transactionId'] ?? null,
-            'invoice_token' => $json['data']['invoiceToken'] ?? null,
+            'transaction_id' => $transaction_id,
+            'invoice_token' => $json['data']['invoiceToken'] ?? $json['data']['InvoiceToken'] ?? null,
             'data' => $json['data']
         ];
     } else {

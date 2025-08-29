@@ -39,6 +39,7 @@ $status = match (strtolower($hubtelStatus)) {
     default => 'Pending',
 };
 $clientReference = $data['Data']['ClientReference'] ?? '';
+$hubtelTransactionId = $data['Data']['TransactionId'] ?? $data['Data']['transactionId'] ?? null;
 
 $intentModel = new PaymentIntent();
 $paymentModel = new Payment();
@@ -50,6 +51,14 @@ if ($clientReference) {
         log_debug('Found PaymentIntent: '.json_encode($intent));
         $intentModel->updateStatus($conn, $clientReference, $status);
         log_debug("Updated PaymentIntent status to $status");
+        
+        // Update hubtel_transaction_id if we received one and don't have it stored
+        if ($hubtelTransactionId && (!isset($intent['hubtel_transaction_id']) || empty($intent['hubtel_transaction_id']) || $intent['hubtel_transaction_id'] === $clientReference)) {
+            $update_txn_stmt = $conn->prepare("UPDATE payment_intents SET hubtel_transaction_id = ? WHERE client_reference = ?");
+            $update_txn_stmt->bind_param('ss', $hubtelTransactionId, $clientReference);
+            $update_txn_stmt->execute();
+            log_debug("Updated hubtel_transaction_id to: $hubtelTransactionId");
+        }
         if ($status === 'Completed') {
             require_once __DIR__.'/../includes/sms.php';
             
