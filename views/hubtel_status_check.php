@@ -163,6 +163,53 @@ ob_start();
                                     <strong>Transaction ID:</strong><br>
                                     <code><?= htmlspecialchars($check_result['transaction_id'] ?? 'N/A') ?></code>
                                 </p>
+                                
+                                <?php if (isset($check_result['hubtel_data']['data'])): 
+                                    $hubtel_data = $check_result['hubtel_data']['data']; ?>
+                                <div class="mt-3">
+                                    <h6 class="text-muted">Payment Details</h6>
+                                    <table class="table table-sm table-borderless">
+                                        <?php if (isset($hubtel_data['amount'])): ?>
+                                        <tr>
+                                            <td><strong>Amount:</strong></td>
+                                            <td>GHS <?= number_format($hubtel_data['amount'], 2) ?></td>
+                                        </tr>
+                                        <?php endif; ?>
+                                        
+                                        <?php if (isset($hubtel_data['charges']) && $hubtel_data['charges'] > 0): ?>
+                                        <tr>
+                                            <td><strong>Charges:</strong></td>
+                                            <td>GHS <?= number_format($hubtel_data['charges'], 2) ?></td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Net Amount:</strong></td>
+                                            <td>GHS <?= number_format($hubtel_data['amountAfterCharges'] ?? $hubtel_data['amount'], 2) ?></td>
+                                        </tr>
+                                        <?php endif; ?>
+                                        
+                                        <?php if (isset($hubtel_data['paymentMethod'])): ?>
+                                        <tr>
+                                            <td><strong>Payment Method:</strong></td>
+                                            <td><?= ucfirst(str_replace('mobilemoney', 'Mobile Money', $hubtel_data['paymentMethod'])) ?></td>
+                                        </tr>
+                                        <?php endif; ?>
+                                        
+                                        <?php if (isset($hubtel_data['externalTransactionId'])): ?>
+                                        <tr>
+                                            <td><strong>Provider Ref:</strong></td>
+                                            <td><code><?= htmlspecialchars($hubtel_data['externalTransactionId']) ?></code></td>
+                                        </tr>
+                                        <?php endif; ?>
+                                        
+                                        <?php if (isset($hubtel_data['date'])): ?>
+                                        <tr>
+                                            <td><strong>Payment Date:</strong></td>
+                                            <td><?= date('M j, Y H:i', strtotime($hubtel_data['date'])) ?></td>
+                                        </tr>
+                                        <?php endif; ?>
+                                    </table>
+                                </div>
+                                <?php endif; ?>
                                 <?php if (isset($check_result['status_updated']) && $check_result['status_updated']): ?>
                                 <div class="alert alert-info alert-sm">
                                     <i class="fas fa-sync-alt"></i> Status updated from 
