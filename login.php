@@ -734,11 +734,40 @@ if (file_exists(__DIR__.'/uploads/logo_6866e9048867c.jpg')) {
                 });
             });
 
-            // Force CRN input to uppercase on input and before submit
+            // Force CRN input to uppercase and auto-format with dashes
             var crnInput = document.getElementById('crn');
             if (crnInput) {
-                crnInput.addEventListener('input', function() {
-                    this.value = this.value.toUpperCase();
+                crnInput.addEventListener('input', function(e) {
+                    let value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); // Remove all non-alphanumeric
+                    let formatted = '';
+                    
+                    // Format: FMC-K0101-KM (3-5-2 pattern)
+                    if (value.length > 0) {
+                        formatted = value.substring(0, 3); // First 3 chars (FMC)
+                        if (value.length > 3) {
+                            formatted += '-' + value.substring(3, 8); // Next 5 chars with dash (K0101)
+                            if (value.length > 8) {
+                                formatted += '-' + value.substring(8, 10); // Last 2 chars with dash (KM)
+                            }
+                        }
+                    }
+                    
+                    this.value = formatted;
+                });
+                
+                // Handle backspace to allow proper deletion of dashes
+                crnInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Backspace') {
+                        let cursorPos = this.selectionStart;
+                        let value = this.value;
+                        
+                        // If cursor is right after a dash, move cursor back one more position
+                        if (cursorPos > 0 && value[cursorPos - 1] === '-') {
+                            setTimeout(() => {
+                                this.setSelectionRange(cursorPos - 1, cursorPos - 1);
+                            }, 0);
+                        }
+                    }
                 });
             }
             // Form submission with loading state
