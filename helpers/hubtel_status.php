@@ -199,8 +199,8 @@ function check_transaction_by_reference($conn, $client_reference, $transaction_i
         }
     }
     
-    // First try the Hubtel API if we have a proper transaction ID
-    if ($transaction_id !== $client_reference) {
+    // Try the Hubtel API if we have a transaction ID
+    if ($transaction_id) {
         $status_result = check_hubtel_transaction_status($transaction_id, $client_reference);
         
         if ($status_result['success']) {
