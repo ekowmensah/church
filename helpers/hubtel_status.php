@@ -77,14 +77,12 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
         ];
     }
 
-    // Use Hubtel's checkout status endpoint instead of transaction status
-    // The checkout API uses a different endpoint structure
-    $url = "https://api.hubtel.com/v2/checkout/invoice/status";
+    // Use the same API domain as the working checkout endpoint
+    // The checkout uses payproxyapi.hubtel.com, so status should too
+    $url = "https://payproxyapi.hubtel.com/items/status/{$client_reference}";
     
-    // Add clientReference as query parameter
-    if ($client_reference) {
-        $url .= "?clientReference=" . urlencode($client_reference);
-    }
+    // Alternative: try query parameter approach if path doesn't work
+    // $url = "https://payproxyapi.hubtel.com/items/status?clientReference=" . urlencode($client_reference);
     
     // Try different authentication methods since transaction status API may differ from checkout API
     $auth_methods = [
