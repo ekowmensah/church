@@ -77,11 +77,11 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
         ];
     }
 
-    // Use the correct Hubtel transaction status endpoint
-    // Based on documentation, use a generic transaction ID in path and client reference as query param
-    $url = "https://api-txnstatus.hubtel.com/transactions/status";
+    // Use Hubtel's checkout status endpoint instead of transaction status
+    // The checkout API uses a different endpoint structure
+    $url = "https://api.hubtel.com/v2/checkout/invoice/status";
     
-    // Add clientReference as query parameter (mandatory per documentation)
+    // Add clientReference as query parameter
     if ($client_reference) {
         $url .= "?clientReference=" . urlencode($client_reference);
     }
