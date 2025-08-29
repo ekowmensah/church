@@ -443,6 +443,9 @@ ob_start();
                     <a href="member_upload.php" class="btn btn-outline-light mr-3">
                         <i class="fas fa-file-upload mr-2"></i>Bulk Upload
                     </a>
+                    <a href="member_upload_enhanced.php" class="btn btn-outline-light mr-3">
+                        <i class="fas fa-file-upload mr-2"></i>Enhanced Bulk Upload
+                    </a>
                     <a href="adherent_list.php" class="btn btn-outline-light mr-3">
                         <i class="fas fa-user-tag mr-2"></i>Adherents
                     </a>
