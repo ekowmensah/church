@@ -471,6 +471,7 @@ ob_start();
     </div>
     <?php endif; ?>
 </div>
+
 <?php endif; ?>
 
 
@@ -548,11 +549,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const selected = Array.from(memberCheckboxes).filter(cb => cb.checked);
         if (selected.length === 0) return;
         
-        if (confirm(`Are you sure you want to bulk register ${selected.length} selected members?`)) {
-            const ids = selected.map(cb => cb.value);
-            // TODO: Implement bulk registration functionality
-            alert('Bulk registration functionality will be implemented in the next phase.');
-        }
+        // Show bulk registration modal
+        showBulkRegistrationModal(selected.map(cb => cb.value));
     });
     
     document.getElementById('bulk-resend-btn')?.addEventListener('click', function(e) {
@@ -665,6 +663,82 @@ document.addEventListener('DOMContentLoaded', function() {
             alert('Error deleting members. Please try again.');
         });
     }
+    
+    // Bulk registration modal functions
+    function showBulkRegistrationModal(memberIds) {
+        document.getElementById('selectedMemberCount').textContent = memberIds.length;
+        $('#bulkRegistrationModal').modal('show');
+        
+        // Store member IDs for later use
+        window.selectedMemberIds = memberIds;
+    }
+    
+    // Confirm bulk registration
+    document.getElementById('confirmBulkRegistration')?.addEventListener('click', function() {
+        if (!window.selectedMemberIds || window.selectedMemberIds.length === 0) {
+            alert('No members selected');
+            return;
+        }
+        
+        const form = document.getElementById('bulkRegistrationForm');
+        const formData = new FormData(form);
+        const defaults = {};
+        
+        // Convert form data to object
+        for (let [key, value] of formData.entries()) {
+            defaults[key] = value;
+        }
+        
+        // Show progress
+        document.getElementById('bulkRegistrationProgress').style.display = 'block';
+        const progressBar = document.querySelector('#bulkRegistrationProgress .progress-bar');
+        progressBar.style.width = '50%';
+        
+        // Disable button
+        const btn = this;
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+        btn.disabled = true;
+        
+        // Send request
+        fetch('ajax_bulk_register_members.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                member_ids: window.selectedMemberIds,
+                defaults: defaults
+            })
+        })
+        .then(resp => resp.json())
+        .then(data => {
+            progressBar.style.width = '100%';
+            
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                document.getElementById('bulkRegistrationProgress').style.display = 'none';
+                progressBar.style.width = '0%';
+                
+                if (data.success) {
+                    alert(data.message);
+                    $('#bulkRegistrationModal').modal('hide');
+                    
+                    // Refresh the page to update the list
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            }, 1000);
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            document.getElementById('bulkRegistrationProgress').style.display = 'none';
+            progressBar.style.width = '0%';
+            alert('Network error occurred. Please try again.');
+        });
+    });
 });
 </script>
 
@@ -705,5 +779,167 @@ document.addEventListener('DOMContentLoaded', function() {
 </style>
 
 <?php
+// Capture modal HTML separately like visitor_list.php
+ob_start();
+?>
+<!-- Bulk Registration Modal -->
+<div class="modal fade" id="bulkRegistrationModal" tabindex="-1" role="dialog" aria-labelledby="bulkRegistrationModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="bulkRegistrationModalLabel">
+                    <i class="fas fa-users"></i> Bulk Member Registration
+                </h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>Selected Members:</strong> <span id="selectedMemberCount">0</span> members will be registered with the default values below.
+                </div>
+                
+                <form id="bulkRegistrationForm">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="bulk_gender">Default Gender</label>
+                                <select class="form-control" id="bulk_gender" name="gender">
+                                    <option value="Male">Male</option>
+                                    <option value="Female">Female</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="bulk_dob">Default Date of Birth</label>
+                                <input type="date" class="form-control" id="bulk_dob" name="dob" value="1990-01-01">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="bulk_marital_status">Default Marital Status</label>
+                                <select class="form-control" id="bulk_marital_status" name="marital_status">
+                                    <option value="Single">Single</option>
+                                    <option value="Married">Married</option>
+                                    <option value="Divorced">Divorced</option>
+                                    <option value="Widowed">Widowed</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="bulk_region">Default Region</label>
+                                <select class="form-control" id="bulk_region" name="region">
+                                    <option value="Greater Accra">Greater Accra</option>
+                                    <option value="Ashanti">Ashanti</option>
+                                    <option value="Central">Central</option>
+                                    <option value="Eastern">Eastern</option>
+                                    <option value="Northern">Northern</option>
+                                    <option value="Upper East">Upper East</option>
+                                    <option value="Upper West">Upper West</option>
+                                    <option value="Volta">Volta</option>
+                                    <option value="Western">Western</option>
+                                    <option value="Brong Ahafo">Brong Ahafo</option>
+                                    <option value="Western North">Western North</option>
+                                    <option value="Ahafo">Ahafo</option>
+                                    <option value="Bono">Bono</option>
+                                    <option value="Bono East">Bono East</option>
+                                    <option value="Oti">Oti</option>
+                                    <option value="Savannah">Savannah</option>
+                                    <option value="North East">North East</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="bulk_employment_status">Default Employment Status</label>
+                                <select class="form-control" id="bulk_employment_status" name="employment_status">
+                                    <option value="Formal">Formal</option>
+                                    <option value="Informal">Informal</option>
+                                    <option value="Self Employed">Self Employed</option>
+                                    <option value="Retired">Retired</option>
+                                    <option value="Student">Student</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="bulk_membership_status">Default Membership Status</label>
+                                <select class="form-control" id="bulk_membership_status" name="membership_status">
+                                    <option value="Full Member">Full Member</option>
+                                    <option value="Catechumen">Catechumen</option>
+                                    <option value="Adherent">Adherent</option>
+                                    <option value="Juvenile">Juvenile</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="bulk_baptized">Default Baptized Status</label>
+                                <select class="form-control" id="bulk_baptized" name="baptized">
+                                    <option value="Yes">Yes</option>
+                                    <option value="No">No</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="bulk_confirmed">Default Confirmed Status</label>
+                                <select class="form-control" id="bulk_confirmed" name="confirmed">
+                                    <option value="Yes">Yes</option>
+                                    <option value="No">No</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="bulk_password">Default Password</label>
+                                <input type="text" class="form-control" id="bulk_password" name="password" value="123456">
+                                <small class="form-text text-muted">All members will receive this password via SMS</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="bulk_place_of_birth">Default Place of Birth</label>
+                                <input type="text" class="form-control" id="bulk_place_of_birth" name="place_of_birth" value="Ghana">
+                            </div>
+                        </div>
+                    </div>
+                </form>
+                
+                <div id="bulkRegistrationProgress" class="mt-3" style="display: none;">
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <div class="text-center mt-2">
+                        <small class="text-muted">Processing bulk registration...</small>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="confirmBulkRegistration">
+                    <i class="fas fa-user-check"></i> Register Selected Members
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<?php
+$modal_html = ob_get_clean();
 $page_content = ob_get_clean();
 include '../includes/layout.php';
