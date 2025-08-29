@@ -428,62 +428,37 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
         <div class="col-lg-6 mb-2">
             <div class="card shadow-sm mb-4">
                 <div class="card-header bg-gradient-primary text-white font-weight-bold py-2 d-flex align-items-center">
-                    <i class="fas fa-chart-pie mr-2"></i> Monthly Payment Summary
+                    <i class="fas fa-list-alt mr-2"></i> Payment Type Breakdown
                 </div>
-                <div class="card-body p-3">
-                    <div class="row text-center">
-                        <div class="col-6 mb-3">
-                            <div class="border-right">
-                                <h4 class="text-primary font-weight-bold">₵<?= number_format($payments_this_month, 2) ?></h4>
-                                <small class="text-muted">This Month</small>
-                            </div>
-                        </div>
-                        <div class="col-6 mb-3">
-                            <h4 class="text-secondary font-weight-bold">₵<?= number_format($payments_last_month, 2) ?></h4>
-                            <small class="text-muted">Last Month</small>
-                        </div>
-                    </div>
-                    
-                    <div class="progress mb-3" style="height: 8px;">
-                        <?php 
-                        $progress_percentage = $payments_last_month > 0 ? min(100, ($payments_this_month / $payments_last_month) * 100) : 100;
-                        $progress_color = $progress_percentage >= 100 ? 'success' : ($progress_percentage >= 75 ? 'warning' : 'danger');
-                        ?>
-                        <div class="progress-bar bg-<?= $progress_color ?>" style="width: <?= $progress_percentage ?>%"></div>
-                    </div>
-                    
-                    <div class="row text-center">
-                        <div class="col-4">
-                            <div class="text-success font-weight-bold">₵<?= number_format($payments_today, 2) ?></div>
-                            <small class="text-muted">Today</small>
-                        </div>
-                        <div class="col-4">
-                            <div class="text-info font-weight-bold">₵<?= number_format($payments_this_week, 2) ?></div>
-                            <small class="text-muted">This Week</small>
-                        </div>
-                        <div class="col-4">
-                            <div class="text-warning font-weight-bold">₵<?= number_format($avg_payment_per_member, 2) ?></div>
-                            <small class="text-muted">Avg/Member</small>
-                        </div>
-                    </div>
-                    
-                    <div class="mt-3 text-center">
-                        <?php if ($progress_percentage >= 100): ?>
-                            <span class="badge badge-success px-3 py-2">
-                                <i class="fas fa-arrow-up mr-1"></i>
-                                <?= number_format($progress_percentage - 100, 1) ?>% above last month
-                            </span>
-                        <?php elseif ($progress_percentage >= 75): ?>
-                            <span class="badge badge-warning px-3 py-2">
-                                <i class="fas fa-minus mr-1"></i>
-                                <?= number_format(100 - $progress_percentage, 1) ?>% below last month
-                            </span>
-                        <?php else: ?>
-                            <span class="badge badge-danger px-3 py-2">
-                                <i class="fas fa-arrow-down mr-1"></i>
-                                <?= number_format(100 - $progress_percentage, 1) ?>% below last month
-                            </span>
-                        <?php endif; ?>
+                <div class="card-body p-2">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover table-bordered mb-0">
+                            <thead class="thead-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Payment Type</th>
+                                    <th>Count</th>
+                                    <th>Total Amount (₵)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php $i=1; $grand_total=0; $grand_count=0; while($type = $all_payment_types->fetch_assoc()): $grand_total += $type['total']; $grand_count += $type['count']; ?>
+                                <tr>
+                                    <td><?= $i++ ?></td>
+                                    <td><?= htmlspecialchars($type['name']) ?></td>
+                                    <td><span class="badge badge-info p-2 px-3 font-weight-bold"><?= $type['count'] ?></span></td>
+                                    <td><span class="badge badge-success p-2 px-3 font-weight-bold">₵ <?= number_format($type['total'],2) ?></span></td>
+                                </tr>
+                                <?php endwhile; ?>
+                            </tbody>
+                            <tfoot>
+                                <tr class="font-weight-bold bg-light">
+                                    <td colspan="2" class="text-right">Grand Total</td>
+                                    <td><?= $grand_count ?></td>
+                                    <td>₵<?= number_format($grand_total, 2) ?></td>
+                                </tr>
+                            </tfoot>
+                        </table>
                     </div>
                 </div>
             </div>
