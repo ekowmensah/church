@@ -112,8 +112,9 @@ function create_hubtel_checkout($params) {
     }
     $json = $response ? json_decode($response, true) : null;
     if ($http_code === 200 && $json && isset($json['data']['checkoutUrl'])) {
-        // Try different possible transaction ID field names from Hubtel
-        $transaction_id = $json['data']['transactionId'] 
+        // Use checkoutId as transaction ID since Hubtel doesn't provide transactionId at checkout creation
+        $transaction_id = $json['data']['checkoutId'] 
+            ?? $json['data']['transactionId'] 
             ?? $json['data']['TransactionId'] 
             ?? $json['data']['invoiceToken'] 
             ?? $json['data']['InvoiceToken']
