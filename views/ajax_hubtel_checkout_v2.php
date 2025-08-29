@@ -63,9 +63,10 @@ if ($result['success']) {
     // This is important to track the payment status later
     try {
         require_once __DIR__.'/../config/database.php';
-        $stmt = $conn->prepare('INSERT INTO payment_intents (client_reference, amount, description, customer_name, customer_phone, checkout_id, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())');
+        $stmt = $conn->prepare('INSERT INTO payment_intents (client_reference, hubtel_transaction_id, amount, description, customer_name, customer_phone, checkout_id, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())');
         $checkoutId = $result['checkoutId'] ?? '';
-        $stmt->bind_param('sdssss', $clientReference, $amount, $description, $customerName, $customerPhone, $checkoutId);
+        $hubtelTransactionId = $result['transaction_id'] ?? null;
+        $stmt->bind_param('ssdsss', $clientReference, $hubtelTransactionId, $amount, $description, $customerName, $customerPhone, $checkoutId);
         $stmt->execute();
     } catch (Exception $e) {
         // Log error but continue - don't block payment flow due to DB issues
