@@ -2,7 +2,7 @@
 // Model for payment_intents table
 class PaymentIntent {
     public function add($conn, $data) {
-        $fields = ['client_reference', 'member_id', 'church_id', 'amount', 'description', 'customer_name', 'customer_phone', 'status', 'payment_type_id', 'payment_period', 'payment_period_description', 'bulk_breakdown'];
+        $fields = ['client_reference', 'hubtel_transaction_id', 'member_id', 'church_id', 'amount', 'description', 'customer_name', 'customer_phone', 'status', 'payment_type_id', 'payment_period', 'payment_period_description', 'bulk_breakdown'];
         $columns = [];
         $placeholders = [];
         $values = [];

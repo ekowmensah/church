@@ -107,6 +107,7 @@ if ($result['success']) {
     if ($bulk_items && is_array($bulk_items) && count($bulk_items) > 0) {
         $intentModel->add($conn, [
             'client_reference' => $clientReference,
+            'hubtel_transaction_id' => $result['transaction_id'],
             'member_id' => $member_id,
             'amount' => $amount,
             'description' => $description,
@@ -122,6 +123,7 @@ if ($result['success']) {
     } else {
         $intentModel->add($conn, [
             'client_reference' => $clientReference,
+            'hubtel_transaction_id' => $result['transaction_id'],
             'member_id' => $member_id,
             'amount' => $amount,
             'description' => $description,
