@@ -281,16 +281,6 @@ ob_start();
                     </div>
                 </div>
                 
-                <?php if (isset($check_result['hubtel_data'])): ?>
-                <div class="card border-secondary">
-                    <div class="card-header">
-                        <i class="fas fa-code"></i> Hubtel API Response Data
-                    </div>
-                    <div class="card-body">
-                        <pre class="bg-light p-3 rounded"><code><?= htmlspecialchars(json_encode($check_result['hubtel_data'], JSON_PRETTY_PRINT)) ?></code></pre>
-                    </div>
-                </div>
-                <?php endif; ?>
                 
                 <!-- Success/Failure Summary -->
                 <?php if ($check_result['success']): ?>
