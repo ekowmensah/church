@@ -66,6 +66,15 @@ if ($result['success']) {
         $stmt = $conn->prepare('INSERT INTO payment_intents (client_reference, hubtel_transaction_id, amount, description, customer_name, customer_phone, checkout_id, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())');
         $checkoutId = $result['checkoutId'] ?? '';
         $hubtelTransactionId = $result['transaction_id'] ?? null;
+        
+        // Debug log what we're getting from Hubtel
+        $debugData = [
+            'client_reference' => $clientReference,
+            'hubtel_transaction_id' => $hubtelTransactionId,
+            'full_result' => $result
+        ];
+        file_put_contents(__DIR__.'/../logs/hubtel_debug.log', date('c') . " - Payment Creation Debug: " . json_encode($debugData) . "\n", FILE_APPEND);
+        
         $stmt->bind_param('ssdsss', $clientReference, $hubtelTransactionId, $amount, $description, $customerName, $customerPhone, $checkoutId);
         $stmt->execute();
     } catch (Exception $e) {
