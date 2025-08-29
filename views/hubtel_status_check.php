@@ -123,10 +123,117 @@ ob_start();
             
             <?php if ($check_result && isset($_POST['action']) && $_POST['action'] === 'check_single'): ?>
             <div class="mt-4">
-                <h6>Status Check Result:</h6>
-                <div class="bg-light p-3 rounded">
-                    <pre><?= htmlspecialchars(json_encode($check_result, JSON_PRETTY_PRINT)) ?></pre>
+                <h6 class="mb-3">Status Check Result:</h6>
+                <?php
+                $status_color = 'secondary';
+                $status_icon = 'fas fa-question-circle';
+                
+                if (isset($check_result['current_status'])) {
+                    switch (strtolower($check_result['current_status'])) {
+                        case 'completed':
+                            $status_color = 'success';
+                            $status_icon = 'fas fa-check-circle';
+                            break;
+                        case 'failed':
+                            $status_color = 'danger';
+                            $status_icon = 'fas fa-times-circle';
+                            break;
+                        case 'pending':
+                            $status_color = 'warning';
+                            $status_icon = 'fas fa-clock';
+                            break;
+                    }
+                }
+                
+                $method_color = ($check_result['method'] ?? '') === 'hubtel_api' ? 'primary' : 'info';
+                $method_icon = ($check_result['method'] ?? '') === 'hubtel_api' ? 'fas fa-cloud' : 'fas fa-database';
+                ?>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card border-<?= $status_color ?> mb-3">
+                            <div class="card-header bg-<?= $status_color ?> text-white">
+                                <i class="<?= $status_icon ?>"></i> Payment Status
+                            </div>
+                            <div class="card-body">
+                                <h5 class="card-title text-<?= $status_color ?>">
+                                    <?= htmlspecialchars($check_result['current_status'] ?? 'Unknown') ?>
+                                </h5>
+                                <p class="card-text">
+                                    <strong>Transaction ID:</strong><br>
+                                    <code><?= htmlspecialchars($check_result['transaction_id'] ?? 'N/A') ?></code>
+                                </p>
+                                <?php if (isset($check_result['status_updated']) && $check_result['status_updated']): ?>
+                                <div class="alert alert-info alert-sm">
+                                    <i class="fas fa-sync-alt"></i> Status updated from 
+                                    <strong><?= htmlspecialchars($check_result['old_status']) ?></strong> to 
+                                    <strong><?= htmlspecialchars($check_result['new_status']) ?></strong>
+                                </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="card border-<?= $method_color ?> mb-3">
+                            <div class="card-header bg-<?= $method_color ?> text-white">
+                                <i class="<?= $method_icon ?>"></i> Check Method
+                            </div>
+                            <div class="card-body">
+                                <h6 class="card-title text-<?= $method_color ?>">
+                                    <?php
+                                    $method_display = [
+                                        'hubtel_api' => 'Hubtel API',
+                                        'database_only' => 'Database Only'
+                                    ];
+                                    echo $method_display[$check_result['method'] ?? 'unknown'] ?? 'Unknown';
+                                    ?>
+                                </h6>
+                                <?php if (isset($check_result['note'])): ?>
+                                <p class="card-text text-muted">
+                                    <i class="fas fa-info-circle"></i> <?= htmlspecialchars($check_result['note']) ?>
+                                </p>
+                                <?php endif; ?>
+                                
+                                <?php if (isset($check_result['api_error'])): ?>
+                                <div class="alert alert-warning alert-sm">
+                                    <i class="fas fa-exclamation-triangle"></i> 
+                                    <strong>API Note:</strong> <?= htmlspecialchars($check_result['api_error']) ?>
+                                </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+                
+                <?php if (isset($check_result['hubtel_data'])): ?>
+                <div class="card border-secondary">
+                    <div class="card-header">
+                        <i class="fas fa-code"></i> Hubtel API Response Data
+                    </div>
+                    <div class="card-body">
+                        <pre class="bg-light p-3 rounded"><code><?= htmlspecialchars(json_encode($check_result['hubtel_data'], JSON_PRETTY_PRINT)) ?></code></pre>
+                    </div>
+                </div>
+                <?php endif; ?>
+                
+                <!-- Success/Failure Summary -->
+                <?php if ($check_result['success']): ?>
+                <div class="alert alert-success mt-3">
+                    <i class="fas fa-check-circle"></i> 
+                    <strong>Check Completed Successfully</strong>
+                    <?php if (isset($check_result['status_updated']) && $check_result['status_updated']): ?>
+                    - Status was updated in the database
+                    <?php else: ?>
+                    - No status changes needed
+                    <?php endif; ?>
+                </div>
+                <?php else: ?>
+                <div class="alert alert-danger mt-3">
+                    <i class="fas fa-times-circle"></i> 
+                    <strong>Check Failed:</strong> <?= htmlspecialchars($check_result['error'] ?? 'Unknown error') ?>
+                </div>
+                <?php endif; ?>
             </div>
             <?php endif; ?>
         </div>
