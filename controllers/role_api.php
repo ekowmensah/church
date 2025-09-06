@@ -4,11 +4,7 @@ session_start();
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/RoleController.php';
 header('Content-Type: application/json');
-// DEBUG: Dump session for troubleshooting
-if (isset($_GET['debug_session'])) {
-    echo json_encode(['_SESSION' => $_SESSION, 'session_id' => session_id()]);
-    exit;
-}
+
 
 // Authentication and robust super admin bypass
 require_once __DIR__ . '/../helpers/auth.php';
