@@ -4,7 +4,7 @@ global $conn;
 //if (session_status() === PHP_SESSION_NONE) session_start();
 
 // Super admin detection
-$is_super_admin = isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3;
+$is_super_admin = isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1;
 
 // Fetch menu items from DB
 $stmt = $conn->prepare("SELECT * FROM menu_items WHERE is_active = 1 ORDER BY menu_group, sort_order");
