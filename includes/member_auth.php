@@ -1,6 +1,6 @@
 <?php
 // member_auth.php: Protects member-only pages and invalidates session if member is deleted or inactive
-//if (session_status() === PHP_SESSION_NONE) session_start();
+if (session_status() === PHP_SESSION_NONE) session_start();
 require_once __DIR__.'/../config/config.php';
 global $conn;
 // Allow super admin to bypass member session check

@@ -1,5 +1,5 @@
 <?php
-//if (session_status() === PHP_SESSION_NONE) session_start();
+if (session_status() === PHP_SESSION_NONE) session_start();
 require_once __DIR__.'/../includes/member_auth.php';
 if (!isset($_SESSION['member_id'])) {
     header('Location: ' . BASE_URL . '/login.php');
