@@ -33,9 +33,9 @@ $can_export = $is_super_admin || has_permission('export_member_list');
 $can_view = true; // Already validated above
 
 // Sorting parameters
-$allowed_sort_fields = ['crn', 'last_name', 'first_name', 'phone', 'church_name', 'class_name', 'day_born', 'gender'];
+$allowed_sort_fields = ['crn', 'last_name', 'first_name', 'phone', 'church_name', 'class_name', 'day_born', 'gender', 'status'];
 $sort_field = isset($_GET['sort']) && in_array($_GET['sort'], $allowed_sort_fields) ? $_GET['sort'] : 'last_name';
-$sort_direction = isset($_GET['dir']) && $_GET['dir'] === 'desc' ? 'DESC' : 'ASC';
+$sort_direction = isset($_GET['order']) && $_GET['order'] === 'desc' ? 'DESC' : 'ASC';
 
 // Build WHERE clause with filters - EXCLUDE adherents (moved before export)
 $where_conditions = ["m.status = 'active'", "m.membership_status != 'Adherent'"];
@@ -217,29 +217,36 @@ $total_pages = ($page_size === 'all') ? 1 : ceil($total_members / $page_size);
 $offset = ($page_size === 'all') ? 0 : ($page - 1) * $page_size;
 $limit_clause = ($page_size === 'all') ? '' : "LIMIT $page_size OFFSET $offset";
 
-// Main query to get members and Sunday school members combined
+// Main query to get members and Sunday school members combined with proper sorting
 $sql = "
-    SELECT 
-        m.id, m.crn, m.last_name, m.first_name, m.middle_name, m.phone, m.gender, 
-        m.day_born, m.photo, m.membership_status, m.status, m.confirmed, m.baptized,
-        c.name as church_name, cl.name as class_name, 'member' as member_type
-    FROM members m
-    LEFT JOIN churches c ON m.church_id = c.id
-    LEFT JOIN bible_classes cl ON m.class_id = cl.id
-    WHERE $where_clause
-    
-    UNION ALL
-    
-    SELECT 
-        s.id, s.srn as crn, s.last_name, s.first_name, s.middle_name, s.contact as phone, s.gender,
-        s.dayborn as day_born, s.photo, NULL as membership_status, 'active' as status, 
-        'no' as confirmed, 'no' as baptized, c.name as church_name, cl.name as class_name, 'sunday_school' as member_type
-    FROM sunday_school s
-    LEFT JOIN churches c ON s.church_id = c.id
-    LEFT JOIN bible_classes cl ON s.class_id = cl.id
-    WHERE 1=1
-    
-    ORDER BY $sort_field $sort_direction, last_name ASC, first_name ASC
+    SELECT * FROM (
+        SELECT 
+            m.id, m.crn, m.last_name, m.first_name, m.middle_name, m.phone, m.gender, 
+            m.day_born, m.photo, m.membership_status, m.status, m.confirmed, m.baptized,
+            c.name as church_name, cl.name as class_name, 'member' as member_type,
+            CASE 
+                WHEN LOWER(m.confirmed) = 'yes' AND LOWER(m.baptized) = 'yes' THEN 'Full Member'
+                WHEN LOWER(m.confirmed) = 'yes' OR LOWER(m.baptized) = 'yes' THEN 'Catechumen'
+                ELSE 'No Status'
+            END as computed_status
+        FROM members m
+        LEFT JOIN churches c ON m.church_id = c.id
+        LEFT JOIN bible_classes cl ON m.class_id = cl.id
+        WHERE $where_clause
+        
+        UNION ALL
+        
+        SELECT 
+            s.id, s.srn as crn, s.last_name, s.first_name, s.middle_name, s.contact as phone, s.gender,
+            s.dayborn as day_born, s.photo, NULL as membership_status, 'active' as status, 
+            'no' as confirmed, 'no' as baptized, c.name as church_name, cl.name as class_name, 'sunday_school' as member_type,
+            'Juvenile' as computed_status
+        FROM sunday_school s
+        LEFT JOIN churches c ON s.church_id = c.id
+        LEFT JOIN bible_classes cl ON s.class_id = cl.id
+        WHERE 1=1
+    ) as combined_results
+    ORDER BY " . ($sort_field === 'status' ? 'computed_status' : $sort_field) . " $sort_direction, last_name ASC, first_name ASC
     $limit_clause
 ";
 
