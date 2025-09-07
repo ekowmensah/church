@@ -36,25 +36,24 @@ $can_view = true; // Already validated above
 
 // --- COMPREHENSIVE DASHBOARD DATA QUERIES ---
 
-// Member Statistics - New Formula Implementation
-// Base counts for calculations
-$total_baptized_confirmed = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE LOWER(confirmed) = 'yes' AND LOWER(baptized) = 'yes'")->fetch_assoc()['cnt'];
-$total_baptized_or_confirmed = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE LOWER(confirmed) = 'yes' OR LOWER(baptized) = 'yes'")->fetch_assoc()['cnt'];
+// Member Statistics - Strict Classification Based on Confirmed/Baptized Status
+// Only count members with proper confirmed/baptized values set
+
+// Get adherents (explicitly marked as adherents)
 $adherent = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE membership_status = 'Adherent'")->fetch_assoc()['cnt'];
-$no_status = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE NOT (LOWER(confirmed) = 'yes' OR LOWER(baptized) = 'yes') AND (membership_status IS NULL OR membership_status != 'Adherent')")->fetch_assoc()['cnt'];
+
+// Get junior members (Sunday School)
 $junior_members = $conn->query("SELECT COUNT(*) as cnt FROM sunday_school")->fetch_assoc()['cnt'];
 
-// Apply new formulas:
-// Full Members = Total (Baptized + Confirmed) - Total (Adherents + No Status)
-$full_member = $total_baptized_confirmed - ($adherent + $no_status);
-$full_member = max(0, $full_member); // Ensure non-negative
+// Full Members: Both baptized AND confirmed (excluding adherents)
+$full_member = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE LOWER(confirmed) = 'yes' AND LOWER(baptized) = 'yes' AND (membership_status IS NULL OR membership_status != 'Adherent')")->fetch_assoc()['cnt'];
 
-// Catechumens = Total (Baptized/Confirmed) - Total (Adherents + No Status) - Full Members
-$catechumen = $total_baptized_or_confirmed - ($adherent + $no_status) - $full_member;
-$catechumen = max(0, $catechumen); // Ensure non-negative
+// Catechumens: Either baptized OR confirmed (but not both) (excluding adherents and full members)
+$catechumen = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE (LOWER(confirmed) = 'yes' OR LOWER(baptized) = 'yes') AND NOT (LOWER(confirmed) = 'yes' AND LOWER(baptized) = 'yes') AND (membership_status IS NULL OR membership_status != 'Adherent')")->fetch_assoc()['cnt'];
 
-// Total Members = Full Members + Catechumens + Junior Members + Adherents + No Status
-$total_members = $full_member + $catechumen + $junior_members + $adherent + $no_status;
+// Total Members = Full Members + Catechumens + Junior Members + Adherents
+// Members without proper confirmed/baptized values are considered "created but not registered yet"
+$total_members = $full_member + $catechumen + $junior_members + $adherent;
 $registered_members = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'active'")->fetch_assoc()['cnt'];
 $pending_registration = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'pending'")->fetch_assoc()['cnt'];
 $members_no_payments = $conn->query("SELECT COUNT(*) as cnt FROM members m LEFT JOIN payments p ON m.id = p.member_id WHERE p.id IS NULL AND m.status = 'active'")->fetch_assoc()['cnt'];

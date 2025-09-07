@@ -1,4 +1,5 @@
 <?php
+session_start();
 ob_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../includes/admin_auth.php'; // restrict to admin roles

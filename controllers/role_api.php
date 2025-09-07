@@ -5,19 +5,38 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/RoleController.php';
 header('Content-Type: application/json');
 
+// Debug session information for troubleshooting
+$debug_info = [
+    'session_id' => session_id(),
+    'session_data' => $_SESSION ?? [],
+    'user_id' => $_SESSION['user_id'] ?? 'not_set',
+    'role_id' => $_SESSION['role_id'] ?? 'not_set',
+    'member_id' => $_SESSION['member_id'] ?? 'not_set'
+];
 
 // Authentication and robust super admin bypass
 require_once __DIR__ . '/../helpers/auth.php';
 require_once __DIR__ . '/../helpers/permissions.php';
 if (!is_logged_in()) {
     http_response_code(401);
-    echo json_encode(['success' => false, 'error' => 'Unauthorized - Please log in']);
+    echo json_encode([
+        'success' => false, 
+        'error' => 'Unauthorized - Please log in',
+        'debug' => $debug_info
+    ]);
     exit;
 }
 $is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
 if (!$is_super_admin && !has_permission('manage_roles')) {
     http_response_code(403);
-    echo json_encode(['success' => false, 'error' => 'Forbidden - Insufficient permissions']);
+    echo json_encode([
+        'success' => false, 
+        'error' => 'Forbidden - Insufficient permissions',
+        'debug' => array_merge($debug_info, [
+            'is_super_admin' => $is_super_admin,
+            'has_manage_roles_permission' => has_permission('manage_roles')
+        ])
+    ]);
     exit;
 }
 
