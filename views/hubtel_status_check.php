@@ -401,7 +401,13 @@ ob_start();
                                 <?php foreach ($check_result['details'] as $detail): ?>
                                 <tr>
                                     <td><code><?= htmlspecialchars($detail['client_reference']) ?></code></td>
-                                    <td><?= date('M j, Y H:i', strtotime($detail['created_at'])) ?></td>
+                                    <td>
+                                        <?php if (!empty($detail['created_at']) && $detail['created_at'] !== '0000-00-00 00:00:00'): ?>
+                                            <?= date('M j, Y H:i', strtotime($detail['created_at'])) ?>
+                                        <?php else: ?>
+                                            <span class="text-muted font-italic">No Date</span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td>
                                         <?php if ($detail['result']['success']): ?>
                                             <?php if ($detail['result']['status_updated'] ?? false): ?>
@@ -534,10 +540,16 @@ ob_start();
                                     </div>
                                 </td>
                                 <td class="py-3">
-                                    <div class="font-weight-bold text-dark"><?= date('M j, Y', strtotime($intent['created_at'])) ?></div>
-                                    <small class="text-muted">
-                                        <i class="fas fa-clock mr-1"></i><?= date('H:i', strtotime($intent['created_at'])) ?>
-                                    </small>
+                                    <?php if (!empty($intent['created_at']) && $intent['created_at'] !== '0000-00-00 00:00:00'): ?>
+                                        <div class="font-weight-bold text-dark"><?= date('M j, Y', strtotime($intent['created_at'])) ?></div>
+                                        <small class="text-muted">
+                                            <i class="fas fa-clock mr-1"></i><?= date('H:i', strtotime($intent['created_at'])) ?>
+                                        </small>
+                                    <?php else: ?>
+                                        <div class="text-muted font-italic">
+                                            <i class="fas fa-question-circle mr-1"></i>No Date
+                                        </div>
+                                    <?php endif; ?>
                                 </td>
                                 <td class="py-3 text-center">
                                     <form method="POST" class="d-inline">
