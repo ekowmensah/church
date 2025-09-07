@@ -686,7 +686,7 @@ ob_start();
                                         $status_class = 'warning';
                                         $show_info = true;
                                     } else {
-                                        $status = 'Catechumen';
+                                        $status = 'No Status';
                                         $status_class = 'secondary';
                                         $show_info = true;
                                     }
