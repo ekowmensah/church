@@ -1,4 +1,4 @@
-<FilesMatch "(_api\\.php$|role_api\\.php$)">
+<FilesMatch "api\\.php$">
     Allow from all
 </FilesMatch>
 Deny from all
