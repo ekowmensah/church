@@ -69,7 +69,7 @@ $AJAX_BASE = isset($parsed['path']) ? rtrim($parsed['path'], '/') : '';
 <script>
 const BASE_URL = "<?= $AJAX_BASE ?>";
 function fetchRoles() {
-    fetch(BASE_URL + '/controllers/role_api.php')
+    fetch(BASE_URL + '/views/role_api.php')
         .then(res => res.json())
         .then(data => {
             const tbody = document.getElementById('rolesTbody');
@@ -100,7 +100,7 @@ function fetchRoles() {
 function deleteRole(id, btn) {
     if (!confirm('Are you sure you want to delete this role?')) return;
     btn.disabled = true;
-    fetch(BASE_URL + '/controllers/role_api.php', {
+    fetch(BASE_URL + '/views/role_api.php', {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
         body: 'action=delete&id=' + encodeURIComponent(id)
@@ -142,8 +142,8 @@ function loadRolePermissions(roleId) {
     
     // Load both permissions and categories
     Promise.all([
-        fetch(BASE_URL + '/controllers/role_permission_api.php?role_id=' + encodeURIComponent(roleId)),
-        fetch(BASE_URL + '/controllers/permission_categories_api.php')
+        fetch(BASE_URL + '/views/role_permission_api.php?role_id=' + encodeURIComponent(roleId)),
+        fetch(BASE_URL + '/views/permission_categories_api.php')
     ])
     .then(responses => Promise.all(responses.map(r => r.json())))
     .then(([permData, catData]) => {
@@ -373,7 +373,7 @@ $('#savePermissionsBtn').on('click', function() {
     const roleId = $('#permissionsRoleId').val();
     const formData = $('#rolePermissionsForm').serialize() + '&role_id=' + encodeURIComponent(roleId);
     $('#savePermissionsBtn').prop('disabled', true).text('Saving...');
-    fetch(BASE_URL + '/controllers/role_permission_api.php', {
+    fetch(BASE_URL + '/views/role_permission_api.php', {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
         body: formData
