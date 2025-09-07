@@ -62,9 +62,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get pending payment intents for display
+// Get pending payment intents for display - debug the created_at issue
 $pending_stmt = $conn->prepare("
-    SELECT pi.*, m.crn, CONCAT(m.first_name, ' ', m.last_name) as member_name, c.name as church_name
+    SELECT pi.*, m.crn, CONCAT(m.first_name, ' ', m.last_name) as member_name, c.name as church_name,
+           pi.created_at as debug_created_at,
+           UNIX_TIMESTAMP(pi.created_at) as created_timestamp
     FROM payment_intents pi 
     LEFT JOIN members m ON pi.member_id = m.id 
     LEFT JOIN churches c ON pi.church_id = c.id 
@@ -74,6 +76,13 @@ $pending_stmt = $conn->prepare("
 ");
 $pending_stmt->execute();
 $pending_intents = $pending_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+// Debug: Log the first few records to see what's in created_at
+if (!empty($pending_intents)) {
+    error_log("DEBUG: First payment intent created_at: " . print_r($pending_intents[0]['created_at'], true));
+    error_log("DEBUG: First payment intent debug_created_at: " . print_r($pending_intents[0]['debug_created_at'], true));
+    error_log("DEBUG: First payment intent timestamp: " . print_r($pending_intents[0]['created_timestamp'], true));
+}
 
 ob_start();
 ?>

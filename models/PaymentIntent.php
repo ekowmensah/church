@@ -2,7 +2,7 @@
 // Model for payment_intents table
 class PaymentIntent {
     public function add($conn, $data) {
-        $fields = ['client_reference', 'hubtel_transaction_id', 'member_id', 'church_id', 'amount', 'description', 'customer_name', 'customer_phone', 'status', 'payment_type_id', 'payment_period', 'payment_period_description', 'bulk_breakdown'];
+        $fields = ['client_reference', 'hubtel_transaction_id', 'member_id', 'church_id', 'amount', 'description', 'customer_name', 'customer_phone', 'status', 'payment_type_id', 'payment_period', 'payment_period_description', 'bulk_breakdown', 'created_at'];
         $columns = [];
         $placeholders = [];
         $values = [];
@@ -12,6 +12,9 @@ class PaymentIntent {
             $placeholders[] = '?';
             if (isset($data[$field])) {
                 $values[] = $data[$field];
+            } elseif ($field === 'created_at') {
+                // Set current timestamp for created_at if not provided
+                $values[] = date('Y-m-d H:i:s');
             } else {
                 $values[] = null;
             }
