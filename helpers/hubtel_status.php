@@ -56,7 +56,14 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
     
     // Debug credentials loading
     $auth_string = base64_encode($api_key . ':' . $api_secret);
-    file_put_contents(__DIR__.'/../logs/hubtel_debug.log', date('c') . " - Auth Debug: " . json_encode([
+    
+    // Ensure logs directory exists
+    $logs_dir = __DIR__.'/../logs';
+    if (!is_dir($logs_dir)) {
+        mkdir($logs_dir, 0755, true);
+    }
+    
+    file_put_contents($logs_dir.'/hubtel_debug.log', date('c') . " - Auth Debug: " . json_encode([
         'api_key_length' => strlen($api_key ?? ''),
         'api_secret_length' => strlen($api_secret ?? ''),
         'auth_header' => 'Basic ' . substr($auth_string, 0, 20) . '...',
@@ -123,14 +130,14 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
         $last_http_code = $http_code;
         
         // Log each auth attempt with raw response
-        file_put_contents(__DIR__.'/../logs/hubtel_debug.log', date('c') . " - Auth Method: " . substr($auth_header, 0, 30) . "... HTTP: $http_code\n", FILE_APPEND);
-        file_put_contents(__DIR__.'/../logs/hubtel_debug.log', date('c') . " - Raw Response: " . $response . "\n", FILE_APPEND);
+        file_put_contents($logs_dir.'/hubtel_debug.log', date('c') . " - Auth Method: " . substr($auth_header, 0, 30) . "... HTTP: $http_code\n", FILE_APPEND);
+        file_put_contents($logs_dir.'/hubtel_debug.log', date('c') . " - Raw Response: " . $response . "\n", FILE_APPEND);
         
         if (!$curl_error && $http_code === 200) {
             $data = $response ? json_decode($response, true) : null;
             
             // Log the full response for debugging
-            file_put_contents(__DIR__.'/../logs/hubtel_debug.log', date('c') . " - Full API Response: " . json_encode($data, JSON_PRETTY_PRINT) . "\n", FILE_APPEND);
+            file_put_contents($logs_dir.'/hubtel_debug.log', date('c') . " - Full API Response: " . json_encode($data, JSON_PRETTY_PRINT) . "\n", FILE_APPEND);
             
             if ($data) {
                 // Handle different response structures
