@@ -67,28 +67,38 @@ if ($payment_type_id && $amount > 0) {
     if ($stmt->execute()) {
         $payment_id = $conn->insert_id;
         
-        // Check if this is a harvest payment (payment_type_id = 4) and send special SMS
-        if ($payment_type_id == 4) {
-            require_once __DIR__.'/../includes/payment_sms_template.php';
-            require_once __DIR__.'/../includes/sms.php';
+        // Send SMS for all payment types
+        require_once __DIR__.'/../includes/payment_sms_template.php';
+        require_once __DIR__.'/../includes/sms.php';
+        
+        // Get member details
+        $member_stmt = $conn->prepare('SELECT first_name, last_name, phone, church_id FROM members WHERE id = ?');
+        $member_stmt->bind_param('i', $member_id);
+        $member_stmt->execute();
+        $member_data = $member_stmt->get_result()->fetch_assoc();
+        $member_stmt->close();
+        
+        if ($member_data && !empty($member_data['phone'])) {
+            // Get church name
+            $church_stmt = $conn->prepare('SELECT name FROM churches WHERE id = ?');
+            $church_stmt->bind_param('i', $church_id);
+            $church_stmt->execute();
+            $church_data = $church_stmt->get_result()->fetch_assoc();
+            $church_stmt->close();
             
-            // Get member details
-            $member_stmt = $conn->prepare('SELECT first_name, last_name, phone, church_id FROM members WHERE id = ?');
-            $member_stmt->bind_param('i', $member_id);
-            $member_stmt->execute();
-            $member_data = $member_stmt->get_result()->fetch_assoc();
-            $member_stmt->close();
+            // Get payment type name
+            $type_stmt = $conn->prepare('SELECT name FROM payment_types WHERE id = ?');
+            $type_stmt->bind_param('i', $payment_type_id);
+            $type_stmt->execute();
+            $type_data = $type_stmt->get_result()->fetch_assoc();
+            $payment_type_name = $type_data['name'] ?? 'Payment';
+            $type_stmt->close();
             
-            if ($member_data && !empty($member_data['phone'])) {
-                // Get church name
-                $church_stmt = $conn->prepare('SELECT name FROM churches WHERE id = ?');
-                $church_stmt->bind_param('i', $church_id);
-                $church_stmt->execute();
-                $church_data = $church_stmt->get_result()->fetch_assoc();
-                $church_stmt->close();
-                
-                $member_name = trim($member_data['first_name'] . ' ' . $member_data['last_name']);
-                $church_name = $church_data['name'] ?? 'Freeman Methodist Church - KM';
+            $member_name = trim($member_data['first_name'] . ' ' . $member_data['last_name']);
+            $church_name = $church_data['name'] ?? 'Freeman Methodist Church - KM';
+            
+            // Check if this is a harvest payment (payment_type_id = 4) and send special SMS
+            if ($payment_type_id == 4) {
                 $yearly_total = get_member_yearly_harvest_total($conn, $member_id);
                 
                 // Generate harvest SMS message
@@ -105,6 +115,15 @@ if ($payment_type_id && $amount > 0) {
                 
                 // Log SMS attempt
                 error_log('Harvest SMS sent to ' . $member_data['phone'] . ': ' . json_encode($sms_result));
+            } else {
+                // Generate regular payment SMS message
+                $sms_message = get_payment_sms_message($member_name, $amount, $payment_type_name, $date);
+                
+                // Send SMS
+                $sms_result = log_sms($member_data['phone'], $sms_message, $payment_id, 'payment');
+                
+                // Log SMS attempt
+                error_log('Payment SMS sent to ' . $member_data['phone'] . ' for ' . $payment_type_name . ': ' . json_encode($sms_result));
             }
         }
         
