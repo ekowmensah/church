@@ -172,15 +172,11 @@ try {
                         
                         $response = [
                             'SessionId' => $session_id,
-                            'Type' => 'AddToCart',
-                            'Message' => "Thank you! You will receive a payment prompt for GHS " . number_format($amount, 2) . " for $selected_type.",
-                            'Item' => [
-                                'ItemName' => $selected_type,
-                                'Qty' => 1,
-                                'Price' => $amount
-                            ],
-                            'Label' => 'Payment Processing',
-                            'DataType' => 'display',
+                            'Type' => 'response',
+                            'Message' => "Amount: GHS " . number_format($amount, 2) . " for $selected_type\n\nPlease enter your CRN (Church Registration Number) for proper record keeping:",
+                            'Label' => 'Enter CRN',
+                            'ClientState' => "crn_{$type_num}_{$amount}",
+                            'DataType' => 'input',
                             'FieldType' => 'text'
                         ];
                     } else {
@@ -193,6 +189,54 @@ try {
                             'DataType' => 'input',
                             'FieldType' => 'decimal'
                         ];
+                    }
+                    break;
+                    
+                case (str_starts_with($client_state, 'crn_') ? $client_state : ''):
+                    // User entered CRN
+                    $parts = explode('_', $client_state);
+                    if (count($parts) >= 3) {
+                        $type_num = $parts[1];
+                        $amount = floatval($parts[2]);
+                        $crn = trim($message);
+                        
+                        $donation_types = [
+                            '1' => 'General Offering',
+                            '2' => 'Tithe', 
+                            '3' => 'Harvest',
+                            '4' => 'Building Fund',
+                            '5' => 'Other'
+                        ];
+                        $selected_type = $donation_types[$type_num] ?? 'Donation';
+                        
+                        if (!empty($crn)) {
+                            // Include CRN in item description for webhook processing
+                            $item_description = "$selected_type - CRN: $crn";
+                            
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'AddToCart',
+                                'Message' => "Thank you! You will receive a payment prompt for GHS " . number_format($amount, 2) . " for $selected_type (CRN: $crn).",
+                                'Item' => [
+                                    'ItemName' => $item_description,
+                                    'Qty' => 1,
+                                    'Price' => $amount
+                                ],
+                                'Label' => 'Payment Processing',
+                                'DataType' => 'display',
+                                'FieldType' => 'text'
+                            ];
+                        } else {
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'response',
+                                'Message' => "CRN is required. Please enter your CRN (Church Registration Number):",
+                                'Label' => 'Enter CRN',
+                                'ClientState' => $client_state,
+                                'DataType' => 'input',
+                                'FieldType' => 'text'
+                            ];
+                        }
                     }
                     break;
                     

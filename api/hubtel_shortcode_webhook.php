@@ -140,19 +140,63 @@ try {
         $member_id = $member_info['id'];
         $church_id = $member_info['church_id'];
         log_debug("Member found by phone: ID $member_id, Name: {$member_info['full_name']}, CRN: {$member_info['crn']}");
-    } else {
-        log_debug("No member found with phone: $phone");
-        
-        // Step 2: Try to extract CRN from payment reference/description
-        $crn_pattern = '/([A-Z]{3}-?[A-Z0-9]{4,5}-?[A-Z]{2})/i';
-        $combined_text = $reference . ' ' . $description;
-        
-        if (preg_match($crn_pattern, $combined_text, $matches)) {
-            $extracted_crn = strtoupper($matches[1]);
-            log_debug("CRN extracted from reference: $extracted_crn");
+    }
+    
+    // Step 2: Extract payment type and CRN from payment items
+    $payment_type_id = 1; // Default to Tithe
+    $crn_extracted = null;
+    $donation_type = 'General Offering';
+    
+    // Payment type mapping from USSD to database IDs
+    $type_mapping = [
+        'General Offering' => 3,  // Offertory
+        'Tithe' => 1,            // Tithe
+        'Harvest' => 4,          // harvest
+        'Building Fund' => 3,    // Offertory (fallback)
+        'Other' => 3             // Offertory (fallback)
+    ];
+    
+    // Extract payment type and CRN from items
+    if (!empty($items)) {
+        foreach ($items as $item) {
+            $item_name = $item['Name'] ?? '';
+            log_debug("Processing item: $item_name");
             
+            // Extract donation type (before " - CRN:")
+            if (preg_match('/^([^-]+?)(?:\s*-\s*CRN:|$)/', $item_name, $type_matches)) {
+                $donation_type = trim($type_matches[1]);
+                if (isset($type_mapping[$donation_type])) {
+                    $payment_type_id = $type_mapping[$donation_type];
+                    log_debug("Payment type mapped: '$donation_type' -> ID $payment_type_id");
+                }
+            }
+            
+            // Extract CRN
+            if (preg_match('/CRN:\s*([A-Z0-9]{3,10})/i', $item_name, $crn_matches)) {
+                $crn_extracted = strtoupper(trim($crn_matches[1]));
+                log_debug("CRN extracted from item name '$item_name': $crn_extracted");
+                break;
+            }
+        }
+    }
+    
+    // Step 3: If no member found by phone, try CRN lookup
+    if (!$member_id) {
+        log_debug("No member found with phone: $phone, attempting CRN extraction");
+        
+        // Fallback: check description and reference if CRN not found in items
+        if (!$crn_extracted) {
+            $combined_text = $reference . ' ' . $description;
+            if (preg_match('/CRN:\s*([A-Z0-9]{3,10})/i', $combined_text, $matches)) {
+                $crn_extracted = strtoupper(trim($matches[1]));
+                log_debug("CRN extracted from description/reference: $crn_extracted");
+            }
+        }
+        
+        // Look up member by extracted CRN
+        if ($crn_extracted) {
             $crn_stmt = $conn->prepare('SELECT id, CONCAT(first_name, " ", last_name) as full_name, crn, church_id, phone FROM members WHERE crn = ? AND status = "active" LIMIT 1');
-            $crn_stmt->bind_param('s', $extracted_crn);
+            $crn_stmt->bind_param('s', $crn_extracted);
             $crn_stmt->execute();
             $crn_result = $crn_stmt->get_result();
             
@@ -160,16 +204,20 @@ try {
                 $member_info = $crn_result->fetch_assoc();
                 $member_id = $member_info['id'];
                 $church_id = $member_info['church_id'];
-                log_debug("Member found by CRN: ID $member_id, Name: {$member_info['full_name']}");
+                log_debug("Member found by CRN: ID $member_id, Name: {$member_info['full_name']}, CRN: {$member_info['crn']}");
                 
-                // Update member's phone number if it's different
-                if ($member_info['phone'] !== $phone) {
+                // Update member's phone number if it's different or empty
+                if (empty($member_info['phone']) || $member_info['phone'] !== $phone) {
                     $update_phone_stmt = $conn->prepare('UPDATE members SET phone = ? WHERE id = ?');
                     $update_phone_stmt->bind_param('si', $phone, $member_id);
                     $update_phone_stmt->execute();
-                    log_debug("Updated member phone from {$member_info['phone']} to $phone");
+                    log_debug("Updated member phone from '{$member_info['phone']}' to '$phone'");
                 }
+            } else {
+                log_debug("No member found with CRN: $crn_extracted");
             }
+        } else {
+            log_debug("No CRN found in payment data");
         }
     }
     
@@ -186,7 +234,7 @@ try {
             'client_reference' => $reference,
             'status' => $payment_status,
             'church_id' => $church_id,
-            'payment_type_id' => 1, // Default to general offering, can be changed later
+            'payment_type_id' => $payment_type_id, // Mapped from USSD selection
             'recorded_by' => 'Shortcode Payment',
             'mode' => 'Mobile Money'
         ];
@@ -232,12 +280,12 @@ try {
         $unmatched_stmt = $conn->prepare('
             INSERT INTO unmatched_payments (
                 phone, amount, reference, description, transaction_date, 
-                raw_data, status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+                raw_data, status, payment_type_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
         ');
         
         $raw_data_json = json_encode($data);
-        $unmatched_stmt->bind_param('sdsssss', $phone, $amount, $reference, $description, $transaction_date, $raw_data_json, $payment_status);
+        $unmatched_stmt->bind_param('sdsssssi', $phone, $amount, $reference, $description, $transaction_date, $raw_data_json, $payment_status, $payment_type_id);
         $unmatched_stmt->execute();
         
         log_debug('Unmatched payment recorded for manual assignment');

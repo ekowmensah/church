@@ -96,10 +96,24 @@ $stmt->fetch();
 $stmt->close();
 $total_pages = max(1, ceil($total/$per_page));
 $offset = ($page-1)*$per_page;
-// Fetch records
-// Consolidated: Only latest record per member
-$sql = "SELECT hr.id, hr.member_id, hr.sundayschool_id, m.crn, m.first_name AS m_first_name, m.last_name AS m_last_name, m.middle_name AS m_middle_name, ss.srn, ss.first_name AS ss_first_name, ss.last_name AS ss_last_name, ss.middle_name AS ss_middle_name, hr.vitals, hr.notes, hr.recorded_at, u.name AS recorded_by
+// Fetch records - Consolidated: Only latest record per member/child
+$sql = "SELECT hr.id, hr.member_id, hr.sundayschool_id, m.crn, m.first_name AS m_first_name, m.last_name AS m_last_name, m.middle_name AS m_middle_name, ss.srn, ss.first_name AS ss_first_name, ss.last_name AS ss_last_name, ss.middle_name AS ss_middle_name, hr.vitals, hr.notes, hr.recorded_at, u.name AS recorded_by,
+    (SELECT COUNT(*) FROM health_records hr2 WHERE 
+        (hr.member_id IS NOT NULL AND hr2.member_id = hr.member_id) OR 
+        (hr.sundayschool_id IS NOT NULL AND hr2.sundayschool_id = hr.sundayschool_id)
+    ) as total_records
 FROM health_records hr
+INNER JOIN (
+    SELECT 
+        COALESCE(member_id, 0) as member_key,
+        COALESCE(sundayschool_id, 0) as ss_key,
+        MAX(recorded_at) as latest_date
+    FROM health_records 
+    GROUP BY COALESCE(member_id, 0), COALESCE(sundayschool_id, 0)
+) latest ON (
+    (hr.member_id IS NOT NULL AND latest.member_key = hr.member_id AND latest.ss_key = 0) OR
+    (hr.sundayschool_id IS NOT NULL AND latest.ss_key = hr.sundayschool_id AND latest.member_key = 0)
+) AND hr.recorded_at = latest.latest_date
 LEFT JOIN members m ON hr.member_id = m.id
 LEFT JOIN sunday_school ss ON hr.sundayschool_id = ss.id
 LEFT JOIN users u ON hr.recorded_by = u.id
@@ -233,6 +247,8 @@ ob_start();
                         <th>Full Name</th>
                         <th>Notes</th>
                         <th>Last Visit</th>
+                        <th>Added By</th>
+                        <th>Total Records</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -240,7 +256,13 @@ ob_start();
                 <?php if ($result && $result->num_rows > 0): while($row = $result->fetch_assoc()): ?>
                     <tr>
                         <td><?= $row['member_id'] ? htmlspecialchars($row['crn']) : htmlspecialchars($row['srn']) ?></td>
-                        <td><?= $row['member_id'] ? 'Member' : 'Child' ?></td>
+                        <td>
+                            <?php if ($row['member_id']): ?>
+                                <span class="badge badge-primary">Member</span>
+                            <?php else: ?>
+                                <span class="badge badge-info">Child</span>
+                            <?php endif; ?>
+                        </td>
                         <td>
                             <?php if ($row['member_id']): ?>
                                 <?= htmlspecialchars(trim(($row['m_last_name'] ?? '').' '.($row['m_first_name'] ?? '').' '.($row['m_middle_name'] ?? ''))) ?>
@@ -249,7 +271,15 @@ ob_start();
                             <?php endif; ?>
                         </td>
                         <td><?= htmlspecialchars(mb_strimwidth($row['notes'],0,30,'...')) ?></td>
-                        <td><?= htmlspecialchars($row['recorded_at']) ?></td>
+                        <td>
+                            <small class="text-muted"><?= date('M j, Y g:i A', strtotime($row['recorded_at'])) ?></small>
+                        </td>
+                        <td>
+                            <span class="badge badge-secondary"><?= htmlspecialchars($row['recorded_by'] ?? 'Unknown') ?></span>
+                        </td>
+                        <td>
+                            <span class="badge badge-success"><?= intval($row['total_records']) ?> record<?= intval($row['total_records']) != 1 ? 's' : '' ?></span>
+                        </td>
                         <td>
                             <a href="health_records.php?id=<?= $row['id'] ?>" class="btn btn-sm btn-info" title="View History"><i class="fas fa-eye"></i> View History</a>
                             <?php if ($can_edit): ?>
@@ -262,7 +292,7 @@ ob_start();
                         </td>
                     </tr>
                 <?php endwhile; else: ?>
-                    <tr><td colspan="5" class="text-center">No records found.</td></tr>
+                    <tr><td colspan="8" class="text-center">No records found.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>
