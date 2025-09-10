@@ -2,16 +2,24 @@
 // --- DEBUG: Log incoming payload for bulk payments ---
 file_put_contents(__DIR__.'/bulk_payment_debug.log', "\n--- BULK PAYMENT SUBMIT ".date('Y-m-d H:i:s')." ---\n".file_get_contents('php://input')."\n", FILE_APPEND);
 
-//if (session_status() === PHP_SESSION_NONE) { session_start(); }
+session_start();
 // Modern Bulk Payment API Endpoint
 require_once __DIR__.'/../config/config.php';
+require_once __DIR__.'/../helpers/auth.php';
 header('Content-Type: application/json');
+
+// Check if user is logged in first
+if (!is_logged_in()) {
+    echo json_encode(['error' => 'Not authenticated']);
+    http_response_code(401);
+    exit;
+}
 
 // Canonical permission check for Bulk Payment (AJAX)
 require_once __DIR__.'/../helpers/permissions.php';
 $is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
-if (!$is_super_admin && !has_permission('access_ajax_bulk_payment')) {
-    echo json_encode(['error' => 'Permission denied']);
+if (!$is_super_admin && !has_permission('add_payment')) {
+    echo json_encode(['error' => 'Permission denied - requires payment management access']);
     http_response_code(403);
     exit;
 }
