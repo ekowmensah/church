@@ -70,7 +70,7 @@ if ($clientReference) {
                         $paymentsToInsert[] = [
                             'member_id' => $item['member_id'] ?? $intent['member_id'],
                             'amount' => $item['amount'],
-                            'description' => $item['typeName'] . ($item['desc'] ? (': ' . $item['desc']) : ''),
+                            'description' => $item['desc'] ?? $item['typeName'],
                             'payment_date' => date('Y-m-d H:i:s'),
                             'client_reference' => $clientReference,
                             'status' => $status,
