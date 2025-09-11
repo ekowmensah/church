@@ -90,21 +90,31 @@ try {
     // Get payment types from database
     $payment_types = [];
     $types_result = $conn->query("SELECT id, name FROM payment_types WHERE active = 1 ORDER BY name ASC");
+    if (!$types_result) {
+        log_debug("Failed to query payment_types: " . $conn->error);
+        throw new Exception("Database query failed for payment_types");
+    }
+    
     while ($row = $types_result->fetch_assoc()) {
         $payment_types[] = $row;
     }
+    log_debug("Loaded " . count($payment_types) . " payment types");
     
     // Build payment types menu
     $payment_menu = "";
     foreach ($payment_types as $index => $type) {
         $payment_menu .= ($index + 1) . ". " . $type['name'] . "\n";
     }
+    log_debug("Built payment menu with " . strlen($payment_menu) . " characters");
     
     // Handle different session states
+    log_debug("Processing USSD type: $type");
     switch ($type) {
         case 'Initiation':
+            log_debug("Handling Initiation case");
             // Welcome message
             if ($member) {
+                log_debug("Building response for registered member: {$member['full_name']}");
                 $response = [
                     'SessionId' => $session_id,
                     'Type' => 'response',
@@ -114,7 +124,9 @@ try {
                     'DataType' => 'input',
                     'FieldType' => 'text'
                 ];
+                log_debug("Response built successfully for registered member");
             } else {
+                log_debug("Building response for unregistered user");
                 $response = [
                     'SessionId' => $session_id,
                     'Type' => 'response',
@@ -124,7 +136,9 @@ try {
                     'DataType' => 'input',
                     'FieldType' => 'text'
                 ];
+                log_debug("Response built successfully for unregistered user");
             }
+            log_debug("Initiation case completed successfully");
             break;
             
         case 'Response':
@@ -485,6 +499,7 @@ try {
             
         default:
             // Unknown type
+            log_debug("Unknown USSD type received: '$type' - falling to default case");
             $response = [
                 'SessionId' => $session_id,
                 'Type' => 'release',
