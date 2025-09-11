@@ -79,7 +79,8 @@ if ($clientReference) {
                             'payment_period' => $item['payment_period'] ?? $item['period'] ?? null,
                             'payment_period_description' => $item['payment_period_description'] ?? $item['periodText'] ?? null,
                             'recorded_by' => 'Online Payment',
-                            'mode' => 'Online'
+                            'mode' => 'Online',
+                            'payment_method' => 'Hubtel'
                         ];
                     }
                 }
@@ -96,7 +97,8 @@ if ($clientReference) {
                     'payment_period' => $intent['payment_period'],
                     'payment_period_description' => $intent['payment_period_description'],
                     'recorded_by' => 'Online Payment',
-                    'mode' => 'Online'
+                    'mode' => 'Online',
+                    'payment_method' => 'Hubtel'
                 ];
             }
             
@@ -173,7 +175,170 @@ if ($clientReference) {
             }
         }
     } else {
-        log_debug('No PaymentIntent found for clientReference');
+        log_debug('No PaymentIntent found for clientReference - checking for USSD payment');
+        
+        // Handle USSD payments that don't have payment intents
+        // Extract payment info from callback data
+        $amount = $data['Data']['Amount'] ?? 0;
+        $description = $data['Data']['Description'] ?? 'USSD Payment';
+        $phone = $data['Data']['CustomerMobileNumber'] ?? '';
+        
+        if ($amount > 0 && $phone) {
+            // Normalize phone number
+            $phone = preg_replace('/^\+233/', '0', $phone);
+            $phone = preg_replace('/^233/', '0', $phone);
+            if (strlen($phone) === 9 && !str_starts_with($phone, '0')) {
+                $phone = '0' . $phone;
+            }
+            
+            log_debug("Processing USSD payment - Amount: $amount, Phone: $phone, Description: $description");
+            
+            // Parse description to extract member info (similar to shortcode webhook)
+            $target_member_id = null;
+            $payer_member_id = null;
+            $payment_type_id = 1; // Default
+            $payment_period = null;
+            $payment_period_description = null;
+            
+            // Extract Target ID and Payer ID from description
+            if (preg_match('/Target ID:\s*(\d+)/', $description, $target_matches)) {
+                $target_member_id = intval($target_matches[1]);
+                log_debug("Found Target ID: $target_member_id");
+            }
+            
+            if (preg_match('/Payer ID:\s*(\d+)/', $description, $payer_matches)) {
+                $payer_member_id = intval($payer_matches[1]);
+                log_debug("Found Payer ID: $payer_member_id");
+            }
+            
+            if (preg_match('/Member ID:\s*(\d+)/', $description, $member_matches)) {
+                $target_member_id = intval($member_matches[1]);
+                log_debug("Found Member ID (self payment): $target_member_id");
+            }
+            
+            // Extract payment period
+            if (preg_match('/Period:\s*([0-9-]+)/', $description, $period_matches)) {
+                $payment_period = $period_matches[1];
+                $payment_period_description = date('F Y', strtotime($payment_period));
+                log_debug("Found payment period: $payment_period ($payment_period_description)");
+            }
+            
+            // Extract payment type from description
+            if (preg_match('/^([^-]+?)\s*-/', $description, $type_matches)) {
+                $payment_type_name = trim($type_matches[1]);
+                $type_stmt = $conn->prepare('SELECT id FROM payment_types WHERE name = ? AND active = 1');
+                $type_stmt->bind_param('s', $payment_type_name);
+                $type_stmt->execute();
+                $type_result = $type_stmt->get_result();
+                if ($type_result->num_rows > 0) {
+                    $payment_type_id = $type_result->fetch_assoc()['id'];
+                    log_debug("Mapped payment type '$payment_type_name' to ID: $payment_type_id");
+                }
+            }
+            
+            // Determine final member ID (prioritize target over payer)
+            $final_member_id = $target_member_id ?: $payer_member_id;
+            
+            if (!$final_member_id) {
+                // Fallback: lookup by phone number
+                $phone_stmt = $conn->prepare('SELECT id, church_id FROM members WHERE phone = ? AND status = "active" LIMIT 1');
+                $phone_stmt->bind_param('s', $phone);
+                $phone_stmt->execute();
+                $phone_result = $phone_stmt->get_result();
+                if ($phone_result->num_rows > 0) {
+                    $phone_member = $phone_result->fetch_assoc();
+                    $final_member_id = $phone_member['id'];
+                    log_debug("Fallback: Found member by phone - ID: $final_member_id");
+                }
+            }
+            
+            if ($final_member_id) {
+                // Get member's church_id
+                $church_stmt = $conn->prepare('SELECT church_id FROM members WHERE id = ? AND status = "active"');
+                $church_stmt->bind_param('i', $final_member_id);
+                $church_stmt->execute();
+                $church_result = $church_stmt->get_result();
+                $church_id = null;
+                if ($church_result->num_rows > 0) {
+                    $church_id = $church_result->fetch_assoc()['church_id'];
+                }
+                
+                // Create payment record
+                $payment_data = [
+                    'member_id' => $final_member_id,
+                    'amount' => floatval($amount),
+                    'description' => $description,
+                    'payment_date' => date('Y-m-d H:i:s'),
+                    'client_reference' => $clientReference,
+                    'status' => $status,
+                    'church_id' => $church_id,
+                    'payment_type_id' => $payment_type_id,
+                    'payment_period' => $payment_period,
+                    'payment_period_description' => $payment_period_description,
+                    'recorded_by' => 'USSD Payment',
+                    'mode' => 'Mobile Money'
+                ];
+                
+                log_debug('Recording USSD payment: '.json_encode($payment_data));
+                $result = $paymentModel->add($conn, $payment_data);
+                
+                if ($result && isset($result['id'])) {
+                    log_debug("USSD payment recorded successfully with ID: {$result['id']}");
+                    
+                    // Send SMS notification
+                    require_once __DIR__.'/../includes/sms.php';
+                    
+                    $member_stmt = $conn->prepare('SELECT CONCAT(first_name, " ", last_name) as full_name, phone FROM members WHERE id = ?');
+                    $member_stmt->bind_param('i', $final_member_id);
+                    $member_stmt->execute();
+                    $member = $member_stmt->get_result()->fetch_assoc();
+                    
+                    if ($member && !empty($member['phone'])) {
+                        $church_stmt = $conn->prepare('SELECT name FROM churches WHERE id = ?');
+                        $church_stmt->bind_param('i', $church_id);
+                        $church_stmt->execute();
+                        $church = $church_stmt->get_result()->fetch_assoc();
+                        $church_name = $church['name'] ?? 'Church';
+                        
+                        $amount_formatted = number_format($amount, 2);
+                        $full_name = $member['full_name'];
+                        
+                        // Check if this is a harvest payment (payment_type_id = 4)
+                        if ($payment_type_id == 4) {
+                            // Calculate yearly harvest total
+                            $year = date('Y');
+                            $yearly_stmt = $conn->prepare('SELECT SUM(amount) as yearly_total FROM payments WHERE member_id = ? AND payment_type_id = 4 AND YEAR(payment_date) = ? AND status = "Completed"');
+                            $yearly_stmt->bind_param('ii', $final_member_id, $year);
+                            $yearly_stmt->execute();
+                            $yearly_result = $yearly_stmt->get_result()->fetch_assoc();
+                            $yearly_total = number_format($yearly_result['yearly_total'] ?? 0, 2);
+                            
+                            $sms_message = "Hi $full_name, your payment of ₵$amount_formatted has been paid to $church_name as Harvest. Your Total Harvest amount for the year $year is ₵$yearly_total";
+                        } else {
+                            $sms_message = "Hi $full_name, your payment of ₵$amount_formatted has been successfully processed for $church_name via USSD. Thank you!";
+                        }
+                        
+                        $sms_result = send_sms($member['phone'], $sms_message);
+                        log_debug('USSD SMS sent: '.json_encode($sms_result));
+                        
+                        // Log SMS
+                        $sms_status = (isset($sms_result['status']) && $sms_result['status'] === 'success') ? 'success' : 'fail';
+                        $sms_log_stmt = $conn->prepare('INSERT INTO sms_logs (member_id, phone, message, type, status, provider, sent_at, response) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)');
+                        $sms_type = 'ussd_payment_notification';
+                        $provider = 'arkesel';
+                        $sms_response = json_encode($sms_result);
+                        $sms_log_stmt->bind_param('issssss', $final_member_id, $member['phone'], $sms_message, $sms_type, $sms_status, $provider, $sms_response);
+                        $sms_log_stmt->execute();
+                    }
+                } else {
+                    log_debug('Failed to record USSD payment: '.json_encode($result));
+                }
+            } else {
+                log_debug('Could not identify member for USSD payment');
+            }
+        } else {
+            log_debug('Invalid USSD payment data - missing amount or phone');
+        }
     }
 } else {
     log_debug('No clientReference in callback data');
