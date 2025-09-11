@@ -356,7 +356,7 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "CRN '$crn' not found. Please try again.\n\nEnter the CRN of the church member you want to pay for:",
+                                'Message' => "CRN '$crn' not found. Please try again.\n\nEnter the CRN of the member you want to pay for:",
                                 'Label' => 'Enter CRN',
                                 'ClientState' => "crn_input_unregistered",
                                 'DataType' => 'input',
