@@ -100,12 +100,40 @@ try {
     }
     log_debug("Loaded " . count($payment_types) . " payment types");
     
-    // Build payment types menu
-    $payment_menu = "";
-    foreach ($payment_types as $index => $payment_type) {
-        $payment_menu .= ($index + 1) . ". " . $payment_type['name'] . "\n";
+    // Build paginated payment types menu (max 8 items per page to fit USSD limits)
+    function build_payment_menu_page($payment_types, $page = 1, $items_per_page = 8) {
+        $total_items = count($payment_types);
+        $total_pages = ceil($total_items / $items_per_page);
+        $start_index = ($page - 1) * $items_per_page;
+        $end_index = min($start_index + $items_per_page, $total_items);
+        
+        $menu = "";
+        for ($i = $start_index; $i < $end_index; $i++) {
+            $menu .= ($i + 1) . ". " . $payment_types[$i]['name'] . "\n";
+        }
+        
+        // Add navigation options
+        if ($total_pages > 1) {
+            $menu .= "\n";
+            if ($page < $total_pages) {
+                $menu .= "98. Next Page\n";
+            }
+            if ($page > 1) {
+                $menu .= "99. Previous Page\n";
+            }
+        }
+        
+        return [
+            'menu' => $menu,
+            'total_pages' => $total_pages,
+            'current_page' => $page,
+            'has_next' => $page < $total_pages,
+            'has_prev' => $page > 1
+        ];
     }
-    log_debug("Built payment menu with " . strlen($payment_menu) . " characters");
+    
+    $payment_menu_data = build_payment_menu_page($payment_types, 1);
+    log_debug("Built paginated payment menu - Page 1 of {$payment_menu_data['total_pages']} with " . strlen($payment_menu_data['menu']) . " characters");
     
     // Handle different session states
     log_debug("Processing USSD type: $type");
@@ -130,7 +158,7 @@ try {
                 $response = [
                     'SessionId' => $session_id,
                     'Type' => 'response',
-                    'Message' => "Welcome to Freeman Methodist Church Payments\n\nYour phone number is not registered.\n\nWho are you paying for?\n1. Myself (unregistered)\n2. A church member (enter CRN)\n\nSelect option:",
+                    'Message' => "Welcome to Freeman Methodist Church Payments\n\nYour phone number is not registered.\n\nWho are you paying for?\n1. Myself (unregistered)\n2. Member (enter CRN)\n\nSelect option:",
                     'Label' => 'Payment For',
                     'ClientState' => 'payment_for_unregistered',
                     'DataType' => 'input',
@@ -157,9 +185,9 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment Types:\n\n" . $payment_menu . "\nSelect donation type:",
+                                'Message' => "Payment Types (Page 1 of {$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "\nSelect donation type:",
                                 'Label' => 'Select Donation Type',
-                                'ClientState' => "menu_unmatched",
+                                'ClientState' => "menu_unmatched_page_1",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
                             ];
@@ -178,7 +206,7 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Invalid selection. Please try again.\n\nWho are you paying for?\n1. Myself (unregistered)\n2. A church member (enter CRN)\n\nSelect option:",
+                                'Message' => "Invalid selection. Please try again.\n\nWho are you paying for?\n1. Myself (unregistered)\n2. Member (enter CRN)\n\nSelect option:",
                                 'Label' => 'Payment For',
                                 'ClientState' => 'payment_for_unregistered',
                                 'DataType' => 'input',
@@ -189,13 +217,13 @@ try {
                         // Registered member selecting who to pay for
                         $member_id = substr($client_state, 12);
                         if ($message === '1') {
-                            // Paying for themselves - go directly to payment types
+                            // Paying for themselves - go to payment types
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment Types:\n\n" . $payment_menu . "\nSelect donation type:",
+                                'Message' => "Payment Types (Page 1 of {$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "\nSelect donation type:",
                                 'Label' => 'Select Donation Type',
-                                'ClientState' => "menu_self_$member_id",
+                                'ClientState' => "menu_self_{$member['id']}_page_1",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
                             ];
@@ -242,9 +270,9 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\n" . $payment_menu . "\nSelect donation type:",
+                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types (Page 1 of {$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "\nSelect donation type:",
                                 'Label' => 'Select Donation Type',
-                                'ClientState' => "menu_unregistered_for_{$target_member['id']}",
+                                'ClientState' => "menu_unregistered_for_{$target_member['id']}_page_1",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
                             ];
@@ -254,9 +282,9 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\n" . $payment_menu . "\nSelect donation type:",
+                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types (Page 1 of {$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "\nSelect donation type:",
                                 'Label' => 'Select Donation Type',
-                                'ClientState' => "menu_other_{$payer_id}_{$target_member['id']}",
+                                'ClientState' => "menu_other_{$payer_id}_{$target_member['id']}_page_1",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
                             ];
@@ -287,25 +315,67 @@ try {
                     break;
                 
                 case ($client_state === 'menu' || $client_state === 'menu_unmatched' || str_starts_with($client_state, 'menu_')):
-                    // User selected donation type
                     $selection = intval($message);
                     
+                    // Handle pagination navigation first
+                    if ($selection === 98 || $selection === 99) {
+                        // Extract current page and context from client state
+                        if (preg_match('/^menu_(.+)_page_(\d+)$/', $client_state, $matches)) {
+                            $context = $matches[1];
+                            $current_page = intval($matches[2]);
+                            
+                            if ($selection === 98) {
+                                // Next page
+                                $new_page = $current_page + 1;
+                            } else {
+                                // Previous page
+                                $new_page = $current_page - 1;
+                            }
+                            
+                            $menu_data = build_payment_menu_page($payment_types, $new_page);
+                            
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'response',
+                                'Message' => "Payment Types (Page {$new_page} of {$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "\nSelect donation type:",
+                                'Label' => 'Select Donation Type',
+                                'ClientState' => "menu_{$context}_page_{$new_page}",
+                                'DataType' => 'input',
+                                'FieldType' => 'text'
+                            ];
+                            break;
+                        }
+                    }
+                    
+                    // Handle payment type selection
                     if ($selection >= 1 && $selection <= count($payment_types)) {
                         $selected_type = $payment_types[$selection - 1];
                         $response = [
                             'SessionId' => $session_id,
                             'Type' => 'response',
-                            'Message' => "You selected: {$selected_type['name']}\n\nEnter amount to donate (GHS):",
+                            'Message' => "You selected: {$selected_type['name']}\n\nEnter amount (GHS):",
                             'Label' => 'Enter Amount',
                             'ClientState' => "amount_{$selected_type['id']}_" . str_replace('menu_', '', $client_state),
                             'DataType' => 'input',
                             'FieldType' => 'decimal'
                         ];
                     } else {
+                        // Invalid selection - show current page again
+                        $current_page = 1;
+                        $context = 'unmatched';
+                        
+                        // Extract page info if available
+                        if (preg_match('/^menu_(.+)_page_(\d+)$/', $client_state, $matches)) {
+                            $context = $matches[1];
+                            $current_page = intval($matches[2]);
+                        }
+                        
+                        $menu_data = build_payment_menu_page($payment_types, $current_page);
+                        
                         $response = [
                             'SessionId' => $session_id,
                             'Type' => 'response',
-                            'Message' => "Invalid selection. Please try again.\n\n" . $payment_menu . "\nSelect donation type:",
+                            'Message' => "Invalid selection. Please try again.\n\nPayment Types (Page {$current_page} of {$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "\nSelect donation type:",
                             'Label' => 'Select Donation Type',
                             'ClientState' => $client_state,
                             'DataType' => 'input',
