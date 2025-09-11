@@ -142,40 +142,71 @@ try {
         log_debug("Member found by phone: ID $member_id, Name: {$member_info['full_name']}, CRN: {$member_info['crn']}");
     }
     
-    // Step 2: Extract payment type and CRN from payment items
-    $payment_type_id = 1; // Default to Tithe
-    $crn_extracted = null;
-    $donation_type = 'General Offering';
+    // Step 2: Extract payment type and member info from payment items
+    $payment_type_id = 1; // Default to first available payment type
+    $target_member_id = null;
+    $payer_member_id = null;
+    $donation_type = 'Donation';
     
-    // Payment type mapping from USSD to database IDs
-    $type_mapping = [
-        'General Offering' => 3,  // Offertory
-        'Tithe' => 1,            // Tithe
-        'Harvest' => 4,          // harvest
-        'Building Fund' => 3,    // Offertory (fallback)
-        'Other' => 3             // Offertory (fallback)
-    ];
+    // Get payment types from database for dynamic mapping
+    $payment_types = [];
+    $types_result = $conn->query("SELECT id, name FROM payment_types WHERE active = 1 ORDER BY name ASC");
+    while ($row = $types_result->fetch_assoc()) {
+        $payment_types[strtolower($row['name'])] = $row['id'];
+    }
     
-    // Extract payment type and CRN from items
+    // Set default payment type to first available
+    if (!empty($payment_types)) {
+        $payment_type_id = reset($payment_types);
+    }
+    
+    // Extract payment info from items
     if (!empty($items)) {
         foreach ($items as $item) {
             $item_name = $item['Name'] ?? '';
             log_debug("Processing item: $item_name");
             
-            // Extract donation type (before " - CRN:")
-            if (preg_match('/^([^-]+?)(?:\s*-\s*CRN:|$)/', $item_name, $type_matches)) {
-                $donation_type = trim($type_matches[1]);
-                if (isset($type_mapping[$donation_type])) {
-                    $payment_type_id = $type_mapping[$donation_type];
+            // Parse new format: "PaymentType - Member ID: X" or "PaymentType - Payer ID: X, Target ID: Y"
+            if (preg_match('/^([^-]+?)\s*-\s*(.+)$/', $item_name, $matches)) {
+                $donation_type = trim($matches[1]);
+                $member_info = trim($matches[2]);
+                
+                // Map payment type name to ID
+                $type_key = strtolower($donation_type);
+                if (isset($payment_types[$type_key])) {
+                    $payment_type_id = $payment_types[$type_key];
                     log_debug("Payment type mapped: '$donation_type' -> ID $payment_type_id");
                 }
+                
+                // Extract member IDs from member info
+                if (preg_match('/Member ID:\s*(\d+)/', $member_info, $member_matches)) {
+                    // Self payment by registered member
+                    $target_member_id = intval($member_matches[1]);
+                    $payer_member_id = $target_member_id;
+                    log_debug("Self payment - Member ID: $target_member_id");
+                } elseif (preg_match('/Payer ID:\s*(\d+),\s*Target ID:\s*(\d+)/', $member_info, $payer_matches)) {
+                    // Registered member paying for another member
+                    $payer_member_id = intval($payer_matches[1]);
+                    $target_member_id = intval($payer_matches[2]);
+                    log_debug("Cross payment - Payer ID: $payer_member_id, Target ID: $target_member_id");
+                } elseif (preg_match('/Phone:\s*([^,]+)\s*\(unregistered\)(?:,\s*Target ID:\s*(\d+))?/', $member_info, $phone_matches)) {
+                    // Unregistered user payment
+                    if (isset($phone_matches[2])) {
+                        // Unregistered user paying for a member
+                        $target_member_id = intval($phone_matches[2]);
+                        log_debug("Unregistered user paying for member ID: $target_member_id");
+                    } else {
+                        // Unregistered user paying for themselves
+                        log_debug("Unregistered user self payment");
+                    }
+                }
+                break;
             }
             
-            // Extract CRN
-            if (preg_match('/CRN:\s*([A-Z0-9]{3,10})/i', $item_name, $crn_matches)) {
+            // Fallback: Legacy CRN extraction for backward compatibility
+            if (preg_match('/CRN:\s*([A-Z0-9-]+)/i', $item_name, $crn_matches)) {
                 $crn_extracted = strtoupper(trim($crn_matches[1]));
-                log_debug("CRN extracted from item name '$item_name': $crn_extracted");
-                break;
+                log_debug("Legacy CRN extracted: $crn_extracted");
             }
         }
     }
@@ -221,20 +252,53 @@ try {
         }
     }
     
-    // Step 3: Record payment
+    // Step 3: Determine final member ID for payment attribution
+    $final_member_id = null;
+    $final_church_id = null;
+    
+    // Priority: target_member_id > payer_member_id > member_id (from phone lookup)
+    if ($target_member_id) {
+        $final_member_id = $target_member_id;
+        // Get church_id for target member
+        $target_stmt = $conn->prepare('SELECT church_id FROM members WHERE id = ? AND status = "active"');
+        $target_stmt->bind_param('i', $target_member_id);
+        $target_stmt->execute();
+        $target_result = $target_stmt->get_result();
+        if ($target_result->num_rows > 0) {
+            $final_church_id = $target_result->fetch_assoc()['church_id'];
+        }
+        log_debug("Payment attributed to target member ID: $target_member_id");
+    } elseif ($payer_member_id) {
+        $final_member_id = $payer_member_id;
+        // Get church_id for payer member
+        $payer_stmt = $conn->prepare('SELECT church_id FROM members WHERE id = ? AND status = "active"');
+        $payer_stmt->bind_param('i', $payer_member_id);
+        $payer_stmt->execute();
+        $payer_result = $payer_stmt->get_result();
+        if ($payer_result->num_rows > 0) {
+            $final_church_id = $payer_result->fetch_assoc()['church_id'];
+        }
+        log_debug("Payment attributed to payer member ID: $payer_member_id");
+    } elseif ($member_id) {
+        $final_member_id = $member_id;
+        $final_church_id = $church_id;
+        log_debug("Payment attributed to phone lookup member ID: $member_id");
+    }
+    
+    // Step 4: Record payment
     $paymentModel = new Payment();
     
-    if ($member_id) {
+    if ($final_member_id) {
         // Member identified - record as regular payment
         $payment_data = [
-            'member_id' => $member_id,
+            'member_id' => $final_member_id,
             'amount' => floatval($amount),
             'description' => "Shortcode Payment - $description",
             'payment_date' => $transaction_date,
             'client_reference' => $reference,
             'status' => $payment_status,
-            'church_id' => $church_id,
-            'payment_type_id' => $payment_type_id, // Mapped from USSD selection
+            'church_id' => $final_church_id,
+            'payment_type_id' => $payment_type_id,
             'recorded_by' => 'Shortcode Payment',
             'mode' => 'Mobile Money'
         ];
@@ -245,17 +309,36 @@ try {
         if ($result && isset($result['id'])) {
             log_debug("Payment recorded successfully with ID: {$result['id']}");
             
-            // Send SMS confirmation
+            // Send SMS confirmation to the payer (phone number used for payment)
             require_once __DIR__.'/../includes/sms.php';
             
             $church_stmt = $conn->prepare('SELECT name FROM churches WHERE id = ?');
-            $church_stmt->bind_param('i', $church_id);
+            $church_stmt->bind_param('i', $final_church_id);
             $church_stmt->execute();
             $church = $church_stmt->get_result()->fetch_assoc();
             $church_name = $church['name'] ?? 'Church';
             
+            // Get member info for SMS (could be payer or target)
+            $sms_member_stmt = $conn->prepare('SELECT CONCAT(first_name, " ", last_name) as full_name FROM members WHERE id = ?');
+            $sms_member_stmt->bind_param('i', $final_member_id);
+            $sms_member_stmt->execute();
+            $sms_member_result = $sms_member_stmt->get_result();
+            $sms_member_name = 'Member';
+            if ($sms_member_result->num_rows > 0) {
+                $sms_member_info = $sms_member_result->fetch_assoc();
+                $sms_member_name = $sms_member_info['full_name'];
+            }
+            
             $formatted_amount = number_format($amount, 2);
-            $sms_message = "Hi {$member_info['full_name']}, your shortcode payment of ₵$formatted_amount has been received by $church_name. Thank you for your contribution!";
+            
+            // Customize SMS message based on payment context
+            if ($target_member_id && $payer_member_id && $target_member_id !== $payer_member_id) {
+                // Cross payment - payer paying for another member
+                $sms_message = "Payment of ₵$formatted_amount for $sms_member_name has been received by $church_name. Thank you for your contribution!";
+            } else {
+                // Self payment or unregistered payment
+                $sms_message = "Hi $sms_member_name, your payment of ₵$formatted_amount has been received by $church_name. Thank you for your contribution!";
+            }
             
             $sms_result = send_sms($phone, $sms_message);
             log_debug('SMS confirmation sent: '.json_encode($sms_result));
@@ -266,7 +349,7 @@ try {
             $sms_type = 'shortcode_payment_confirmation';
             $provider = 'arkesel';
             $sms_response = json_encode($sms_result);
-            $sms_log_stmt->bind_param('issssss', $member_id, $phone, $sms_message, $sms_type, $sms_status, $provider, $sms_response);
+            $sms_log_stmt->bind_param('issssss', $final_member_id, $phone, $sms_message, $sms_type, $sms_status, $provider, $sms_response);
             $sms_log_stmt->execute();
             
         } else {
