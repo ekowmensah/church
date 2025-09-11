@@ -331,7 +331,7 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types (Page 1 of {$unregistered_for_menu_data['total_pages']}):\n\n" . $unregistered_for_menu_data['menu'] . "\nSelect payment type:",
+                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types (1/{$unregistered_for_menu_data['total_pages']}):\n\n" . $unregistered_for_menu_data['menu'] . "Select payment type:",
                                 'Label' => 'Select Payment Type',
                                 'ClientState' => "menu_unregistered_for_{$target_member['id']}_page_1",
                                 'DataType' => 'input',
@@ -344,7 +344,7 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types (Page 1 of {$other_menu_data['total_pages']}):\n\n" . $other_menu_data['menu'] . "\nSelect payment type:",
+                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types (1/{$other_menu_data['total_pages']}):\n\n" . $other_menu_data['menu'] . "Select payment type:",
                                 'Label' => 'Select Payment Type',
                                 'ClientState' => "menu_other_{$payer_id}_{$target_member['id']}_page_1",
                                 'DataType' => 'input',
