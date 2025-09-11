@@ -101,8 +101,8 @@ try {
     }
     log_debug("Total payment types loaded: " . count($payment_types));
     
-    // Build paginated payment types menu (max 6 items per page to fit USSD limits better)
-    function build_payment_menu_page($payment_types, $page = 1, $items_per_page = 6) {
+    // Build paginated payment types menu (max 4 items per page to fit USSD limits)
+    function build_payment_menu_page($payment_types, $page = 1, $items_per_page = 4) {
         $total_items = count($payment_types);
         $total_pages = ceil($total_items / $items_per_page);
         $start_index = ($page - 1) * $items_per_page;
@@ -115,17 +115,19 @@ try {
             $menu .= ($i + 1) . ". " . $payment_types[$i]['name'] . "\n";
         }
         
-        // Add navigation options
+        // Always add navigation options if multiple pages exist
         log_debug("Navigation check: total_pages=$total_pages, current_page=$page, page < total_pages=" . ($page < $total_pages ? 'true' : 'false'));
         if ($total_pages > 1) {
             $menu .= "\n";
+            // Always show Next if not on last page
             if ($page < $total_pages) {
-                $menu .= "98. Next Page\n";
-                log_debug("Added 'Next Page' option");
+                $menu .= "98. Next\n";
+                log_debug("Added 'Next' option");
             }
+            // Always show Previous if not on first page  
             if ($page > 1) {
-                $menu .= "99. Previous Page\n";
-                log_debug("Added 'Previous Page' option");
+                $menu .= "99. Previous\n";
+                log_debug("Added 'Previous' option");
             }
         } else {
             log_debug("Only 1 page, no navigation options added");
@@ -196,7 +198,7 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment Types (Page 1 of {$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "\nSelect payment type:",
+                                'Message' => "Payment Types (1/{$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "Select type:",
                                 'Label' => 'Select Payment Type',
                                 'ClientState' => "menu_unmatched_page_1",
                                 'DataType' => 'input',
@@ -232,7 +234,7 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment Types (Page 1 of {$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "\nSelect payment type:",
+                                'Message' => "Payment Types (1/{$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "Select type:",
                                 'Label' => 'Select Payment Type',
                                 'ClientState' => "menu_self_{$member['id']}_page_1",
                                 'DataType' => 'input',
@@ -348,7 +350,7 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment Types (Page {$new_page} of {$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "\nSelect payment type:",
+                                'Message' => "Payment Types ({$new_page}/{$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "Select type:",
                                 'Label' => 'Select Payment Type',
                                 'ClientState' => "menu_{$context}_page_{$new_page}",
                                 'DataType' => 'input',
@@ -386,7 +388,7 @@ try {
                         $response = [
                             'SessionId' => $session_id,
                             'Type' => 'response',
-                            'Message' => "Invalid selection. Please try again.\n\nPayment Types (Page {$current_page} of {$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "\nSelect payment type:",
+                            'Message' => "Invalid selection. Please try again.\n\nPayment Types ({$current_page}/{$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "Select type:",
                             'Label' => 'Select Payment Type',
                             'ClientState' => $client_state,
                             'DataType' => 'input',
