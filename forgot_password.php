@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </div>
   <div class="card card-primary card-outline">
     <div class="card-body login-card-body">
-      <p class="login-box-msg">Reset your password</p>
+      <p class="login-box-msg">Reset your Password</p>
       <?php if ($error): ?>
         <div class="alert alert-danger text-center py-2"><?= htmlspecialchars($error) ?></div>
       <?php elseif ($success): ?>
