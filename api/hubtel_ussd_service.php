@@ -344,7 +344,7 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "For: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types (1/{$other_menu_data['total_pages']}):\n\n" . $other_menu_data['menu'] . "Select type:",
+                                'Message' => "For: {$target_member['full_name']} \n\nPayment Types (1/{$other_menu_data['total_pages']}):\n\n" . $other_menu_data['menu'] . "Select type:",
                                 'Label' => 'Select Payment Type',
                                 'ClientState' => "menu_other_{$payer_id}_{$target_member['id']}_page_1",
                                 'DataType' => 'input',
