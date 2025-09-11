@@ -356,7 +356,7 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "CRN '$crn' not found. Please try again.\n\nEnter the CRN of the church member you want to pay for:",
+                                'Message' => "CRN  '$crn'  not found. Please try again.\n\nEnter the CRN of the church member you want to pay for:",
                                 'Label' => 'Enter CRN',
                                 'ClientState' => "crn_input_unregistered",
                                 'DataType' => 'input',
@@ -607,11 +607,46 @@ try {
                                 'FieldType' => 'text'
                             ];
                         } else {
-                            // Ask for CRN for unregistered users or other member payments
+                            // Handle different contexts for unregistered users and other member payments
+                            $confirmation_message = "Amount: GHS " . number_format($amount, 2) . " for $selected_type_name";
+                            
+                            // Check if this is an unregistered user paying for a specific member
+                            if (str_starts_with($context, 'unregistered_for_')) {
+                                $target_member_id = substr($context, 17);
+                                // Get member details for confirmation
+                                $member_stmt = $conn->prepare("SELECT CONCAT(first_name, ' ', last_name) as full_name, crn FROM members WHERE id = ? AND status = 'active'");
+                                $member_stmt->bind_param("i", $target_member_id);
+                                $member_stmt->execute();
+                                $member_result = $member_stmt->get_result();
+                                $target_member = $member_result->fetch_assoc();
+                                
+                                if ($target_member) {
+                                    $confirmation_message = "Payment Type: $selected_type_name\nFor: {$target_member['full_name']} ({$target_member['crn']})\nAmount: GHS " . number_format($amount, 2);
+                                }
+                            } elseif (str_starts_with($context, 'other_')) {
+                                // Registered member paying for another member
+                                $context_parts = explode('_', $context, 3);
+                                $target_member_id = $context_parts[2] ?? null;
+                                if ($target_member_id) {
+                                    $member_stmt = $conn->prepare("SELECT CONCAT(first_name, ' ', last_name) as full_name, crn FROM members WHERE id = ? AND status = 'active'");
+                                    $member_stmt->bind_param("i", $target_member_id);
+                                    $member_stmt->execute();
+                                    $member_result = $member_stmt->get_result();
+                                    $target_member = $member_result->fetch_assoc();
+                                    
+                                    if ($target_member) {
+                                        $confirmation_message = "Payment Type: $selected_type_name\nFor: {$target_member['full_name']} ({$target_member['crn']})\nAmount: GHS " . number_format($amount, 2);
+                                    }
+                                }
+                            } elseif ($context === 'unmatched') {
+                                // Unregistered user paying for themselves
+                                $confirmation_message = "Payment Type: $selected_type_name\nFor: Yourself (unregistered)\nAmount: GHS " . number_format($amount, 2);
+                            }
+                            
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Amount: GHS " . number_format($amount, 2) . " for $selected_type_name\n\nConfirm payment?\n1. Yes, proceed\n2. No, cancel",
+                                'Message' => $confirmation_message . "\n\nConfirm payment?\n1. Yes, proceed\n2. No, cancel",
                                 'Label' => 'Confirm Payment',
                                 'ClientState' => "confirm_{$payment_type_id}_{$amount}_{$context}",
                                 'DataType' => 'input',
