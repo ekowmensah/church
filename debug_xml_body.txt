@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<AcsEventCond>
-  <searchID>1</searchID>
-  <startTime>2025-08-20T12:36:09</startTime>
-  <endTime>2025-08-21T12:36:09</endTime>
-  <maxResults>1000</maxResults>
-</AcsEventCond>
