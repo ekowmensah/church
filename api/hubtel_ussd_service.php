@@ -116,17 +116,23 @@ try {
         }
         
         // Add navigation options
+        log_debug("Navigation check: total_pages=$total_pages, current_page=$page, page < total_pages=" . ($page < $total_pages ? 'true' : 'false'));
         if ($total_pages > 1) {
             $menu .= "\n";
             if ($page < $total_pages) {
                 $menu .= "98. Next Page\n";
+                log_debug("Added 'Next Page' option");
             }
             if ($page > 1) {
                 $menu .= "99. Previous Page\n";
+                log_debug("Added 'Previous Page' option");
             }
+        } else {
+            log_debug("Only 1 page, no navigation options added");
         }
         
-        log_debug("Built menu with " . ($end_index - $start_index) . " items, has_next: " . ($page < $total_pages ? 'true' : 'false'));
+        log_debug("Built menu with " . ($end_index - $start_index) . " items, has_next: " . ($page < $total_pages ? 'true' : 'false') . ", menu length: " . strlen($menu) . " chars");
+        log_debug("Menu content: " . str_replace("\n", "\\n", $menu));
         
         return [
             'menu' => $menu,
@@ -190,8 +196,8 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment Types (Page 1 of {$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "\nSelect donation type:",
-                                'Label' => 'Select Donation Type',
+                                'Message' => "Payment Types (Page 1 of {$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "\nSelect payment type:",
+                                'Label' => 'Select Payment Type',
                                 'ClientState' => "menu_unmatched_page_1",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
@@ -226,8 +232,8 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment Types (Page 1 of {$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "\nSelect donation type:",
-                                'Label' => 'Select Donation Type',
+                                'Message' => "Payment Types (Page 1 of {$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "\nSelect payment type:",
+                                'Label' => 'Select Payment Type',
                                 'ClientState' => "menu_self_{$member['id']}_page_1",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
@@ -275,8 +281,8 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types (Page 1 of {$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "\nSelect donation type:",
-                                'Label' => 'Select Donation Type',
+                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types (Page 1 of {$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "\nSelect payment type:",
+                                'Label' => 'Select Payment Type',
                                 'ClientState' => "menu_unregistered_for_{$target_member['id']}_page_1",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
@@ -287,8 +293,8 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types (Page 1 of {$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "\nSelect donation type:",
-                                'Label' => 'Select Donation Type',
+                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types (Page 1 of {$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "\nSelect payment type:",
+                                'Label' => 'Select Payment Type',
                                 'ClientState' => "menu_other_{$payer_id}_{$target_member['id']}_page_1",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
@@ -342,8 +348,8 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment Types (Page {$new_page} of {$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "\nSelect donation type:",
-                                'Label' => 'Select Donation Type',
+                                'Message' => "Payment Types (Page {$new_page} of {$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "\nSelect payment type:",
+                                'Label' => 'Select Payment Type',
                                 'ClientState' => "menu_{$context}_page_{$new_page}",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
@@ -380,8 +386,8 @@ try {
                         $response = [
                             'SessionId' => $session_id,
                             'Type' => 'response',
-                            'Message' => "Invalid selection. Please try again.\n\nPayment Types (Page {$current_page} of {$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "\nSelect donation type:",
-                            'Label' => 'Select Donation Type',
+                            'Message' => "Invalid selection. Please try again.\n\nPayment Types (Page {$current_page} of {$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "\nSelect payment type:",
+                            'Label' => 'Select Payment Type',
                             'ClientState' => $client_state,
                             'DataType' => 'input',
                             'FieldType' => 'text'
