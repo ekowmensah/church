@@ -171,9 +171,9 @@ try {
                 $response = [
                     'SessionId' => $session_id,
                     'Type' => 'response',
-                    'Message' => "Welcome to Freeman Methodist Church Payments\n\nYour phone number is not registered.\n\nWho are you paying for?\n1. Myself (unregistered)\n2. Member (enter CRN)\n\nSelect option:",
-                    'Label' => 'Payment For',
-                    'ClientState' => 'payment_for_unregistered',
+                    'Message' => "Welcome to Freeman Methodist Church Payments\n\nYour phone number is not registered.\n\nEnter the CRN of the member you want to pay for:",
+                    'Label' => 'Enter CRN',
+                    'ClientState' => 'crn_input_unregistered',
                     'DataType' => 'input',
                     'FieldType' => 'text'
                 ];
