@@ -102,8 +102,8 @@ try {
     
     // Build payment types menu
     $payment_menu = "";
-    foreach ($payment_types as $index => $type) {
-        $payment_menu .= ($index + 1) . ". " . $type['name'] . "\n";
+    foreach ($payment_types as $index => $payment_type) {
+        $payment_menu .= ($index + 1) . ". " . $payment_type['name'] . "\n";
     }
     log_debug("Built payment menu with " . strlen($payment_menu) . " characters");
     
