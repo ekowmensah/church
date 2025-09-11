@@ -25,6 +25,7 @@ migrations/add_church_id_column.php
 sql/create_payment_intents_table.sql
 logs/sms_debug_2025-07-31.log
 CURRENT_myfreemangit.sql
+config/config.php
 logs/hubtel_callback_debug.log
 logs/hubtel_callback_raw.log
 logs/hubtel_callback_test.log
