@@ -97,15 +97,18 @@ try {
     
     while ($row = $types_result->fetch_assoc()) {
         $payment_types[] = $row;
+        log_debug("Loaded payment type: {$row['id']} - {$row['name']}");
     }
-    log_debug("Loaded " . count($payment_types) . " payment types");
+    log_debug("Total payment types loaded: " . count($payment_types));
     
-    // Build paginated payment types menu (max 8 items per page to fit USSD limits)
-    function build_payment_menu_page($payment_types, $page = 1, $items_per_page = 8) {
+    // Build paginated payment types menu (max 6 items per page to fit USSD limits better)
+    function build_payment_menu_page($payment_types, $page = 1, $items_per_page = 6) {
         $total_items = count($payment_types);
         $total_pages = ceil($total_items / $items_per_page);
         $start_index = ($page - 1) * $items_per_page;
         $end_index = min($start_index + $items_per_page, $total_items);
+        
+        log_debug("Pagination: Total items: $total_items, Page: $page, Items per page: $items_per_page, Total pages: $total_pages, Start: $start_index, End: $end_index");
         
         $menu = "";
         for ($i = $start_index; $i < $end_index; $i++) {
@@ -122,6 +125,8 @@ try {
                 $menu .= "99. Previous Page\n";
             }
         }
+        
+        log_debug("Built menu with " . ($end_index - $start_index) . " items, has_next: " . ($page < $total_pages ? 'true' : 'false'));
         
         return [
             'menu' => $menu,
