@@ -409,7 +409,7 @@ try {
                                 $target_member = $member_result->fetch_assoc();
                                 
                                 if ($target_member) {
-                                    $message = "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types ({$new_page}/{$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "Select type:";
+                                    $message = "For: {$target_member['full_name']} \n\nPayment Types ({$new_page}/{$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "Select type:";
                                 }
                             } elseif (str_starts_with($context, 'other_')) {
                                 $context_parts = explode('_', $context, 3);
@@ -422,7 +422,7 @@ try {
                                     $target_member = $member_result->fetch_assoc();
                                     
                                     if ($target_member) {
-                                        $message = "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types ({$new_page}/{$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "Select type:";
+                                        $message = "For: {$target_member['full_name']} \n\nPayment Types ({$new_page}/{$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "Select type:";
                                     }
                                 }
                             }
