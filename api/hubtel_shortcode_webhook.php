@@ -324,7 +324,7 @@ try {
             'status' => $payment_status,
             'church_id' => $final_church_id,
             'payment_type_id' => $payment_type_id,
-            'recorded_by' => 'Shortcode Payment',
+            'recorded_by' => 'USSD',
             'mode' => 'Mobile Money'
         ];
         
