@@ -1,15 +1,16 @@
 <?php
+//session_start();
 // Base URL for the application
 if (!defined('BASE_URL')) {
-    define('BASE_URL', 'https://portal.myfreeman.org');
+    define('BASE_URL', 'http://localhost/myfreemanchurchgit/church');
 }
 // Database configuration
 // Ensure $conn is global for all includes
 if (!isset($GLOBALS['conn'])) {
     $host = 'localhost';
-    $db   = 'fmckgmib_portal';
-    $user = 'fmckgmib_portal';
-    $pass = '7%yKi#;dPm2j';
+    $db   = 'myfreemangit';
+    $user = 'root';
+    $pass = '';
     $GLOBALS['conn'] = new mysqli($host, $user, $pass, $db);
     if ($GLOBALS['conn']->connect_error) {
         die('Connection failed: ' . $GLOBALS['conn']->connect_error);
