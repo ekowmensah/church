@@ -1,4 +1,5 @@
 <?php
+//session_start();
 // Base URL for the application
 if (!defined('BASE_URL')) {
     define('BASE_URL', 'http://localhost/myfreemanchurchgit/church');
