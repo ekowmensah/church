@@ -129,6 +129,50 @@ try {
                 $menu .= "99. Previous\n";
                 log_debug("Added 'Previous' option");
             }
+        }
+        
+        return [
+            'menu' => $menu,
+            'total_pages' => $total_pages,
+            'current_page' => $page,
+            'has_next' => $page < $total_pages,
+            'has_prev' => $page > 1
+        ];
+    }
+    
+    // Build paginated payment period menu (max 6 items per page to fit USSD limits)
+    function build_period_menu_page($page = 1, $items_per_page = 6) {
+        // Generate 12 months (current + previous 11)
+        $periods = [];
+        for ($i = 0; $i < 12; $i++) {
+            $date = date('Y-m-01', strtotime("-$i months"));
+            $display = date('F Y', strtotime($date));
+            $periods[] = ['date' => $date, 'display' => $display];
+        }
+        
+        $total_items = count($periods);
+        $total_pages = ceil($total_items / $items_per_page);
+        $start_index = ($page - 1) * $items_per_page;
+        $end_index = min($start_index + $items_per_page, $total_items);
+        
+        log_debug("Period Pagination: Total items: $total_items, Page: $page, Items per page: $items_per_page, Total pages: $total_pages, Start: $start_index, End: $end_index");
+        
+        $menu = "";
+        for ($i = $start_index; $i < $end_index; $i++) {
+            $menu .= ($i + 1) . ". " . $periods[$i]['display'] . "\n";
+        }
+        
+        // Add navigation options if multiple pages exist
+        if ($total_pages > 1) {
+            $menu .= "\n";
+            if ($page < $total_pages) {
+                $menu .= "98. Next\n";
+                log_debug("Added 'Next' option for periods");
+            }
+            if ($page > 1) {
+                $menu .= "99. Previous\n";
+                log_debug("Added 'Previous' option for periods");
+            }
         } else {
             log_debug("Only 1 page, no navigation options added");
         }
@@ -141,7 +185,8 @@ try {
             'total_pages' => $total_pages,
             'current_page' => $page,
             'has_next' => $page < $total_pages,
-            'has_prev' => $page > 1
+            'has_prev' => $page > 1,
+            'periods' => $periods
         ];
     }
     
@@ -364,20 +409,15 @@ try {
                     if ($selection >= 1 && $selection <= count($payment_types)) {
                         $selected_type = $payment_types[$selection - 1];
                         
-                        // Generate payment period options (current month and previous 11 months)
-                        $period_menu = "";
-                        for ($i = 0; $i < 12; $i++) {
-                            $date = date('Y-m-01', strtotime("-$i months"));
-                            $display = date('F Y', strtotime($date));
-                            $period_menu .= ($i + 1) . ". " . $display . "\n";
-                        }
+                        // Generate paginated payment period options
+                        $period_data = build_period_menu_page(1);
                         
                         $response = [
                             'SessionId' => $session_id,
                             'Type' => 'response',
-                            'Message' => "You selected: {$selected_type['name']}\n\nSelect payment period:\n\n" . $period_menu . "Select period:",
+                            'Message' => "You selected: {$selected_type['name']}\n\nSelect payment period (1/{$period_data['total_pages']}):\n\n" . $period_data['menu'] . "Select period:",
                             'Label' => 'Select Period',
-                            'ClientState' => "period_{$selected_type['id']}_" . str_replace('menu_', '', $client_state),
+                            'ClientState' => "period_{$selected_type['id']}_" . str_replace('menu_', '', $client_state) . "_page_1",
                             'DataType' => 'input',
                             'FieldType' => 'text'
                         ];
@@ -407,19 +447,96 @@ try {
                     break;
                     
                 case (str_starts_with($client_state, 'period_') ? $client_state : ''):
-                    // User selected payment period
+                    // User selected payment period or navigation
                     $selection = intval($message);
                     
+                    // Handle pagination navigation (98 = Next, 99 = Previous)
+                    if ($selection === 98 || $selection === 99) {
+                        // Extract current page from client state
+                        if (preg_match('/^period_(\d+)_(.+)_page_(\d+)$/', $client_state, $matches)) {
+                            $payment_type_id = $matches[1];
+                            $context = $matches[2];
+                            $current_page = intval($matches[3]);
+                            
+                            if ($selection === 98) {
+                                // Next page
+                                $new_page = $current_page + 1;
+                            } else {
+                                // Previous page
+                                $new_page = $current_page - 1;
+                            }
+                            
+                            $period_data = build_period_menu_page($new_page);
+                            
+                            // Get payment type name
+                            $selected_type_name = '';
+                            foreach ($payment_types as $type) {
+                                if ($type['id'] == $payment_type_id) {
+                                    $selected_type_name = $type['name'];
+                                    break;
+                                }
+                            }
+                            
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'response',
+                                'Message' => "You selected: {$selected_type_name}\n\nSelect payment period ({$new_page}/{$period_data['total_pages']}):\n\n" . $period_data['menu'] . "Select period:",
+                                'Label' => 'Select Period',
+                                'ClientState' => "period_{$payment_type_id}_{$context}_page_{$new_page}",
+                                'DataType' => 'input',
+                                'FieldType' => 'text'
+                            ];
+                            break;
+                        }
+                    }
+                    
+                    // Handle period selection (1-12 on current page)
                     if ($selection >= 1 && $selection <= 12) {
-                        // Parse client state: period_{payment_type_id}_{context}
-                        $parts = explode('_', $client_state, 3);
-                        $payment_type_id = $parts[1];
-                        $context = $parts[2] ?? '';
+                        // Parse client state to get page info
+                        $current_page = 1;
+                        $payment_type_id = '';
+                        $context = '';
                         
-                        // Calculate selected period
-                        $period_index = $selection - 1;
-                        $period_date = date('Y-m-01', strtotime("-$period_index months"));
-                        $period_display = date('F Y', strtotime($period_date));
+                        if (preg_match('/^period_(\d+)_(.+)_page_(\d+)$/', $client_state, $matches)) {
+                            $payment_type_id = $matches[1];
+                            $context = $matches[2];
+                            $current_page = intval($matches[3]);
+                        } else {
+                            // Legacy format without pagination
+                            $parts = explode('_', $client_state, 3);
+                            $payment_type_id = $parts[1];
+                            $context = $parts[2] ?? '';
+                        }
+                        
+                        // Get period data for current page to calculate actual period index
+                        $period_data = build_period_menu_page($current_page);
+                        $periods = $period_data['periods'];
+                        
+                        // Calculate actual period index based on page and selection
+                        $items_per_page = 6;
+                        $start_index = ($current_page - 1) * $items_per_page;
+                        $actual_period_index = $start_index + ($selection - 1);
+                        
+                        // Validate selection is within available periods on current page
+                        $items_on_page = min($items_per_page, count($periods) - $start_index);
+                        if ($selection > $items_on_page) {
+                            // Invalid selection for current page
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'response',
+                                'Message' => "Invalid selection. Please select from the available options:",
+                                'Label' => 'Select Period',
+                                'ClientState' => $client_state,
+                                'DataType' => 'input',
+                                'FieldType' => 'text'
+                            ];
+                            break;
+                        }
+                        
+                        // Get the selected period
+                        $selected_period = $periods[$actual_period_index];
+                        $period_date = $selected_period['date'];
+                        $period_display = $selected_period['display'];
                         
                         // Get payment type name
                         $selected_type_name = '';
@@ -444,7 +561,7 @@ try {
                         $response = [
                             'SessionId' => $session_id,
                             'Type' => 'response',
-                            'Message' => "Invalid selection. Please select a period from 1-12:",
+                            'Message' => "Invalid selection. Please select from the available options:",
                             'Label' => 'Select Period',
                             'ClientState' => $client_state,
                             'DataType' => 'input',
