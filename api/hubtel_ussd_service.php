@@ -519,11 +519,12 @@ try {
                         // Calculate actual period index based on page and selection
                         $items_per_page = 4;
                         $start_index = ($current_page - 1) * $items_per_page;
-                        $actual_period_index = $start_index + ($selection - 1);
+                        $actual_period_index = $selection - 1;
                         
                         // Validate selection is within available periods on current page
-                        $items_on_page = min($items_per_page, count($periods) - $start_index);
-                        if ($selection > $items_on_page) {
+                        $min_selection = $start_index + 1;
+                        $max_selection = $start_index + min($items_per_page, count($periods) - $start_index);
+                        if ($selection < $min_selection || $selection > $max_selection) {
                             // Invalid selection for current page
                             $response = [
                                 'SessionId' => $session_id,
