@@ -30,12 +30,10 @@ $description = '';
 if (
     isset($bulk_items) && is_array($bulk_items) && count($bulk_items) > 0
 ) {
-    // Concatenate all item descriptions for Hubtel
+    // Use the already formatted descriptions from frontend
     $desc_parts = [];
     foreach ($bulk_items as $item) {
-        $item_period = isset($item['payment_period_description']) && $item['payment_period_description'] !== '' ? $item['payment_period_description'] : (isset($item['period_text']) && $item['period_text'] !== '' ? $item['period_text'] : '-');
-        $item_type = isset($item['typeName']) && $item['typeName'] !== '' ? $item['typeName'] : '-';
-        $desc_parts[] = "Payment for {$item_period} {$item_type}";
+        $desc_parts[] = $item['desc'] ?? $item['typeName'] ?? '-';
     }
     $description = implode('; ', $desc_parts) . " by $crn";
     // Optionally trim to 255 chars for Hubtel
