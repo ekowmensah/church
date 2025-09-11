@@ -363,14 +363,23 @@ try {
                     // Handle payment type selection
                     if ($selection >= 1 && $selection <= count($payment_types)) {
                         $selected_type = $payment_types[$selection - 1];
+                        
+                        // Generate payment period options (current month and previous 11 months)
+                        $period_menu = "";
+                        for ($i = 0; $i < 12; $i++) {
+                            $date = date('Y-m-01', strtotime("-$i months"));
+                            $display = date('F Y', strtotime($date));
+                            $period_menu .= ($i + 1) . ". " . $display . "\n";
+                        }
+                        
                         $response = [
                             'SessionId' => $session_id,
                             'Type' => 'response',
-                            'Message' => "You selected: {$selected_type['name']}\n\nEnter amount (GHS):",
-                            'Label' => 'Enter Amount',
-                            'ClientState' => "amount_{$selected_type['id']}_" . str_replace('menu_', '', $client_state),
+                            'Message' => "You selected: {$selected_type['name']}\n\nSelect payment period:\n\n" . $period_menu . "Select period:",
+                            'Label' => 'Select Period',
+                            'ClientState' => "period_{$selected_type['id']}_" . str_replace('menu_', '', $client_state),
                             'DataType' => 'input',
-                            'FieldType' => 'decimal'
+                            'FieldType' => 'text'
                         ];
                     } else {
                         // Invalid selection - show current page again
@@ -390,6 +399,53 @@ try {
                             'Type' => 'response',
                             'Message' => "Invalid selection. Please try again.\n\nPayment Types ({$current_page}/{$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "Select type:",
                             'Label' => 'Select Payment Type',
+                            'ClientState' => $client_state,
+                            'DataType' => 'input',
+                            'FieldType' => 'text'
+                        ];
+                    }
+                    break;
+                    
+                case (str_starts_with($client_state, 'period_') ? $client_state : ''):
+                    // User selected payment period
+                    $selection = intval($message);
+                    
+                    if ($selection >= 1 && $selection <= 12) {
+                        // Parse client state: period_{payment_type_id}_{context}
+                        $parts = explode('_', $client_state, 3);
+                        $payment_type_id = $parts[1];
+                        $context = $parts[2] ?? '';
+                        
+                        // Calculate selected period
+                        $period_index = $selection - 1;
+                        $period_date = date('Y-m-01', strtotime("-$period_index months"));
+                        $period_display = date('F Y', strtotime($period_date));
+                        
+                        // Get payment type name
+                        $selected_type_name = '';
+                        foreach ($payment_types as $type) {
+                            if ($type['id'] == $payment_type_id) {
+                                $selected_type_name = $type['name'];
+                                break;
+                            }
+                        }
+                        
+                        $response = [
+                            'SessionId' => $session_id,
+                            'Type' => 'response',
+                            'Message' => "Payment: {$selected_type_name}\nPeriod: {$period_display}\n\nEnter amount (GHS):",
+                            'Label' => 'Enter Amount',
+                            'ClientState' => "amount_{$payment_type_id}_{$period_date}_{$context}",
+                            'DataType' => 'input',
+                            'FieldType' => 'decimal'
+                        ];
+                    } else {
+                        // Invalid period selection
+                        $response = [
+                            'SessionId' => $session_id,
+                            'Type' => 'response',
+                            'Message' => "Invalid selection. Please select a period from 1-12:",
+                            'Label' => 'Select Period',
                             'ClientState' => $client_state,
                             'DataType' => 'input',
                             'FieldType' => 'text'
@@ -456,14 +512,14 @@ try {
                 case (str_starts_with($client_state, 'confirm_') ? $client_state : ''):
                     // User confirmed payment
                     if ($message === '1') {
-                        // Parse client state: confirm_{payment_type_id}_{amount}_{context}
-                        $parts = explode('_', $client_state);
+                        // Parse client state: confirm_{payment_type_id}_{period_date}_{amount}_{context}
+                        $parts = explode('_', $client_state, 5);
                         $payment_type_id = $parts[1];
                         $amount = floatval($parts[2]);
-                        $context = isset($parts[3]) ? $parts[3] : '';
+                        $context = $parts[3] ?? '';
                         
-                        // Find payment type name
-                        $selected_type_name = 'Donation';
+                        // Get payment type name and period display
+                        $selected_type_name = '';
                         foreach ($payment_types as $type) {
                             if ($type['id'] == $payment_type_id) {
                                 $selected_type_name = $type['name'];
@@ -471,24 +527,34 @@ try {
                             }
                         }
                         
-                        // Determine member info based on context
-                        $member_info = '';
-                        if (str_starts_with($context, 'self_')) {
-                            $member_id = substr($context, 5);
-                            $member_info = "Member ID: $member_id";
-                        } elseif (str_starts_with($context, 'other_')) {
-                            $parts_context = explode('_', $context);
-                            $payer_id = $parts_context[1];
-                            $target_id = $parts_context[2];
-                            $member_info = "Payer ID: $payer_id, Target ID: $target_id";
-                        } elseif (str_starts_with($context, 'unregistered_for_')) {
-                            $target_id = substr($context, 17);
-                            $member_info = "Phone: $phone (unregistered), Target ID: $target_id";
-                        } elseif ($context === 'unmatched') {
-                            $member_info = "Phone: $phone (unregistered)";
-                        }
+                        $period_display = '';
+                        $payment_description = $selected_type_name;
                         
-                        $item_description = "$selected_type_name - $member_info";
+                        // Determine member info and payment context
+                        $member_id = null;
+                        $target_member_id = null;
+                        $payer_member_id = null;
+                        
+                        if (str_starts_with($context, 'self_')) {
+                            // Self payment by registered member
+                            $member_id = substr($context, 5);
+                            $target_member_id = $member_id;
+                            $payer_member_id = $member_id;
+                            $item_description = "$payment_description - Member ID: $member_id";
+                        } elseif (str_starts_with($context, 'other_')) {
+                            // Registered member paying for another member
+                            $context_parts = explode('_', $context, 3);
+                            $payer_member_id = $context_parts[1] ?? null;
+                            $target_member_id = $context_parts[2] ?? null;
+                            $item_description = "$payment_description - Payer ID: $payer_member_id, Target ID: $target_member_id";
+                        } elseif (str_starts_with($context, 'unregistered_for_')) {
+                            // Unregistered user paying for a member
+                            $target_member_id = substr($context, 17);
+                            $item_description = "$payment_description - Phone: $phone (unregistered), Target ID: $target_member_id";
+                        } else {
+                            // Unregistered user paying for themselves
+                            $item_description = "$payment_description - Phone: $phone (unregistered)";
+                        }
                         
                         $response = [
                             'SessionId' => $session_id,
