@@ -610,10 +610,11 @@ try {
                     // User entered amount
                     $amount = floatval($message);
                     if ($amount > 0) {
-                        // Parse client state: amount_{payment_type_id}_{context}
+                        // Parse client state: amount_{payment_type_id}_{period_date}_{context}
                         $parts = explode('_', $client_state);
                         $payment_type_id = $parts[1];
-                        $context = isset($parts[2]) ? $parts[2] : '';
+                        $period_date = $parts[2] ?? '';
+                        $context = isset($parts[3]) ? $parts[3] : '';
                         
                         // Find payment type name
                         $selected_type_name = 'Donation';
@@ -633,7 +634,7 @@ try {
                                 'Type' => 'response',
                                 'Message' => "Amount: GHS " . number_format($amount, 2) . " for $selected_type_name\n\nConfirm payment?\n1. Yes, proceed\n2. No, cancel",
                                 'Label' => 'Confirm Payment',
-                                'ClientState' => "confirm_{$payment_type_id}_{$amount}_self_{$member_id}",
+                                'ClientState' => "confirm_{$payment_type_id}_{$period_date}_{$amount}_self_{$member_id}",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
                             ];
@@ -679,7 +680,7 @@ try {
                                 'Type' => 'response',
                                 'Message' => $confirmation_message . "\n\nConfirm payment?\n1. Yes, proceed\n2. No, cancel",
                                 'Label' => 'Confirm Payment',
-                                'ClientState' => "confirm_{$payment_type_id}_{$amount}_{$context}",
+                                'ClientState' => "confirm_{$payment_type_id}_{$period_date}_{$amount}_{$context}",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
                             ];
@@ -701,10 +702,11 @@ try {
                     // User confirmed payment
                     if ($message === '1') {
                         // Parse client state: confirm_{payment_type_id}_{period_date}_{amount}_{context}
-                        $parts = explode('_', $client_state, 5);
+                        $parts = explode('_', $client_state, 6);
                         $payment_type_id = $parts[1];
-                        $amount = floatval($parts[2]);
-                        $context = $parts[3] ?? '';
+                        $period_date = $parts[2] ?? '';
+                        $amount = floatval($parts[3]);
+                        $context = $parts[4] ?? '';
                         
                         // Get payment type name and period display
                         $selected_type_name = '';
@@ -716,6 +718,9 @@ try {
                         }
                         
                         $period_display = '';
+                        if ($period_date) {
+                            $period_display = date('F Y', strtotime($period_date));
+                        }
                         $payment_description = $selected_type_name;
                         
                         // Determine member info and payment context
@@ -728,20 +733,20 @@ try {
                             $member_id = substr($context, 5);
                             $target_member_id = $member_id;
                             $payer_member_id = $member_id;
-                            $item_description = "$payment_description - Member ID: $member_id";
+                            $item_description = "$payment_description - Member ID: $member_id, Period: $period_date";
                         } elseif (str_starts_with($context, 'other_')) {
                             // Registered member paying for another member
                             $context_parts = explode('_', $context, 3);
                             $payer_member_id = $context_parts[1] ?? null;
                             $target_member_id = $context_parts[2] ?? null;
-                            $item_description = "$payment_description - Payer ID: $payer_member_id, Target ID: $target_member_id";
+                            $item_description = "$payment_description - Payer ID: $payer_member_id, Target ID: $target_member_id, Period: $period_date";
                         } elseif (str_starts_with($context, 'unregistered_for_')) {
                             // Unregistered user paying for a member
                             $target_member_id = substr($context, 17);
-                            $item_description = "$payment_description - Phone: $phone (unregistered), Target ID: $target_member_id";
+                            $item_description = "$payment_description - Phone: $phone (unregistered), Target ID: $target_member_id, Period: $period_date";
                         } else {
                             // Unregistered user paying for themselves
-                            $item_description = "$payment_description - Phone: $phone (unregistered)";
+                            $item_description = "$payment_description - Phone: $phone (unregistered), Period: $period_date";
                         }
                         
                         $response = [

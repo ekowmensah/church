@@ -161,12 +161,15 @@ try {
     }
     
     // Extract payment info from items
+    $payment_period = null;
+    $payment_period_description = null;
+    
     if (!empty($items)) {
         foreach ($items as $item) {
             $item_name = $item['Name'] ?? '';
             log_debug("Processing item: $item_name");
             
-            // Parse new format: "PaymentType - Member ID: X" or "PaymentType - Payer ID: X, Target ID: Y"
+            // Parse new format: "PaymentType - Member ID: X, Period: Y" or "PaymentType - Payer ID: X, Target ID: Y, Period: Z"
             if (preg_match('/^([^-]+?)\s*-\s*(.+)$/', $item_name, $matches)) {
                 $donation_type = trim($matches[1]);
                 $member_info = trim($matches[2]);
@@ -176,6 +179,13 @@ try {
                 if (isset($payment_types[$type_key])) {
                     $payment_type_id = $payment_types[$type_key];
                     log_debug("Payment type mapped: '$donation_type' -> ID $payment_type_id");
+                }
+                
+                // Extract payment period from member info
+                if (preg_match('/Period:\s*([0-9-]+)/', $member_info, $period_matches)) {
+                    $payment_period = $period_matches[1];
+                    $payment_period_description = date('F Y', strtotime($payment_period));
+                    log_debug("Payment period extracted: $payment_period ($payment_period_description)");
                 }
                 
                 // Extract member IDs from member info
@@ -289,12 +299,27 @@ try {
     $paymentModel = new Payment();
     
     if ($final_member_id) {
+        // Get payment type name for description
+        $payment_type_name = 'Payment';
+        $type_stmt = $conn->prepare('SELECT name FROM payment_types WHERE id = ?');
+        $type_stmt->bind_param('i', $payment_type_id);
+        $type_stmt->execute();
+        $type_result = $type_stmt->get_result();
+        if ($type_result->num_rows > 0) {
+            $payment_type_name = $type_result->fetch_assoc()['name'];
+        }
+        
+        // Format description like Hubtel payments: "Payment for [period] [type]"
+        $formatted_description = "Payment for " . ($payment_period_description ?: date('F Y')) . " " . $payment_type_name;
+        
         // Member identified - record as regular payment
         $payment_data = [
             'member_id' => $final_member_id,
             'amount' => floatval($amount),
-            'description' => "Shortcode Payment - $description",
+            'description' => $formatted_description,
             'payment_date' => $transaction_date,
+            'payment_period' => $payment_period,
+            'payment_period_description' => $payment_period_description,
             'client_reference' => $reference,
             'status' => $payment_status,
             'church_id' => $final_church_id,
