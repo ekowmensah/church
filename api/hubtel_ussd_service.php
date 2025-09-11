@@ -739,11 +739,12 @@ try {
                             $context_parts = explode('_', $context, 3);
                             $payer_member_id = $context_parts[1] ?? null;
                             $target_member_id = $context_parts[2] ?? null;
-                            $item_description = "$payment_description - Payer ID: $payer_member_id, Target ID: $target_member_id, Period: $period_date";
+                            // CRITICAL FIX: Use Target ID as the primary member for payment attribution
+                            $item_description = "$payment_description - Target ID: $target_member_id, Payer ID: $payer_member_id, Period: $period_date";
                         } elseif (str_starts_with($context, 'unregistered_for_')) {
                             // Unregistered user paying for a member
                             $target_member_id = substr($context, 17);
-                            $item_description = "$payment_description - Phone: $phone (unregistered), Target ID: $target_member_id, Period: $period_date";
+                            $item_description = "$payment_description - Target ID: $target_member_id, Phone: $phone (unregistered), Period: $period_date";
                         } else {
                             // Unregistered user paying for themselves
                             $item_description = "$payment_description - Phone: $phone (unregistered), Period: $period_date";
