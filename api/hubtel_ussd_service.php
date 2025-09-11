@@ -140,8 +140,8 @@ try {
         ];
     }
     
-    // Build paginated payment period menu (6 items per page for exactly 2 pages)
-    function build_period_menu_page($page = 1, $items_per_page = 6) {
+    // Build paginated payment period menu (4 items per page for exactly 3 pages)
+    function build_period_menu_page($page = 1, $items_per_page = 4) {
         // Generate 12 months (current + previous 11)
         $periods = [];
         for ($i = 0; $i < 12; $i++) {
@@ -240,10 +240,11 @@ try {
                         // Unregistered user selecting who to pay for
                         if ($message === '1') {
                             // Paying for themselves (unregistered) - go to payment types
+                            $unregistered_menu_data = build_payment_menu_page($payment_types, 1);
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment Types (1/{$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "Select type:",
+                                'Message' => "Payment Types (1/{$unregistered_menu_data['total_pages']}):\n\n" . $unregistered_menu_data['menu'] . "Select type:",
                                 'Label' => 'Select Payment Type',
                                 'ClientState' => "menu_unmatched_page_1",
                                 'DataType' => 'input',
@@ -276,10 +277,11 @@ try {
                         $member_id = substr($client_state, 12);
                         if ($message === '1') {
                             // Paying for themselves - go to payment types
+                            $self_menu_data = build_payment_menu_page($payment_types, 1);
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment Types (1/{$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "Select type:",
+                                'Message' => "Payment Types (1/{$self_menu_data['total_pages']}):\n\n" . $self_menu_data['menu'] . "Select type:",
                                 'Label' => 'Select Payment Type',
                                 'ClientState' => "menu_self_{$member['id']}_page_1",
                                 'DataType' => 'input',
@@ -325,10 +327,11 @@ try {
                     if ($target_member) {
                         if ($context === 'unregistered') {
                             // Unregistered user paying for a member
+                            $unregistered_for_menu_data = build_payment_menu_page($payment_types, 1);
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types (Page 1 of {$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "\nSelect payment type:",
+                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types (Page 1 of {$unregistered_for_menu_data['total_pages']}):\n\n" . $unregistered_for_menu_data['menu'] . "\nSelect payment type:",
                                 'Label' => 'Select Payment Type',
                                 'ClientState' => "menu_unregistered_for_{$target_member['id']}_page_1",
                                 'DataType' => 'input',
@@ -337,10 +340,11 @@ try {
                         } else {
                             // Registered member paying for another member
                             $payer_id = $context;
+                            $other_menu_data = build_payment_menu_page($payment_types, 1);
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types (Page 1 of {$payment_menu_data['total_pages']}):\n\n" . $payment_menu_data['menu'] . "\nSelect payment type:",
+                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types (Page 1 of {$other_menu_data['total_pages']}):\n\n" . $other_menu_data['menu'] . "\nSelect payment type:",
                                 'Label' => 'Select Payment Type',
                                 'ClientState' => "menu_other_{$payer_id}_{$target_member['id']}_page_1",
                                 'DataType' => 'input',
@@ -513,7 +517,7 @@ try {
                         $periods = $period_data['periods'];
                         
                         // Calculate actual period index based on page and selection
-                        $items_per_page = 6;
+                        $items_per_page = 4;
                         $start_index = ($current_page - 1) * $items_per_page;
                         $actual_period_index = $start_index + ($selection - 1);
                         
