@@ -87,6 +87,19 @@ try {
         log_debug("No member found for phone: $phone");
     }
     
+    // Get payment types from database
+    $payment_types = [];
+    $types_result = $conn->query("SELECT id, name FROM payment_types WHERE active = 1 ORDER BY name ASC");
+    while ($row = $types_result->fetch_assoc()) {
+        $payment_types[] = $row;
+    }
+    
+    // Build payment types menu
+    $payment_menu = "";
+    foreach ($payment_types as $index => $type) {
+        $payment_menu .= ($index + 1) . ". " . $type['name'] . "\n";
+    }
+    
     // Handle different session states
     switch ($type) {
         case 'Initiation':
@@ -95,9 +108,9 @@ try {
                 $response = [
                     'SessionId' => $session_id,
                     'Type' => 'response',
-                    'Message' => "Welcome {$member['full_name']} (CRN: {$member['crn']}) to Freeman Methodist Church Donations\n\n1. General Offering\n2. Tithe\n3. Harvest\n4. Building Fund\n5. Other\n\nSelect donation type:",
-                    'Label' => 'Select Donation Type',
-                    'ClientState' => 'menu_' . $member['id'],
+                    'Message' => "Welcome {$member['full_name']} (CRN: {$member['crn']}) to Freeman Methodist Church Payments\n\nWho are you paying for?\n1. Myself\n2. Another member\n\nSelect option:",
+                    'Label' => 'Payment For',
+                    'ClientState' => 'payment_for_' . $member['id'],
                     'DataType' => 'input',
                     'FieldType' => 'text'
                 ];
@@ -105,9 +118,9 @@ try {
                 $response = [
                     'SessionId' => $session_id,
                     'Type' => 'response',
-                    'Message' => "Welcome to Freeman Methodist Church Donations\n\nYour phone number is not registered. Your donation will be recorded for manual assignment.\n\n1. General Offering\n2. Tithe\n3. Harvest\n4. Building Fund\n5. Other\n\nSelect donation type:",
-                    'Label' => 'Select Donation Type',
-                    'ClientState' => 'menu_unmatched',
+                    'Message' => "Welcome to Freeman Methodist Church Payments\n\nYour phone number is not registered.\n\nWho are you paying for?\n1. Myself (unregistered)\n2. A church member (enter CRN)\n\nSelect option:",
+                    'Label' => 'Payment For',
+                    'ClientState' => 'payment_for_unregistered',
                     'DataType' => 'input',
                     'FieldType' => 'text'
                 ];
@@ -122,24 +135,155 @@ try {
             }
             
             switch (true) {
+                case (str_starts_with($client_state, 'payment_for_')):
+                    if ($client_state === 'payment_for_unregistered') {
+                        // Unregistered user selecting who to pay for
+                        if ($message === '1') {
+                            // Paying for themselves (unregistered) - go to payment types
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'response',
+                                'Message' => "Payment Types:\n\n" . $payment_menu . "\nSelect donation type:",
+                                'Label' => 'Select Donation Type',
+                                'ClientState' => "menu_unmatched",
+                                'DataType' => 'input',
+                                'FieldType' => 'text'
+                            ];
+                        } elseif ($message === '2') {
+                            // Paying for a church member - ask for CRN
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'response',
+                                'Message' => "Enter the CRN of the church member you want to pay for:",
+                                'Label' => 'Enter CRN',
+                                'ClientState' => "crn_input_unregistered",
+                                'DataType' => 'input',
+                                'FieldType' => 'text'
+                            ];
+                        } else {
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'response',
+                                'Message' => "Invalid selection. Please try again.\n\nWho are you paying for?\n1. Myself (unregistered)\n2. A church member (enter CRN)\n\nSelect option:",
+                                'Label' => 'Payment For',
+                                'ClientState' => 'payment_for_unregistered',
+                                'DataType' => 'input',
+                                'FieldType' => 'text'
+                            ];
+                        }
+                    } else {
+                        // Registered member selecting who to pay for
+                        $member_id = substr($client_state, 12);
+                        if ($message === '1') {
+                            // Paying for themselves - go directly to payment types
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'response',
+                                'Message' => "Payment Types:\n\n" . $payment_menu . "\nSelect donation type:",
+                                'Label' => 'Select Donation Type',
+                                'ClientState' => "menu_self_$member_id",
+                                'DataType' => 'input',
+                                'FieldType' => 'text'
+                            ];
+                        } elseif ($message === '2') {
+                            // Paying for another member - ask for CRN
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'response',
+                                'Message' => "Enter the CRN of the member you want to pay for:",
+                                'Label' => 'Enter CRN',
+                                'ClientState' => "crn_input_$member_id",
+                                'DataType' => 'input',
+                                'FieldType' => 'text'
+                            ];
+                        } else {
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'response',
+                                'Message' => "Invalid selection. Please try again.\n\nWho are you paying for?\n1. Myself\n2. Another member\n\nSelect option:",
+                                'Label' => 'Payment For',
+                                'ClientState' => "payment_for_$member_id",
+                                'DataType' => 'input',
+                                'FieldType' => 'text'
+                            ];
+                        }
+                    }
+                    break;
+                    
+                case (str_starts_with($client_state, 'crn_input_')):
+                    // User entered CRN for another member
+                    $context = substr($client_state, 10);
+                    $crn = strtoupper(trim($message));
+                    
+                    // Validate CRN exists
+                    $crn_stmt = $conn->prepare("SELECT id, CONCAT(first_name, ' ', last_name) as full_name, crn FROM members WHERE crn = ? AND status = 'active'");
+                    $crn_stmt->bind_param("s", $crn);
+                    $crn_stmt->execute();
+                    $crn_result = $crn_stmt->get_result();
+                    $target_member = $crn_result->fetch_assoc();
+                    
+                    if ($target_member) {
+                        if ($context === 'unregistered') {
+                            // Unregistered user paying for a member
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'response',
+                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\n" . $payment_menu . "\nSelect donation type:",
+                                'Label' => 'Select Donation Type',
+                                'ClientState' => "menu_unregistered_for_{$target_member['id']}",
+                                'DataType' => 'input',
+                                'FieldType' => 'text'
+                            ];
+                        } else {
+                            // Registered member paying for another member
+                            $payer_id = $context;
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'response',
+                                'Message' => "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\n" . $payment_menu . "\nSelect donation type:",
+                                'Label' => 'Select Donation Type',
+                                'ClientState' => "menu_other_{$payer_id}_{$target_member['id']}",
+                                'DataType' => 'input',
+                                'FieldType' => 'text'
+                            ];
+                        }
+                    } else {
+                        if ($context === 'unregistered') {
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'response',
+                                'Message' => "CRN '$crn' not found. Please try again.\n\nEnter the CRN of the church member you want to pay for:",
+                                'Label' => 'Enter CRN',
+                                'ClientState' => "crn_input_unregistered",
+                                'DataType' => 'input',
+                                'FieldType' => 'text'
+                            ];
+                        } else {
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'response',
+                                'Message' => "CRN '$crn' not found. Please try again.\n\nEnter the CRN of the member you want to pay for:",
+                                'Label' => 'Enter CRN',
+                                'ClientState' => "crn_input_$context",
+                                'DataType' => 'input',
+                                'FieldType' => 'text'
+                            ];
+                        }
+                    }
+                    break;
+                
                 case ($client_state === 'menu' || $client_state === 'menu_unmatched' || str_starts_with($client_state, 'menu_')):
                     // User selected donation type
-                    $donation_types = [
-                        '1' => 'General Offering',
-                        '2' => 'Tithe',
-                        '3' => 'Harvest',
-                        '4' => 'Building Fund',
-                        '5' => 'Other'
-                    ];
+                    $selection = intval($message);
                     
-                    if (isset($donation_types[$message])) {
-                        $selected_type = $donation_types[$message];
+                    if ($selection >= 1 && $selection <= count($payment_types)) {
+                        $selected_type = $payment_types[$selection - 1];
                         $response = [
                             'SessionId' => $session_id,
                             'Type' => 'response',
-                            'Message' => "You selected: $selected_type\n\nEnter amount to donate (GHS):",
+                            'Message' => "You selected: {$selected_type['name']}\n\nEnter amount to donate (GHS):",
                             'Label' => 'Enter Amount',
-                            'ClientState' => "amount_$message",
+                            'ClientState' => "amount_{$selected_type['id']}_" . str_replace('menu_', '', $client_state),
                             'DataType' => 'input',
                             'FieldType' => 'decimal'
                         ];
@@ -147,9 +291,9 @@ try {
                         $response = [
                             'SessionId' => $session_id,
                             'Type' => 'response',
-                            'Message' => "Invalid selection. Please try again.\n\n1. General Offering\n2. Tithe\n3. Harvest\n4. Building Fund\n5. Other\n\nSelect donation type:",
+                            'Message' => "Invalid selection. Please try again.\n\n" . $payment_menu . "\nSelect donation type:",
                             'Label' => 'Select Donation Type',
-                            'ClientState' => 'menu',
+                            'ClientState' => $client_state,
                             'DataType' => 'input',
                             'FieldType' => 'text'
                         ];
@@ -160,25 +304,45 @@ try {
                     // User entered amount
                     $amount = floatval($message);
                     if ($amount > 0) {
-                        $type_num = substr($client_state, 7);
-                        $donation_types = [
-                            '1' => 'General Offering',
-                            '2' => 'Tithe',
-                            '3' => 'Harvest',
-                            '4' => 'Building Fund',
-                            '5' => 'Other'
-                        ];
-                        $selected_type = $donation_types[$type_num] ?? 'Donation';
+                        // Parse client state: amount_{payment_type_id}_{context}
+                        $parts = explode('_', $client_state);
+                        $payment_type_id = $parts[1];
+                        $context = isset($parts[2]) ? $parts[2] : '';
                         
-                        $response = [
-                            'SessionId' => $session_id,
-                            'Type' => 'response',
-                            'Message' => "Amount: GHS " . number_format($amount, 2) . " for $selected_type\n\nPlease enter your CRN (Church Registration Number) for proper record keeping:",
-                            'Label' => 'Enter CRN',
-                            'ClientState' => "crn_{$type_num}_{$amount}",
-                            'DataType' => 'input',
-                            'FieldType' => 'text'
-                        ];
+                        // Find payment type name
+                        $selected_type_name = 'Donation';
+                        foreach ($payment_types as $type) {
+                            if ($type['id'] == $payment_type_id) {
+                                $selected_type_name = $type['name'];
+                                break;
+                            }
+                        }
+                        
+                        // Check if this is for self payment (registered member)
+                        if (str_starts_with($context, 'self_')) {
+                            // Skip CRN input for registered members paying for themselves
+                            $member_id = substr($context, 5);
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'response',
+                                'Message' => "Amount: GHS " . number_format($amount, 2) . " for $selected_type_name\n\nConfirm payment?\n1. Yes, proceed\n2. No, cancel",
+                                'Label' => 'Confirm Payment',
+                                'ClientState' => "confirm_{$payment_type_id}_{$amount}_self_{$member_id}",
+                                'DataType' => 'input',
+                                'FieldType' => 'text'
+                            ];
+                        } else {
+                            // Ask for CRN for unregistered users or other member payments
+                            $response = [
+                                'SessionId' => $session_id,
+                                'Type' => 'response',
+                                'Message' => "Amount: GHS " . number_format($amount, 2) . " for $selected_type_name\n\nConfirm payment?\n1. Yes, proceed\n2. No, cancel",
+                                'Label' => 'Confirm Payment',
+                                'ClientState' => "confirm_{$payment_type_id}_{$amount}_{$context}",
+                                'DataType' => 'input',
+                                'FieldType' => 'text'
+                            ];
+                        }
                     } else {
                         $response = [
                             'SessionId' => $session_id,
@@ -192,31 +356,84 @@ try {
                     }
                     break;
                     
+                case (str_starts_with($client_state, 'confirm_') ? $client_state : ''):
+                    // User confirmed payment
+                    if ($message === '1') {
+                        // Parse client state: confirm_{payment_type_id}_{amount}_{context}
+                        $parts = explode('_', $client_state);
+                        $payment_type_id = $parts[1];
+                        $amount = floatval($parts[2]);
+                        $context = isset($parts[3]) ? $parts[3] : '';
+                        
+                        // Find payment type name
+                        $selected_type_name = 'Donation';
+                        foreach ($payment_types as $type) {
+                            if ($type['id'] == $payment_type_id) {
+                                $selected_type_name = $type['name'];
+                                break;
+                            }
+                        }
+                        
+                        // Determine member info based on context
+                        $member_info = '';
+                        if (str_starts_with($context, 'self_')) {
+                            $member_id = substr($context, 5);
+                            $member_info = "Member ID: $member_id";
+                        } elseif (str_starts_with($context, 'other_')) {
+                            $parts_context = explode('_', $context);
+                            $payer_id = $parts_context[1];
+                            $target_id = $parts_context[2];
+                            $member_info = "Payer ID: $payer_id, Target ID: $target_id";
+                        } elseif (str_starts_with($context, 'unregistered_for_')) {
+                            $target_id = substr($context, 17);
+                            $member_info = "Phone: $phone (unregistered), Target ID: $target_id";
+                        } elseif ($context === 'unmatched') {
+                            $member_info = "Phone: $phone (unregistered)";
+                        }
+                        
+                        $item_description = "$selected_type_name - $member_info";
+                        
+                        $response = [
+                            'SessionId' => $session_id,
+                            'Type' => 'AddToCart',
+                            'Message' => "Thank you! You will receive a payment prompt for GHS " . number_format($amount, 2) . " for $selected_type_name.",
+                            'Item' => [
+                                'ItemName' => $item_description,
+                                'Qty' => 1,
+                                'Price' => $amount
+                            ],
+                            'DataType' => 'input',
+                            'FieldType' => 'text'
+                        ];
+                    } else {
+                        // User cancelled
+                        $response = [
+                            'SessionId' => $session_id,
+                            'Type' => 'response',
+                            'Message' => "Payment cancelled. Thank you for using Freeman Methodist Church USSD service.\n\nDial *713*4# to start again.",
+                            'Label' => 'Payment Cancelled',
+                            'ClientState' => 'cancelled',
+                            'DataType' => 'input',
+                            'FieldType' => 'text'
+                        ];
+                    }
+                    break;
+                    
                 case (str_starts_with($client_state, 'crn_') ? $client_state : ''):
-                    // User entered CRN
+                    // Legacy CRN handling (keeping for backward compatibility)
                     $parts = explode('_', $client_state);
                     if (count($parts) >= 3) {
                         $type_num = $parts[1];
                         $amount = floatval($parts[2]);
                         $crn = trim($message);
                         
-                        $donation_types = [
-                            '1' => 'General Offering',
-                            '2' => 'Tithe', 
-                            '3' => 'Harvest',
-                            '4' => 'Building Fund',
-                            '5' => 'Other'
-                        ];
-                        $selected_type = $donation_types[$type_num] ?? 'Donation';
-                        
                         if (!empty($crn)) {
-                            // Include CRN in item description for webhook processing
-                            $item_description = "$selected_type - CRN: $crn";
+                            $item_description = "Legacy Payment - CRN: $crn";
                             
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'AddToCart',
-                                'Message' => "Thank you! You will receive a payment prompt for GHS " . number_format($amount, 2) . " for $selected_type (CRN: $crn).",
+                                'Message' => "Thank you! You will receive a payment prompt for GHS " . number_format($amount, 2) . " (CRN: $crn).",
                                 'Item' => [
                                     'ItemName' => $item_description,
                                     'Qty' => 1,
