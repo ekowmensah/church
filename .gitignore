@@ -26,3 +26,13 @@ sql/create_payment_intents_table.sql
 logs/sms_debug_2025-07-31.log
 CURRENT_myfreemangit.sql
 config/config.php
+logs/hubtel_callback_debug.log
+logs/hubtel_callback_raw.log
+logs/hubtel_callback_test.log
+logs/hubtel_callback_v2.log
+logs/hubtel_callback.log
+logs/hubtel_debug.log
+logs/php_errors.log
+logs/sms_debug_2025-08-29.log
+logs/sms_debug_2025-09-10.log
+config/config.php
