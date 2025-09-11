@@ -101,8 +101,8 @@ try {
     }
     log_debug("Total payment types loaded: " . count($payment_types));
     
-    // Build paginated payment types menu (max 4 items per page to fit USSD limits)
-    function build_payment_menu_page($payment_types, $page = 1, $items_per_page = 4) {
+    // Build paginated payment types menu (max 6 items per page to fit USSD limits)
+    function build_payment_menu_page($payment_types, $page = 1, $items_per_page = 6) {
         $total_items = count($payment_types);
         $total_pages = ceil($total_items / $items_per_page);
         $start_index = ($page - 1) * $items_per_page;
