@@ -140,7 +140,7 @@ try {
         ];
     }
     
-    // Build paginated payment period menu (max 6 items per page to fit USSD limits)
+    // Build paginated payment period menu (6 items per page for exactly 2 pages)
     function build_period_menu_page($page = 1, $items_per_page = 6) {
         // Generate 12 months (current + previous 11)
         $periods = [];
