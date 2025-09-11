@@ -416,6 +416,9 @@ ob_start();
                 <i class="fas fa-plus mr-1"></i> Add Payment
             </a>
         <?php endif; ?>
+        <a href="payment_bulk_upload.php" class="btn btn-outline-info btn-sm shadow-sm">
+            <i class="fas fa-upload mr-1"></i> Bulk Upload
+        </a>
         <button class="btn btn-success btn-sm shadow-sm" onclick="exportToExcel()">
             <i class="fas fa-file-excel mr-1"></i> Export
         </button>
