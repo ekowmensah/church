@@ -356,7 +356,7 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "CRN  '$crn'  not found. Please try again.\n\nEnter the CRN of the church member you want to pay for:",
+                                'Message' => "CRN '$crn' not found. Please try again.\n\nEnter the CRN of the church member you want to pay for:",
                                 'Label' => 'Enter CRN',
                                 'ClientState' => "crn_input_unregistered",
                                 'DataType' => 'input',
@@ -396,10 +396,41 @@ try {
                             
                             $menu_data = build_payment_menu_page($payment_types, $new_page);
                             
+                            // Build appropriate message based on context
+                            $message = "Payment Types ({$new_page}/{$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "Select type:";
+                            
+                            // Check if this is for a specific member and add member info
+                            if (str_starts_with($context, 'unregistered_for_')) {
+                                $target_member_id = substr($context, 17);
+                                $member_stmt = $conn->prepare("SELECT CONCAT(first_name, ' ', last_name) as full_name, crn FROM members WHERE id = ? AND status = 'active'");
+                                $member_stmt->bind_param("i", $target_member_id);
+                                $member_stmt->execute();
+                                $member_result = $member_stmt->get_result();
+                                $target_member = $member_result->fetch_assoc();
+                                
+                                if ($target_member) {
+                                    $message = "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types ({$new_page}/{$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "Select type:";
+                                }
+                            } elseif (str_starts_with($context, 'other_')) {
+                                $context_parts = explode('_', $context, 3);
+                                $target_member_id = $context_parts[2] ?? null;
+                                if ($target_member_id) {
+                                    $member_stmt = $conn->prepare("SELECT CONCAT(first_name, ' ', last_name) as full_name, crn FROM members WHERE id = ? AND status = 'active'");
+                                    $member_stmt->bind_param("i", $target_member_id);
+                                    $member_stmt->execute();
+                                    $member_result = $member_stmt->get_result();
+                                    $target_member = $member_result->fetch_assoc();
+                                    
+                                    if ($target_member) {
+                                        $message = "Payment for: {$target_member['full_name']} ({$target_member['crn']})\n\nPayment Types ({$new_page}/{$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "Select type:";
+                                    }
+                                }
+                            }
+                            
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Payment Types ({$new_page}/{$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "Select type:",
+                                'Message' => $message,
                                 'Label' => 'Select Payment Type',
                                 'ClientState' => "menu_{$context}_page_{$new_page}",
                                 'DataType' => 'input',
