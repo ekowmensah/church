@@ -275,7 +275,7 @@ $('#singlePaymentForm').on('submit', function(e){
     let periodValue = $('#single_payment_period').val();
     let payload = {
       amount: amount,
-      description: typeName + ' Payment',
+      description: 'Payment for ' + periodText + ' ' + typeName,
       payment_type_id: typeId,
       payment_type_name: typeName,
       payment_period: periodValue,
@@ -433,7 +433,7 @@ $(document).on('click', '#confirmBulkPaymentBtn', function(){
   let descArr = [];
   bulkCart.forEach(function(item){
     total += item.amount;
-    descArr.push(item.typeName+':₵'+item.amount.toLocaleString(undefined,{minimumFractionDigits:2}));
+    descArr.push(item.desc || item.typeName);
   });
   let description = 'Bulk Payment ['+descArr.join(', ')+']';
   let payload = {
@@ -609,7 +609,7 @@ $('#bulkPaymentForm').on('submit', function(e){
   let descArr = [];
   bulkCart.forEach(function(item){
     total += item.amount;
-    descArr.push(item.typeName+':₵'+item.amount.toLocaleString(undefined,{minimumFractionDigits:2}));
+    descArr.push(item.desc || item.typeName);
   });
   let description = 'Bulk Payment ['+descArr.join(', ')+']';
   $.post(
