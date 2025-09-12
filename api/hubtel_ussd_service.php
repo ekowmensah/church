@@ -775,18 +775,17 @@ try {
                                 'Qty' => 1,
                                 'Price' => $amount
                             ],
-                            'DataType' => 'input',
+                            'DataType' => 'display',
                             'FieldType' => 'text'
                         ];
                     } else {
                         // User cancelled
                         $response = [
                             'SessionId' => $session_id,
-                            'Type' => 'response',
+                            'Type' => 'release',
                             'Message' => "Payment cancelled. Thank you for using Freeman Methodist Church USSD service.\n\nDial *713*4# to start again.",
                             'Label' => 'Payment Cancelled',
-                            'ClientState' => 'cancelled',
-                            'DataType' => 'input',
+                            'DataType' => 'display',
                             'FieldType' => 'text'
                         ];
                     }
