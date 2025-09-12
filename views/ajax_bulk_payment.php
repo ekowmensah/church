@@ -111,15 +111,17 @@ if ((!$member_ids && !$sundayschool_ids) || !$amounts || !$church_id || !$paymen
 
 class BulkPaymentProcessor {
     private $conn;
+    private $recorded_by;
     public $success_count = 0;
     public $error_count = 0;
     public $summary = [];
     public $errors = [];
-    public function __construct($conn) {
+    public function __construct($conn, $recorded_by) {
         $this->conn = $conn;
+        $this->recorded_by = $recorded_by;
     }
     
-    public function process($member_ids, $sundayschool_ids, $amounts, $descriptions, $modes, $church_id, $payment_date) {
+    public function process($member_ids, $sundayschool_ids, $amounts, $descriptions, $modes, $periods, $period_descriptions, $church_id, $payment_date) {
         // Process member payments
         foreach ($member_ids as $mid) {
             $mid = intval($mid);
@@ -150,12 +152,13 @@ class BulkPaymentProcessor {
 
                 $this->summary[] = ["debug" => "Attempting insert: member_id=$mid, sundayschool_id=NULL, church_id=$church_id, payment_type_id=$ptid, amount=$amount, mode=$mode, payment_date=$payment_date, payment_period=$period, description=$desc"];
                 $stmt = $this->conn->prepare('INSERT INTO payments (member_id, sundayschool_id, church_id, payment_type_id, amount, mode, payment_date, payment_period, payment_period_description, description, recorded_by) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                $stmt->bind_param('iiidsssssi', $mid, $church_id, $ptid, $amount, $mode, $payment_date, $period, $period_description, $desc, $GLOBALS['recorded_by']);
+                $stmt->bind_param('iiidsssssi', $mid, $church_id, $ptid, $amount, $mode, $payment_date, $period, $period_description, $desc, $this->recorded_by);
                 try {
                     if ($stmt->execute()) {
                         $this->success_count++;
                         $payment_id = $this->conn->insert_id;
                         $this->summary[] = ['member_id' => $mid, 'payment_type_id' => $ptid, 'amount' => $amount, 'payment_id' => $payment_id];
+                        file_put_contents(__DIR__.'/bulk_payment_debug.log', "SUCCESS: Inserted payment ID $payment_id for member $mid, type $ptid, amount $amount\n", FILE_APPEND);
                         
                         // Check if this is a harvest payment (payment_type_id = 4) and send special SMS
                         if ($ptid == 4) {
@@ -205,6 +208,7 @@ class BulkPaymentProcessor {
                     } else {
                         $this->error_count++;
                         $this->errors[] = "DB error for member $mid, type $ptid: ".$stmt->error;
+                        file_put_contents(__DIR__.'/bulk_payment_debug.log', "ERROR: Failed to insert payment for member $mid, type $ptid: ".$stmt->error."\n", FILE_APPEND);
                     }
                 } catch (mysqli_sql_exception $e) {
                     if ($e->getCode() == 1062) {
@@ -251,7 +255,7 @@ class BulkPaymentProcessor {
                 }
                 $this->summary[] = ["debug" => "Attempting insert: member_id=NULL, sundayschool_id=$sid, church_id=$church_id, payment_type_id=$ptid, amount=$amount, mode=$mode, payment_date=$payment_date, payment_period=$period, description=$desc"];
                 $stmt = $this->conn->prepare('INSERT INTO payments (member_id, sundayschool_id, church_id, payment_type_id, amount, mode, payment_date, payment_period, payment_period_description, description, recorded_by) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                $stmt->bind_param('iiidsssssi', $sid, $church_id, $ptid, $amount, $mode, $payment_date, $period, $period_description, $desc, $GLOBALS['recorded_by']);
+                $stmt->bind_param('iiidsssssi', $sid, $church_id, $ptid, $amount, $mode, $payment_date, $period, $period_description, $desc, $this->recorded_by);
                 try {
                     if ($stmt->execute()) {
                         $this->success_count++;
@@ -346,8 +350,8 @@ if (!empty($member_ids) && empty($sundayschool_ids)) {
     file_put_contents(__DIR__.'/bulk_payment_debug.log', "Processing as CRN only. member_ids=".json_encode($member_ids)."\n", FILE_APPEND);
 }
 
-$processor = new BulkPaymentProcessor($conn);
-$result = $processor->process($member_ids, $sundayschool_ids, $amounts, $descriptions, $modes, $church_id, $payment_date);
+$processor = new BulkPaymentProcessor($conn, $recorded_by);
+$result = $processor->process($member_ids, $sundayschool_ids, $amounts, $descriptions, $modes, $periods, $period_descriptions, $church_id, $payment_date);
 
 respond([
     'success' => $processor->error_count === 0,
