@@ -616,10 +616,10 @@ try {
                     $amount = floatval($message);
                     if ($amount > 0) {
                         // Parse client state: amount_{payment_type_id}_{period_date}_{context}
-                        $parts = explode('_', $client_state);
+                        $parts = explode('_', $client_state, 4);
                         $payment_type_id = $parts[1];
                         $period_date = $parts[2] ?? '';
-                        $context = isset($parts[3]) ? $parts[3] : '';
+                        $context = $parts[3] ?? '';
                         
                         // Find payment type name
                         $selected_type_name = 'Donation';
