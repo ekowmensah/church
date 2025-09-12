@@ -194,11 +194,16 @@ try {
                     $target_member_id = intval($member_matches[1]);
                     $payer_member_id = $target_member_id;
                     log_debug("Self payment - Member ID: $target_member_id");
+                } elseif (preg_match('/Target ID:\s*(\d+),\s*Payer ID:\s*(\d+)/', $member_info, $target_first_matches)) {
+                    // Registered member paying for another member (Target ID first format)
+                    $target_member_id = intval($target_first_matches[1]);
+                    $payer_member_id = intval($target_first_matches[2]);
+                    log_debug("Cross payment (Target first) - Target ID: $target_member_id, Payer ID: $payer_member_id");
                 } elseif (preg_match('/Payer ID:\s*(\d+),\s*Target ID:\s*(\d+)/', $member_info, $payer_matches)) {
-                    // Registered member paying for another member
+                    // Registered member paying for another member (Payer ID first format - legacy)
                     $payer_member_id = intval($payer_matches[1]);
                     $target_member_id = intval($payer_matches[2]);
-                    log_debug("Cross payment - Payer ID: $payer_member_id, Target ID: $target_member_id");
+                    log_debug("Cross payment (Payer first) - Payer ID: $payer_member_id, Target ID: $target_member_id");
                 } elseif (preg_match('/Phone:\s*([^,]+)\s*\(unregistered\)(?:,\s*Target ID:\s*(\d+))?/', $member_info, $phone_matches)) {
                     // Unregistered user payment
                     if (isset($phone_matches[2])) {
