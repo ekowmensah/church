@@ -742,7 +742,7 @@ try {
                             $item_description = "$payment_description - Member ID: $member_id, Period: $period_date";
                         } elseif (str_starts_with($context, 'other_')) {
                             // Registered member paying for another member
-                            $context_parts = explode('_', $context, 3);
+                            $context_parts = explode('_', $context, 4);
                             $payer_member_id = $context_parts[1] ?? null;
                             $target_member_id = $context_parts[2] ?? null;
                             log_debug("Context parsing - Full context: $context, Payer: $payer_member_id, Target: $target_member_id");
