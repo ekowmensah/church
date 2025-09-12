@@ -94,7 +94,15 @@ try {
     
     // Get payment types from database
     $payment_types = [];
-    $types_result = $conn->query("SELECT id, name FROM payment_types WHERE active = 1 ORDER BY name ASC");
+    $types_result = $conn->query("SELECT id, name FROM payment_types WHERE active = 1 ORDER BY CASE 
+        WHEN UPPER(name) = 'TITHE' THEN 1
+        WHEN UPPER(name) = 'WELFARE' THEN 2
+        WHEN UPPER(name) = 'HARVEST' THEN 3
+        WHEN UPPER(name) = 'OFFERING' THEN 4
+        WHEN UPPER(name) = 'SUNDAY SCHOOL' THEN 5
+        WHEN UPPER(name) = 'APPEAL' THEN 6
+        ELSE 7
+    END, name ASC");
     if (!$types_result) {
         log_debug("Failed to query payment_types: " . $conn->error);
         throw new Exception("Database query failed for payment_types");
