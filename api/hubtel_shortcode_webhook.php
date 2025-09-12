@@ -407,6 +407,33 @@ try {
         // You can implement admin notification logic here
     }
     
+    // Send callback confirmation to Hubtel
+    $callback_payload = [
+        'SessionId' => $session_id,
+        'OrderId' => $order_id,
+        'ServiceStatus' => 'success',
+        'MetaData' => null
+    ];
+    
+    $callback_url = 'http://gs-callback.hubtel.com:9055/callback';
+    $callback_options = [
+        'http' => [
+            'header' => "Content-Type: application/json\r\n",
+            'method' => 'POST',
+            'content' => json_encode($callback_payload),
+            'timeout' => 10
+        ]
+    ];
+    
+    $callback_context = stream_context_create($callback_options);
+    $callback_result = @file_get_contents($callback_url, false, $callback_context);
+    
+    if ($callback_result !== false) {
+        log_debug('Hubtel callback sent successfully: ' . json_encode($callback_payload));
+    } else {
+        log_debug('Failed to send Hubtel callback: ' . json_encode($callback_payload));
+    }
+    
     // Respond success to Hubtel
     http_response_code(200);
     echo json_encode(['status' => 'success', 'message' => 'Payment processed']);
