@@ -707,11 +707,12 @@ try {
                     // User confirmed payment
                     if ($message === '1') {
                         // Parse client state: confirm_{payment_type_id}_{period_date}_{amount}_{context}
-                        $parts = explode('_', $client_state, 6);
+                        $parts = explode('_', $client_state, 5);
                         $payment_type_id = $parts[1];
                         $period_date = $parts[2] ?? '';
                         $amount = floatval($parts[3]);
                         $context = $parts[4] ?? '';
+                        log_debug("Confirm parsing - Full state: $client_state, Context: $context");
                         
                         // Get payment type name and period display
                         $selected_type_name = '';
