@@ -24,7 +24,8 @@ if (!$is_super_admin && !has_permission('access_ajax_single_payment_member')) {
     exit;
 }
 
-$member_id = intval($_SESSION['member_id']);
+// Use member_id from POST data (from CRN lookup) if provided, otherwise fall back to session member_id
+$member_id = intval($_POST['member_id'] ?? $_SESSION['member_id'] ?? 0);
 $payment_type_id = intval($_POST['payment_type_id'] ?? 0);
 $amount = floatval($_POST['amount'] ?? 0);
 // Handle payment date - if only date is provided, append current time

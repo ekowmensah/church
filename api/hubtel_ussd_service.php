@@ -27,6 +27,11 @@ require_once __DIR__.'/../config/config.php';
 $debug_log = __DIR__.'/../logs/ussd_service_debug.log';
 $raw_log = __DIR__.'/../logs/ussd_service_raw.log';
 
+// Ensure log directory exists
+if (!is_dir(__DIR__.'/../logs')) {
+    mkdir(__DIR__.'/../logs', 0755, true);
+}
+
 function log_debug($msg) {
     global $debug_log;
     file_put_contents($debug_log, date('c')." $msg\n", FILE_APPEND);
