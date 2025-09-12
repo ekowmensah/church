@@ -744,8 +744,10 @@ try {
                             $context_parts = explode('_', $context, 3);
                             $payer_member_id = $context_parts[1] ?? null;
                             $target_member_id = $context_parts[2] ?? null;
+                            log_debug("Context parsing - Full context: $context, Payer: $payer_member_id, Target: $target_member_id");
                             // CRITICAL FIX: Use Target ID as the primary member for payment attribution
                             $item_description = "$payment_description - Target ID: $target_member_id, Payer ID: $payer_member_id, Period: $period_date";
+                            log_debug("Generated ItemName: $item_description");
                         } elseif (str_starts_with($context, 'unregistered_for_')) {
                             // Unregistered user paying for a member
                             $target_member_id = substr($context, 17);
