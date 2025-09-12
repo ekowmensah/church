@@ -179,6 +179,12 @@ $(function() {
             url: 'ajax_payment_types.php',
             dataType: 'json',
             delay: 150,
+            data: function(params) {
+              return {
+                q: params.term || '', // Send search term
+                page: params.page || 1
+              };
+            },
             processResults: function(data) {
               if (!data || !data.results) {
                 console.error('No payment types loaded:', data);

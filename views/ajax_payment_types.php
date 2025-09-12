@@ -21,9 +21,23 @@ if (!$is_super_admin && !has_permission('access_ajax_payment_types')) {
     exit;
 }
 
-$res = $conn->query("SELECT id, name FROM payment_types WHERE active=1 ORDER BY name ASC");
+// Get search term from request
+$search = isset($_GET['q']) ? trim($_GET['q']) : '';
+
+// Build query with search functionality
+if (!empty($search)) {
+    $stmt = $conn->prepare("SELECT id, name FROM payment_types WHERE active=1 AND name LIKE ? ORDER BY name ASC");
+    $search_param = '%' . $search . '%';
+    $stmt->bind_param('s', $search_param);
+    $stmt->execute();
+    $res = $stmt->get_result();
+} else {
+    $res = $conn->query("SELECT id, name FROM payment_types WHERE active=1 ORDER BY name ASC");
+}
+
 $results = [];
 while($row = $res->fetch_assoc()) {
     $results[] = ['id' => $row['id'], 'text' => $row['name']];
 }
+
 echo json_encode(['results' => $results]);
