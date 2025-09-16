@@ -1,7 +1,11 @@
 <?php
 // Minimal fallback logger for debugging
 function _test_log($msg) {
-    file_put_contents(__DIR__ . '/../logs/hubtel_callback_test.log', date('Y-m-d H:i:s') . ' ' . $msg . "\n", FILE_APPEND);
+    $logfile = __DIR__ . '/../logs/hubtel_callback_test.log';
+    $logline = date('Y-m-d H:i:s') . ' ' . $msg . "\n";
+    if (file_put_contents($logfile, $logline, FILE_APPEND) === false) {
+        error_log('Failed to write to hubtel_callback_test.log: ' . $msg);
+    }
 }
 _test_log('hubtel_callback.php called');
 // Hubtel callback handler: receives payment status update from Hubtel
@@ -14,7 +18,10 @@ $debug_log = __DIR__.'/../logs/hubtel_callback_debug.log';
 
 function log_debug($msg) {
     global $debug_log;
-    file_put_contents($debug_log, date('c')." $msg\n", FILE_APPEND);
+    $logline = date('c')." $msg\n";
+    if (file_put_contents($debug_log, $logline, FILE_APPEND) === false) {
+        error_log('Failed to write to hubtel_callback_debug.log: ' . $msg);
+    }
 }
 
 // Log raw input for debugging
