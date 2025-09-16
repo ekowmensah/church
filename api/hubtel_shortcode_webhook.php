@@ -458,7 +458,21 @@ try {
                 $target_phone = $target_row['phone'];
                 $target_name = $target_row['full_name'];
                 if (!empty($target_phone) && $target_phone !== $customer_phone) {
-                    $target_sms_msg = "Hello $target_name, your payment of $amount GHS for $desc_formatted has been received by Freeman Methodist Church. Thank you!";
+                    $target_sms_msg = "Hello $target_name, your payment of $amount GHS for $desc_formatted by [$full_name] has been received by Freeman Methodist Church. Thank you!";
+                    // If payment type is HARVEST, append total for year
+                    if (strtolower($donation_type) === 'harvest' && !empty($payment_period)) {
+                        $harvest_year = date('Y', strtotime($payment_period));
+                        $harvest_total = 0;
+                        $harvest_stmt = $conn->prepare('SELECT SUM(amount) as total FROM payments WHERE member_id = ? AND payment_type_id = ? AND YEAR(payment_period) = ? AND status = "Completed"');
+                        $harvest_stmt->bind_param('iii', $target_member_id, $payment_type_id, $harvest_year);
+                        $harvest_stmt->execute();
+                        $harvest_result = $harvest_stmt->get_result();
+                        if ($harvest_row = $harvest_result->fetch_assoc()) {
+                            $harvest_total = number_format(floatval($harvest_row['total']), 2);
+                        }
+                        $harvest_stmt->close();
+                        $target_sms_msg .= " Your Total Harvest amount for the year $harvest_year is GHS $harvest_total.";
+                    }
                     log_sms($target_phone, $target_sms_msg, null, 'ussd_payment_target');
                 }
             }
