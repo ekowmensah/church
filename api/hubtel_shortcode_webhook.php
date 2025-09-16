@@ -444,7 +444,7 @@ try {
             }
             $target_stmt->close();
             if ($target_name) {
-                $payer_sms_msg = "Hello $full_name, your payment of $amount GHS for $desc_formatted on behalf of [$target_name] has been received by Freeman Methodist Church. Thank you!";
+                $payer_sms_msg = "Hello $full_name, your payment of $amount GHS for $desc_formatted on behalf of $target_name has been received by Freeman Methodist Church. Thank you!";
             }
         }
         log_sms($customer_phone, $payer_sms_msg, null, 'ussd_payment');
