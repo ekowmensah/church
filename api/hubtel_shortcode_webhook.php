@@ -430,6 +430,8 @@ try {
         if (!empty($payment_period_description)) {
             $desc_formatted .= " $payment_period_description";
         }
+        // Always use amount after charges for SMS (matches system record)
+        $amount = isset($payment_info['AmountAfterCharges']) ? number_format(floatval($payment_info['AmountAfterCharges']), 2) : number_format(floatval($amount), 2);
         // If paying for another member, include 'on behalf of' in payer's SMS
         $payer_sms_msg = "Hello $full_name, your payment of $amount GHS for $desc_formatted has been received by Freeman Methodist Church. Thank you!";
         if (!empty($target_member_id) && $target_member_id != $payer_member_id) {
