@@ -43,8 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['name'] = $user['name'];
                 $_SESSION['user_name'] = $user['name']; // For dashboard compatibility
                 $_SESSION['email'] = $user['email'];
-                // Robust super admin session flag
-                $_SESSION['is_super_admin'] = ($user['id'] == 3) ? true : false;
+                // Robust super admin session flag - check if user has role_id = 1 (super admin role)
+                $_SESSION['is_super_admin'] = false;
                 // Fetch all roles for this user
                 $role_stmt = $conn->prepare('SELECT role_id FROM user_roles WHERE user_id = ? ORDER BY role_id ASC');
                 $role_stmt->bind_param('i', $user['id']);
@@ -63,8 +63,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['role_ids'] = $role_ids;
                     // For backward compatibility, set role_id to the first (lowest) role
                     $_SESSION['role_id'] = $role_ids[0];
-                    // Set super admin flag if user has role_id 1
-                    $_SESSION['is_super_admin'] = in_array(1, $role_ids);
+                    
+                    // Set super admin flag if user has role_id = 1
+                    if (in_array(1, $role_ids)) {
+                        $_SESSION['is_super_admin'] = true;
+                    }
                     
                     // Load user permissions into session
                     $permissions = [];
