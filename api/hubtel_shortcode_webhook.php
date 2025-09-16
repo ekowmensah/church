@@ -447,7 +447,17 @@ try {
                 $payer_sms_msg = "Hello $full_name, your payment of $amount GHS for $desc_formatted on behalf of $target_name has been received by Freeman Methodist Church. Thank you!";
             }
         }
-        log_sms($customer_phone, $payer_sms_msg, null, 'ussd_payment');
+        // Only send payer SMS if payer and target are different
+        $send_payer_sms = true;
+        if (!empty($target_member_id)) {
+            $actual_payer_id = !empty($payer_member_id) ? $payer_member_id : $member_id;
+            if ($target_member_id == $actual_payer_id) {
+                $send_payer_sms = false;
+            }
+        }
+        if ($send_payer_sms) {
+            log_sms($customer_phone, $payer_sms_msg, null, 'ussd_payment');
+        }
         // Send to target member if different and valid
         if (!empty($target_member_id)) {
             $target_stmt = $conn->prepare('SELECT phone, CONCAT(first_name, " ", last_name) as full_name FROM members WHERE id = ? AND status = "active"');
