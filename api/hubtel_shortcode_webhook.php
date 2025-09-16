@@ -411,14 +411,17 @@ try {
                             if (strtolower($donation_type) === 'harvest' && !empty($payment_period)) {
                                 $harvest_year = date('Y', strtotime($payment_period));
                                 $harvest_total = 0;
-                                $harvest_stmt = $conn->prepare('SELECT SUM(amount) as total FROM payments WHERE member_id = ? AND payment_type_id = ? AND YEAR(payment_period) = ? AND status = "Completed"');
-                                $harvest_stmt->bind_param('iii', $target_member_id, $payment_type_id, $harvest_year);
+                                $start_date = "$harvest_year-01-01";
+                                $end_date = "$harvest_year-12-31";
+                                $harvest_stmt = $conn->prepare('SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE member_id = ? AND payment_type_id = ? AND payment_date >= ? AND payment_date <= ? AND ((reversal_approved_at IS NULL) OR (reversal_undone_at IS NOT NULL))');
+                                $harvest_stmt->bind_param('iiss', $target_member_id, $payment_type_id, $start_date, $end_date);
                                 $harvest_stmt->execute();
                                 $harvest_result = $harvest_stmt->get_result();
                                 if ($harvest_row = $harvest_result->fetch_assoc()) {
                                     $harvest_total = floatval($harvest_row['total']);
                                 }
                                 $harvest_stmt->close();
+                                log_debug("Raw harvest total from DB: $harvest_total, payment_type_id: $payment_type_id, target_member_id: $target_member_id, harvest_year: $harvest_year");
                                 $harvest_total = number_format($harvest_total, 2);
                                 $target_sms_msg .= " Your Total Harvest amount for the year $harvest_year is GHS $harvest_total.";
                                 log_debug("Harvest total for year $harvest_year: GHS $harvest_total");
