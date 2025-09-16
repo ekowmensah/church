@@ -339,48 +339,89 @@ try {
         if ($result && isset($result['id'])) {
             log_debug("Payment recorded successfully with ID: {$result['id']}");
             
-            // Send SMS confirmation to the payer (phone number used for payment)
+            // Send SMS notification for USSD payment
             require_once __DIR__.'/../includes/sms.php';
+            $order_info = $data['OrderInfo'] ?? [];
+            $customer_phone = $order_info['CustomerMobileNumber'] ?? '';
+            $payment_info = $order_info['Payment'] ?? null;
+            $formatted_amount = isset($payment_info['AmountAfterCharges']) ? number_format(floatval($payment_info['AmountAfterCharges']), 2) : number_format(floatval($amount), 2);
             
-            $church_stmt = $conn->prepare('SELECT name FROM churches WHERE id = ?');
-            $church_stmt->bind_param('i', $final_church_id);
-            $church_stmt->execute();
-            $church = $church_stmt->get_result()->fetch_assoc();
-            $church_name = $church['name'] ?? 'Church';
-            
-            // Get member info for SMS (could be payer or target)
-            $sms_member_stmt = $conn->prepare('SELECT CONCAT(first_name, " ", last_name) as full_name FROM members WHERE id = ?');
-            $sms_member_stmt->bind_param('i', $final_member_id);
-            $sms_member_stmt->execute();
-            $sms_member_result = $sms_member_stmt->get_result();
-            $sms_member_name = 'Member';
-            if ($sms_member_result->num_rows > 0) {
-                $sms_member_info = $sms_member_result->fetch_assoc();
-                $sms_member_name = $sms_member_info['full_name'];
-            }
-            
-            $formatted_amount = number_format($amount, 2);
-            
-            // Customize SMS message based on payment context
-            if ($target_member_id && $payer_member_id && $target_member_id !== $payer_member_id) {
-                // Cross payment - payer paying for another member
-                $sms_message = "Payment of ₵$formatted_amount for $sms_member_name has been received by $church_name. Thank you for your contribution!";
+            $full_name = '';
+            if (!empty($order_info['CustomerName'])) {
+                $full_name = $order_info['CustomerName'];
             } else {
-                // Self payment or unregistered payment
-                $sms_message = "Hi $sms_member_name, your payment of ₵$formatted_amount has been received by $church_name. Thank you for your contribution!";
+                $full_name = $customer_phone;
             }
             
-            $sms_result = send_sms($phone, $sms_message);
-            log_debug('SMS confirmation sent: '.json_encode($sms_result));
-            
-            // Log SMS
-            $sms_status = (isset($sms_result['status']) && $sms_result['status'] === 'success') ? 'success' : 'fail';
-            $sms_log_stmt = $conn->prepare('INSERT INTO sms_logs (member_id, phone, message, type, status, provider, sent_at, response) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)');
-            $sms_type = 'shortcode_payment_confirmation';
-            $provider = 'arkesel';
-            $sms_response = json_encode($sms_result);
-            $sms_log_stmt->bind_param('issssss', $final_member_id, $phone, $sms_message, $sms_type, $sms_status, $provider, $sms_response);
-            $sms_log_stmt->execute();
+            if (!empty($customer_phone) && !empty($formatted_amount) && strtolower($order_info['Status'] ?? '') === 'paid') {
+                // Format description as in manual payment: e.g., 'Harvest - September 2025'
+                $desc_formatted = $donation_type;
+                if (!empty($payment_period_description)) {
+                    $desc_formatted .= " - $payment_period_description";
+                }
+                
+                // If paying for another member, include 'on behalf of' in payer's SMS
+                $payer_sms_msg = "Hello $full_name, your payment of $formatted_amount GHS for $desc_formatted has been received by Freeman Methodist Church. Thank you!";
+                if (!empty($target_member_id) && $target_member_id != $payer_member_id) {
+                    // Lookup target name
+                    $target_name = '';
+                    $target_stmt = $conn->prepare('SELECT CONCAT(first_name, " ", last_name) as full_name FROM members WHERE id = ? AND status = "active"');
+                    $target_stmt->bind_param('i', $target_member_id);
+                    $target_stmt->execute();
+                    $target_result = $target_stmt->get_result();
+                    if ($target_row = $target_result->fetch_assoc()) {
+                        $target_name = $target_row['full_name'];
+                    }
+                    $target_stmt->close();
+                    if ($target_name) {
+                        $payer_sms_msg = "Hello $full_name, your payment of $formatted_amount GHS for $desc_formatted on behalf of $target_name has been received by Freeman Methodist Church. Thank you!";
+                    }
+                }
+                
+                // Only send payer SMS if payer and target are different
+                $send_payer_sms = true;
+                if (!empty($target_member_id)) {
+                    $actual_payer_id = !empty($payer_member_id) ? $payer_member_id : $member_id;
+                    if ($target_member_id == $actual_payer_id) {
+                        $send_payer_sms = false;
+                    }
+                }
+                if ($send_payer_sms) {
+                    log_sms($customer_phone, $payer_sms_msg, null, 'ussd_payment');
+                }
+                
+                // Send to target member if different and valid
+                if (!empty($target_member_id)) {
+                    $target_stmt = $conn->prepare('SELECT phone, CONCAT(first_name, " ", last_name) as full_name FROM members WHERE id = ? AND status = "active"');
+                    $target_stmt->bind_param('i', $target_member_id);
+                    $target_stmt->execute();
+                    $target_result = $target_stmt->get_result();
+                    if ($target_row = $target_result->fetch_assoc()) {
+                        $target_phone = $target_row['phone'];
+                        $target_name = $target_row['full_name'];
+                        if (!empty($target_phone) && $target_phone !== $customer_phone) {
+                            $target_sms_msg = "Hello $target_name, your payment of $formatted_amount GHS for $desc_formatted by $full_name has been received by Freeman Methodist Church. Thank you!";
+                            // If payment type is HARVEST, append total for year
+                            if (strtolower($donation_type) === 'harvest' && !empty($payment_period)) {
+                                $harvest_year = date('Y', strtotime($payment_period));
+                                $harvest_total = 0;
+                                $harvest_stmt = $conn->prepare('SELECT SUM(amount) as total FROM payments WHERE member_id = ? AND payment_type_id = ? AND YEAR(payment_period) = ? AND status = "Completed"');
+                                $harvest_stmt->bind_param('iii', $target_member_id, $payment_type_id, $harvest_year);
+                                $harvest_stmt->execute();
+                                $harvest_result = $harvest_stmt->get_result();
+                                if ($harvest_row = $harvest_result->fetch_assoc()) {
+                                    $harvest_total = floatval($harvest_row['total']);
+                                }
+                                $harvest_stmt->close();
+                                $harvest_total = number_format($harvest_total, 2);
+                                $target_sms_msg .= " Your Total Harvest amount for the year $harvest_year is GHS $harvest_total.";
+                            }
+                            log_sms($target_phone, $target_sms_msg, null, 'ussd_payment_target');
+                        }
+                    }
+                    $target_stmt->close();
+                }
+            }
             
         } else {
             log_debug('Failed to record payment: '.json_encode($result));
@@ -407,103 +448,7 @@ try {
         // You can implement admin notification logic here
     }
     
-    // Send SMS notification for USSD payment
-    require_once __DIR__.'/../includes/sms.php';
-    $order_info = $data['OrderInfo'] ?? [];
-    $customer_phone = $order_info['CustomerMobileNumber'] ?? '';
-    $amount = isset($order_info['Payment']['AmountPaid']) ? $order_info['Payment']['AmountPaid'] : '';
-    $desc = '';
-    if (!empty($order_info['Items'][0]['Description'])) {
-        $desc = $order_info['Items'][0]['Description'];
-    } elseif (!empty($order_info['Items'][0]['Name'])) {
-        $desc = $order_info['Items'][0]['Name'];
-    }
-    $full_name = '';
-    if (!empty($order_info['CustomerName'])) {
-        $full_name = $order_info['CustomerName'];
-    } else {
-        $full_name = $customer_phone;
-    }
-    if (!empty($customer_phone) && !empty($amount) && strtolower($order_info['Status'] ?? '') === 'paid') {
-        // Format description as in manual payment: e.g., 'Harvest for September 2025'
-        $desc_formatted = $donation_type;
-        if (!empty($payment_period_description)) {
-            $desc_formatted .= " - $payment_period_description";
-        }
-        // Always use amount after charges for SMS (matches system record)
-        $amount = isset($payment_info['AmountAfterCharges']) ? number_format(floatval($payment_info['AmountAfterCharges']), 2) : number_format(floatval($amount), 2);
-        // If paying for another member, include 'on behalf of' in payer's SMS
-        $payer_sms_msg = "Hello $full_name, your payment of $amount GHS for $desc_formatted has been received by Freeman Methodist Church. Thank you!";
-        if (!empty($target_member_id) && $target_member_id != $payer_member_id) {
-            // Lookup target name
-            $target_name = '';
-            $target_stmt = $conn->prepare('SELECT CONCAT(first_name, " ", last_name) as full_name FROM members WHERE id = ? AND status = "active"');
-            $target_stmt->bind_param('i', $target_member_id);
-            $target_stmt->execute();
-            $target_result = $target_stmt->get_result();
-            if ($target_row = $target_result->fetch_assoc()) {
-                $target_name = $target_row['full_name'];
-            }
-            $target_stmt->close();
-            if ($target_name) {
-                $payer_sms_msg = "Hello $full_name, your payment of $amount GHS for $desc_formatted on behalf of $target_name has been received by Freeman Methodist Church. Thank you!";
-            }
-        }
-        // Only send payer SMS if payer and target are different
-        $send_payer_sms = true;
-        if (!empty($target_member_id)) {
-            $actual_payer_id = !empty($payer_member_id) ? $payer_member_id : $member_id;
-            if ($target_member_id == $actual_payer_id) {
-                $send_payer_sms = false;
-            }
-        }
-        if ($send_payer_sms) {
-            log_sms($customer_phone, $payer_sms_msg, null, 'ussd_payment');
-        }
-        // Send to target member if different and valid
-        if (!empty($target_member_id)) {
-            $target_stmt = $conn->prepare('SELECT phone, CONCAT(first_name, " ", last_name) as full_name FROM members WHERE id = ? AND status = "active"');
-            $target_stmt->bind_param('i', $target_member_id);
-            $target_stmt->execute();
-            $target_result = $target_stmt->get_result();
-            if ($target_row = $target_result->fetch_assoc()) {
-                $target_phone = $target_row['phone'];
-                $target_name = $target_row['full_name'];
-                if (!empty($target_phone) && $target_phone !== $customer_phone) {
-                    $target_sms_msg = "Hello $target_name, your payment of $amount GHS for $desc_formatted by $full_name has been received by Freeman Methodist Church. Thank you!";
-                    // If payment type is HARVEST, append total for year
-                    if (strtolower($donation_type) === 'harvest' && !empty($payment_period)) {
-                        $harvest_year = date('Y', strtotime($payment_period));
-                        $harvest_total = 0;
-                        $harvest_stmt = $conn->prepare('SELECT SUM(amount) as total FROM payments WHERE member_id = ? AND payment_type_id = ? AND YEAR(payment_period) = ? AND status = "Completed"');
-                        $harvest_stmt->bind_param('iii', $target_member_id, $payment_type_id, $harvest_year);
-                        $harvest_stmt->execute();
-                        $harvest_result = $harvest_stmt->get_result();
-                        $harvest_total = 0;
-                        if ($harvest_row = $harvest_result->fetch_assoc()) {
-                            $harvest_total = floatval($harvest_row['total']);
-                        }
-                        // Check if current payment is already included in DB sum
-                        $already_in_db = false;
-                        $check_stmt = $conn->prepare('SELECT 1 FROM payments WHERE member_id = ? AND payment_type_id = ? AND YEAR(payment_period) = ? AND reference = ? AND status = "Completed" LIMIT 1');
-                        $check_stmt->bind_param('iiis', $target_member_id, $payment_type_id, $harvest_year, $reference);
-                        $check_stmt->execute();
-                        $check_stmt->store_result();
-                        if ($check_stmt->num_rows == 0) {
-                            // Not in DB, add current payment
-                            $harvest_total += floatval($amount);
-                        }
-                        $check_stmt->close();
-                        $harvest_total = number_format($harvest_total, 2);
-                        $harvest_stmt->close();
-                        $target_sms_msg .= " Your Total Harvest amount for the year $harvest_year is GHS $harvest_total.";
-                    }
-                    log_sms($target_phone, $target_sms_msg, null, 'ussd_payment_target');
-                }
-            }
-            $target_stmt->close();
-        }
-    }
+    // SMS will be sent after payment is recorded
     // Send callback confirmation to Hubtel
     $callback_payload = [
         'SessionId' => $session_id,
