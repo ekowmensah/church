@@ -425,8 +425,45 @@ try {
         $full_name = $customer_phone;
     }
     if (!empty($customer_phone) && !empty($amount) && strtolower($order_info['Status'] ?? '') === 'paid') {
-        $sms_msg = "Hello $full_name, your payment of $amount GHS for $desc has been received by Freeman Methodist Church. Thank you!";
-        log_sms($customer_phone, $sms_msg, null, 'ussd_payment');
+        // Format description as in manual payment: e.g., 'Harvest for September 2025'
+        $desc_formatted = $donation_type;
+        if (!empty($payment_period_description)) {
+            $desc_formatted .= " for $payment_period_description";
+        }
+        // If paying for another member, include 'on behalf of' in payer's SMS
+        $payer_sms_msg = "Hello $full_name, your payment of $amount GHS for $desc_formatted has been received by Freeman Methodist Church. Thank you!";
+        if (!empty($target_member_id) && $target_member_id != $payer_member_id) {
+            // Lookup target name
+            $target_name = '';
+            $target_stmt = $conn->prepare('SELECT CONCAT(first_name, " ", last_name) as full_name FROM members WHERE id = ? AND status = "active"');
+            $target_stmt->bind_param('i', $target_member_id);
+            $target_stmt->execute();
+            $target_result = $target_stmt->get_result();
+            if ($target_row = $target_result->fetch_assoc()) {
+                $target_name = $target_row['full_name'];
+            }
+            $target_stmt->close();
+            if ($target_name) {
+                $payer_sms_msg = "Hello $full_name, your payment of $amount GHS for $desc_formatted on behalf of [$target_name] has been received by Freeman Methodist Church. Thank you!";
+            }
+        }
+        log_sms($customer_phone, $payer_sms_msg, null, 'ussd_payment');
+        // Send to target member if different and valid
+        if (!empty($target_member_id)) {
+            $target_stmt = $conn->prepare('SELECT phone, CONCAT(first_name, " ", last_name) as full_name FROM members WHERE id = ? AND status = "active"');
+            $target_stmt->bind_param('i', $target_member_id);
+            $target_stmt->execute();
+            $target_result = $target_stmt->get_result();
+            if ($target_row = $target_result->fetch_assoc()) {
+                $target_phone = $target_row['phone'];
+                $target_name = $target_row['full_name'];
+                if (!empty($target_phone) && $target_phone !== $customer_phone) {
+                    $target_sms_msg = "Hello $target_name, your payment of $amount GHS for $desc_formatted has been received by Freeman Methodist Church. Thank you!";
+                    log_sms($target_phone, $target_sms_msg, null, 'ussd_payment_target');
+                }
+            }
+            $target_stmt->close();
+        }
     }
     // Send callback confirmation to Hubtel
     $callback_payload = [
