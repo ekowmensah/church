@@ -63,6 +63,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['role_ids'] = $role_ids;
                     // For backward compatibility, set role_id to the first (lowest) role
                     $_SESSION['role_id'] = $role_ids[0];
+                    // Set super admin flag if user has role_id 1
+                    $_SESSION['is_super_admin'] = in_array(1, $role_ids);
                     
                     // Load user permissions into session
                     $permissions = [];
