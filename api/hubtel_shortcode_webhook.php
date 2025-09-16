@@ -480,8 +480,10 @@ try {
                         $harvest_stmt->execute();
                         $harvest_result = $harvest_stmt->get_result();
                         if ($harvest_row = $harvest_result->fetch_assoc()) {
-                            $harvest_total = number_format(floatval($harvest_row['total']), 2);
+                            $harvest_total = floatval($harvest_row['total']);
                         }
+                        $harvest_total += floatval($amount); // Add current payment
+                        $harvest_total = number_format($harvest_total, 2);
                         $harvest_stmt->close();
                         $target_sms_msg .= " Your Total Harvest amount for the year $harvest_year is GHS $harvest_total.";
                     }
