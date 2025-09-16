@@ -479,10 +479,21 @@ try {
                         $harvest_stmt->bind_param('iii', $target_member_id, $payment_type_id, $harvest_year);
                         $harvest_stmt->execute();
                         $harvest_result = $harvest_stmt->get_result();
+                        $harvest_total = 0;
                         if ($harvest_row = $harvest_result->fetch_assoc()) {
                             $harvest_total = floatval($harvest_row['total']);
                         }
-                        $harvest_total += floatval($amount); // Add current payment
+                        // Check if current payment is already included in DB sum
+                        $already_in_db = false;
+                        $check_stmt = $conn->prepare('SELECT 1 FROM payments WHERE member_id = ? AND payment_type_id = ? AND YEAR(payment_period) = ? AND reference = ? AND status = "Completed" LIMIT 1');
+                        $check_stmt->bind_param('iiis', $target_member_id, $payment_type_id, $harvest_year, $reference);
+                        $check_stmt->execute();
+                        $check_stmt->store_result();
+                        if ($check_stmt->num_rows == 0) {
+                            // Not in DB, add current payment
+                            $harvest_total += floatval($amount);
+                        }
+                        $check_stmt->close();
                         $harvest_total = number_format($harvest_total, 2);
                         $harvest_stmt->close();
                         $target_sms_msg .= " Your Total Harvest amount for the year $harvest_year is GHS $harvest_total.";
