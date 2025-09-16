@@ -353,7 +353,9 @@ try {
                 $full_name = $customer_phone;
             }
             
+            log_debug("SMS check: phone=$customer_phone, amount=$formatted_amount, status=".($order_info['Status'] ?? 'none'));
             if (!empty($customer_phone) && !empty($formatted_amount) && strtolower($order_info['Status'] ?? '') === 'paid') {
+                log_debug("SMS conditions met, proceeding with SMS logic");
                 // Format description as in manual payment: e.g., 'Harvest - September 2025'
                 $desc_formatted = $donation_type;
                 if (!empty($payment_period_description)) {
@@ -387,7 +389,10 @@ try {
                     }
                 }
                 if ($send_payer_sms) {
+                    log_debug("Sending payer SMS to: $customer_phone");
                     log_sms($customer_phone, $payer_sms_msg, null, 'ussd_payment');
+                } else {
+                    log_debug("Skipping payer SMS (same as target)");
                 }
                 
                 // Send to target member if different and valid
@@ -400,6 +405,7 @@ try {
                         $target_phone = $target_row['phone'];
                         $target_name = $target_row['full_name'];
                         if (!empty($target_phone) && $target_phone !== $customer_phone) {
+                            log_debug("Sending target SMS to: $target_phone");
                             $target_sms_msg = "Hello $target_name, your payment of $formatted_amount GHS for $desc_formatted by $full_name has been received by Freeman Methodist Church. Thank you!";
                             // If payment type is HARVEST, append total for year
                             if (strtolower($donation_type) === 'harvest' && !empty($payment_period)) {
@@ -415,12 +421,19 @@ try {
                                 $harvest_stmt->close();
                                 $harvest_total = number_format($harvest_total, 2);
                                 $target_sms_msg .= " Your Total Harvest amount for the year $harvest_year is GHS $harvest_total.";
+                                log_debug("Harvest total for year $harvest_year: GHS $harvest_total");
                             }
                             log_sms($target_phone, $target_sms_msg, null, 'ussd_payment_target');
+                        } else {
+                            log_debug("Skipping target SMS - same phone as payer or no target phone");
                         }
                     }
                     $target_stmt->close();
+                } else {
+                    log_debug("No target member ID found");
                 }
+            } else {
+                log_debug("SMS conditions not met, skipping SMS");
             }
             
         } else {
