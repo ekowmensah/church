@@ -134,17 +134,15 @@ if ($clientReference) {
                             $description = $paymentRow['description'];
                             
                             // Check if this is a harvest payment (payment_type_id = 4)
-                            if ($paymentRow['payment_type_id'] == 4) {
-                                log_debug('Processing harvest payment SMS');
-                                // Calculate yearly harvest total
-                                $year = date('Y');
-                                $yearly_stmt = $conn->prepare('SELECT SUM(amount) as yearly_total FROM payments WHERE member_id = ? AND payment_type_id = 4 AND YEAR(payment_date) = ? AND status = "Completed"');
-                                $yearly_stmt->bind_param('ii', $paymentRow['member_id'], $year);
-                                $yearly_stmt->execute();
-                                $yearly_result = $yearly_stmt->get_result()->fetch_assoc();
-                                $yearly_total = number_format($yearly_result['yearly_total'] ?? 0, 2);
-                                
-                                $sms_message = "Hi $full_name, your payment of ₵$amount has been paid to $church_name as $description. Your Total Harvest amount for the year $year is ₵$yearly_total";
+                            if (!function_exists('get_payment_sms_message')) require_once __DIR__.'/../includes/payment_sms_template.php';
+if ($paymentRow['payment_type_id'] == 4) {
+    log_debug('Processing harvest payment SMS');
+    // Use the unified SMS template for harvest as well
+    $sms_message = get_payment_sms_message($full_name, $amount, $description, $paymentRow['payment_date'], $description);
+} else {
+    log_debug('Processing regular payment SMS');
+    $sms_message = get_payment_sms_message($full_name, $amount, $description, $paymentRow['payment_date'], $description);
+}
                             } else {
                                 log_debug('Processing regular payment SMS');
                                 $sms_message = "Hi $full_name, your payment of ₵$amount has been successfully processed for $church_name. Description: $description. Thank you!";
