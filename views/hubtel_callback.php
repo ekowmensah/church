@@ -1,11 +1,7 @@
 <?php
 // Minimal fallback logger for debugging
 function _test_log($msg) {
-    $logfile = __DIR__ . '/../logs/hubtel_callback_test.log';
-    $logline = date('Y-m-d H:i:s') . ' ' . $msg . "\n";
-    if (file_put_contents($logfile, $logline, FILE_APPEND) === false) {
-        error_log('Failed to write to hubtel_callback_test.log: ' . $msg);
-    }
+    file_put_contents(__DIR__ . '/../logs/hubtel_callback_test.log', date('Y-m-d H:i:s') . ' ' . $msg . "\n", FILE_APPEND);
 }
 _test_log('hubtel_callback.php called');
 // Hubtel callback handler: receives payment status update from Hubtel
@@ -18,10 +14,7 @@ $debug_log = __DIR__.'/../logs/hubtel_callback_debug.log';
 
 function log_debug($msg) {
     global $debug_log;
-    $logline = date('c')." $msg\n";
-    if (file_put_contents($debug_log, $logline, FILE_APPEND) === false) {
-        error_log('Failed to write to hubtel_callback_debug.log: ' . $msg);
-    }
+    file_put_contents($debug_log, date('c')." $msg\n", FILE_APPEND);
 }
 
 // Log raw input for debugging
@@ -141,15 +134,17 @@ if ($clientReference) {
                             $description = $paymentRow['description'];
                             
                             // Check if this is a harvest payment (payment_type_id = 4)
-                            if (!function_exists('get_payment_sms_message')) require_once __DIR__.'/../includes/payment_sms_template.php';
-if ($paymentRow['payment_type_id'] == 4) {
-    log_debug('Processing harvest payment SMS');
-    // Use the unified SMS template for harvest as well
-    $sms_message = get_payment_sms_message($full_name, $amount, $description, $paymentRow['payment_date'], $description);
-} else {
-    log_debug('Processing regular payment SMS');
-    $sms_message = get_payment_sms_message($full_name, $amount, $description, $paymentRow['payment_date'], $description);
-}
+                            if ($paymentRow['payment_type_id'] == 4) {
+                                log_debug('Processing harvest payment SMS');
+                                // Calculate yearly harvest total
+                                $year = date('Y');
+                                $yearly_stmt = $conn->prepare('SELECT SUM(amount) as yearly_total FROM payments WHERE member_id = ? AND payment_type_id = 4 AND YEAR(payment_date) = ? AND status = "Completed"');
+                                $yearly_stmt->bind_param('ii', $paymentRow['member_id'], $year);
+                                $yearly_stmt->execute();
+                                $yearly_result = $yearly_stmt->get_result()->fetch_assoc();
+                                $yearly_total = number_format($yearly_result['yearly_total'] ?? 0, 2);
+                                
+                                $sms_message = "Hi $full_name, payment of ₵$amount as $description. Your Total Harvest amount for the year $year is ₵$yearly_total";
                             } else {
                                 log_debug('Processing regular payment SMS');
                                 $sms_message = "Hi $full_name, your payment of ₵$amount has been successfully processed for $church_name. Description: $description. Thank you!";
