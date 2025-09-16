@@ -156,11 +156,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Send welcome SMS if phone is not empty
             if (!empty($phone)) {
                 require_once __DIR__.'/../includes/sms.php';
-                $welcome_msg = "WE WARMLY WELCOME YOU TO FREEMAN METHODIST CHURCH, KWESIMINTSIM.\n\nWe pray that the good Lord will meet you at the point of your spiritual and physical needs.\n\nEnjoy your stay with us.";
+                $first_name = explode(' ', trim($name))[0];
+                $welcome_msg = "Hello $first_name, we warmly welcome you to Freeman Methodist Chapel, Kwesimintsim. We pray that the good Lord will meet you at the point of your spiritual and physical needs. Enjoy your stay with us. Freeman...Christ Mu Adehye!";
+                $debug_file = __DIR__.'/../logs/visitor_sms_debug.log';
+                file_put_contents($debug_file, date('c') . " - Attempting to send visitor SMS to $phone: $welcome_msg\n", FILE_APPEND);
                 try {
-                    send_sms($phone, $welcome_msg);
+                    $sms_result = log_sms($phone, $welcome_msg, null, 'visitor_welcome');
+                    file_put_contents($debug_file, date('c') . " - SMS result: " . json_encode($sms_result) . "\n", FILE_APPEND);
                 } catch (Exception $e) {
-                    error_log('Visitor SMS failed: ' . $e->getMessage());
+                    $err = 'Visitor SMS failed: ' . $e->getMessage();
+                    file_put_contents($debug_file, date('c') . " - $err\n", FILE_APPEND);
+                    error_log($err);
                 }
             }
         }

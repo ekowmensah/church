@@ -118,6 +118,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_POST['vitals']['sugar_status'] = 'normal';
             }
         }
+        // Prepare temperature status
+        if (isset($_POST['vitals']['temperature'])) {
+            $temp = floatval($_POST['vitals']['temperature']);
+            if ($temp <= 35.0) {
+                $_POST['vitals']['temperature_status'] = 'low';
+            } elseif ($temp >= 35.1 && $temp <= 37.2) {
+                $_POST['vitals']['temperature_status'] = 'normal';
+            } elseif ($temp > 37.2) {
+                $_POST['vitals']['temperature_status'] = 'high';
+            } else {
+                $_POST['vitals']['temperature_status'] = '';
+            }
+        }
         // Prepare vitals as JSON
         $vitals_json = json_encode($_POST['vitals']);
         if ($editing) {
@@ -130,6 +143,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ok = $stmt->execute();
         }
         if ($ok) {
+            // Send health visit SMS
+            $member_phone = '';
+            $member_full_name = '';
+            if ($member_id) {
+                $stmt = $conn->prepare('SELECT CONCAT(first_name, " ", last_name) as full_name, phone FROM members WHERE id = ?');
+                $stmt->bind_param('i', $member_id);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                if ($row = $result->fetch_assoc()) {
+                    $member_phone = $row['phone'];
+                    $member_full_name = $row['full_name'];
+                }
+                $stmt->close();
+            }
+            if (!empty($member_phone)) {
+                require_once __DIR__.'/../includes/sms.php';
+                $sms_msg = "Hello $member_full_name, Thank you for visiting MyFreeman Health Network. It is always a pleasure to serve you. Your Health Is Our Top Priority.";
+                $debug_file = __DIR__.'/../logs/health_sms_debug.log';
+                file_put_contents($debug_file, date('c') . " - Attempting to send health SMS to $member_phone: $sms_msg\n", FILE_APPEND);
+                $sms_result = log_sms($member_phone, $sms_msg, null, 'health_notification');
+                file_put_contents($debug_file, date('c') . " - SMS result: " . json_encode($sms_result) . "\n", FILE_APPEND);
+            }
             header('Location: health_list.php?msg=saved');
             exit;
         } else {
@@ -500,7 +535,7 @@ ob_start();
                                 <input type="number" step="0.1" class="form-control form-control-lg" 
                                        id="weight" name="vitals[weight]" 
                                        value="<?= htmlspecialchars($vitals['weight'] ?? '') ?>"
-                                       placeholder="e.g. 70.5">
+                                       placeholder="e.g. 70.5" required>
                             </div>
                         </div>
                         <div class="col-md-3">
@@ -511,7 +546,55 @@ ob_start();
                                 <input type="number" step="0.1" class="form-control form-control-lg" 
                                        id="temperature" name="vitals[temperature]" 
                                        value="<?= htmlspecialchars($vitals['temperature'] ?? '') ?>"
-                                       placeholder="e.g. 36.5">
+                                       placeholder="e.g. 36.5" required>
+                                <div class="form-group">
+                                    <label class="form-label font-weight-bold">Temperature Status</label>
+                                    <div id="temperature_status_display" class="mt-2">
+                                        <?php
+                                            $temp_val = isset($vitals['temperature']) ? floatval($vitals['temperature']) : null;
+                                            $temp_status = '';
+                                            $temp_color = '';
+                                            if (isset($vitals['temperature_status']) && $vitals['temperature_status']) {
+                                                $temp_status = ucfirst($vitals['temperature_status']);
+                                                if ($temp_status === 'High') $temp_color = '#dc3545';
+                                                elseif ($temp_status === 'Low') $temp_color = '#ffc107';
+                                                elseif ($temp_status === 'Normal') $temp_color = '#28a745';
+                                            } elseif ($temp_val !== null) {
+                                                if ($temp_val <= 35.0) { $temp_status = 'Low'; $temp_color = '#ffc107'; }
+                                                elseif ($temp_val >= 35.1 && $temp_val <= 37.2) { $temp_status = 'Normal'; $temp_color = '#28a745'; }
+                                                elseif ($temp_val > 37.3) { $temp_status = 'High'; $temp_color = '#dc3545'; }
+                                            }
+                                        ?>
+                                        <span id="temperature_status_text" class="status-badge d-inline-block" style="background:<?= $temp_color ?: '#6c757d' ?>;color:#fff;">
+    <?= $temp_status ? $temp_status : 'Enter temperature' ?>
+</span>
+<input type="hidden" id="temperature_status" name="vitals[temperature_status]" value="<?= strtolower($temp_status) ?>">
+</div>
+<script>
+    function updateTemperatureStatus() {
+        const tempInput = document.getElementById('temperature');
+        const badge = document.getElementById('temperature_status_text');
+        const hidden = document.getElementById('temperature_status');
+        let val = parseFloat(tempInput.value);
+        let status = '';
+        let color = '#6c757d';
+        if (!isNaN(val)) {
+            if (val <= 35.0) {
+                status = 'Low'; color = '#ffc107';
+            } else if (val >= 35.1 && val <= 37.2) {
+                status = 'Normal'; color = '#28a745';
+            } else if (val > 37.2) {
+                status = 'High'; color = '#dc3545';
+            }
+        }
+        badge.textContent = status ? status : 'Enter temperature';
+        badge.style.background = color;
+        hidden.value = status.toLowerCase();
+    }
+    document.getElementById('temperature').addEventListener('input', updateTemperatureStatus);
+    window.addEventListener('DOMContentLoaded', updateTemperatureStatus);
+</script>
+                                </div>
                             </div>
                         </div>
                         <div class="col-md-3">
@@ -523,14 +606,14 @@ ob_start();
                                     <input type="number" min="0" class="form-control" 
                                            id="bp_systolic" name="vitals[bp_systolic]" 
                                            value="<?= htmlspecialchars($vitals['bp_systolic'] ?? (isset($vitals['bp']) && strpos($vitals['bp'], '/')!==false ? explode('/', $vitals['bp'])[0] : '')) ?>" 
-                                           placeholder="120">
+                                           placeholder="120" required>
                                     <div class="input-group-append input-group-prepend">
                                         <span class="input-group-text bg-primary text-white">/</span>
                                     </div>
                                     <input type="number" min="0" class="form-control" 
                                            id="bp_diastolic" name="vitals[bp_diastolic]" 
                                            value="<?= htmlspecialchars($vitals['bp_diastolic'] ?? (isset($vitals['bp']) && strpos($vitals['bp'], '/')!==false ? explode('/', $vitals['bp'])[1] : '')) ?>" 
-                                           placeholder="80">
+                                           placeholder="80" required>
                                 </div>
                                 <small class="form-text text-muted mt-1">
                                     <i class="fas fa-info-circle mr-1"></i>Systolic / Diastolic
@@ -637,7 +720,7 @@ ob_start();
                                 <label for="malaria" class="form-label font-weight-bold">
                                     <i class="fas fa-bug mr-2 text-danger"></i>Malaria Status
                                 </label>
-                                <select class="form-control form-control-lg" id="malaria" name="vitals[malaria]">
+                                <select class="form-control form-control-lg" id="malaria" name="vitals[malaria]" required>
                                     <option value="">-- Select Status --</option>
                                     <option value="positive" <?= (isset($vitals['malaria']) && $vitals['malaria'] === 'positive') ? 'selected' : '' ?>>Positive</option>
                                     <option value="negative" <?= (isset($vitals['malaria']) && $vitals['malaria'] === 'negative') ? 'selected' : '' ?>>Negative</option>
@@ -658,7 +741,7 @@ ob_start();
                             <i class="fas fa-edit mr-2 text-secondary"></i>Health Notes & Observations
                         </label>
                         <textarea class="form-control form-control-lg" id="notes" name="notes" rows="4" 
-                                  placeholder="Record any additional health observations, symptoms, medications, or relevant medical history..."><?= htmlspecialchars($record['notes'] ?? '') ?></textarea>
+                                  placeholder="Record any additional health observations, symptoms, medications, or relevant medical history..." required><?= htmlspecialchars($record['notes'] ?? '') ?></textarea>
                         <small class="form-text text-muted mt-2">
                             <i class="fas fa-info-circle mr-1"></i>
                             Include any relevant medical history, current medications, or special health considerations
