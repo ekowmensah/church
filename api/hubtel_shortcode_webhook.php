@@ -428,7 +428,7 @@ try {
         // Format description as in manual payment: e.g., 'Harvest for September 2025'
         $desc_formatted = $donation_type;
         if (!empty($payment_period_description)) {
-            $desc_formatted .= " for $payment_period_description";
+            $desc_formatted .= " $payment_period_description";
         }
         // If paying for another member, include 'on behalf of' in payer's SMS
         $payer_sms_msg = "Hello $full_name, your payment of $amount GHS for $desc_formatted has been received by Freeman Methodist Church. Thank you!";
@@ -458,7 +458,7 @@ try {
                 $target_phone = $target_row['phone'];
                 $target_name = $target_row['full_name'];
                 if (!empty($target_phone) && $target_phone !== $customer_phone) {
-                    $target_sms_msg = "Hello $target_name, your payment of $amount GHS for $desc_formatted by [$full_name] has been received by Freeman Methodist Church. Thank you!";
+                    $target_sms_msg = "Hello $target_name, your payment of $amount GHS for $desc_formatted by $full_name has been received by Freeman Methodist Church. Thank you!";
                     // If payment type is HARVEST, append total for year
                     if (strtolower($donation_type) === 'harvest' && !empty($payment_period)) {
                         $harvest_year = date('Y', strtotime($payment_period));
