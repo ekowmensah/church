@@ -428,7 +428,7 @@ try {
         // Format description as in manual payment: e.g., 'Harvest for September 2025'
         $desc_formatted = $donation_type;
         if (!empty($payment_period_description)) {
-            $desc_formatted .= " $payment_period_description";
+            $desc_formatted .= " - $payment_period_description";
         }
         // Always use amount after charges for SMS (matches system record)
         $amount = isset($payment_info['AmountAfterCharges']) ? number_format(floatval($payment_info['AmountAfterCharges']), 2) : number_format(floatval($amount), 2);

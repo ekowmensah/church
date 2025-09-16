@@ -1,0 +1,2412 @@
+
+====
+2025-07-31T02:12:37+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-07-31",
+    "member_ids": [
+        72
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "72": {
+            "4": 10
+        }
+    },
+    "descriptions": {
+        "72": {
+            "4": "harvest for July"
+        }
+    }
+}
+Processing as CRN only. member_ids=[72]
+
+====
+2025-07-31T08:00:15+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-07-31",
+    "member_ids": [
+        72
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "72": {
+            "3": 43,
+            "4": 10
+        }
+    },
+    "descriptions": {
+        "72": {
+            "3": "off harv",
+            "4": "bulk harv"
+        }
+    }
+}
+Processing as CRN only. member_ids=[72]
+
+====
+2025-08-01T23:50:00+02:00
+{
+    "member_ids": [
+        72
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "72": {
+            "4": "100",
+            "6": "10"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-01"
+}
+Processing as CRN only. member_ids=[72]
+
+====
+2025-08-01T23:56:44+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-08-01",
+    "member_ids": [],
+    "sundayschool_ids": [
+        7
+    ],
+    "amounts": {
+        "ss_7": {
+            "4": 19
+        }
+    },
+    "descriptions": {
+        "ss_7": {
+            "4": ""
+        }
+    }
+}
+Processing as SRN only. sundayschool_ids=[7]
+
+====
+2025-08-02T21:23:31+02:00
+{
+    "member_ids": [
+        8
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "8": {
+            "7": "0.04"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-02"
+}
+Processing as CRN only. member_ids=[8]
+
+====
+2025-08-02T21:39:16+02:00
+{
+    "member_ids": [
+        8
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "8": {
+            "7": "10"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-02"
+}
+Processing as CRN only. member_ids=[8]
+
+====
+2025-08-02T23:03:55+02:00
+{
+    "member_ids": [
+        8
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "8": {
+            "3": "100"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-02"
+}
+Processing as CRN only. member_ids=[8]
+
+====
+2025-08-02T23:08:47+02:00
+{
+    "member_ids": [
+        8
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "8": {
+            "3": "10"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-02"
+}
+Processing as CRN only. member_ids=[8]
+
+====
+2025-08-02T23:16:20+02:00
+{
+    "member_ids": [
+        8
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "8": {
+            "4": "8"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-02"
+}
+Processing as CRN only. member_ids=[8]
+
+====
+2025-08-02T23:21:16+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-08-02",
+    "member_ids": [],
+    "sundayschool_ids": [
+        8
+    ],
+    "amounts": {
+        "ss_8": {
+            "4": 89
+        }
+    },
+    "descriptions": {
+        "ss_8": {
+            "4": ""
+        }
+    }
+}
+Processing as SRN only. sundayschool_ids=[8]
+
+====
+2025-08-02T23:33:07+02:00
+{
+    "member_ids": [
+        8
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "8": {
+            "3": "10"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-02"
+}
+Processing as CRN only. member_ids=[8]
+
+--- BULK PAYMENT SUBMIT 2025-08-02 23:44:34 ---
+{"payments":[{"type_id":"4","type_text":"harvest","amount":"10","mode":"Cash","date":"2025-08-02","desc":"jjjs"}],"church_id":7,"payment_date":"2025-08-02","sundayschool_id":8}
+
+====
+2025-08-02T23:44:34+02:00
+{
+    "payments": [
+        {
+            "type_id": "4",
+            "type_text": "harvest",
+            "amount": "10",
+            "mode": "Cash",
+            "date": "2025-08-02",
+            "desc": "jjjs"
+        }
+    ],
+    "church_id": 7,
+    "payment_date": "2025-08-02",
+    "sundayschool_id": 8
+}
+
+--- BULK PAYMENT SUBMIT 2025-08-02 23:46:26 ---
+{"payments":[{"type_id":"6","type_text":"education fund","amount":"10","mode":"Cash","date":"2025-08-02","desc":"pii"}],"church_id":7,"payment_date":"2025-08-02","sundayschool_id":8}
+
+====
+2025-08-02T23:46:26+02:00
+{
+    "payments": [
+        {
+            "type_id": "6",
+            "type_text": "education fund",
+            "amount": "10",
+            "mode": "Cash",
+            "date": "2025-08-02",
+            "desc": "pii"
+        }
+    ],
+    "church_id": 7,
+    "payment_date": "2025-08-02",
+    "sundayschool_id": 8
+}
+
+--- BULK PAYMENT SUBMIT 2025-08-02 23:49:47 ---
+{"member_ids":[],"sundayschool_ids":[8],"amounts":{"ss_8":{"1":"10"}},"church_id":7,"payment_date":"2025-08-02"}
+
+====
+2025-08-02T23:49:47+02:00
+{
+    "member_ids": [],
+    "sundayschool_ids": [
+        8
+    ],
+    "amounts": {
+        "ss_8": {
+            "1": "10"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-02"
+}
+Processing as SRN only. sundayschool_ids=[8]
+
+--- BULK PAYMENT SUBMIT 2025-08-02 23:51:06 ---
+{"member_ids":[],"sundayschool_ids":[8],"amounts":{"ss_8":{"3":"100","5":"10"}},"church_id":7,"payment_date":"2025-08-02"}
+
+====
+2025-08-02T23:51:06+02:00
+{
+    "member_ids": [],
+    "sundayschool_ids": [
+        8
+    ],
+    "amounts": {
+        "ss_8": {
+            "3": "100",
+            "5": "10"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-02"
+}
+Processing as SRN only. sundayschool_ids=[8]
+
+--- BULK PAYMENT SUBMIT 2025-08-03 00:05:41 ---
+{"member_ids":[],"sundayschool_ids":[8],"amounts":{"ss_8":{"5":"70","6":"56"}},"church_id":7,"payment_date":"2025-08-03"}
+
+====
+2025-08-03T00:05:41+02:00
+{
+    "member_ids": [],
+    "sundayschool_ids": [
+        8
+    ],
+    "amounts": {
+        "ss_8": {
+            "5": "70",
+            "6": "56"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-03"
+}
+Processing as SRN only. sundayschool_ids=[8]
+
+--- BULK PAYMENT SUBMIT 2025-08-03 00:13:43 ---
+{"member_ids":[],"sundayschool_ids":[8],"amounts":{"ss_8":{"3":"89.00","4":"15"}},"church_id":7,"payment_date":"2025-08-03","descriptions":{"ss_8":{"3":"Payment for August Offertory","4":"Payment for August harvest"}}}
+
+====
+2025-08-03T00:13:43+02:00
+{
+    "member_ids": [],
+    "sundayschool_ids": [
+        8
+    ],
+    "amounts": {
+        "ss_8": {
+            "3": "89.00",
+            "4": "15"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-03",
+    "descriptions": {
+        "ss_8": {
+            "3": "Payment for August Offertory",
+            "4": "Payment for August harvest"
+        }
+    }
+}
+Processing as SRN only. sundayschool_ids=[8]
+
+--- BULK PAYMENT SUBMIT 2025-08-03 00:51:32 ---
+{"church_id":"7","payment_date":"2025-08-03","member_ids":[],"sundayschool_ids":[7,8],"amounts":{"ss_7":{"1":50,"3":19,"4":10},"ss_8":{"3":40,"4":10}},"descriptions":{"ss_7":{"1":"Payment for August Tithe","3":"Payment for August Offertory","4":"Payment for August harvest"},"ss_8":{"3":"Payment for August Offertory","4":"Payment for August harvest"}}}
+
+====
+2025-08-03T00:51:32+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-08-03",
+    "member_ids": [],
+    "sundayschool_ids": [
+        7,
+        8
+    ],
+    "amounts": {
+        "ss_7": {
+            "1": 50,
+            "3": 19,
+            "4": 10
+        },
+        "ss_8": {
+            "3": 40,
+            "4": 10
+        }
+    },
+    "descriptions": {
+        "ss_7": {
+            "1": "Payment for August Tithe",
+            "3": "Payment for August Offertory",
+            "4": "Payment for August harvest"
+        },
+        "ss_8": {
+            "3": "Payment for August Offertory",
+            "4": "Payment for August harvest"
+        }
+    }
+}
+Processing as SRN only. sundayschool_ids=[7,8]
+
+--- BULK PAYMENT SUBMIT 2025-08-03 01:02:54 ---
+{"member_ids":[],"sundayschool_ids":[7],"amounts":{"ss_7":{"1":"10","4":"80"}},"church_id":7,"payment_date":"2025-08-03","descriptions":{"ss_7":{"1":"Payment for August Tithe","4":"Payment for August harvest"}}}
+
+====
+2025-08-03T01:02:54+02:00
+{
+    "member_ids": [],
+    "sundayschool_ids": [
+        7
+    ],
+    "amounts": {
+        "ss_7": {
+            "1": "10",
+            "4": "80"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-03",
+    "descriptions": {
+        "ss_7": {
+            "1": "Payment for August Tithe",
+            "4": "Payment for August harvest"
+        }
+    }
+}
+Processing as SRN only. sundayschool_ids=[7]
+
+--- BULK PAYMENT SUBMIT 2025-08-03 01:13:42 ---
+{"member_ids":[72],"sundayschool_ids":[],"amounts":{"72":{"4":"1.00","6":"89"}},"church_id":7,"payment_date":"2025-08-03","descriptions":{"72":{"4":"Payment for August harvest","6":"Payment for August education fund"}}}
+
+====
+2025-08-03T01:13:42+02:00
+{
+    "member_ids": [
+        72
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "72": {
+            "4": "1.00",
+            "6": "89"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-03",
+    "descriptions": {
+        "72": {
+            "4": "Payment for August harvest",
+            "6": "Payment for August education fund"
+        }
+    }
+}
+Processing as CRN only. member_ids=[72]
+
+--- BULK PAYMENT SUBMIT 2025-08-09 09:46:29 ---
+{"church_id":"7","payment_date":"2025-08-09","member_ids":[123],"sundayschool_ids":[],"amounts":{"123":{"1":4,"3":5,"4":8}},"descriptions":{"123":{"1":"Payment for August TITHE","3":"Payment for August WELFARE","4":"Payment for August HARVEST"}}}
+
+====
+2025-08-09T09:46:29+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-08-09",
+    "member_ids": [
+        123
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "123": {
+            "1": 4,
+            "3": 5,
+            "4": 8
+        }
+    },
+    "descriptions": {
+        "123": {
+            "1": "Payment for August TITHE",
+            "3": "Payment for August WELFARE",
+            "4": "Payment for August HARVEST"
+        }
+    }
+}
+Processing as CRN only. member_ids=[123]
+
+--- BULK PAYMENT SUBMIT 2025-08-09 09:50:33 ---
+{"member_ids":[124],"sundayschool_ids":[],"amounts":{"124":{"1":"1","3":"2","4":"3"}},"church_id":7,"payment_date":"2025-08-09","descriptions":{"124":{"1":"Payment for August TITHE","3":"Payment for August WELFARE","4":"Payment for August HARVEST"}}}
+
+====
+2025-08-09T09:50:33+02:00
+{
+    "member_ids": [
+        124
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "124": {
+            "1": "1",
+            "3": "2",
+            "4": "3"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-09",
+    "descriptions": {
+        "124": {
+            "1": "Payment for August TITHE",
+            "3": "Payment for August WELFARE",
+            "4": "Payment for August HARVEST"
+        }
+    }
+}
+Processing as CRN only. member_ids=[124]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 12:25:44 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"1":"2","3":"3","4":"1"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"1":"Payment for August TITHE","3":"Payment for August WELFARE","4":"Payment for August HARVEST"}}}
+
+====
+2025-08-12T12:25:44+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "1": "2",
+            "3": "3",
+            "4": "1"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "1": "Payment for August TITHE",
+            "3": "Payment for August WELFARE",
+            "4": "Payment for August HARVEST"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 12:32:50 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"1":"2","4":"1"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"1":"Payment for August TITHE","4":"Payment for August HARVEST"}}}
+
+====
+2025-08-12T12:32:50+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "1": "2",
+            "4": "1"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "1": "Payment for August TITHE",
+            "4": "Payment for August HARVEST"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 12:37:18 ---
+{"church_id":"7","payment_date":"2025-08-12","member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"3":1,"4":2}},"descriptions":{"129":{"3":"Payment for August WELFARE","4":"Payment for August HARVEST"}}}
+
+====
+2025-08-12T12:37:18+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-08-12",
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "3": 1,
+            "4": 2
+        }
+    },
+    "descriptions": {
+        "129": {
+            "3": "Payment for August WELFARE",
+            "4": "Payment for August HARVEST"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 12:39:13 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"4":"3"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"4":"Payment for August HARVEST"}}}
+
+====
+2025-08-12T12:39:13+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "4": "3"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "4": "Payment for August HARVEST"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 12:43:58 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"4":"5"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"4":"Payment for August HARVEST"}}}
+
+====
+2025-08-12T12:43:58+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "4": "5"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "4": "Payment for August HARVEST"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 12:46:18 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"4":"3"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"4":"Payment for August HARVEST"}}}
+
+====
+2025-08-12T12:46:18+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "4": "3"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "4": "Payment for August HARVEST"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 12:49:51 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"4":"1"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"4":"Payment for August HARVEST"}},"modes":{"129":{"4":"Cheque"}}}
+
+====
+2025-08-12T12:49:51+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "4": "1"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "4": "Payment for August HARVEST"
+        }
+    },
+    "modes": {
+        "129": {
+            "4": "Cheque"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 12:50:53 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"1":"4","3":"5","4":"10"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"1":"Payment for August TITHE","3":"Payment for August WELFARE","4":"Payment for August HARVEST"}},"modes":{"129":{"1":"Cheque","3":"Cheque","4":"Cheque"}}}
+
+====
+2025-08-12T12:50:53+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "1": "4",
+            "3": "5",
+            "4": "10"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "1": "Payment for August TITHE",
+            "3": "Payment for August WELFARE",
+            "4": "Payment for August HARVEST"
+        }
+    },
+    "modes": {
+        "129": {
+            "1": "Cheque",
+            "3": "Cheque",
+            "4": "Cheque"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 12:52:01 ---
+{"church_id":"7","payment_date":"2025-08-12","member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"3":7}},"descriptions":{"129":{"3":"Payment for August WELFARE"}}}
+
+====
+2025-08-12T12:52:01+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-08-12",
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "3": 7
+        }
+    },
+    "descriptions": {
+        "129": {
+            "3": "Payment for August WELFARE"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 12:57:24 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"4":"1"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"4":"Payment for August HARVEST"}},"modes":{"129":{"4":"Cheque"}}}
+
+====
+2025-08-12T12:57:24+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "4": "1"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "4": "Payment for August HARVEST"
+        }
+    },
+    "modes": {
+        "129": {
+            "4": "Cheque"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 13:35:40 ---
+{"church_id":"7","payment_date":"2025-08-12","member_ids":[122,128],"sundayschool_ids":[],"amounts":{"122":{"1":5},"128":{"3":6,"4":6}},"descriptions":{"122":{"1":"TITHE for December 2024"},"128":{"3":"WELFARE for September 2024","4":"HARVEST for March 2025"}},"periods":{"122":{"1":"2024-12-01"},"128":{"3":"2024-09-01","4":"2025-03-01"}},"period_descriptions":{"122":{"1":"December 2024"},"128":{"3":"September 2024","4":"March 2025"}}}
+
+====
+2025-08-12T13:35:40+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-08-12",
+    "member_ids": [
+        122,
+        128
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "122": {
+            "1": 5
+        },
+        "128": {
+            "3": 6,
+            "4": 6
+        }
+    },
+    "descriptions": {
+        "122": {
+            "1": "TITHE for December 2024"
+        },
+        "128": {
+            "3": "WELFARE for September 2024",
+            "4": "HARVEST for March 2025"
+        }
+    },
+    "periods": {
+        "122": {
+            "1": "2024-12-01"
+        },
+        "128": {
+            "3": "2024-09-01",
+            "4": "2025-03-01"
+        }
+    },
+    "period_descriptions": {
+        "122": {
+            "1": "December 2024"
+        },
+        "128": {
+            "3": "September 2024",
+            "4": "March 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[122,128]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 14:00:14 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"3":"1"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"3":"Payment for November 2024 WELFARE"}},"modes":{"129":{"3":"Cheque"}},"periods":{"129":{"3":"2024-11-01"}},"period_descriptions":{"129":{"3":"November 2024"}}}
+
+====
+2025-08-12T14:00:14+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "3": "1"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "3": "Payment for November 2024 WELFARE"
+        }
+    },
+    "modes": {
+        "129": {
+            "3": "Cheque"
+        }
+    },
+    "periods": {
+        "129": {
+            "3": "2024-11-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "3": "November 2024"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 14:03:03 ---
+{"church_id":"7","payment_date":"2025-08-12","member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"4":10}},"descriptions":{"129":{"4":"HARVEST for October 2024"}},"periods":{"129":{"4":"2024-10-01"}},"period_descriptions":{"129":{"4":"October 2024"}}}
+
+====
+2025-08-12T14:03:03+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-08-12",
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "4": 10
+        }
+    },
+    "descriptions": {
+        "129": {
+            "4": "HARVEST for October 2024"
+        }
+    },
+    "periods": {
+        "129": {
+            "4": "2024-10-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "4": "October 2024"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 14:12:27 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"1":"3","3":"2"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"1":"Payment for February 2025 TITHE","3":"Payment for March 2025 WELFARE"}},"modes":{"129":{"1":"Cash","3":"Cheque"}},"periods":{"129":{"1":"2025-02-01","3":"2025-03-01"}},"period_descriptions":{"129":{"1":"February 2025","3":"March 2025"}}}
+
+====
+2025-08-12T14:12:27+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "1": "3",
+            "3": "2"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "1": "Payment for February 2025 TITHE",
+            "3": "Payment for March 2025 WELFARE"
+        }
+    },
+    "modes": {
+        "129": {
+            "1": "Cash",
+            "3": "Cheque"
+        }
+    },
+    "periods": {
+        "129": {
+            "1": "2025-02-01",
+            "3": "2025-03-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "1": "February 2025",
+            "3": "March 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 14:24:10 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"1":"5"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"1":"Payment for November 2024 TITHE"}},"modes":{"129":{"1":"Cash"}},"periods":{"129":{"1":"2024-11-01"}},"period_descriptions":{"129":{"1":"November 2024"}}}
+
+====
+2025-08-12T14:24:10+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "1": "5"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "1": "Payment for November 2024 TITHE"
+        }
+    },
+    "modes": {
+        "129": {
+            "1": "Cash"
+        }
+    },
+    "periods": {
+        "129": {
+            "1": "2024-11-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "1": "November 2024"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 14:26:18 ---
+{"church_id":"7","payment_date":"2025-08-12","member_ids":[],"sundayschool_ids":[14],"amounts":{"ss_14":{"3":6}},"descriptions":{"ss_14":{"3":"WELFARE for October 2024"}},"periods":{"ss_14":{"3":"2024-10-01"}},"period_descriptions":{"ss_14":{"3":"October 2024"}}}
+
+====
+2025-08-12T14:26:18+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-08-12",
+    "member_ids": [],
+    "sundayschool_ids": [
+        14
+    ],
+    "amounts": {
+        "ss_14": {
+            "3": 6
+        }
+    },
+    "descriptions": {
+        "ss_14": {
+            "3": "WELFARE for October 2024"
+        }
+    },
+    "periods": {
+        "ss_14": {
+            "3": "2024-10-01"
+        }
+    },
+    "period_descriptions": {
+        "ss_14": {
+            "3": "October 2024"
+        }
+    }
+}
+Processing as SRN only. sundayschool_ids=[14]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 14:29:11 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"1":"4","4":"8"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"1":"Payment for April 2025 TITHE","4":"Payment for January 2025 HARVEST"}},"modes":{"129":{"1":"Cash","4":"Cheque"}},"periods":{"129":{"1":"2025-04-01","4":"2025-01-01"}},"period_descriptions":{"129":{"1":"April 2025","4":"January 2025"}}}
+
+====
+2025-08-12T14:29:11+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "1": "4",
+            "4": "8"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "1": "Payment for April 2025 TITHE",
+            "4": "Payment for January 2025 HARVEST"
+        }
+    },
+    "modes": {
+        "129": {
+            "1": "Cash",
+            "4": "Cheque"
+        }
+    },
+    "periods": {
+        "129": {
+            "1": "2025-04-01",
+            "4": "2025-01-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "1": "April 2025",
+            "4": "January 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 14:30:32 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"3":"3","4":"5"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"3":"Payment for June 2025 WELFARE","4":"Payment for April 2025 HARVEST"}},"modes":{"129":{"3":"Cash","4":"Cheque"}},"periods":{"129":{"3":"2025-06-01","4":"2025-04-01"}},"period_descriptions":{"129":{"3":"June 2025","4":"April 2025"}}}
+
+====
+2025-08-12T14:30:32+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "3": "3",
+            "4": "5"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "3": "Payment for June 2025 WELFARE",
+            "4": "Payment for April 2025 HARVEST"
+        }
+    },
+    "modes": {
+        "129": {
+            "3": "Cash",
+            "4": "Cheque"
+        }
+    },
+    "periods": {
+        "129": {
+            "3": "2025-06-01",
+            "4": "2025-04-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "3": "June 2025",
+            "4": "April 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 14:31:53 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"3":"3","4":"5"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"3":"Payment for June 2025 WELFARE","4":"Payment for April 2025 HARVEST"}},"modes":{"129":{"3":"Cash","4":"Cheque"}},"periods":{"129":{"3":"2025-06-01","4":"2025-04-01"}},"period_descriptions":{"129":{"3":"June 2025","4":"April 2025"}}}
+
+====
+2025-08-12T14:31:53+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "3": "3",
+            "4": "5"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "3": "Payment for June 2025 WELFARE",
+            "4": "Payment for April 2025 HARVEST"
+        }
+    },
+    "modes": {
+        "129": {
+            "3": "Cash",
+            "4": "Cheque"
+        }
+    },
+    "periods": {
+        "129": {
+            "3": "2025-06-01",
+            "4": "2025-04-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "3": "June 2025",
+            "4": "April 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 14:31:59 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"3":"3","4":"5"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"3":"Payment for June 2025 WELFARE","4":"Payment for April 2025 HARVEST"}},"modes":{"129":{"3":"Cash","4":"Cheque"}},"periods":{"129":{"3":"2025-06-01","4":"2025-04-01"}},"period_descriptions":{"129":{"3":"June 2025","4":"April 2025"}}}
+
+====
+2025-08-12T14:31:59+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "3": "3",
+            "4": "5"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "3": "Payment for June 2025 WELFARE",
+            "4": "Payment for April 2025 HARVEST"
+        }
+    },
+    "modes": {
+        "129": {
+            "3": "Cash",
+            "4": "Cheque"
+        }
+    },
+    "periods": {
+        "129": {
+            "3": "2025-06-01",
+            "4": "2025-04-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "3": "June 2025",
+            "4": "April 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 14:33:06 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"3":"3","4":"5"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"3":"Payment for June 2025 WELFARE","4":"Payment for April 2025 HARVEST"}},"modes":{"129":{"3":"Cash","4":"Cheque"}},"periods":{"129":{"3":"2025-06-01","4":"2025-04-01"}},"period_descriptions":{"129":{"3":"June 2025","4":"April 2025"}}}
+
+====
+2025-08-12T14:33:06+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "3": "3",
+            "4": "5"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "3": "Payment for June 2025 WELFARE",
+            "4": "Payment for April 2025 HARVEST"
+        }
+    },
+    "modes": {
+        "129": {
+            "3": "Cash",
+            "4": "Cheque"
+        }
+    },
+    "periods": {
+        "129": {
+            "3": "2025-06-01",
+            "4": "2025-04-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "3": "June 2025",
+            "4": "April 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 14:39:03 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"1":"5"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"1":"Payment for February 2025 TITHE"}},"modes":{"129":{"1":"Cheque"}},"periods":{"129":{"1":"2025-02-01"}},"period_descriptions":{"129":{"1":"February 2025"}}}
+
+====
+2025-08-12T14:39:03+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "1": "5"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "1": "Payment for February 2025 TITHE"
+        }
+    },
+    "modes": {
+        "129": {
+            "1": "Cheque"
+        }
+    },
+    "periods": {
+        "129": {
+            "1": "2025-02-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "1": "February 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 14:45:56 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"4":"1"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"4":"Payment for November 2024 HARVEST"}},"modes":{"129":{"4":"Cheque"}},"periods":{"129":{"4":"2024-11-01"}},"period_descriptions":{"129":{"4":"November 2024"}}}
+
+====
+2025-08-12T14:45:56+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "4": "1"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "4": "Payment for November 2024 HARVEST"
+        }
+    },
+    "modes": {
+        "129": {
+            "4": "Cheque"
+        }
+    },
+    "periods": {
+        "129": {
+            "4": "2024-11-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "4": "November 2024"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 14:50:32 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"1":"6"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"1":"Payment for December 2024 TITHE"}},"modes":{"129":{"1":"Cheque"}},"periods":{"129":{"1":"2024-12-01"}},"period_descriptions":{"129":{"1":"December 2024"}}}
+
+====
+2025-08-12T14:50:32+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "1": "6"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "1": "Payment for December 2024 TITHE"
+        }
+    },
+    "modes": {
+        "129": {
+            "1": "Cheque"
+        }
+    },
+    "periods": {
+        "129": {
+            "1": "2024-12-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "1": "December 2024"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 14:53:16 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"1":"3"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"1":"Payment for June 2025 TITHE"}},"modes":{"129":{"1":"Cheque"}},"periods":{"129":{"1":"2025-06-01"}},"period_descriptions":{"129":{"1":"June 2025"}}}
+
+====
+2025-08-12T14:53:16+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "1": "3"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "1": "Payment for June 2025 TITHE"
+        }
+    },
+    "modes": {
+        "129": {
+            "1": "Cheque"
+        }
+    },
+    "periods": {
+        "129": {
+            "1": "2025-06-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "1": "June 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 14:55:56 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"4":"6"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"4":"Payment for November 2024 HARVEST"}},"modes":{"129":{"4":"Cheque"}},"periods":{"129":{"4":"2024-11-01"}},"period_descriptions":{"129":{"4":"November 2024"}}}
+
+====
+2025-08-12T14:55:56+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "4": "6"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "4": "Payment for November 2024 HARVEST"
+        }
+    },
+    "modes": {
+        "129": {
+            "4": "Cheque"
+        }
+    },
+    "periods": {
+        "129": {
+            "4": "2024-11-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "4": "November 2024"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 15:00:19 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"1":"1","3":"4"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"1":"Payment for November 2024 TITHE","3":"Payment for April 2025 WELFARE"}},"modes":{"129":{"1":"Cheque","3":"Cash"}},"periods":{"129":{"1":"2024-11-01","3":"2025-04-01"}},"period_descriptions":{"129":{"1":"November 2024","3":"April 2025"}}}
+
+====
+2025-08-12T15:00:19+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "1": "1",
+            "3": "4"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "1": "Payment for November 2024 TITHE",
+            "3": "Payment for April 2025 WELFARE"
+        }
+    },
+    "modes": {
+        "129": {
+            "1": "Cheque",
+            "3": "Cash"
+        }
+    },
+    "periods": {
+        "129": {
+            "1": "2024-11-01",
+            "3": "2025-04-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "1": "November 2024",
+            "3": "April 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 15:04:09 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"1":"6","3":"5"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"1":"Payment for November 2024 TITHE","3":"Payment for October 2024 WELFARE"}},"modes":{"129":{"1":"Cheque","3":"Cash"}},"periods":{"129":{"1":"2024-11-01","3":"2024-10-01"}},"period_descriptions":{"129":{"1":"November 2024","3":"October 2024"}}}
+
+====
+2025-08-12T15:04:09+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "1": "6",
+            "3": "5"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "1": "Payment for November 2024 TITHE",
+            "3": "Payment for October 2024 WELFARE"
+        }
+    },
+    "modes": {
+        "129": {
+            "1": "Cheque",
+            "3": "Cash"
+        }
+    },
+    "periods": {
+        "129": {
+            "1": "2024-11-01",
+            "3": "2024-10-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "1": "November 2024",
+            "3": "October 2024"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 15:09:48 ---
+{"member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"1":"6"}},"church_id":7,"payment_date":"2025-08-12","descriptions":{"129":{"1":"Payment for March 2025 TITHE"}},"modes":{"129":{"1":"Cheque"}},"periods":{"129":{"1":"2025-03-01"}},"period_descriptions":{"129":{"1":"March 2025"}}}
+
+====
+2025-08-12T15:09:48+02:00
+{
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "1": "6"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-12",
+    "descriptions": {
+        "129": {
+            "1": "Payment for March 2025 TITHE"
+        }
+    },
+    "modes": {
+        "129": {
+            "1": "Cheque"
+        }
+    },
+    "periods": {
+        "129": {
+            "1": "2025-03-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "1": "March 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-12 15:20:08 ---
+{"church_id":"7","payment_date":"2025-08-12","member_ids":[129],"sundayschool_ids":[],"amounts":{"129":{"1":8}},"descriptions":{"129":{"1":"TITHE for September 2024"}},"periods":{"129":{"1":"2024-09-01"}},"period_descriptions":{"129":{"1":"September 2024"}}}
+
+====
+2025-08-12T15:20:08+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-08-12",
+    "member_ids": [
+        129
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "129": {
+            "1": 8
+        }
+    },
+    "descriptions": {
+        "129": {
+            "1": "TITHE for September 2024"
+        }
+    },
+    "periods": {
+        "129": {
+            "1": "2024-09-01"
+        }
+    },
+    "period_descriptions": {
+        "129": {
+            "1": "September 2024"
+        }
+    }
+}
+Processing as CRN only. member_ids=[129]
+
+--- BULK PAYMENT SUBMIT 2025-08-20 05:12:17 ---
+{"church_id":"7","payment_date":"2025-08-20","member_ids":[124],"sundayschool_ids":[],"amounts":{"124":{"1":3,"4":1}},"descriptions":{"124":{"1":"TITHE for August 2025","4":"HARVEST for August 2025"}},"periods":{"124":{"1":"2025-08-01","4":"2025-08-01"}},"period_descriptions":{"124":{"1":"August 2025","4":"August 2025"}}}
+
+====
+2025-08-20T05:12:17+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-08-20",
+    "member_ids": [
+        124
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "124": {
+            "1": 3,
+            "4": 1
+        }
+    },
+    "descriptions": {
+        "124": {
+            "1": "TITHE for August 2025",
+            "4": "HARVEST for August 2025"
+        }
+    },
+    "periods": {
+        "124": {
+            "1": "2025-08-01",
+            "4": "2025-08-01"
+        }
+    },
+    "period_descriptions": {
+        "124": {
+            "1": "August 2025",
+            "4": "August 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[124]
+
+--- BULK PAYMENT SUBMIT 2025-08-20 05:14:08 ---
+{"member_ids":[124],"sundayschool_ids":[],"amounts":{"124":{"4":"1"}},"church_id":7,"payment_date":"2025-08-20","descriptions":{"124":{"4":"Payment for October 2024 HARVEST"}},"modes":{"124":{"4":"Cash"}},"periods":{"124":{"4":"2024-10-01"}},"period_descriptions":{"124":{"4":"October 2024"}}}
+
+====
+2025-08-20T05:14:08+02:00
+{
+    "member_ids": [
+        124
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "124": {
+            "4": "1"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-08-20",
+    "descriptions": {
+        "124": {
+            "4": "Payment for October 2024 HARVEST"
+        }
+    },
+    "modes": {
+        "124": {
+            "4": "Cash"
+        }
+    },
+    "periods": {
+        "124": {
+            "4": "2024-10-01"
+        }
+    },
+    "period_descriptions": {
+        "124": {
+            "4": "October 2024"
+        }
+    }
+}
+Processing as CRN only. member_ids=[124]
+
+--- BULK PAYMENT SUBMIT 2025-09-10 16:26:11 ---
+{"member_ids":[1286],"sundayschool_ids":[],"amounts":{"1286":{"4":"1","6":"1"}},"church_id":7,"payment_date":"2025-09-10","descriptions":{"1286":{"4":"Payment for September 2025 HARVEST","6":"Payment for January 2025 Outlook Support"}},"modes":{"1286":{"4":"Cash","6":"Cash"}},"periods":{"1286":{"4":"2025-09-01","6":"2025-01-01"}},"period_descriptions":{"1286":{"4":"September 2025","6":"January 2025"}}}
+
+====
+2025-09-10T16:26:11+02:00
+{
+    "member_ids": [
+        1286
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1286": {
+            "4": "1",
+            "6": "1"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-09-10",
+    "descriptions": {
+        "1286": {
+            "4": "Payment for September 2025 HARVEST",
+            "6": "Payment for January 2025 Outlook Support"
+        }
+    },
+    "modes": {
+        "1286": {
+            "4": "Cash",
+            "6": "Cash"
+        }
+    },
+    "periods": {
+        "1286": {
+            "4": "2025-09-01",
+            "6": "2025-01-01"
+        }
+    },
+    "period_descriptions": {
+        "1286": {
+            "4": "September 2025",
+            "6": "January 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1286]
+
+--- BULK PAYMENT SUBMIT 2025-09-12 02:54:27 ---
+{"church_id":"7","payment_date":"2025-09-12","member_ids":[1169],"sundayschool_ids":[],"amounts":{"1169":{"9":1}},"descriptions":{"1169":{"9":"Education Support for September 2025"}},"periods":{"1169":{"9":"2025-09-01"}},"period_descriptions":{"1169":{"9":"September 2025"}}}
+
+====
+2025-09-12T02:54:27+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-09-12",
+    "member_ids": [
+        1169
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1169": {
+            "9": 1
+        }
+    },
+    "descriptions": {
+        "1169": {
+            "9": "Education Support for September 2025"
+        }
+    },
+    "periods": {
+        "1169": {
+            "9": "2025-09-01"
+        }
+    },
+    "period_descriptions": {
+        "1169": {
+            "9": "September 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1169]
+SUCCESS: Inserted payment ID 629 for member 1169, type 9, amount 1
+
+--- BULK PAYMENT SUBMIT 2025-09-12 03:12:11 ---
+{"church_id":"7","payment_date":"2025-09-12","member_ids":[1169],"sundayschool_ids":[],"amounts":{"1169":{"10":1}},"descriptions":{"1169":{"10":"Fa woho BÃªÅ“ÂªhyÃªÅ“Âª Yesu Bogya Mu for September 2025"}},"periods":{"1169":{"10":"2025-09-01"}},"period_descriptions":{"1169":{"10":"September 2025"}}}
+
+====
+2025-09-12T03:12:11+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-09-12",
+    "member_ids": [
+        1169
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1169": {
+            "10": 1
+        }
+    },
+    "descriptions": {
+        "1169": {
+            "10": "Fa woho B\u00c3\u00aa\u00c5\u201c\u00c2\u00aahy\u00c3\u00aa\u00c5\u201c\u00c2\u00aa Yesu Bogya Mu for September 2025"
+        }
+    },
+    "periods": {
+        "1169": {
+            "10": "2025-09-01"
+        }
+    },
+    "period_descriptions": {
+        "1169": {
+            "10": "September 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1169]
+SUCCESS: Inserted payment ID 630 for member 1169, type 10, amount 1
+
+--- BULK PAYMENT SUBMIT 2025-09-12 03:24:43 ---
+{"church_id":"7","payment_date":"2025-09-12","member_ids":[1169],"sundayschool_ids":[],"amounts":{"1169":{"10":1}},"descriptions":{"1169":{"10":"Fa woho BÃªÅ“ÂªhyÃªÅ“Âª Yesu Bogya Mu for September 2025"}},"periods":{"1169":{"10":"2025-09-01"}},"period_descriptions":{"1169":{"10":"September 2025"}}}
+Processing as CRN only. member_ids=[1169]
+SUCCESS: Inserted payment ID 631 for member 1169, type 10, amount 1
+Processing as CRN only. member_ids=[1291]
+Processing as CRN only. member_ids=[1291]
+
+--- BULK PAYMENT SUBMIT 2025-09-16 11:57:46 ---
+{"member_ids":[1286],"sundayschool_ids":[],"amounts":{"1286":{"4":"10","7":"1","10":"2.5"}},"church_id":7,"payment_date":"2025-09-16","descriptions":{"1286":{"4":"Payment for June 2025 HARVEST","7":"Payment for September 2025 APPEALS","10":"Payment for June 2025 Fa woho BÃªÅ“ÂªhyÃªÅ“Âª Yesu Bogya Mu"}},"modes":{"1286":{"4":"Cash","7":"Cash","10":"Cash"}},"periods":{"1286":{"4":"2025-06-01","7":"2025-09-01","10":"2025-06-01"}},"period_descriptions":{"1286":{"4":"June 2025","7":"September 2025","10":"June 2025"}}}
+
+====
+2025-09-16T11:57:46+02:00
+{
+    "member_ids": [
+        1286
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1286": {
+            "4": "10",
+            "7": "1",
+            "10": "2.5"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-09-16",
+    "descriptions": {
+        "1286": {
+            "4": "Payment for June 2025 HARVEST",
+            "7": "Payment for September 2025 APPEALS",
+            "10": "Payment for June 2025 Fa woho B\u00c3\u00aa\u00c5\u201c\u00c2\u00aahy\u00c3\u00aa\u00c5\u201c\u00c2\u00aa Yesu Bogya Mu"
+        }
+    },
+    "modes": {
+        "1286": {
+            "4": "Cash",
+            "7": "Cash",
+            "10": "Cash"
+        }
+    },
+    "periods": {
+        "1286": {
+            "4": "2025-06-01",
+            "7": "2025-09-01",
+            "10": "2025-06-01"
+        }
+    },
+    "period_descriptions": {
+        "1286": {
+            "4": "June 2025",
+            "7": "September 2025",
+            "10": "June 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1286]
+SUCCESS: Inserted payment ID 641 for member 1286, type 4, amount 10
+SUCCESS: Inserted payment ID 642 for member 1286, type 7, amount 1
+SUCCESS: Inserted payment ID 643 for member 1286, type 10, amount 2.5
+
+--- BULK PAYMENT SUBMIT 2025-09-16 12:01:46 ---
+{"member_ids":[1286],"sundayschool_ids":[],"amounts":{"1286":{"4":"10","7":"1","10":"2.5"}},"church_id":7,"payment_date":"2025-09-16","descriptions":{"1286":{"4":"Payment for June 2025 HARVEST","7":"Payment for September 2025 APPEALS","10":"Payment for June 2025 Fa woho BÃªÅ“ÂªhyÃªÅ“Âª Yesu Bogya Mu"}},"modes":{"1286":{"4":"Cash","7":"Cash","10":"Cash"}},"periods":{"1286":{"4":"2025-06-01","7":"2025-09-01","10":"2025-06-01"}},"period_descriptions":{"1286":{"4":"June 2025","7":"September 2025","10":"June 2025"}}}
+
+====
+2025-09-16T12:01:46+02:00
+{
+    "member_ids": [
+        1286
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1286": {
+            "4": "10",
+            "7": "1",
+            "10": "2.5"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-09-16",
+    "descriptions": {
+        "1286": {
+            "4": "Payment for June 2025 HARVEST",
+            "7": "Payment for September 2025 APPEALS",
+            "10": "Payment for June 2025 Fa woho B\u00c3\u00aa\u00c5\u201c\u00c2\u00aahy\u00c3\u00aa\u00c5\u201c\u00c2\u00aa Yesu Bogya Mu"
+        }
+    },
+    "modes": {
+        "1286": {
+            "4": "Cash",
+            "7": "Cash",
+            "10": "Cash"
+        }
+    },
+    "periods": {
+        "1286": {
+            "4": "2025-06-01",
+            "7": "2025-09-01",
+            "10": "2025-06-01"
+        }
+    },
+    "period_descriptions": {
+        "1286": {
+            "4": "June 2025",
+            "7": "September 2025",
+            "10": "June 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1286]
+SUCCESS: Inserted payment ID 644 for member 1286, type 4, amount 10
+SUCCESS: Inserted payment ID 645 for member 1286, type 7, amount 1
+SUCCESS: Inserted payment ID 646 for member 1286, type 10, amount 2.5
+
+--- BULK PAYMENT SUBMIT 2025-09-16 12:07:08 ---
+{"member_ids":[1286],"sundayschool_ids":[],"amounts":{"1286":{"4":"1","10":"1","12":"1","14":"1"}},"church_id":7,"payment_date":"2025-09-16","descriptions":{"1286":{"4":"Payment for December 2024 HARVEST","10":"Payment for May 2025 Fa woho BÃªÅ“ÂªhyÃªÅ“Âª Yesu Bogya Mu","12":"Payment for September 2025 Jericho Hour","14":"Payment for December 2024 Monthly Offering/Kofi & Ama"}},"modes":{"1286":{"4":"Cash","10":"Cash","12":"Cash","14":"Cash"}},"periods":{"1286":{"4":"2024-12-01","10":"2025-05-01","12":"2025-09-01","14":"2024-12-01"}},"period_descriptions":{"1286":{"4":"December 2024","10":"May 2025","12":"September 2025","14":"December 2024"}}}
+
+====
+2025-09-16T12:07:08+02:00
+{
+    "member_ids": [
+        1286
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1286": {
+            "4": "1",
+            "10": "1",
+            "12": "1",
+            "14": "1"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-09-16",
+    "descriptions": {
+        "1286": {
+            "4": "Payment for December 2024 HARVEST",
+            "10": "Payment for May 2025 Fa woho B\u00c3\u00aa\u00c5\u201c\u00c2\u00aahy\u00c3\u00aa\u00c5\u201c\u00c2\u00aa Yesu Bogya Mu",
+            "12": "Payment for September 2025 Jericho Hour",
+            "14": "Payment for December 2024 Monthly Offering\/Kofi & Ama"
+        }
+    },
+    "modes": {
+        "1286": {
+            "4": "Cash",
+            "10": "Cash",
+            "12": "Cash",
+            "14": "Cash"
+        }
+    },
+    "periods": {
+        "1286": {
+            "4": "2024-12-01",
+            "10": "2025-05-01",
+            "12": "2025-09-01",
+            "14": "2024-12-01"
+        }
+    },
+    "period_descriptions": {
+        "1286": {
+            "4": "December 2024",
+            "10": "May 2025",
+            "12": "September 2025",
+            "14": "December 2024"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1286]
+SUCCESS: Inserted payment ID 648 for member 1286, type 4, amount 1
+SUCCESS: Inserted payment ID 649 for member 1286, type 10, amount 1
+SUCCESS: Inserted payment ID 650 for member 1286, type 12, amount 1
+SUCCESS: Inserted payment ID 651 for member 1286, type 14, amount 1
+
+--- BULK PAYMENT SUBMIT 2025-09-16 12:11:09 ---
+{"member_ids":[1286],"sundayschool_ids":[],"amounts":{"1286":{"4":"1","10":"1","12":"1","14":"1"}},"church_id":7,"payment_date":"2025-09-16","descriptions":{"1286":{"4":"Payment for December 2024 HARVEST","10":"Payment for May 2025 Fa woho BÃªÅ“ÂªhyÃªÅ“Âª Yesu Bogya Mu","12":"Payment for September 2025 Jericho Hour","14":"Payment for December 2024 Monthly Offering/Kofi & Ama"}},"modes":{"1286":{"4":"Cash","10":"Cash","12":"Cash","14":"Cash"}},"periods":{"1286":{"4":"2024-12-01","10":"2025-05-01","12":"2025-09-01","14":"2024-12-01"}},"period_descriptions":{"1286":{"4":"December 2024","10":"May 2025","12":"September 2025","14":"December 2024"}}}
+
+====
+2025-09-16T12:11:09+02:00
+{
+    "member_ids": [
+        1286
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1286": {
+            "4": "1",
+            "10": "1",
+            "12": "1",
+            "14": "1"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-09-16",
+    "descriptions": {
+        "1286": {
+            "4": "Payment for December 2024 HARVEST",
+            "10": "Payment for May 2025 Fa woho B\u00c3\u00aa\u00c5\u201c\u00c2\u00aahy\u00c3\u00aa\u00c5\u201c\u00c2\u00aa Yesu Bogya Mu",
+            "12": "Payment for September 2025 Jericho Hour",
+            "14": "Payment for December 2024 Monthly Offering\/Kofi & Ama"
+        }
+    },
+    "modes": {
+        "1286": {
+            "4": "Cash",
+            "10": "Cash",
+            "12": "Cash",
+            "14": "Cash"
+        }
+    },
+    "periods": {
+        "1286": {
+            "4": "2024-12-01",
+            "10": "2025-05-01",
+            "12": "2025-09-01",
+            "14": "2024-12-01"
+        }
+    },
+    "period_descriptions": {
+        "1286": {
+            "4": "December 2024",
+            "10": "May 2025",
+            "12": "September 2025",
+            "14": "December 2024"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1286]
+SUCCESS: Inserted payment ID 652 for member 1286, type 4, amount 1
+SUCCESS: Inserted payment ID 653 for member 1286, type 10, amount 1
+SUCCESS: Inserted payment ID 654 for member 1286, type 12, amount 1
+SUCCESS: Inserted payment ID 655 for member 1286, type 14, amount 1
+
+--- BULK PAYMENT SUBMIT 2025-09-16 12:11:58 ---
+{"member_ids":[1286],"sundayschool_ids":[],"amounts":{"1286":{"9":"1","10":"1"}},"church_id":7,"payment_date":"2025-09-16","descriptions":{"1286":{"9":"Payment for September 2025 Education Support","10":"Payment for September 2025 Fa woho BÃªÅ“ÂªhyÃªÅ“Âª Yesu Bogya Mu"}},"modes":{"1286":{"9":"Cash","10":"Cash"}},"periods":{"1286":{"9":"2025-09-01","10":"2025-09-01"}},"period_descriptions":{"1286":{"9":"September 2025","10":"September 2025"}}}
+
+====
+2025-09-16T12:11:58+02:00
+{
+    "member_ids": [
+        1286
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1286": {
+            "9": "1",
+            "10": "1"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-09-16",
+    "descriptions": {
+        "1286": {
+            "9": "Payment for September 2025 Education Support",
+            "10": "Payment for September 2025 Fa woho B\u00c3\u00aa\u00c5\u201c\u00c2\u00aahy\u00c3\u00aa\u00c5\u201c\u00c2\u00aa Yesu Bogya Mu"
+        }
+    },
+    "modes": {
+        "1286": {
+            "9": "Cash",
+            "10": "Cash"
+        }
+    },
+    "periods": {
+        "1286": {
+            "9": "2025-09-01",
+            "10": "2025-09-01"
+        }
+    },
+    "period_descriptions": {
+        "1286": {
+            "9": "September 2025",
+            "10": "September 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1286]
+SUCCESS: Inserted payment ID 656 for member 1286, type 9, amount 1
+SUCCESS: Inserted payment ID 657 for member 1286, type 10, amount 1
+
+--- BULK PAYMENT SUBMIT 2025-09-16 12:13:59 ---
+{"church_id":"7","payment_date":"2025-09-16","member_ids":[1286],"sundayschool_ids":[],"amounts":{"1286":{"9":0.2,"10":0.1}},"descriptions":{"1286":{"9":"Education Support for September 2025","10":"Fa woho BÃªÅ“ÂªhyÃªÅ“Âª Yesu Bogya Mu for September 2025"}},"periods":{"1286":{"9":"2025-09-01","10":"2025-09-01"}},"period_descriptions":{"1286":{"9":"September 2025","10":"September 2025"}}}
+
+====
+2025-09-16T12:13:59+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-09-16",
+    "member_ids": [
+        1286
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1286": {
+            "9": 0.2,
+            "10": 0.1
+        }
+    },
+    "descriptions": {
+        "1286": {
+            "9": "Education Support for September 2025",
+            "10": "Fa woho B\u00c3\u00aa\u00c5\u201c\u00c2\u00aahy\u00c3\u00aa\u00c5\u201c\u00c2\u00aa Yesu Bogya Mu for September 2025"
+        }
+    },
+    "periods": {
+        "1286": {
+            "9": "2025-09-01",
+            "10": "2025-09-01"
+        }
+    },
+    "period_descriptions": {
+        "1286": {
+            "9": "September 2025",
+            "10": "September 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1286]
+SUCCESS: Inserted payment ID 658 for member 1286, type 9, amount 0.2
+SUCCESS: Inserted payment ID 659 for member 1286, type 10, amount 0.1
+
+--- BULK PAYMENT SUBMIT 2025-09-16 12:17:57 ---
+{"church_id":"7","payment_date":"2025-09-16","member_ids":[1286],"sundayschool_ids":[],"amounts":{"1286":{"4":300,"9":200,"10":100}},"descriptions":{"1286":{"4":"HARVEST for September 2025","9":"Education Support for September 2025","10":"Fa woho BÃªÅ“ÂªhyÃªÅ“Âª Yesu Bogya Mu for September 2025"}},"periods":{"1286":{"4":"2025-09-01","9":"2025-09-01","10":"2025-09-01"}},"period_descriptions":{"1286":{"4":"September 2025","9":"September 2025","10":"September 2025"}}}
+
+====
+2025-09-16T12:17:57+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-09-16",
+    "member_ids": [
+        1286
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1286": {
+            "4": 300,
+            "9": 200,
+            "10": 100
+        }
+    },
+    "descriptions": {
+        "1286": {
+            "4": "HARVEST for September 2025",
+            "9": "Education Support for September 2025",
+            "10": "Fa woho B\u00c3\u00aa\u00c5\u201c\u00c2\u00aahy\u00c3\u00aa\u00c5\u201c\u00c2\u00aa Yesu Bogya Mu for September 2025"
+        }
+    },
+    "periods": {
+        "1286": {
+            "4": "2025-09-01",
+            "9": "2025-09-01",
+            "10": "2025-09-01"
+        }
+    },
+    "period_descriptions": {
+        "1286": {
+            "4": "September 2025",
+            "9": "September 2025",
+            "10": "September 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1286]
+SUCCESS: Inserted payment ID 660 for member 1286, type 4, amount 300
+SUCCESS: Inserted payment ID 661 for member 1286, type 9, amount 200
+SUCCESS: Inserted payment ID 662 for member 1286, type 10, amount 100
+
+--- BULK PAYMENT SUBMIT 2025-09-16 12:20:03 ---
+{"church_id":"7","payment_date":"2025-09-16","member_ids":[1286],"sundayschool_ids":[],"amounts":{"1286":{"4":3000,"7":1000,"8":2000}},"descriptions":{"1286":{"4":"HARVEST for October 2024","7":"APPEALS for July 2025","8":"Charity Fund for April 2025"}},"periods":{"1286":{"4":"2024-10-01","7":"2025-07-01","8":"2025-04-01"}},"period_descriptions":{"1286":{"4":"October 2024","7":"July 2025","8":"April 2025"}}}
+
+====
+2025-09-16T12:20:03+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-09-16",
+    "member_ids": [
+        1286
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1286": {
+            "4": 3000,
+            "7": 1000,
+            "8": 2000
+        }
+    },
+    "descriptions": {
+        "1286": {
+            "4": "HARVEST for October 2024",
+            "7": "APPEALS for July 2025",
+            "8": "Charity Fund for April 2025"
+        }
+    },
+    "periods": {
+        "1286": {
+            "4": "2024-10-01",
+            "7": "2025-07-01",
+            "8": "2025-04-01"
+        }
+    },
+    "period_descriptions": {
+        "1286": {
+            "4": "October 2024",
+            "7": "July 2025",
+            "8": "April 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1286]
+SUCCESS: Inserted payment ID 663 for member 1286, type 4, amount 3000
+SUCCESS: Inserted payment ID 664 for member 1286, type 7, amount 1000
+SUCCESS: Inserted payment ID 665 for member 1286, type 8, amount 2000
+
+--- BULK PAYMENT SUBMIT 2025-09-16 12:25:14 ---
+{"member_ids":[1286],"sundayschool_ids":[],"amounts":{"1286":{"8":"100"}},"church_id":7,"payment_date":"2025-09-16","descriptions":{"1286":{"8":"Payment for June 2025 Charity Fund"}},"modes":{"1286":{"8":"Cash"}},"periods":{"1286":{"8":"2025-06-01"}},"period_descriptions":{"1286":{"8":"June 2025"}}}
+
+====
+2025-09-16T12:25:14+02:00
+{
+    "member_ids": [
+        1286
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1286": {
+            "8": "100"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-09-16",
+    "descriptions": {
+        "1286": {
+            "8": "Payment for June 2025 Charity Fund"
+        }
+    },
+    "modes": {
+        "1286": {
+            "8": "Cash"
+        }
+    },
+    "periods": {
+        "1286": {
+            "8": "2025-06-01"
+        }
+    },
+    "period_descriptions": {
+        "1286": {
+            "8": "June 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1286]
+SUCCESS: Inserted payment ID 668 for member 1286, type 8, amount 100
+
+--- BULK PAYMENT SUBMIT 2025-09-16 12:26:33 ---
+{"church_id":"7","payment_date":"2025-09-16","member_ids":[1286],"sundayschool_ids":[],"amounts":{"1286":{}},"descriptions":{"1286":{}},"periods":{"1286":{}},"period_descriptions":{"1286":{}}}
+
+====
+2025-09-16T12:26:33+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-09-16",
+    "member_ids": [
+        1286
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1286": []
+    },
+    "descriptions": {
+        "1286": []
+    },
+    "periods": {
+        "1286": []
+    },
+    "period_descriptions": {
+        "1286": []
+    }
+}
+Processing as CRN only. member_ids=[1286]
+
+--- BULK PAYMENT SUBMIT 2025-09-16 12:31:43 ---
+{"church_id":"7","payment_date":"2025-09-16","member_ids":[1286],"sundayschool_ids":[],"amounts":{"1286":{"8":1}},"descriptions":{"1286":{"8":"Charity Fund for March 2025"}},"periods":{"1286":{"8":"2025-03-01"}},"period_descriptions":{"1286":{"8":"March 2025"}}}
+
+====
+2025-09-16T12:31:43+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-09-16",
+    "member_ids": [
+        1286
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1286": {
+            "8": 1
+        }
+    },
+    "descriptions": {
+        "1286": {
+            "8": "Charity Fund for March 2025"
+        }
+    },
+    "periods": {
+        "1286": {
+            "8": "2025-03-01"
+        }
+    },
+    "period_descriptions": {
+        "1286": {
+            "8": "March 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1286]
+SUCCESS: Inserted payment ID 669 for member 1286, type 8, amount 1
+
+--- BULK PAYMENT SUBMIT 2025-09-16 12:32:53 ---
+{"church_id":"7","payment_date":"2025-09-16","member_ids":[1286],"sundayschool_ids":[],"amounts":{"1286":{"8":1,"9":5}},"descriptions":{"1286":{"8":"Charity Fund for January 2025","9":"Education Support for March 2025"}},"periods":{"1286":{"8":"2025-01-01","9":"2025-03-01"}},"period_descriptions":{"1286":{"8":"January 2025","9":"March 2025"}}}
+
+====
+2025-09-16T12:32:53+02:00
+{
+    "church_id": "7",
+    "payment_date": "2025-09-16",
+    "member_ids": [
+        1286
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1286": {
+            "8": 1,
+            "9": 5
+        }
+    },
+    "descriptions": {
+        "1286": {
+            "8": "Charity Fund for January 2025",
+            "9": "Education Support for March 2025"
+        }
+    },
+    "periods": {
+        "1286": {
+            "8": "2025-01-01",
+            "9": "2025-03-01"
+        }
+    },
+    "period_descriptions": {
+        "1286": {
+            "8": "January 2025",
+            "9": "March 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1286]
+SUCCESS: Inserted payment ID 670 for member 1286, type 8, amount 1
+SUCCESS: Inserted payment ID 671 for member 1286, type 9, amount 5
+
+--- BULK PAYMENT SUBMIT 2025-09-16 12:34:19 ---
+{"member_ids":[1286],"sundayschool_ids":[],"amounts":{"1286":{"4":"2","8":"1","14":"1"}},"church_id":7,"payment_date":"2025-09-16","descriptions":{"1286":{"4":"Payment for February 2025 HARVEST","8":"Payment for May 2025 Charity Fund","14":"Payment for April 2025 Monthly Offering/Kofi & Ama"}},"modes":{"1286":{"4":"Cash","8":"Cash","14":"Cash"}},"periods":{"1286":{"4":"2025-02-01","8":"2025-05-01","14":"2025-04-01"}},"period_descriptions":{"1286":{"4":"February 2025","8":"May 2025","14":"April 2025"}}}
+
+====
+2025-09-16T12:34:19+02:00
+{
+    "member_ids": [
+        1286
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1286": {
+            "4": "2",
+            "8": "1",
+            "14": "1"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-09-16",
+    "descriptions": {
+        "1286": {
+            "4": "Payment for February 2025 HARVEST",
+            "8": "Payment for May 2025 Charity Fund",
+            "14": "Payment for April 2025 Monthly Offering\/Kofi & Ama"
+        }
+    },
+    "modes": {
+        "1286": {
+            "4": "Cash",
+            "8": "Cash",
+            "14": "Cash"
+        }
+    },
+    "periods": {
+        "1286": {
+            "4": "2025-02-01",
+            "8": "2025-05-01",
+            "14": "2025-04-01"
+        }
+    },
+    "period_descriptions": {
+        "1286": {
+            "4": "February 2025",
+            "8": "May 2025",
+            "14": "April 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1286]
+SUCCESS: Inserted payment ID 672 for member 1286, type 4, amount 2
+SUCCESS: Inserted payment ID 673 for member 1286, type 8, amount 1
+SUCCESS: Inserted payment ID 674 for member 1286, type 14, amount 1
