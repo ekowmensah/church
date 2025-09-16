@@ -147,7 +147,7 @@ if ($clientReference) {
                                 $sms_message = "Hi $full_name, payment of ₵$amount as $description. Your Total Harvest amount for the year $year is ₵$yearly_total";
                             } else {
                                 log_debug('Processing regular payment SMS');
-                                $sms_message = "Hi $full_name, your payment of ₵$amount has been successfully processed for $church_name. Description: $description. Thank you!";
+                                $sms_message = "Hi $full_name, your payment of ₵$amount as $description. Thank you!";
                             }
                             
                             log_debug('About to send SMS: '.$sms_message);
