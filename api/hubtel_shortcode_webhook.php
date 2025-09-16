@@ -407,6 +407,27 @@ try {
         // You can implement admin notification logic here
     }
     
+    // Send SMS notification for USSD payment
+    require_once __DIR__.'/../includes/sms.php';
+    $order_info = $data['OrderInfo'] ?? [];
+    $customer_phone = $order_info['CustomerMobileNumber'] ?? '';
+    $amount = isset($order_info['Payment']['AmountPaid']) ? $order_info['Payment']['AmountPaid'] : '';
+    $desc = '';
+    if (!empty($order_info['Items'][0]['Description'])) {
+        $desc = $order_info['Items'][0]['Description'];
+    } elseif (!empty($order_info['Items'][0]['Name'])) {
+        $desc = $order_info['Items'][0]['Name'];
+    }
+    $full_name = '';
+    if (!empty($order_info['CustomerName'])) {
+        $full_name = $order_info['CustomerName'];
+    } else {
+        $full_name = $customer_phone;
+    }
+    if (!empty($customer_phone) && !empty($amount) && strtolower($order_info['Status'] ?? '') === 'paid') {
+        $sms_msg = "Hello $full_name, your payment of $amount GHS for $desc has been received by Freeman Methodist Church. Thank you!";
+        log_sms($customer_phone, $sms_msg, null, 'ussd_payment');
+    }
     // Send callback confirmation to Hubtel
     $callback_payload = [
         'SessionId' => $session_id,
