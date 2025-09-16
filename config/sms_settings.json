@@ -1,4 +1,14 @@
 {
-    "arkesel_api_key": "cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
-    "sms_sender": "MyFreeman"
+    "default_provider": "arkesel",
+    "arkesel": {
+        "api_key": "cHZtY1B3SW5sZ05iUEJOVmZ1QXA",
+        "sender": "MyFreeman",
+        "url": "https:\/\/sms.arkesel.com\/api\/v2\/sms\/send"
+    },
+    "hubtel": {
+        "api_key": "noqtbbwi",
+        "api_secret": "rxaejipl",
+        "sender": "FREEMANCHAP",
+        "url": "https:\/\/smsc.hubtel.com\/v1\/messages\/send"
+    }
 }
