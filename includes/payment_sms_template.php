@@ -1,16 +1,22 @@
 <?php
 // Default payment SMS template for MyFreeman
-function get_payment_sms_message($member_name, $amount, $payment_type = '', $date = null) {
+function get_payment_sms_message($member_name, $amount, $payment_type = '', $date = null, $description = '') {
     $amount = number_format($amount, 2);
     $payment_date = $date ? strtotime($date) : time();
     $month = date('F', $payment_date); // Full month name (e.g., July)
+    $year = date('Y', $payment_date);
     
-    // Build the payment description part
-    $payment_part = '';
-    if (!empty($payment_type)) {
-        $payment_part = " for $month $payment_type";
-    } elseif (!empty($month)) {
-        $payment_part = " for $month";
+    // Prefer description if provided
+    if (!empty($description)) {
+        $payment_part = " for $description";
+    } else if (!empty($payment_type) && !empty($month)) {
+        $payment_part = " for $month $year $payment_type";
+    } else if (!empty($month)) {
+        $payment_part = " for $month $year";
+    } else if (!empty($payment_type)) {
+        $payment_part = " for $payment_type";
+    } else {
+        $payment_part = '';
     }
     
     return "Dear $member_name, your payment of ₵$amount$payment_part has been received by Freeman Methodist Church - KM. Thank You!";
