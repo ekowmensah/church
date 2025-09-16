@@ -328,7 +328,7 @@ try {
             'client_reference' => $reference,
             'status' => $payment_status,
             'church_id' => $final_church_id,
-            'payment_type_id' => $payment_type_id,
+            'payment_type_id' => intval($payment_type_id),
             'recorded_by' => 'USSD',
             'mode' => 'Mobile Money'
         ];
