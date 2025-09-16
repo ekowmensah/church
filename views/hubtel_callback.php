@@ -109,7 +109,7 @@ if ($clientReference) {
                 
                 // Send SMS notification for each payment
                 log_debug('Checking SMS trigger conditions - result: '.json_encode($result));
-                if ($result && isset($result['id'])) {
+                if ($result && is_numeric($result)) {
                     log_debug('SMS trigger condition met, payment ID: '.$result['id']);
                     try {
                         // Get member details
@@ -282,7 +282,7 @@ if ($clientReference) {
                 log_debug('Recording USSD payment: '.json_encode($payment_data));
                 $result = $paymentModel->add($conn, $payment_data);
                 
-                if ($result && isset($result['id'])) {
+                if ($result && is_numeric($result)) {
                     log_debug("USSD payment recorded successfully with ID: {$result['id']}");
                     
                     // Send SMS notification
