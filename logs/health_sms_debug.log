@@ -1,4 +1,0 @@
-2025-09-16T14:46:21+02:00 - Attempting to send health SMS to 0545644749: Hello MERCY TURKSON, Thank you for visiting MyFreeman Health Network. It is always a pleasure to serve you. Your Health Is Our Top Priority.
-2025-09-16T14:46:25+02:00 - SMS result: {"data":[{"id":"babc7657-9e00-4718-bc1c-d77882e9077f","recipient":"233545644749"}],"status":"success"}
-2025-09-16T14:50:16+02:00 - Attempting to send health SMS to 0545644749: Hello MERCY TURKSON, Thank you for visiting MyFreeman Health Network. It is always a pleasure to serve you. Your Health Is Our Top Priority.
-2025-09-16T14:50:20+02:00 - SMS result: {"data":[{"id":"534782f6-2b1a-45c9-b438-87354d8c5e00","recipient":"233545644749"}],"status":"success"}
