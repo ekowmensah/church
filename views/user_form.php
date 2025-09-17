@@ -484,7 +484,7 @@ ob_start();
             </div>
             <!-- Save/Cancel Buttons -->
             <div class="d-flex justify-content-between align-items-center mt-4 pt-2 border-top sticky-bottom bg-white" style="z-index:10;">
-              <button type="submit" class="btn btn-success px-4"><i class="fas fa-save mr-1"></i> Save</button>
+              <button type="submit" id="submitBtn" class="btn btn-success px-4"><i class="fas fa-save mr-1"></i> Save</button>
               <a href="user_list.php" class="btn btn-secondary px-4"><i class="fas fa-arrow-left mr-1"></i> Cancel</a>
             </div>
           </form>
@@ -631,6 +631,25 @@ $(document).ready(function() {
   });
   $('#class_id').on('change', function() {
     $('#summary-class').text($('#class_id option:selected').text());
+  });
+  
+  // Prevent multiple form submissions
+  $('#userForm').on('submit', function(e) {
+    var $submitBtn = $('#submitBtn');
+    if ($submitBtn.prop('disabled')) {
+      e.preventDefault();
+      return false;
+    }
+    
+    // Disable submit button and show loading state
+    $submitBtn.prop('disabled', true);
+    $submitBtn.html('<i class="fas fa-spinner fa-spin mr-1"></i> Saving...');
+    
+    // Re-enable after 10 seconds as failsafe
+    setTimeout(function() {
+      $submitBtn.prop('disabled', false);
+      $submitBtn.html('<i class="fas fa-save mr-1"></i> Save');
+    }, 10000);
   });
 });
 </script>
