@@ -15,7 +15,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 // Super admin check
-$is_super_admin = ($_SESSION['user_id'] == 3);
+$is_super_admin = ($_SESSION['role_id'] == 1);
 
 // Initialize variables
 $role_id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: 0;
