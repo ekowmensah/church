@@ -5,6 +5,12 @@ require_once __DIR__ . '/PermissionController.php';
 
 // Start session for audit logging
 session_start();
+require_once __DIR__ . '/../helpers/auth.php';
+if (!is_logged_in()) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Not authenticated']);
+    exit;
+}
 
 header('Content-Type: application/json');
 
