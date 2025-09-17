@@ -81,11 +81,28 @@ if ($editing) {
     $rstmt->close();
 }
 
+// Generate form token for CSRF protection
+if (!isset($_SESSION['form_token'])) {
+    $_SESSION['form_token'] = bin2hex(random_bytes(32));
+}
+
 // Fetch dropdowns
 $churches = $conn->query("SELECT id, name FROM churches ORDER BY name ASC");
 $roles = $conn->query("SELECT id, name FROM roles ORDER BY name ASC");
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Prevent duplicate submissions using session token
+    $form_token = $_POST['form_token'] ?? '';
+    $session_token = $_SESSION['form_token'] ?? '';
+    
+    if (empty($form_token) || $form_token !== $session_token) {
+        $error = 'Invalid form submission. Please try again.';
+    } else {
+        // Clear the token to prevent reuse
+        unset($_SESSION['form_token']);
+    }
+    
+    if (empty($error)) {
     if ($editing) {
         // EDIT MODE: Only update user and roles, never create or link member
         $user['name'] = trim($_POST['name'] ?? '');
@@ -311,6 +328,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+    } // End of empty($error) check
 }
 
 ob_start();
@@ -349,8 +367,9 @@ ob_start();
                 <br>
                 Would you like to link this user account to the existing member record above?<br>
                 <form method="post" autocomplete="off" id="linkMemberForm">
+                    <input type="hidden" name="form_token" value="<?= htmlspecialchars($_SESSION['form_token']) ?>">
                     <?php foreach ($_POST as $k => $v):
-                        if ($k === 'link_to_member') continue;
+                        if ($k === 'link_to_member' || $k === 'form_token') continue;
                         if (is_array($v)) {
                             foreach ($v as $vv) {
                                 echo '<input type="hidden" name="'.htmlspecialchars($k).'[]" value="'.htmlspecialchars($vv).'">';
@@ -368,6 +387,7 @@ ob_start();
             <script>$(function(){ $('#userForm').hide(); });</script>
           <?php endif; ?>
           <form method="post" autocomplete="off" id="userForm">
+            <input type="hidden" name="form_token" value="<?= htmlspecialchars($_SESSION['form_token']) ?>">
             <!-- Account Info -->
             <div class="mb-4 pb-3 border-bottom">
               <h5 class="font-weight-bold mb-3"><i class="fas fa-user-circle mr-2 text-primary"></i>Account Info</h5>
