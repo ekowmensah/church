@@ -53,7 +53,7 @@ if ($filter_org) {
     $params[] = $filter_org;
     $types .= 'i';
 }
-$sql = "SELECT u.id AS user_id, u.name AS user_name, u.email AS user_email, u.status AS user_status, u.member_id, m.crn, m.phone, m.email AS member_email, m.class_id, m.church_id, m.last_name, m.first_name, m.middle_name, bc.name AS class_name
+$sql = "SELECT DISTINCT u.id AS user_id, u.name AS user_name, u.email AS user_email, u.status AS user_status, u.member_id, m.crn, m.phone, m.email AS member_email, m.class_id, m.church_id, m.last_name, m.first_name, m.middle_name, bc.name AS class_name
 FROM users u
 LEFT JOIN members m ON u.member_id = m.id
 LEFT JOIN bible_classes bc ON m.class_id = bc.id";
