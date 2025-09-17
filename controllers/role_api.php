@@ -83,6 +83,9 @@ function json_response($data, $status = 200) {
     exit;
 }
 
+// Log the request for debugging
+error_log("Role API Request - Method: $method, Input: " . json_encode($_POST) . " | JSON: " . file_get_contents('php://input'));
+
 switch ($method) {
     case 'GET':
         // List all roles, or get one if id is set
@@ -127,10 +130,12 @@ switch ($method) {
         }
         // Otherwise, create new role
         $created = $controller->create($input);
-        if ($created) {
+        if ($created && !isset($created['error'])) {
             json_response(['success' => true, 'role' => $created], 201);
         } else {
-            json_response(['success' => false, 'error' => 'Failed to create role'], 400);
+            $error_msg = isset($created['error']) ? $created['error'] : 'Failed to create role';
+            error_log("Role creation failed: " . $error_msg . " | Input: " . json_encode($input));
+            json_response(['success' => false, 'error' => $error_msg, 'debug' => $debug_info], 400);
         }
         break;
     case 'PUT':

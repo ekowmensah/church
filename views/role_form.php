@@ -267,18 +267,31 @@ document.addEventListener("DOMContentLoaded", function() {
             credentials: "same-origin",
             body: JSON.stringify(formData)
         })
-        .then(response => response.json())
+        .then(response => {
+            console.log("Response status:", response.status);
+            console.log("Response headers:", response.headers);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
         .then(data => {
+            console.log("Response data:", data);
             if (data.success) {
                 showAlert("Role saved successfully!", "success");
                 setTimeout(() => window.location.href = "role_list.php", 1500);
             } else {
-                showAlert(data.error || "Failed to save role.", "danger");
+                const errorMsg = data.error || "Failed to save role.";
+                console.error("API Error:", errorMsg);
+                if (data.debug) {
+                    console.log("Debug info:", data.debug);
+                }
+                showAlert(errorMsg, "danger");
             }
         })
         .catch(error => {
-            console.error("Error:", error);
-            showAlert("An error occurred while saving.", "danger");
+            console.error("Fetch Error:", error);
+            showAlert(`Network error: ${error.message}`, "danger");
         })
         .finally(() => {
             saveBtn.disabled = false;

@@ -1,7 +1,15 @@
 <?php
 // AJAX endpoint to check for duplicate role names
+session_start();
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../helpers/auth.php';
 header('Content-Type: application/json');
+
+// Authentication check
+if (!is_logged_in()) {
+    echo json_encode(['exists' => false, 'error' => 'Unauthorized']);
+    exit;
+}
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['exists' => false, 'error' => 'Invalid request']);
