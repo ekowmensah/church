@@ -40,3 +40,4 @@ logs/sms_debug_2025-09-17.log
 logs/hubtel_sms_debug.log
 logs/visitor_sms_debug.log
 logs/health_sms_debug.log
+migrations/20250917_add_unique_indexes_to_users.sql
