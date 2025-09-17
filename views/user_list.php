@@ -165,9 +165,12 @@ $(function(){
                 </thead>
                 <tbody>
                 <?php
+    $displayed_users = [];
     if ($users && $users->num_rows > 0):
     while($u = $users->fetch_assoc()):
         $user_id = $u['user_id'];
+        if (in_array($user_id, $displayed_users)) continue;
+        $displayed_users[] = $user_id;
         $member_id = $u['member_id'];
         // Fetch all roles for this user (including secondary roles)
         $roles = [];
