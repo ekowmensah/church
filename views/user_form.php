@@ -654,7 +654,7 @@ $(document).ready(function() {
   });
   
   // Prevent multiple form submissions
-  $('#userForm').on('submit', function(e) {
+  $('#userForm').off('submit').on('submit', function(e) {
     var $submitBtn = $('#submitBtn');
     if ($submitBtn.prop('disabled')) {
       e.preventDefault();
