@@ -51,11 +51,16 @@ if (!is_logged_in()) {
     echo json_encode([
         'success' => false, 
         'error' => 'Unauthorized - Please log in',
-        'debug' => $debug_info
+        'debug' => $debug_info,
+        'session_check' => [
+            'is_logged_in' => is_logged_in(),
+            'session_user_id' => $_SESSION['user_id'] ?? 'not_set',
+            'session_member_id' => $_SESSION['member_id'] ?? 'not_set'
+        ]
     ]);
     exit;
 }
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 1) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 1) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1) || (isset($_SESSION['is_super_admin']) && $_SESSION['is_super_admin']);
 if (!$is_super_admin && !has_permission('manage_roles')) {
     http_response_code(403);
     echo json_encode([
@@ -63,7 +68,15 @@ if (!$is_super_admin && !has_permission('manage_roles')) {
         'error' => 'Forbidden - Insufficient permissions',
         'debug' => array_merge($debug_info, [
             'is_super_admin' => $is_super_admin,
-            'has_manage_roles_permission' => has_permission('manage_roles')
+            'has_manage_roles_permission' => has_permission('manage_roles'),
+            'user_id_check' => $_SESSION['user_id'] ?? 'not_set',
+            'role_id_check' => $_SESSION['role_id'] ?? 'not_set',
+            'permissions_in_session' => $_SESSION['permissions'] ?? 'not_set',
+            'super_admin_calculation' => [
+                'user_id_is_1' => (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 1),
+                'role_id_is_1' => (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1),
+                'is_super_admin_session' => (isset($_SESSION['is_super_admin']) && $_SESSION['is_super_admin'])
+            ]
         ])
     ]);
     exit;
