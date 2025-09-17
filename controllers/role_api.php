@@ -1,10 +1,33 @@
 <?php
-session_start();
+// Ensure session is started properly
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 // AJAX/API endpoint for advanced role management
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/RoleController.php';
 
+// Set proper headers for AJAX requests
 header('Content-Type: application/json');
+header('Cache-Control: no-cache, must-revalidate');
+
+// Handle CORS if needed
+if (isset($_SERVER['HTTP_ORIGIN'])) {
+    header("Access-Control-Allow-Origin: {$_SERVER['HTTP_ORIGIN']}");
+    header('Access-Control-Allow-Credentials: true');
+    header('Access-Control-Max-Age: 86400');
+}
+
+if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+    if (isset($_SERVER['HTTP_ACCESS_CONTROL_REQUEST_METHOD'])) {
+        header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+    }
+    if (isset($_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS'])) {
+        header("Access-Control-Allow-Headers: {$_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS']}");
+    }
+    exit(0);
+}
 
 // Debug session information for troubleshooting
 $debug_info = [
@@ -12,7 +35,12 @@ $debug_info = [
     'session_data' => $_SESSION ?? [],
     'user_id' => $_SESSION['user_id'] ?? 'not_set',
     'role_id' => $_SESSION['role_id'] ?? 'not_set',
-    'member_id' => $_SESSION['member_id'] ?? 'not_set'
+    'member_id' => $_SESSION['member_id'] ?? 'not_set',
+    'cookies' => $_COOKIE ?? [],
+    'request_uri' => $_SERVER['REQUEST_URI'] ?? 'not_set',
+    'http_host' => $_SERVER['HTTP_HOST'] ?? 'not_set',
+    'session_status' => session_status(),
+    'session_name' => session_name()
 ];
 
 // Authentication and robust super admin bypass

@@ -188,6 +188,7 @@ document.addEventListener("DOMContentLoaded", function() {
         fetch("ajax_validate_role.php", {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            credentials: "same-origin",
             body: `name=${encodeURIComponent(name)}&id=${encodeURIComponent(ROLE_ID)}`
         })
         .then(res => res.json())
@@ -220,6 +221,7 @@ document.addEventListener("DOMContentLoaded", function() {
             fetch("ajax_validate_role.php", {
                 method: "POST",
                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                credentials: "same-origin",
                 body: `name=${encodeURIComponent(name)}&id=${encodeURIComponent(ROLE_ID)}`
             })
             .then(res => res.json())
@@ -262,6 +264,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 "Content-Type": "application/json",
                 "X-Requested-With": "XMLHttpRequest"
             },
+            credentials: "same-origin",
             body: JSON.stringify(formData)
         })
         .then(response => response.json())
