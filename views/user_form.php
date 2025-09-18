@@ -387,7 +387,7 @@ ob_start();
             <script>$(function(){ $('#userForm').hide(); });</script>
           <?php endif; ?>
           <form method="post" autocomplete="off" id="userForm">
-            <input type="hidden" name="form_token" value="<?= htmlspecialchars($_SESSION['form_token']) ?>
+            <input type="hidden" name="form_token" value="<?= htmlspecialchars($_SESSION['form_token']) ?>">
             <!-- Account Info -->
             <div class="mb-4 pb-3 border-bottom">
               <h5 class="font-weight-bold mb-3"><i class="fas fa-user-circle mr-2 text-primary"></i>Account Info</h5>
