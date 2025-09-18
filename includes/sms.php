@@ -216,28 +216,26 @@ function send_hubtel_sms($recipients, $message, $sender, $config) {
         return ['status' => 'error', 'message' => 'Hubtel API credentials not configured'];
     }
     
-    $url = $config['url'];
-    $payload = [
-        'From' => $sender,
-        'To' => implode(',', $recipients),
-        'Content' => $message,
-        'Type' => 0,
-        'DlrUrl' => '',
-        'ClientReference' => 'SMS_' . time()
+    // Hubtel uses GET parameters instead of POST JSON
+    $base_url = $config['url'];
+    $params = [
+        'clientid' => $config['api_key'],
+        'clientsecret' => $config['api_secret'],
+        'from' => $sender,
+        'to' => implode(',', $recipients),
+        'content' => $message
     ];
     
-    $auth = base64_encode($config['api_key'] . ':' . $config['api_secret']);
+    $url = $base_url . '?' . http_build_query($params);
+    
     $headers = [
-        'Authorization: Basic ' . $auth,
-        'Content-Type: application/json',
         'Accept: application/json'
     ];
     
     $ch = curl_init();
     curl_setopt_array($ch, [
         CURLOPT_URL => $url,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($payload),
+        CURLOPT_HTTPGET => true,
         CURLOPT_HTTPHEADER => $headers,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HEADER => true,
@@ -267,7 +265,7 @@ function send_hubtel_sms($recipients, $message, $sender, $config) {
         'time' => date('Y-m-d H:i:s'),
         'provider' => 'hubtel',
         'url' => $url,
-        'payload' => $payload,
+        'params' => $params,
         'request_headers' => $headers,
         'http_status' => $http_code,
         'response_headers' => $response_headers,
@@ -318,14 +316,14 @@ function send_hubtel_sms($recipients, $message, $sender, $config) {
     }
     
     // Standardize response format for Hubtel
-    if (!isset($json['status'])) {
-        if (isset($json['Status']) && $json['Status'] === 0) {
+    // Hubtel returns status: 0 for success, other values for errors
+    if (!isset($json['status']) || is_numeric($json['status'])) {
+        if (isset($json['status']) && $json['status'] === 0) {
             $json['status'] = 'success';
+            $json['message'] = $json['statusDescription'] ?? 'SMS sent successfully';
         } else {
             $json['status'] = 'error';
-            if (!isset($json['message']) && isset($json['Message'])) {
-                $json['message'] = $json['Message'];
-            }
+            $json['message'] = $json['statusDescription'] ?? 'SMS sending failed';
         }
     }
     
