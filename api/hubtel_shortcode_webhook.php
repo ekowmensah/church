@@ -406,7 +406,24 @@ try {
                         $target_name = $target_row['full_name'];
                         if (!empty($target_phone) && $target_phone !== $customer_phone) {
                             log_debug("Sending target SMS to: $target_phone");
-                            $target_sms_msg = "Hello $target_name, your payment of $formatted_amount GHS for $desc_formatted by $full_name has been received by Freeman Methodist Church. Thank you!";
+                            
+                            // Get payer's actual name for target SMS
+                            $payer_name = $full_name; // Default to phone/customer name
+                            if (!empty($payer_member_id)) {
+                                $payer_stmt = $conn->prepare('SELECT CONCAT(first_name, " ", last_name) as full_name FROM members WHERE id = ? AND status = "active"');
+                                $payer_stmt->bind_param('i', $payer_member_id);
+                                $payer_stmt->execute();
+                                $payer_result = $payer_stmt->get_result();
+                                if ($payer_row = $payer_result->fetch_assoc()) {
+                                    $payer_name = $payer_row['full_name'];
+                                    log_debug("Payer name found: $payer_name");
+                                }
+                                $payer_stmt->close();
+                            } else {
+                                log_debug("No payer member ID, using customer info: $payer_name");
+                            }
+                            
+                            $target_sms_msg = "Hello $target_name, your payment of $formatted_amount GHS for $desc_formatted by $payer_name has been received by Freeman Methodist Church. Thank you!";
                             // If payment type is HARVEST, append total for year
                             if (strtolower($donation_type) === 'harvest' && !empty($payment_period)) {
                                 $harvest_year = date('Y', strtotime($payment_period));
