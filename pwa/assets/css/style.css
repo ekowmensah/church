@@ -307,6 +307,40 @@ body {
     }
 }
 
+/* Church Logo Styles */
+.church-logo {
+    width: 120px;
+    height: 120px;
+    object-fit: contain;
+    border-radius: 50%;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    transition: transform 0.3s ease;
+}
+
+.church-logo:hover {
+    transform: scale(1.05);
+}
+
+.church-logo-small {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+    border-radius: 50%;
+    box-shadow: 0 2px 15px rgba(0,0,0,0.15);
+}
+
+.navbar-logo {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+    border-radius: 50%;
+}
+
+/* Fallback for logo loading */
+.church-logo, .church-logo-small, .navbar-logo {
+    background: linear-gradient(135deg, #6f42c1 0%, #4e54c8 100%);
+}
+
 /* Dark mode support */
 @media (prefers-color-scheme: dark) {
     .payment-summary .card {
@@ -316,5 +350,9 @@ body {
     
     .form-text {
         color: #a0aec0 !important;
+    }
+    
+    .church-logo, .church-logo-small, .navbar-logo {
+        box-shadow: 0 4px 20px rgba(255,255,255,0.1);
     }
 }

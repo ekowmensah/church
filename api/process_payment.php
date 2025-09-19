@@ -115,7 +115,7 @@ try {
         
         $payment_id = $conn->insert_id;
         
-        // Use your existing Hubtel integration like USSD
+        // PWA replaces USSD - initiate mobile money payment directly
         require_once __DIR__ . '/../helpers/hubtel_payment_v2.php';
         
         // Get member phone number for payment prompt
@@ -124,13 +124,16 @@ try {
             throw new Exception('Member phone number is required for payment');
         }
         
-        // Prepare Hubtel checkout parameters (same as your existing system)
+        // Use production URLs (since this replaces USSD)
+        $base_url = 'https://portal.myfreeman.org/church';
+        
+        // Prepare Hubtel checkout parameters (same as your USSD system)
         $hubtel_params = [
             'amount' => $amount,
             'description' => $payment_type_info['name'] . ' - ' . $period_description,
-            'callbackUrl' => 'https://portal.myfreeman.org/church/api/hubtel_shortcode_webhook.php',
-            'returnUrl' => 'https://portal.myfreeman.org/church/pwa/index.html#payment-success',
-            'cancellationUrl' => 'https://portal.myfreeman.org/church/pwa/index.html#payment-cancelled',
+            'callbackUrl' => $base_url . '/api/hubtel_shortcode_webhook.php',
+            'returnUrl' => $base_url . '/pwa/index.html#payment-success',
+            'cancellationUrl' => $base_url . '/pwa/index.html#payment-cancelled',
             'customerName' => $member['first_name'] . ' ' . $member['last_name'],
             'customerPhone' => $customer_phone,
             'customerEmail' => $member['email'] ?? '',
@@ -140,34 +143,8 @@ try {
         // Create Hubtel checkout (same as your USSD system)
         $hubtel_result = create_hubtel_checkout_v2($hubtel_params);
         
-        // Log the full Hubtel response for debugging
-        error_log("Hubtel API Response: " . json_encode($hubtel_result));
-        
         if (!$hubtel_result['success']) {
-            // For debugging - let's see what the actual error is
-            $error_details = '';
-            if (isset($hubtel_result['debug'])) {
-                $error_details = ' Debug: ' . json_encode($hubtel_result['debug']);
-            }
-            
-            // Check if it's a credentials issue
-            if (isset($hubtel_result['error']) && strpos($hubtel_result['error'], 'credentials') !== false) {
-                // Provide more helpful error message
-                throw new Exception('Hubtel API credentials not configured. Please check your .env file or contact administrator.' . $error_details);
-            }
-            
-            // For testing purposes, create a mock successful response if in development
-            if (isset($_GET['test_mode']) || (isset($hubtel_result['error']) && strpos($hubtel_result['error'], 'credentials') !== false)) {
-                error_log("Using test mode for Hubtel payment");
-                $hubtel_result = [
-                    'success' => true,
-                    'checkoutUrl' => 'https://test-checkout.hubtel.com/test/' . $reference,
-                    'checkoutId' => 'test_' . $reference,
-                    'clientReference' => $reference
-                ];
-            } else {
-                throw new Exception('Failed to initialize Hubtel payment: ' . ($hubtel_result['error'] ?? 'Unknown error') . $error_details);
-            }
+            throw new Exception('Failed to initialize mobile money payment: ' . ($hubtel_result['error'] ?? 'Unknown error'));
         }
         
         // Update payment with Hubtel details
@@ -187,15 +164,15 @@ try {
         
         echo json_encode([
             'success' => true,
-            'message' => 'Payment initiated! Please check your phone for the payment prompt.',
+            'message' => 'Mobile money payment initiated! Check your phone.',
             'data' => [
                 'payment_id' => $payment_id,
                 'reference' => $reference,
                 'amount' => $amount,
                 'description' => $description,
-                'checkout_url' => $hubtel_result['checkoutUrl'],
-                'status' => 'pending',
-                'phone' => $customer_phone
+                'phone' => $customer_phone,
+                'member_name' => $member['first_name'] . ' ' . $member['last_name'],
+                'checkout_url' => $hubtel_result['checkoutUrl']
             ]
         ]);
         

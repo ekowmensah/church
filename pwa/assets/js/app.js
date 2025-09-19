@@ -7,6 +7,58 @@ const API_BASE_URL = '../api';
 // DOM Elements
 let currentMember = null;
 
+// Offline storage for payment requests
+const STORAGE_KEY = 'fmc_offline_payments';
+
+// Store payment request offline
+function storePaymentOffline(paymentData) {
+    try {
+        const offlinePayments = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+        paymentData.stored_at = new Date().toISOString();
+        paymentData.synced = false;
+        offlinePayments.push(paymentData);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(offlinePayments));
+        console.log('Payment stored offline:', paymentData.reference);
+    } catch (error) {
+        console.error('Error storing payment offline:', error);
+    }
+}
+
+// Get offline payments
+function getOfflinePayments() {
+    try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    } catch (error) {
+        console.error('Error getting offline payments:', error);
+        return [];
+    }
+}
+
+// Sync offline payments when online
+async function syncOfflinePayments() {
+    if (!navigator.onLine) return;
+    
+    const offlinePayments = getOfflinePayments();
+    const unsynced = offlinePayments.filter(p => !p.synced);
+    
+    for (const payment of unsynced) {
+        try {
+            // Check if payment was completed via USSD
+            const response = await fetch(`${API_BASE_URL}/check_payment_status.php?reference=${payment.reference}`);
+            const result = await response.json();
+            
+            if (result.success && result.status === 'completed') {
+                // Mark as synced
+                payment.synced = true;
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(offlinePayments));
+                console.log('Payment synced:', payment.reference);
+            }
+        } catch (error) {
+            console.error('Error syncing payment:', payment.reference, error);
+        }
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize the app
     initializeNavigation();
@@ -15,6 +67,22 @@ document.addEventListener('DOMContentLoaded', () => {
     loadPaymentPeriods();
     checkForInstallPrompt();
     registerServiceWorker();
+    
+    // Load payment history if on history page
+    if (window.location.hash === '#history') {
+        loadPaymentHistory();
+    }
+    
+    // Sync offline payments when online
+    if (navigator.onLine) {
+        syncOfflinePayments();
+    }
+    
+    // Listen for online/offline events
+    window.addEventListener('online', syncOfflinePayments);
+    window.addEventListener('offline', () => {
+        showAlert('warning', 'You are now offline. Payments will be stored locally.');
+    });
 });
 
 // Initialize navigation
@@ -288,21 +356,16 @@ async function handlePaymentSubmit(e) {
         const result = await response.json();
         
         if (result.success) {
-            showAlert('success', result.message || 'Payment initiated successfully!');
+            showAlert('success', result.message);
             
-            // Show payment status with phone number
-            if (result.data && result.data.phone) {
-                showPaymentStatus(result.data);
+            // Show mobile money prompt modal
+            if (result.data) {
+                showMobileMoneyPrompt(result.data);
             }
             
             // Reset form
             document.getElementById('payment-form').reset();
             currentMember = null;
-            
-            // Update history after a delay to allow for callback processing
-            setTimeout(() => {
-                loadPaymentHistory();
-            }, 3000);
         } else {
             showAlert('danger', result.message || 'Payment failed. Please try again.');
         }
@@ -372,41 +435,48 @@ function viewReceipt(reference) {
     // window.open(`/receipt.php?ref=${reference}`, '_blank');
 }
 
-// Show payment status modal
-function showPaymentStatus(paymentData) {
+// Show mobile money prompt modal (replaces USSD)
+function showMobileMoneyPrompt(paymentData) {
     const modal = document.createElement('div');
     modal.className = 'modal fade show';
     modal.style.display = 'block';
     modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
     modal.innerHTML = `
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content">
                 <div class="modal-header bg-primary text-white">
                     <h5 class="modal-title">
-                        <i class="fas fa-mobile-alt me-2"></i>Payment Initiated
+                        <i class="fas fa-mobile-alt me-2"></i>Mobile Money Payment
                     </h5>
                 </div>
                 <div class="modal-body text-center">
                     <div class="mb-4">
-                        <div class="spinner-border text-primary mb-3" role="status">
-                            <span class="visually-hidden">Processing...</span>
+                        <div class="payment-icon mb-3">
+                            <i class="fas fa-phone fa-4x text-primary"></i>
                         </div>
                         <h4>Check Your Phone</h4>
-                        <p class="text-muted">A payment prompt has been sent to:</p>
+                        <p class="text-muted">Mobile money prompt sent to:</p>
                         <h5 class="text-primary">${paymentData.phone}</h5>
                     </div>
                     
                     <div class="alert alert-info">
-                        <strong>Amount:</strong> GHS ${parseFloat(paymentData.amount).toFixed(2)}<br>
-                        <strong>Reference:</strong> ${paymentData.reference}<br>
-                        <strong>Description:</strong> ${paymentData.description}
+                        <div class="row">
+                            <div class="col-6"><strong>Member:</strong></div>
+                            <div class="col-6">${paymentData.member_name}</div>
+                            <div class="col-6"><strong>Amount:</strong></div>
+                            <div class="col-6 text-success fw-bold">GHS ${parseFloat(paymentData.amount).toFixed(2)}</div>
+                            <div class="col-6"><strong>Reference:</strong></div>
+                            <div class="col-6"><small>${paymentData.reference}</small></div>
+                        </div>
                     </div>
                     
-                    <div class="mb-3">
-                        <small class="text-muted">
-                            Please approve the payment on your phone to complete the transaction.
-                            This window will close automatically once payment is confirmed.
-                        </small>
+                    <div class="alert alert-success">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Instructions:</strong><br>
+                        1. Check your phone for mobile money prompt<br>
+                        2. Enter your mobile money PIN<br>
+                        3. Confirm the payment<br>
+                        4. Wait for confirmation SMS
                     </div>
                     
                     <div id="payment-status-${paymentData.payment_id}" class="payment-status">
@@ -417,7 +487,7 @@ function showPaymentStatus(paymentData) {
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closePaymentStatus()">
+                    <button type="button" class="btn btn-secondary" onclick="closeMobileMoneyModal()">
                         Close
                     </button>
                     <button type="button" class="btn btn-primary" onclick="checkPaymentStatus('${paymentData.reference}')">
@@ -428,16 +498,16 @@ function showPaymentStatus(paymentData) {
         </div>
     `;
     
-    modal.id = 'payment-status-modal';
+    modal.id = 'mobile-money-modal';
     document.body.appendChild(modal);
     
-    // Start checking payment status
+    // Start checking payment status automatically
     startPaymentStatusCheck(paymentData.reference, paymentData.payment_id);
 }
 
-// Close payment status modal
-function closePaymentStatus() {
-    const modal = document.getElementById('payment-status-modal');
+// Close mobile money modal
+function closeMobileMoneyModal() {
+    const modal = document.getElementById('mobile-money-modal');
     if (modal) {
         modal.remove();
     }
@@ -445,6 +515,29 @@ function closePaymentStatus() {
     if (window.paymentStatusInterval) {
         clearInterval(window.paymentStatusInterval);
     }
+}
+
+// Copy USSD code to clipboard
+function copyUSSDCode(code) {
+    navigator.clipboard.writeText(code).then(() => {
+        showAlert('success', 'USSD code copied to clipboard!');
+    }).catch(() => {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = code;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        showAlert('success', 'USSD code copied!');
+    });
+}
+
+// Open phone dialer with USSD code
+function openDialer(code) {
+    // Try to open the phone dialer with the USSD code
+    const telUrl = `tel:${encodeURIComponent(code)}`;
+    window.location.href = telUrl;
 }
 
 // Check payment status

@@ -3,16 +3,25 @@ const STATIC_CACHE = 'fmc-static-v2';
 const DYNAMIC_CACHE = 'fmc-dynamic-v2';
 
 // Static assets to cache
-const staticAssets = [
+const urlsToCache = [
+  './',
   './index.html',
   './assets/css/style.css',
   './assets/js/app.js',
   './manifest.json',
   './assets/icons/icon-192x192.png',
   './assets/icons/icon-512x512.png',
+  '../uploads/logo.png',
   'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css',
   'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
+];
+
+// URLs that should work offline (return cached version or offline page)
+const OFFLINE_URLS = [
+  './api/validate_member.php',
+  './api/payment_types.php', 
+  './api/payment_periods.php'
 ];
 
 // Install event - cache static assets

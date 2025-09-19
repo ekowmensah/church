@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Church Logo PWA Icon Generator</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .icon-preview { margin: 10px; display: inline-block; text-align: center; }
+        .icon-preview canvas { border: 1px solid #ccc; margin-bottom: 5px; }
+        .download-btn { background: #007bff; color: white; border: none; padding: 5px 10px; cursor: pointer; }
+        .download-all { background: #28a745; color: white; border: none; padding: 10px 20px; cursor: pointer; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <h1>Freeman Methodist Church - PWA Icon Generator</h1>
+    <p>Generate PWA icons using the church logo</p>
+    
+    <button class="download-all" onclick="generateAllIcons()">Generate All Icons</button>
+    
+    <div id="icons-container"></div>
+    
+    <script>
+        const iconSizes = [
+            { size: 72, name: 'icon-72x72.png' },
+            { size: 96, name: 'icon-96x96.png' },
+            { size: 128, name: 'icon-128x128.png' },
+            { size: 144, name: 'icon-144x144.png' },
+            { size: 152, name: 'icon-152x152.png' },
+            { size: 192, name: 'icon-192x192.png' },
+            { size: 384, name: 'icon-384x384.png' },
+            { size: 512, name: 'icon-512x512.png' }
+        ];
+
+        function generateAllIcons() {
+            const container = document.getElementById('icons-container');
+            container.innerHTML = '<p>Loading church logo and generating icons...</p>';
+
+            // Pre-load the logo image first
+            const logoImg = new Image();
+            logoImg.crossOrigin = 'anonymous';
+            
+            logoImg.onload = function() {
+                console.log('Logo loaded successfully:', logoImg.width, 'x', logoImg.height);
+                container.innerHTML = ''; // Clear loading message
+                
+                iconSizes.forEach(iconInfo => {
+                    const div = document.createElement('div');
+                    div.className = 'icon-preview';
+                    
+                    const canvas = document.createElement('canvas');
+                    canvas.width = iconInfo.size;
+                    canvas.height = iconInfo.size;
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Clear canvas with white background
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(0, 0, iconInfo.size, iconInfo.size);
+                    
+                    // Draw the logo (since it's already loaded)
+                    // The logo is circular, so we'll draw it to fill the square canvas
+                    const size = iconInfo.size;
+                    const padding = size * 0.05; // 5% padding
+                    const drawSize = size - (padding * 2);
+                    
+                    ctx.drawImage(logoImg, padding, padding, drawSize, drawSize);
+                    
+                    // Add a subtle border for better definition
+                    ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(0, 0, size, size);
+                    
+                    const downloadBtn = document.createElement('button');
+                    downloadBtn.className = 'download-btn';
+                    downloadBtn.textContent = `Download ${iconInfo.name}`;
+                    downloadBtn.onclick = () => downloadIcon(canvas, iconInfo.name);
+                    
+                    div.appendChild(canvas);
+                    div.appendChild(document.createElement('br'));
+                    div.appendChild(downloadBtn);
+                    div.appendChild(document.createElement('br'));
+                    div.appendChild(document.createTextNode(`${iconInfo.size}x${iconInfo.size}`));
+                    
+                    container.appendChild(div);
+                });
+            };
+            
+            logoImg.onerror = function() {
+                console.error('Failed to load logo from ../../uploads/logo.png');
+                container.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h5>Logo Not Found</h5>
+                        <p>Could not load the church logo from: <code>../../uploads/logo.png</code></p>
+                        <p>Please make sure the logo file exists at that location.</p>
+                        <button onclick="tryAlternatePath()" class="btn btn-primary">Try Different Path</button>
+                    </div>
+                `;
+            };
+            
+            // Try to load the logo - fix the path
+            logoImg.src = '../../../uploads/logo.png';
+        }
+        
+        function tryAlternatePath() {
+            const container = document.getElementById('icons-container');
+            container.innerHTML = '<p>Trying alternate logo paths...</p>';
+            
+            const alternatePaths = [
+                '../../../uploads/logo.png',
+                '../../../uploads/logo_686fd2f349cc5.png',
+                '../../../uploads/logo_686dcaf9acb78.png',
+                '../../../uploads/logo_686987c5695fd.png',
+                '../../../uploads/logo_6866e9048867c.jpg',
+                '../../../uploads/logo_68670b965aa6a.jpg',
+                '../../../uploads/logo_686dcaf9acb78.png',
+                '../../../uploads/logo_686fd24852587.png',
+                '../../uploads/logo.png',
+                '../uploads/logo.png',
+                '/church/uploads/logo.png',
+                'http://localhost/church/uploads/logo.png'
+            ];
+            
+            let pathIndex = 0;
+            
+            function tryNextPath() {
+                if (pathIndex >= alternatePaths.length) {
+                    container.innerHTML = `
+                        <div class="alert alert-warning">
+                            <h5>No Logo Found</h5>
+                            <p>Could not find the church logo in any of these locations:</p>
+                            <ul>
+                                ${alternatePaths.map(path => `<li><code>${path}</code></li>`).join('')}
+                            </ul>
+                            <button onclick="generateFallbackIcons()" class="btn btn-secondary">Generate with Fallback Design</button>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                const img = new Image();
+                img.onload = function() {
+                    console.log('Found logo at:', alternatePaths[pathIndex]);
+                    // Update the main function to use this path
+                    window.logoPath = alternatePaths[pathIndex];
+                    generateAllIcons();
+                };
+                img.onerror = function() {
+                    pathIndex++;
+                    tryNextPath();
+                };
+                img.src = alternatePaths[pathIndex];
+            }
+            
+            tryNextPath();
+        }
+        
+        function generateFallbackIcons() {
+            const container = document.getElementById('icons-container');
+            container.innerHTML = '';
+            
+            iconSizes.forEach(iconInfo => {
+                const div = document.createElement('div');
+                div.className = 'icon-preview';
+                
+                const canvas = document.createElement('canvas');
+                canvas.width = iconInfo.size;
+                canvas.height = iconInfo.size;
+                const ctx = canvas.getContext('2d');
+                
+                // Create a nice fallback design
+                const size = iconInfo.size;
+                
+                // Gradient background
+                const gradient = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+                gradient.addColorStop(0, '#6f42c1');
+                gradient.addColorStop(1, '#4e54c8');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, size, size);
+                
+                // White circle
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(size/2, size/2, size * 0.35, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                // Church cross
+                ctx.fillStyle = '#6f42c1';
+                const crossSize = size * 0.15;
+                const crossThickness = size * 0.03;
+                
+                // Vertical bar
+                ctx.fillRect(size/2 - crossThickness/2, size/2 - crossSize/2, crossThickness, crossSize);
+                // Horizontal bar
+                ctx.fillRect(size/2 - crossSize/3, size/2 - crossThickness/2, crossSize * 2/3, crossThickness);
+                
+                // Text
+                ctx.fillStyle = '#6f42c1';
+                ctx.font = `bold ${size * 0.08}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('FMC', size/2, size * 0.75);
+                
+                const downloadBtn = document.createElement('button');
+                downloadBtn.className = 'download-btn';
+                downloadBtn.textContent = `Download ${iconInfo.name}`;
+                downloadBtn.onclick = () => downloadIcon(canvas, iconInfo.name);
+                
+                div.appendChild(canvas);
+                div.appendChild(document.createElement('br'));
+                div.appendChild(downloadBtn);
+                div.appendChild(document.createElement('br'));
+                div.appendChild(document.createTextNode(`${iconInfo.size}x${iconInfo.size}`));
+                
+                container.appendChild(div);
+            });
+        }
+
+        function downloadIcon(canvas, filename) {
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL();
+            link.click();
+        }
+
+        // Auto-generate on load
+        window.onload = generateAllIcons;
+    </script>
+</body>
+</html>

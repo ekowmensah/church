@@ -34,31 +34,44 @@
         ];
 
         function drawChurchIcon(ctx, size) {
-            const scale = size / 192;
-            
+            // Generate icon using church logo
+        }
+
+        function generateIcon(size, canvas, ctx) {
             // Clear canvas
             ctx.clearRect(0, 0, size, size);
             
-            // Background circle with gradient
-            const gradient = ctx.createLinearGradient(0, 0, size, size);
-            gradient.addColorStop(0, '#6f42c1');
-            gradient.addColorStop(1, '#4e54c8');
+            // Load and draw the church logo
+            const img = new Image();
+            img.onload = function() {
+                // Draw logo to fill the canvas
+                ctx.drawImage(img, 0, 0, size, size);
+                
+                // Add subtle border for better visibility
+                ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+                ctx.lineWidth = size * 0.02;
+                ctx.strokeRect(0, 0, size, size);
+            };
+            img.src = '../../uploads/logo.png';
             
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(size/2, size/2, size/2 - 8*scale, 0, 2 * Math.PI);
-            ctx.fill();
-            
-            // White border
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 8 * scale;
-            ctx.stroke();
-            
-            // Church building (white)
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(60*scale, 100*scale, 72*scale, 60*scale);
-            
-            // Church roof
+            // Fallback if logo doesn't load
+            setTimeout(() => {
+                if (!img.complete) {
+                    // Background gradient fallback
+                    const gradient = ctx.createLinearGradient(0, 0, size, size);
+                    gradient.addColorStop(0, '#6f42c1');
+                    gradient.addColorStop(1, '#4e54c8');
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(0, 0, size, size);
+                    
+                    // Church icon fallback
+                    ctx.fillStyle = 'white';
+                    ctx.font = `${size * 0.6}px FontAwesome`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('⛪', size/2, size/2);
+                }
+            }, 1000);
             ctx.beginPath();
             ctx.moveTo(56*scale, 100*scale);
             ctx.lineTo(96*scale, 70*scale);
