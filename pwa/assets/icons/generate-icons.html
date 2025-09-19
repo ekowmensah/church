@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PWA Icon Generator</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
+        .icon-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px; margin: 20px 0; }
+        .icon-item { text-align: center; padding: 15px; border: 1px solid #ddd; border-radius: 8px; }
+        .icon-item canvas { border: 1px solid #ccc; margin: 10px 0; }
+        .download-btn { background: #6f42c1; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+        .download-btn:hover { background: #5a2d91; }
+        h1 { color: #6f42c1; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏛️ FMC PWA Icon Generator</h1>
+        <p>Click "Generate Icons" to create all required PWA icons for Freeman Methodist Church.</p>
+        <button onclick="generateAllIcons()" class="download-btn" style="font-size: 16px; padding: 12px 24px;">Generate All Icons</button>
+        <div id="icons-container" class="icon-grid"></div>
+    </div>
+
+    <script>
+        const sizes = [
+            { size: 72, name: 'icon-72x72.png' },
+            { size: 96, name: 'icon-96x96.png' },
+            { size: 128, name: 'icon-128x128.png' },
+            { size: 144, name: 'icon-144x144.png' },
+            { size: 152, name: 'icon-152x152.png' },
+            { size: 192, name: 'icon-192x192.png' },
+            { size: 384, name: 'icon-384x384.png' },
+            { size: 512, name: 'icon-512x512.png' }
+        ];
+
+        function drawChurchIcon(ctx, size) {
+            const scale = size / 192;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, size, size);
+            
+            // Background circle with gradient
+            const gradient = ctx.createLinearGradient(0, 0, size, size);
+            gradient.addColorStop(0, '#6f42c1');
+            gradient.addColorStop(1, '#4e54c8');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(size/2, size/2, size/2 - 8*scale, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // White border
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 8 * scale;
+            ctx.stroke();
+            
+            // Church building (white)
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(60*scale, 100*scale, 72*scale, 60*scale);
+            
+            // Church roof
+            ctx.beginPath();
+            ctx.moveTo(56*scale, 100*scale);
+            ctx.lineTo(96*scale, 70*scale);
+            ctx.lineTo(136*scale, 100*scale);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Cross on top
+            ctx.fillRect(94*scale, 50*scale, 4*scale, 25*scale);
+            ctx.fillRect(87*scale, 57*scale, 18*scale, 4*scale);
+            
+            // Church door (gradient)
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.roundRect(88*scale, 130*scale, 16*scale, 25*scale, 8*scale);
+            ctx.fill();
+            
+            // Church windows (gradient)
+            ctx.beginPath();
+            ctx.roundRect(70*scale, 115*scale, 12*scale, 15*scale, 6*scale);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.roundRect(110*scale, 115*scale, 12*scale, 15*scale, 6*scale);
+            ctx.fill();
+            
+            // Bell tower (white)
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.roundRect(85*scale, 75*scale, 22*scale, 25*scale, 2*scale);
+            ctx.fill();
+            
+            // Bell tower window (gradient)
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.roundRect(88*scale, 78*scale, 16*scale, 8*scale, 2*scale);
+            ctx.fill();
+        }
+
+        function generateIcon(size, filename) {
+            return new Promise((resolve) => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = size;
+                canvas.height = size;
+
+                // Draw the church icon
+                drawChurchIcon(ctx, size);
+                
+                // Create download link
+                canvas.toBlob((blob) => {
+                    const link = document.createElement('a');
+                    link.download = filename;
+                    link.href = URL.createObjectURL(blob);
+                    
+                    const container = document.createElement('div');
+                    container.className = 'icon-item';
+                    
+                    const previewCanvas = document.createElement('canvas');
+                    const previewCtx = previewCanvas.getContext('2d');
+                    const previewSize = Math.min(size, 100);
+                    previewCanvas.width = previewSize;
+                    previewCanvas.height = previewSize;
+                    
+                    drawChurchIcon(previewCtx, previewSize);
+                    
+                    container.innerHTML = `
+                        <div><strong>${filename}</strong></div>
+                        <div>${size}×${size}px</div>
+                    `;
+                    container.appendChild(previewCanvas);
+                    
+                    const downloadBtn = document.createElement('button');
+                    downloadBtn.className = 'download-btn';
+                    downloadBtn.textContent = 'Download';
+                    downloadBtn.onclick = () => link.click();
+                    
+                    container.appendChild(document.createElement('br'));
+                    container.appendChild(downloadBtn);
+                    
+                    document.getElementById('icons-container').appendChild(container);
+                    resolve();
+                });
+            });
+        }
+
+        async function generateAllIcons() {
+            document.getElementById('icons-container').innerHTML = '<p>Generating icons...</p>';
+            
+            for (const iconSize of sizes) {
+                await generateIcon(iconSize.size, iconSize.name);
+            }
+            
+            // Add download all button
+            const downloadAllBtn = document.createElement('button');
+            downloadAllBtn.className = 'download-btn';
+            downloadAllBtn.textContent = 'Download All as ZIP';
+            downloadAllBtn.style.gridColumn = '1 / -1';
+            downloadAllBtn.style.marginTop = '20px';
+            downloadAllBtn.onclick = downloadAllAsZip;
+            document.getElementById('icons-container').appendChild(downloadAllBtn);
+        }
+
+        function downloadAllAsZip() {
+            alert('Individual downloads are ready above. For a ZIP file, you would need a library like JSZip.');
+        }
+
+        // Polyfill for roundRect if not supported
+        if (!CanvasRenderingContext2D.prototype.roundRect) {
+            CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+                if (w < 2 * r) r = w / 2;
+                if (h < 2 * r) r = h / 2;
+                this.beginPath();
+                this.moveTo(x + r, y);
+                this.arcTo(x + w, y, x + w, y + h, r);
+                this.arcTo(x + w, y + h, x, y + h, r);
+                this.arcTo(x, y + h, x, y, r);
+                this.arcTo(x, y, x + w, y, r);
+                this.closePath();
+                return this;
+            };
+        }
+    </script>
+</body>
+</html>

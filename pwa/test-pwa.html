@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PWA Test</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="manifest" href="manifest.json">
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; }
+        .test-item { padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; }
+        .pass { background: #d4edda; border-color: #c3e6cb; }
+        .fail { background: #f8d7da; border-color: #f5c6cb; }
+        button { background: #6f42c1; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>🏛️ PWA Test Page</h1>
+    <div id="tests"></div>
+    <button onclick="testServiceWorker()">Test Service Worker</button>
+    <button onclick="testManifest()">Test Manifest</button>
+    <button onclick="testIcons()">Test Icons</button>
+
+    <script>
+        function addTest(name, passed, details = '') {
+            const div = document.createElement('div');
+            div.className = `test-item ${passed ? 'pass' : 'fail'}`;
+            div.innerHTML = `<strong>${name}</strong>: ${passed ? '✅ PASS' : '❌ FAIL'}<br>${details}`;
+            document.getElementById('tests').appendChild(div);
+        }
+
+        function testServiceWorker() {
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('service-worker.js')
+                    .then(reg => addTest('Service Worker', true, 'Registered successfully'))
+                    .catch(err => addTest('Service Worker', false, err.message));
+            } else {
+                addTest('Service Worker', false, 'Not supported in this browser');
+            }
+        }
+
+        function testManifest() {
+            fetch('manifest.json')
+                .then(response => response.json())
+                .then(manifest => {
+                    addTest('Manifest', true, `Found: ${manifest.name}`);
+                    addTest('Icons in Manifest', manifest.icons.length > 0, `${manifest.icons.length} icons defined`);
+                })
+                .catch(err => addTest('Manifest', false, err.message));
+        }
+
+        function testIcons() {
+            const iconSizes = ['72x72', '96x96', '128x128', '144x144', '152x152', '192x192', '384x384', '512x512'];
+            iconSizes.forEach(size => {
+                const img = new Image();
+                img.onload = () => addTest(`Icon ${size}`, true, 'Loaded successfully');
+                img.onerror = () => addTest(`Icon ${size}`, false, 'Failed to load');
+                img.src = `assets/icons/icon-${size}.png`;
+            });
+        }
+
+        // Auto-run basic tests
+        window.addEventListener('load', () => {
+            testServiceWorker();
+            testManifest();
+        });
+    </script>
+</body>
+</html>
