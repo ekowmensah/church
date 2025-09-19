@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'api_key' => $hubtel_api_key,
             'api_secret' => $hubtel_api_secret,
             'sender' => $hubtel_sender,
-            'url' => 'https://smsc.hubtel.com/v1/messages/send'
+            'url' => 'https://sms.hubtel.com/v1/messages/send'
         ]
     ];
     
