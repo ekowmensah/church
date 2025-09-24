@@ -354,6 +354,22 @@ $(function(){
     $('#mother_is_member').val("<?=isset($record['mother_is_member'])?$record['mother_is_member']:''?>");
     // For select2 member selects, if editing and value exists, ensure the option is present and selected
 
+    var fatherMemberId = "<?=isset($record['father_member_id'])?$record['father_member_id']:''?>";
+    var fatherMemberText = <?php
+    if (!empty($record['father_member_id'])) {
+        $fm = $conn->query("SELECT CONCAT(last_name, ' ', first_name, ' ', middle_name) as name FROM members WHERE id=".intval($record['father_member_id']));
+        $frow = $fm->fetch_assoc();
+        echo json_encode($frow ? $frow['name'] : '');
+    } else { echo '""'; }
+    ?>;
+    if(fatherMemberId && fatherMemberText){
+        if($('#father_member_id option[value="'+fatherMemberId+'"]:selected').length==0){
+            $('#father_member_id').append(new Option(fatherMemberText, fatherMemberId, true, true)).trigger('change');
+        } else {
+            $('#father_member_id').val(fatherMemberId).trigger('change');
+        }
+    }
+
     var motherMemberId = "<?=isset($record['mother_member_id'])?$record['mother_member_id']:''?>";
     var motherMemberText = <?php
     if (!empty($record['mother_member_id'])) {
@@ -370,40 +386,6 @@ $(function(){
         }
     }
 
-    // Robustly pre-populate parent fields on edit
-    document.addEventListener('DOMContentLoaded', function() {
-        // Father is_member
-        var fatherIsMember = "<?=isset($record['father_is_member'])?$record['father_is_member']:''?>";
-        if(fatherIsMember){
-            $('#father_is_member').val(fatherIsMember).trigger('change');
-        }
-        // Father member
-        var fatherMemberId = "<?=isset($record['father_member_id'])?$record['father_member_id']:''?>";
-        if(fatherIsMember==='yes' && fatherMemberId){
-            // If editing, ensure select2 loads with correct member
-            var $fatherSel = $('#father_member_id');
-            if($fatherSel.find('option[value="'+fatherMemberId+'"]').length===0 && fatherMemberId){
-                $fatherSel.append(new Option('<?=htmlspecialchars(@$row["name"]??"")?>', fatherMemberId, true, true)).trigger('change');
-            } else {
-                $fatherSel.val(fatherMemberId).trigger('change');
-            }
-        }
-        // Mother is_member
-        var motherIsMember = "<?=isset($record['mother_is_member'])?$record['mother_is_member']:''?>";
-        if(motherIsMember){
-            $('#mother_is_member').val(motherIsMember).trigger('change');
-        }
-        // Mother member
-        var motherMemberId = "<?=isset($record['mother_member_id'])?$record['mother_member_id']:''?>";
-        if(motherIsMember==='yes' && motherMemberId){
-            var $motherSel = $('#mother_member_id');
-            if($motherSel.find('option[value="'+motherMemberId+'"]').length===0 && motherMemberId){
-                $motherSel.append(new Option('<?=htmlspecialchars(@$row["name"]??"")?>', motherMemberId, true, true)).trigger('change');
-            } else {
-                $motherSel.val(motherMemberId).trigger('change');
-            }
-        }
-    });
 });
 </script>
         <div class="form-row">
@@ -970,26 +952,11 @@ function toggleParentFields() {
 $(document).ready(function(){
     hideAllParentFields();
     toggleParentFields();
-    // Pre-select father/mother member if editing
-    var fatherMemberId = "<?=isset($record['father_member_id'])?$record['father_member_id']:''?>";
-    if(fatherMemberId){
-        $('#father_member_id').val(fatherMemberId).trigger('change');
-    }
-    var motherMemberId = "<?=isset($record['mother_member_id'])?$record['mother_member_id']:''?>";
-    if(motherMemberId){
-        $('#mother_member_id').val(motherMemberId).trigger('change');
-    }
-    // Pre-select is_member options
-    var fatherIsMember = "<?=isset($record['father_is_member'])?$record['father_is_member']:''?>";
-    if(fatherIsMember){
-        $('#father_is_member').val(fatherIsMember);
-    }
-    var motherIsMember = "<?=isset($record['mother_is_member'])?$record['mother_is_member']:''?>";
-    if(motherIsMember){
-        $('#mother_is_member').val(motherIsMember);
-    }
     
     // Load member details for existing selections when editing
+    var fatherMemberId = "<?=isset($record['father_member_id'])?$record['father_member_id']:''?>";
+    var motherMemberId = "<?=isset($record['mother_member_id'])?$record['mother_member_id']:''?>";
+    
     if(fatherMemberId){
         loadMemberDetails(fatherMemberId, 'father');
     }
