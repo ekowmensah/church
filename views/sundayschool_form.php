@@ -205,18 +205,8 @@ while($c = $churches->fetch_assoc()): ?>
     </div>
     <div class="form-group col-md-4">
         <label>Bible Class <span class="text-danger">*</span></label>
-        <select name="class_id" id="class_id" class="form-control" required <?=empty($record['church_id'])?'disabled':''?>>
-<option value="">-- Select Class --</option>
-<?php 
-// Always show Sunday School option (ID: 116) as selected by default
-$sunday_school_selected = ($record['class_id'] == '116' || empty($record['class_id'])) ? 'selected="selected"' : '';
-echo '<option value="116" '.$sunday_school_selected.'>Sunday School</option>';
-
-if (!empty($record['church_id'])): 
-    $classes = $conn->query("SELECT id, name FROM bible_classes WHERE church_id = ".intval($record['church_id'])." AND id != 116 ORDER BY name ASC");
-    while($cl = $classes->fetch_assoc()): ?>
-        <option value="<?=$cl['id']?>" <?=($record['class_id']??'')==$cl['id']?'selected="selected"':''?>><?=htmlspecialchars($cl['name'])?></option>
-    <?php endwhile; endif; ?>
+        <select name="class_id" id="class_id" class="form-control" required>
+<option value="116" selected="selected">Sunday School</option>
 </select>
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
@@ -224,28 +214,12 @@ if (!empty($record['church_id'])):
 $(function(){
     // Only one initialization for Select2
     $('#class_id').select2();
-    // Only use AJAX if church changes
+    // Bible class is fixed to Sunday School only - no need to change on church selection
     $('#church_id').on('change', function(){
-        var churchId = this.value;
-        $('#class_id').prop('disabled', !churchId);
-        if(!churchId){
-            var sundaySchoolOption = '<option value="116" selected="selected">Sunday School</option>';
-            $('#class_id').html('<option value="">-- Select Class --</option>' + sundaySchoolOption);
-            $('#class_id').val('116').trigger('change');
-            return;
-        }
-        $.ajax({
-            url: 'ajax_get_classes_by_church.php',
-            data: {church_id: churchId},
-            method: 'GET',
-            success: function(data){
-                // Always prepend Sunday School option and select it by default
-                var sundaySchoolOption = '<option value="116" selected="selected">Sunday School</option>';
-                $('#class_id').html('<option value="">-- Select Class --</option>' + sundaySchoolOption + data);
-                $('#class_id').val('116').trigger('change');
-                $('#class_id').select2();
-            }
-        });
+        // Keep Sunday School selected always
+        $('#class_id').html('<option value="116" selected="selected">Sunday School</option>');
+        $('#class_id').val('116').trigger('change');
+        $('#class_id').select2();
     });
     // Robustly pre-populate parent Select2 fields (Father/Mother)
     var fatherMemberId = "<?=isset($record['father_member_id'])?$record['father_member_id']:''?>";
@@ -303,30 +277,10 @@ $(function(){
 <script>
 $(function(){
     function loadClasses(churchId, selectedClassId) {
-    $('#class_id').prop('disabled', !churchId);
-    if(!churchId){ 
-        var sundaySchoolOption = '<option value="116" selected="selected">Sunday School</option>';
-        $('#class_id').html('<option value="">-- Select Class --</option>' + sundaySchoolOption); 
-        $('#class_id').val('116');
-        $('#class_id').select2(); 
-        return; 
-    }
-    $.ajax({
-        url: 'ajax_get_classes_by_church.php',
-        data: {church_id: churchId, class_id: selectedClassId},
-        method: 'GET',
-        success: function(data){
-            // Always prepend Sunday School option
-            var sundaySchoolOption = '<option value="116"' + (selectedClassId == '116' || !selectedClassId ? ' selected="selected"' : '') + '>Sunday School</option>';
-            $('#class_id').html('<option value="">-- Select Class --</option>' + sundaySchoolOption + data);
-            if(selectedClassId) $('#class_id').val(selectedClassId);
-            else $('#class_id').val('116'); // Default to Sunday School
-            $('#class_id').select2();
-        },
-        error: function(xhr, status, err){
-            alert('Could not load classes: ' + xhr.responseText);
-        }
-    });
+    // Always show only Sunday School - no other classes
+    $('#class_id').html('<option value="116" selected="selected">Sunday School</option>');
+    $('#class_id').val('116');
+    $('#class_id').select2();
 }
     $('#church_id').on('change', function(){
         loadClasses(this.value, '116');
@@ -347,27 +301,11 @@ $(function(){
     }
     // On page load, if editing or after error, populate classes and SRN
     $('#class_id').select2();
-    // Only use AJAX if church changes
+    // Bible class is fixed to Sunday School only
     $('#church_id').on('change', function(){
-        var churchId = this.value;
-        $('#class_id').prop('disabled', !churchId);
-        if(!churchId){
-            var sundaySchoolOption = '<option value="116" selected="selected">Sunday School</option>';
-            $('#class_id').html('<option value="">-- Select Class --</option>' + sundaySchoolOption);
-            $('#class_id').val('116').trigger('change');
-            return;
-        }
-        $.ajax({
-            url: 'ajax_get_classes_by_church.php',
-            data: {church_id: churchId},
-            method: 'GET',
-            success: function(data){
-                // Always prepend Sunday School option and select it by default
-                var sundaySchoolOption = '<option value="116" selected="selected">Sunday School</option>';
-                $('#class_id').html('<option value="">-- Select Class --</option>' + sundaySchoolOption + data);
-                $('#class_id').val('116').trigger('change');
-            }
-        });
+        // Always show only Sunday School
+        $('#class_id').html('<option value="116" selected="selected">Sunday School</option>');
+        $('#class_id').val('116').trigger('change');
     });
     // Pre-populate parent select2 fields robustly
     $('#father_is_member').val("<?=isset($record['father_is_member'])?$record['father_is_member']:''?>");
