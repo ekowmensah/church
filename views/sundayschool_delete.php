@@ -1,4 +1,5 @@
 <?php
+session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../includes/admin_auth.php';
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
