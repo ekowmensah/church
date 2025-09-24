@@ -43,3 +43,4 @@ logs/health_sms_debug.log
 migrations/20250917_add_unique_indexes_to_users.sql
 debug_session.php
 test_hubtel_sms.php
+fix_sunday_school_member_ids.sql

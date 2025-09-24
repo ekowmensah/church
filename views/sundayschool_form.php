@@ -90,9 +90,9 @@ if (!isset($record['other_name'])) $record['other_name'] = '';
             $error = 'Photo upload failed.';
         }
     }
-    // Ensure integer fields are null if empty
+    // Ensure integer fields are null if empty or '0'
         foreach(['church_id','class_id','father_member_id','mother_member_id'] as $f) {
-            if ($record[$f]==='') $record[$f] = null;
+            if ($record[$f]==='' || $record[$f]==='0' || $record[$f]===0) $record[$f] = null;
         }
         if (!$error) {
         if ($editing) {

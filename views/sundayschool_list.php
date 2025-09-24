@@ -40,12 +40,41 @@ $total_records = $conn->query("SELECT COUNT(*) as cnt FROM sunday_school")->fetc
 if (is_numeric($page_size)) {
     $offset = ($page - 1) * intval($page_size);
     $total_pages = ceil($total_records / intval($page_size));
-    $sql = "SELECT * FROM sunday_school ORDER BY last_name, first_name, srn LIMIT $offset, $page_size";
+    $sql = "SELECT ss.*, 
+                   CASE 
+                       WHEN ss.father_is_member = 'yes' AND fm.id IS NOT NULL 
+                       THEN CONCAT(fm.last_name, ' ', fm.first_name, ' ', COALESCE(fm.middle_name, ''))
+                       ELSE ss.father_name 
+                   END as display_father_name,
+                   CASE 
+                       WHEN ss.mother_is_member = 'yes' AND mm.id IS NOT NULL 
+                       THEN CONCAT(mm.last_name, ' ', mm.first_name, ' ', COALESCE(mm.middle_name, ''))
+                       ELSE ss.mother_name 
+                   END as display_mother_name
+            FROM sunday_school ss 
+            LEFT JOIN members fm ON ss.father_member_id = fm.id AND ss.father_is_member = 'yes'
+            LEFT JOIN members mm ON ss.mother_member_id = mm.id AND ss.mother_is_member = 'yes'
+            ORDER BY ss.last_name, ss.first_name, ss.srn 
+            LIMIT $offset, $page_size";
 } else {
     $offset = 0;
     $total_pages = 1;
     $page = 1;
-    $sql = "SELECT * FROM sunday_school ORDER BY last_name, first_name, srn";
+    $sql = "SELECT ss.*, 
+                   CASE 
+                       WHEN ss.father_is_member = 'yes' AND fm.id IS NOT NULL 
+                       THEN CONCAT(fm.last_name, ' ', fm.first_name, ' ', COALESCE(fm.middle_name, ''))
+                       ELSE ss.father_name 
+                   END as display_father_name,
+                   CASE 
+                       WHEN ss.mother_is_member = 'yes' AND mm.id IS NOT NULL 
+                       THEN CONCAT(mm.last_name, ' ', mm.first_name, ' ', COALESCE(mm.middle_name, ''))
+                       ELSE ss.mother_name 
+                   END as display_mother_name
+            FROM sunday_school ss 
+            LEFT JOIN members fm ON ss.father_member_id = fm.id AND ss.father_is_member = 'yes'
+            LEFT JOIN members mm ON ss.mother_member_id = mm.id AND ss.mother_is_member = 'yes'
+            ORDER BY ss.last_name, ss.first_name, ss.srn";
 }
 $sundayschool = $conn->query($sql);
 
@@ -111,8 +140,8 @@ ob_start();
                         <?=htmlspecialchars($dob)?><?php if($age): ?> <span class="text-muted small">(<?=$age?>)</span><?php endif; ?></td>
                         <td><?=htmlspecialchars($row['contact'])?></td>
                         <td><?=htmlspecialchars($row['school_attend'])?></td>
-                        <td><?=htmlspecialchars($row['father_name'])?><br><small><?=htmlspecialchars($row['father_contact'])?></small></td>
-                        <td><?=htmlspecialchars($row['mother_name'])?><br><small><?=htmlspecialchars($row['mother_contact'])?></small></td>
+                        <td><?=htmlspecialchars($row['display_father_name'])?><br><small><?=htmlspecialchars($row['father_contact'])?></small></td>
+                        <td><?=htmlspecialchars($row['display_mother_name'])?><br><small><?=htmlspecialchars($row['mother_contact'])?></small></td>
                         <td>
                             <?php if (!empty($row['transferred_at'])): ?>
                                 <span class="badge badge-success">Transferred</span>

@@ -9,7 +9,43 @@ if (!$id) {
     exit;
 }
 
-$stmt = $conn->prepare('SELECT ss.*, c.name as church_name, c.church_code, c.circuit_code, bc.name as class_name FROM sunday_school ss LEFT JOIN churches c ON ss.church_id = c.id LEFT JOIN bible_classes bc ON ss.class_id = bc.id WHERE ss.id = ? LIMIT 1');
+$stmt = $conn->prepare('SELECT ss.*, c.name as church_name, c.church_code, c.circuit_code, bc.name as class_name,
+                        CASE 
+                            WHEN ss.father_is_member = "yes" AND fm.id IS NOT NULL 
+                            THEN CONCAT(fm.last_name, " ", fm.first_name, " ", COALESCE(fm.middle_name, ""))
+                            ELSE ss.father_name 
+                        END as display_father_name,
+                        CASE 
+                            WHEN ss.mother_is_member = "yes" AND mm.id IS NOT NULL 
+                            THEN CONCAT(mm.last_name, " ", mm.first_name, " ", COALESCE(mm.middle_name, ""))
+                            ELSE ss.mother_name 
+                        END as display_mother_name,
+                        CASE 
+                            WHEN ss.father_is_member = "yes" AND fm.id IS NOT NULL 
+                            THEN fm.phone
+                            ELSE ss.father_contact 
+                        END as display_father_contact,
+                        CASE 
+                            WHEN ss.mother_is_member = "yes" AND mm.id IS NOT NULL 
+                            THEN mm.phone
+                            ELSE ss.mother_contact 
+                        END as display_mother_contact,
+                        CASE 
+                            WHEN ss.father_is_member = "yes" AND fm.id IS NOT NULL 
+                            THEN fm.profession
+                            ELSE ss.father_occupation 
+                        END as display_father_occupation,
+                        CASE 
+                            WHEN ss.mother_is_member = "yes" AND mm.id IS NOT NULL 
+                            THEN mm.profession
+                            ELSE ss.mother_occupation 
+                        END as display_mother_occupation
+                        FROM sunday_school ss 
+                        LEFT JOIN churches c ON ss.church_id = c.id 
+                        LEFT JOIN bible_classes bc ON ss.class_id = bc.id 
+                        LEFT JOIN members fm ON ss.father_member_id = fm.id AND ss.father_is_member = "yes"
+                        LEFT JOIN members mm ON ss.mother_member_id = mm.id AND ss.mother_is_member = "yes"
+                        WHERE ss.id = ? LIMIT 1');
 $stmt->bind_param('i', $id);
 $stmt->execute();
 $result = $stmt->get_result();
@@ -96,9 +132,9 @@ ob_start();
                   <div class="card border-0 shadow-sm h-100">
                     <div class="card-body">
                       <div class="ss-section-title"><i class="fa fa-male text-info"></i> Father</div>
-                      <div><b>Name:</b> <?= htmlspecialchars($child['father_name']) ?></div>
-                      <div><b>Contact:</b> <?= htmlspecialchars($child['father_contact']) ?></div>
-                      <div><b>Occupation:</b> <?= htmlspecialchars($child['father_occupation']) ?></div>
+                      <div><b>Name:</b> <?= htmlspecialchars($child['display_father_name']) ?></div>
+                      <div><b>Contact:</b> <?= htmlspecialchars($child['display_father_contact']) ?></div>
+                      <div><b>Occupation:</b> <?= htmlspecialchars($child['display_father_occupation']) ?></div>
                     </div>
                   </div>
                 </div>
@@ -106,9 +142,9 @@ ob_start();
                   <div class="card border-0 shadow-sm h-100">
                     <div class="card-body">
                       <div class="ss-section-title"><i class="fa fa-female text-pink"></i> Mother</div>
-                      <div><b>Name:</b> <?= htmlspecialchars($child['mother_name']) ?></div>
-                      <div><b>Contact:</b> <?= htmlspecialchars($child['mother_contact']) ?></div>
-                      <div><b>Occupation:</b> <?= htmlspecialchars($child['mother_occupation']) ?></div>
+                      <div><b>Name:</b> <?= htmlspecialchars($child['display_mother_name']) ?></div>
+                      <div><b>Contact:</b> <?= htmlspecialchars($child['display_mother_contact']) ?></div>
+                      <div><b>Occupation:</b> <?= htmlspecialchars($child['display_mother_occupation']) ?></div>
                     </div>
                   </div>
                 </div>
