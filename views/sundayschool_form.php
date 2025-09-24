@@ -810,11 +810,7 @@ function toggleFatherField() {
                 minimumInputLength: 2
             });
         }
-        // Pre-populate value after Select2 is initialized and row is shown
-        var fatherMemberId = "<?=isset($record['father_member_id'])?$record['father_member_id']:''?>";
-        if (fatherMemberId) {
-            $('#father_member_id').val(fatherMemberId).trigger('change');
-        }
+        // Don't override existing selection when editing - the proper logic handles this earlier
     } else {
         $('#father_name_row').show();
         $('#father_member_row').hide();
@@ -864,11 +860,7 @@ function toggleMotherField() {
         $('#mother_occupation_member').val('');
     }
 }
-// Initial call
-$(document).ready(function(){
-    toggleFatherField();
-    toggleMotherField();
-});
+// Initial call is handled by the main $(document).ready() function
 
 function hideAllParentFields() {
     $('#father_member_row').hide();
