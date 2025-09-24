@@ -988,15 +988,30 @@ $(document).ready(function(){
     if(motherIsMember){
         $('#mother_is_member').val(motherIsMember);
     }
+    
+    // Load member details for existing selections when editing
+    if(fatherMemberId){
+        loadMemberDetails(fatherMemberId, 'father');
+    }
+    if(motherMemberId){
+        loadMemberDetails(motherMemberId, 'mother');
+    }
 });
+
+// Function to load member details
+function loadMemberDetails(memberId, parentType) {
+    if (memberId) {
+        $.getJSON('ajax_member_details.php', {id: memberId}, function(data) {
+            $('#' + parentType + '_contact_member').val(data.phone || '');
+            $('#' + parentType + '_occupation_member').val(data.profession || '');
+        });
+    }
+}
 
 $('#father_member_id').on('select2:select', function(e) {
     var memberId = e.params.data.id;
     if (memberId) {
-        $.getJSON('ajax_member_details.php', {id: memberId}, function(data) {
-            $('#father_contact_member').val(data.phone || '');
-            $('#father_occupation_member').val(data.profession || '');
-        });
+        loadMemberDetails(memberId, 'father');
     } else {
         $('#father_contact_member').val('');
         $('#father_occupation_member').val('');
@@ -1005,10 +1020,7 @@ $('#father_member_id').on('select2:select', function(e) {
 $('#mother_member_id').on('select2:select', function(e) {
     var memberId = e.params.data.id;
     if (memberId) {
-        $.getJSON('ajax_member_details.php', {id: memberId}, function(data) {
-            $('#mother_contact_member').val(data.phone || '');
-            $('#mother_occupation_member').val(data.profession || '');
-        });
+        loadMemberDetails(memberId, 'mother');
     } else {
         $('#mother_contact_member').val('');
         $('#mother_occupation_member').val('');
