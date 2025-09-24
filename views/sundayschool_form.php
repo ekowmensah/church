@@ -993,7 +993,7 @@ $(document).ready(function(){
 $('#father_member_id').on('select2:select', function(e) {
     var memberId = e.params.data.id;
     if (memberId) {
-        $.getJSON('../ajax_member_details.php', {id: memberId}, function(data) {
+        $.getJSON('ajax_member_details.php', {id: memberId}, function(data) {
             $('#father_contact_member').val(data.phone || '');
             $('#father_occupation_member').val(data.profession || '');
         });
@@ -1005,7 +1005,7 @@ $('#father_member_id').on('select2:select', function(e) {
 $('#mother_member_id').on('select2:select', function(e) {
     var memberId = e.params.data.id;
     if (memberId) {
-        $.getJSON('../ajax_member_details.php', {id: memberId}, function(data) {
+        $.getJSON('ajax_member_details.php', {id: memberId}, function(data) {
             $('#mother_contact_member').val(data.phone || '');
             $('#mother_occupation_member').val(data.profession || '');
         });
