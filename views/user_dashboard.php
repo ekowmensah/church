@@ -54,7 +54,10 @@ $catechumen = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE (LOWER(con
 // Total Members = Full Members + Catechumens + Junior Members + Adherents
 // Members without proper confirmed/baptized values are considered "created but not registered yet"
 $total_members = $full_member + $catechumen + $junior_members + $adherent;
-$registered_members = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'active'")->fetch_assoc()['cnt'];
+// Christian Community = Active Members + Sunday School Members
+$active_members = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'active'")->fetch_assoc()['cnt'];
+$sunday_school_members = $conn->query("SELECT COUNT(*) as cnt FROM sunday_school")->fetch_assoc()['cnt'];
+$registered_members = $active_members + $sunday_school_members;
 $pending_registration = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'pending'")->fetch_assoc()['cnt'];
 $members_no_payments = $conn->query("SELECT COUNT(*) as cnt FROM members m LEFT JOIN payments p ON m.id = p.member_id WHERE p.id IS NULL AND m.status = 'active'")->fetch_assoc()['cnt'];
 
