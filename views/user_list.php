@@ -35,9 +35,17 @@ $can_view = true; // Already validated above
 $filter_church = isset($_GET['church_id']) ? intval($_GET['church_id']) : null;
 $filter_class = isset($_GET['class_id']) ? intval($_GET['class_id']) : null;
 $filter_org = isset($_GET['organization_id']) ? intval($_GET['organization_id']) : null;
+$search = isset($_GET['search']) ? trim($_GET['search']) : '';
+
+// Pagination
+$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+$per_page = isset($_GET['per_page']) ? min(100, max(10, intval($_GET['per_page']))) : 20;
+$offset = ($page - 1) * $per_page;
+
 $where = [];
 $params = [];
 $types = '';
+
 if ($filter_church) {
     $where[] = 'm.church_id = ?';
     $params[] = $filter_church;
@@ -53,6 +61,12 @@ if ($filter_org) {
     $params[] = $filter_org;
     $types .= 'i';
 }
+if ($search) {
+    $where[] = '(u.name LIKE ? OR u.email LIKE ? OR u.phone LIKE ? OR m.crn LIKE ? OR m.phone LIKE ? OR CONCAT(m.first_name, " ", m.last_name) LIKE ?)';
+    $search_param = '%' . $search . '%';
+    $params = array_merge($params, [$search_param, $search_param, $search_param, $search_param, $search_param, $search_param]);
+    $types .= 'ssssss';
+}
 $sql = "SELECT DISTINCT u.id AS user_id, u.name AS user_name, u.email AS user_email, u.status AS user_status, u.member_id, m.crn, m.phone, m.email AS member_email, m.class_id, m.church_id, m.last_name, m.first_name, m.middle_name, bc.name AS class_name
 FROM users u
 LEFT JOIN members m ON u.member_id = m.id
@@ -61,6 +75,40 @@ if ($where) {
     $sql .= ' WHERE ' . implode(' AND ', $where);
 }
 $sql .= ' ORDER BY u.name';
+
+// Count total records for pagination
+$count_sql = "SELECT COUNT(DISTINCT u.id) as total FROM users u LEFT JOIN members m ON u.member_id = m.id LEFT JOIN bible_classes bc ON m.class_id = bc.id";
+if ($where) {
+    $count_sql .= ' WHERE ' . implode(' AND ', $where);
+}
+$total_count = 0;
+// Use original params for count (before adding LIMIT/OFFSET)
+$count_params = array_slice($params, 0, count($params));
+$count_types = substr($types, 0, strlen($types) - 2); // Remove 'ii' from end
+if ($count_params) {
+    $count_stmt = $conn->prepare($count_sql);
+    $count_stmt->bind_param($count_types, ...$count_params);
+    $count_stmt->execute();
+    $count_result = $count_stmt->get_result();
+    if ($count_result && $count_row = $count_result->fetch_assoc()) {
+        $total_count = $count_row['total'];
+    }
+    $count_stmt->close();
+} else {
+    $count_result = $conn->query($count_sql);
+    if ($count_result && $count_row = $count_result->fetch_assoc()) {
+        $total_count = $count_row['total'];
+    }
+}
+
+$total_pages = ceil($total_count / $per_page);
+
+// Add LIMIT and OFFSET to main query
+$sql .= " LIMIT ? OFFSET ?";
+$params[] = $per_page;
+$params[] = $offset;
+$types .= 'ii';
+
 $users = null;
 if ($params) {
     $stmt = $conn->prepare($sql);
@@ -80,7 +128,11 @@ ob_start();
 </div>
 <!-- Filter Form -->
 <form method="get" class="form-row align-items-end mb-3" id="userFilterForm">
-    <div class="form-group col-md-3 mb-2">
+    <div class="form-group col-md-2 mb-2">
+        <label for="search" class="font-weight-bold">Search</label>
+        <input type="text" class="form-control" id="search" name="search" value="<?= htmlspecialchars($search) ?>" placeholder="Name, email, phone, CRN...">
+    </div>
+    <div class="form-group col-md-2 mb-2">
         <label for="church_id" class="font-weight-bold">Church</label>
         <select class="form-control" id="church_id" name="church_id">
             <option value="">All</option>
@@ -90,7 +142,7 @@ ob_start();
             <?php endwhile; ?>
         </select>
     </div>
-    <div class="form-group col-md-3 mb-2">
+    <div class="form-group col-md-2 mb-2">
         <label for="class_id" class="font-weight-bold">Bible Class</label>
         <select class="form-control" id="class_id" name="class_id" <?= !$filter_church ? 'disabled' : '' ?>>
             <option value="">All</option>
@@ -103,7 +155,7 @@ ob_start();
             ?>
         </select>
     </div>
-    <div class="form-group col-md-3 mb-2">
+    <div class="form-group col-md-2 mb-2">
         <label for="organization_id" class="font-weight-bold">Organization</label>
         <select class="form-control" id="organization_id" name="organization_id" <?= !$filter_church ? 'disabled' : '' ?>>
             <option value="">All</option>
@@ -116,8 +168,20 @@ ob_start();
             ?>
         </select>
     </div>
-    <div class="form-group col-md-2 mb-2">
+    <div class="form-group col-md-1 mb-2">
+        <label for="per_page" class="font-weight-bold">Show</label>
+        <select class="form-control" id="per_page" name="per_page">
+            <option value="10" <?= $per_page == 10 ? 'selected' : '' ?>>10</option>
+            <option value="20" <?= $per_page == 20 ? 'selected' : '' ?>>20</option>
+            <option value="50" <?= $per_page == 50 ? 'selected' : '' ?>>50</option>
+            <option value="100" <?= $per_page == 100 ? 'selected' : '' ?>>100</option>
+        </select>
+    </div>
+    <div class="form-group col-md-1 mb-2">
         <button type="submit" class="btn btn-primary btn-block"><i class="fas fa-filter mr-1"></i>Filter</button>
+    </div>
+    <div class="form-group col-md-2 mb-2">
+        <a href="user_list.php" class="btn btn-secondary btn-block"><i class="fas fa-times mr-1"></i>Clear</a>
     </div>
 </form>
 <script>
@@ -271,6 +335,76 @@ $(function(){
             </table>
         </div>
     </div>
+
+    <!-- Pagination and Statistics -->
+    <?php if ($total_count > 0): ?>
+    <div class="row align-items-center mt-3">
+        <div class="col-md-6">
+            <div class="text-muted">
+                Showing <?= (($page - 1) * $per_page) + 1 ?> to <?= min($page * $per_page, $total_count) ?> of <?= number_format($total_count) ?> users
+                <?php if ($search): ?>
+                    <span class="text-primary">(filtered by: "<?= htmlspecialchars($search) ?>")</span>
+                <?php endif; ?>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <?php if ($total_pages > 1): ?>
+            <nav aria-label="User pagination">
+                <ul class="pagination justify-content-end mb-0">
+                    <?php
+                    $start_page = max(1, $page - 2);
+                    $end_page = min($total_pages, $page + 2);
+
+                    // Previous button
+                    if ($page > 1): ?>
+                        <li class="page-item">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page - 1])) ?>">
+                                <i class="fas fa-chevron-left"></i>
+                            </a>
+                        </li>
+                    <?php endif;
+
+                    // First page + ellipsis
+                    if ($start_page > 1): ?>
+                        <li class="page-item">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => 1])) ?>">1</a>
+                        </li>
+                        <?php if ($start_page > 2): ?>
+                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                        <?php endif;
+                    endif;
+
+                    // Page numbers
+                    for ($i = $start_page; $i <= $end_page; $i++): ?>
+                        <li class="page-item <?= $i == $page ? 'active' : '' ?>">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $i])) ?>"><?= $i ?></a>
+                        </li>
+                    <?php endfor;
+
+                    // Last page + ellipsis
+                    if ($end_page < $total_pages): ?>
+                        <?php if ($end_page < $total_pages - 1): ?>
+                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                        <?php endif; ?>
+                        <li class="page-item">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $total_pages])) ?>"><?= $total_pages ?></a>
+                        </li>
+                    <?php endif;
+
+                    // Next button
+                    if ($page < $total_pages): ?>
+                        <li class="page-item">
+                            <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page + 1])) ?>">
+                                <i class="fas fa-chevron-right"></i>
+                            </a>
+                        </li>
+                    <?php endif; ?>
+                </ul>
+            </nav>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
 </div>
 <?php
 $page_content = ob_get_clean();
