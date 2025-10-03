@@ -257,7 +257,7 @@ document.addEventListener("DOMContentLoaded", function() {
             description: desc
         };
         if (EDITING) formData.id = ROLE_ID;
-        const url = BASE_URL + "/controllers/role_api.php" + (EDITING ? `?id=${ROLE_ID}&action=update` : "");
+        const url = BASE_URL + "/views/role_api.php" + (EDITING ? `?id=${ROLE_ID}&action=update` : "");
         fetch(url, {
             method: "POST",
             headers: {
