@@ -39,15 +39,14 @@ if (!is_logged_in()) {
     exit;
 }
 $is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
-// TEMPORARY: Show debug info instead of blocking
 if (!$is_super_admin && !has_permission('manage_roles')) {
+    http_response_code(403);
     echo json_encode([
         'success' => false, 
-        'error' => 'DEBUG: Permission check failed',
+        'error' => 'Forbidden - Insufficient permissions',
         'debug' => array_merge($debug_info, [
             'is_super_admin' => $is_super_admin,
-            'has_manage_roles_permission' => has_permission('manage_roles'),
-            'user_permissions_query_test' => 'Will check database directly'
+            'has_manage_roles_permission' => has_permission('manage_roles')
         ])
     ]);
     exit;
