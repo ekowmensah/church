@@ -1,4 +1,7 @@
 <?php
+// Start session immediately like other working API files
+session_start();
+
 // role_permission_api.php: Handles AJAX for getting and setting permissions for a role.
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
@@ -6,9 +9,20 @@ require_once __DIR__.'/../helpers/permissions.php';
 
 header('Content-Type: application/json');
 
-if (!is_logged_in() || !has_permission('manage_roles')) {
-    echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+// Authentication check
+if (!is_logged_in()) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => 'Unauthorized - Please log in']);
+    exit;
+}
+
+// Robust super admin bypass and permission check (consistent with other files)
+$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
+                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+
+if (!$is_super_admin && !has_permission('manage_roles')) {
     http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Insufficient permissions']);
     exit;
 }
 

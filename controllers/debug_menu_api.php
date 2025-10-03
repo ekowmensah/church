@@ -1,21 +1,35 @@
 <?php
-require_once '../config/config.php';
-require_once '../helpers/permissions.php';
-//session_start();
+// Start session immediately like other working API files
+session_start();
+
+// AJAX/API endpoint for debug menu management
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../helpers/auth.php';
+require_once __DIR__ . '/../helpers/permissions.php';
 
 // Enable error reporting for debugging
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-// Check permissions
-$is_super_admin = isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3;
+// Set proper headers for AJAX requests
+header('Content-Type: application/json');
+
+// Authentication check
+if (!is_logged_in()) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'message' => 'Unauthorized - Please log in']);
+    exit;
+}
+
+// Robust super admin bypass and permission check (consistent with other files)
+$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
+                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+
 if (!$is_super_admin && !has_permission('manage_menu_items')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Access denied']);
     exit;
 }
-
-header('Content-Type: application/json');
 
 // Debug: Log all POST data
 error_log("DEBUG: POST data: " . print_r($_POST, true));

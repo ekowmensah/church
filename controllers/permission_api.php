@@ -17,8 +17,9 @@ header('Content-Type: application/json');
 $controller = new PermissionController($conn);
 $method = $_SERVER['REQUEST_METHOD'];
 
-// Super admin bypass
-$is_super_admin = (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+// Robust super admin bypass and permission check (consistent with other files)
+$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
+                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
 if ($is_super_admin) {
     switch ($method) {
         case 'GET':
