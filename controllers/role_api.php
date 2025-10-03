@@ -1,8 +1,6 @@
 <?php
-// Ensure session is started properly
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+// Start session immediately like other working API files
+session_start();
 
 // AJAX/API endpoint for advanced role management
 require_once __DIR__ . '/../config/config.php';
@@ -10,24 +8,6 @@ require_once __DIR__ . '/RoleController.php';
 
 // Set proper headers for AJAX requests
 header('Content-Type: application/json');
-header('Cache-Control: no-cache, must-revalidate');
-
-// Handle CORS if needed
-if (isset($_SERVER['HTTP_ORIGIN'])) {
-    header("Access-Control-Allow-Origin: {$_SERVER['HTTP_ORIGIN']}");
-    header('Access-Control-Allow-Credentials: true');
-    header('Access-Control-Max-Age: 86400');
-}
-
-if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
-    if (isset($_SERVER['HTTP_ACCESS_CONTROL_REQUEST_METHOD'])) {
-        header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-    }
-    if (isset($_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS'])) {
-        header("Access-Control-Allow-Headers: {$_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS']}");
-    }
-    exit(0);
-}
 
 // Debug session information for troubleshooting
 $debug_info = [
@@ -54,34 +34,20 @@ if (!is_logged_in()) {
     echo json_encode([
         'success' => false, 
         'error' => 'Unauthorized - Please log in',
-        'debug' => $debug_info,
-        'session_check' => [
-            'is_logged_in' => is_logged_in(),
-            'session_user_id' => $_SESSION['user_id'] ?? 'not_set',
-            'session_member_id' => $_SESSION['member_id'] ?? 'not_set'
-        ]
+        'debug' => $debug_info
     ]);
     exit;
 }
-// Robust super admin bypass and permission check (consistent with other files)
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
-
+$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+// TEMPORARY: Show debug info instead of blocking
 if (!$is_super_admin && !has_permission('manage_roles')) {
-    http_response_code(403);
     echo json_encode([
         'success' => false, 
-        'error' => 'Forbidden - Insufficient permissions',
+        'error' => 'DEBUG: Permission check failed',
         'debug' => array_merge($debug_info, [
             'is_super_admin' => $is_super_admin,
             'has_manage_roles_permission' => has_permission('manage_roles'),
-            'user_id_check' => $_SESSION['user_id'] ?? 'not_set',
-            'role_id_check' => $_SESSION['role_id'] ?? 'not_set',
-            'permissions_in_session' => $_SESSION['permissions'] ?? 'not_set',
-            'super_admin_calculation' => [
-                'user_id_is_3' => (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3),
-                'role_id_is_1' => (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1)
-            ]
+            'user_permissions_query_test' => 'Will check database directly'
         ])
     ]);
     exit;
