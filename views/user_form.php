@@ -82,7 +82,7 @@ if ($editing) {
 }
 
 // Generate form token for CSRF protection
-if (!isset($_SESSION['form_token'])) {
+if (!isset($_SESSION['form_token']) || empty($_SESSION['form_token'])) {
     $_SESSION['form_token'] = bin2hex(random_bytes(32));
 }
 
@@ -98,8 +98,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($form_token) || $form_token !== $session_token) {
         $error = 'Invalid form submission. Please try again.';
     } else {
-        // Clear the token to prevent reuse
-        unset($_SESSION['form_token']);
+        // Only clear the token after successful processing, not during member linking flow
+        $clear_token = true;
     }
     
     if (empty($error)) {
@@ -160,6 +160,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->close();
             }
             $success = 'User updated successfully.';
+            // Clear token after successful operation and regenerate for next use
+            unset($_SESSION['form_token']);
+            $_SESSION['form_token'] = bin2hex(random_bytes(32));
         }
     } else {
         // ADD MODE: Create user and member
@@ -215,6 +218,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->close();
             $error = '';
             $show_link_prompt = true;
+            // Regenerate token for the member linking form
+            $_SESSION['form_token'] = bin2hex(random_bytes(32));
         } else if ($existing_member_id && isset($_POST['skip_member_link']) && $_POST['skip_member_link'] == '1') {
             // Skip linking, just create user without member_id
             $conn->begin_transaction();
@@ -234,6 +239,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmt->close();
                 }
                 $conn->commit();
+                // Clear token after successful operation
+                unset($_SESSION['form_token']);
                 header('Location: user_list.php');
                 exit;
             } catch (Exception $e) {
@@ -259,6 +266,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmt->close();
                 }
                 $conn->commit();
+                // Clear token after successful operation
+                unset($_SESSION['form_token']);
                 header('Location: user_list.php');
                 exit;
                 // $success = 'User account created and linked to existing member.';
@@ -320,6 +329,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmt->close();
                 }
                 $conn->commit();
+                // Clear token after successful operation
+                unset($_SESSION['form_token']);
                 header('Location: user_list.php');
                 exit;
             } catch (Exception $e) {
@@ -329,6 +340,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     } // End of empty($error) check
+    
+    // Clear token after successful processing (but not during member linking flow)
+    if (isset($clear_token) && $clear_token && empty($show_link_prompt)) {
+        unset($_SESSION['form_token']);
+    }
 }
 
 ob_start();
@@ -354,15 +370,15 @@ ob_start();
             <div class="alert alert-warning font-weight-bold" style="font-size:1.1em;">
                 <i class="fas fa-exclamation-triangle mr-2"></i>
                 A member with this email or phone already exists in the system.<br>
-                <strong>CRN:</strong> <?php
+                <?php
                     $stmt = $conn->prepare('SELECT crn, first_name, last_name FROM members WHERE id = ?');
                     $stmt->bind_param('i', $existing_member_id);
                     $stmt->execute();
                     $stmt->bind_result($existing_crn, $existing_first, $existing_last);
                     $stmt->fetch();
                     $stmt->close();
-                    echo htmlspecialchars($existing_crn);
-                ?><br>
+                ?>
+                <strong>CRN:</strong> <?= htmlspecialchars($existing_crn) ?><br>
                 <strong>Name:</strong> <?= htmlspecialchars($existing_first . ' ' . $existing_last) ?><br>
                 <br>
                 Would you like to link this user account to the existing member record above?<br>
