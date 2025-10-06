@@ -2,12 +2,34 @@
 // Error reporting for development (remove or comment out in production)
 
 ob_start();
+if (session_status() === PHP_SESSION_NONE) session_start();
 require_once '../config/config.php';
 require_once '../helpers/auth.php';
 require_once '../helpers/permissions.php';
 require_once '../includes/admin_auth.php';
 require_once '../includes/report_ui_helpers.php';
-if (session_status() === PHP_SESSION_NONE) session_start();
+
+// Only allow logged-in users
+if (!is_logged_in()) {
+    header('Location: ' . BASE_URL . '/login.php');
+    exit;
+}
+
+// Robust super admin bypass and permission check
+$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
+                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+
+if (!$is_super_admin && !has_permission('payment_statistics')) {
+    http_response_code(403);
+    if (file_exists(__DIR__.'/errors/403.php')) {
+        include __DIR__.'/errors/403.php';
+    } else if (file_exists(dirname(__DIR__).'/views/errors/403.php')) {
+        include dirname(__DIR__).'/views/errors/403.php';
+    } else {
+        echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access payment statistics.</p></div>';
+    }
+    exit;
+}
 
 // --- CONFIG ---
 $date = isset($_GET['date']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date']) ? $_GET['date'] : date('Y-m-d');

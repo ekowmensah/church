@@ -174,7 +174,77 @@ $attendance_trends = $conn->query("SELECT
 
 ob_start();
 $user_name = isset($_SESSION['user_name']) ? $_SESSION['user_name'] : 'User';
-$user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
+
+// Get role name from database using role_id
+$user_role = 'Admin'; // Default
+$role_id = isset($_SESSION['role_id']) ? intval($_SESSION['role_id']) : 0;
+if ($role_id > 0) {
+    $role_stmt = $conn->prepare("SELECT name FROM roles WHERE id = ?");
+    $role_stmt->bind_param('i', $role_id);
+    $role_stmt->execute();
+    $role_result = $role_stmt->get_result();
+    if ($role_result && $role_row = $role_result->fetch_assoc()) {
+        $user_role = $role_row['name'];
+    }
+    $role_stmt->close();
+}
+
+// Check if user is a cashier
+$is_cashier = (strtolower($user_role) === 'cashier');
+$current_user_id = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
+
+// Debug: Add temporary debug output
+echo "<!-- DEBUG: Role ID: $role_id, User Role: " . htmlspecialchars($user_role) . ", Is Cashier: " . ($is_cashier ? 'YES' : 'NO') . " -->";
+
+// If cashier, recalculate statistics to show only their payments
+if ($is_cashier && $current_user_id > 0) {
+    // Cashier-specific payment statistics
+    $cashier_filter = " AND recorded_by = $current_user_id";
+    
+    // Total payments by this cashier
+    $total_payments_cashier = $conn->query("SELECT COUNT(*) as cnt FROM payments WHERE 1 $cashier_filter")->fetch_assoc()['cnt'];
+    
+    // Total amount collected by this cashier
+    $total_amount_cashier = $conn->query("SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE 1 $cashier_filter")->fetch_assoc()['total'];
+    
+    // Today's payments by this cashier
+    $today_payments_cashier = $conn->query("SELECT COUNT(*) as cnt FROM payments WHERE DATE(payment_date) = CURDATE() $cashier_filter")->fetch_assoc()['cnt'];
+    
+    // Today's amount by this cashier
+    $today_amount_cashier = $conn->query("SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE DATE(payment_date) = CURDATE() $cashier_filter")->fetch_assoc()['total'];
+    
+    // This week's payments by this cashier
+    $week_payments_cashier = $conn->query("SELECT COUNT(*) as cnt FROM payments WHERE YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1) $cashier_filter")->fetch_assoc()['cnt'];
+    
+    // This month's payments by this cashier
+    $month_payments_cashier = $conn->query("SELECT COUNT(*) as cnt FROM payments WHERE YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE()) $cashier_filter")->fetch_assoc()['cnt'];
+    
+    // Payment types breakdown for this cashier
+    $payment_types_cashier = $conn->query("
+        SELECT pt.name, COUNT(*) as count, SUM(p.amount) as total_amount 
+        FROM payments p 
+        LEFT JOIN payment_types pt ON p.payment_type_id = pt.id 
+        WHERE 1 $cashier_filter 
+        GROUP BY pt.name 
+        ORDER BY total_amount DESC 
+        LIMIT 10
+    ");
+    
+    // Recent payments by this cashier
+    $recent_payments_cashier = $conn->query("
+        SELECT p.*, pt.name as payment_type, 
+               COALESCE(m.first_name, ss.first_name) as first_name,
+               COALESCE(m.last_name, ss.last_name) as last_name,
+               COALESCE(m.crn, ss.srn) as identifier
+        FROM payments p 
+        LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
+        LEFT JOIN members m ON p.member_id = m.id
+        LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
+        WHERE 1 $cashier_filter 
+        ORDER BY p.payment_date DESC 
+        LIMIT 10
+    ");
+}
 ?>
 
 <!-- Modern Dashboard Header -->
@@ -186,22 +256,210 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
                     <i class="fas fa-tachometer-alt dashboard-main-icon"></i>
                 </div>
                 <div>
-                    <h3 class="mb-1 font-weight-bold text-dark dashboard-title">Church Management Dashboard</h3>
+                    <h3 class="mb-1 font-weight-bold text-dark dashboard-title"><?= $is_cashier ? 'Cashier Payment Dashboard' : 'Church Management Dashboard' ?></h3>
                     <p class="text-muted mb-0">Welcome back, <strong><?= htmlspecialchars($user_name) ?></strong> | <?= htmlspecialchars($user_role) ?> | <?= date('l, F j, Y') ?></p>
                 </div>
             </div>
         </div>
         <div class="col-md-4 text-right">
             <div class="btn-group" role="group">
-                <a href="<?= BASE_URL ?>/views/member_form.php" class="btn btn-gradient-primary btn-sm"><i class="fa fa-plus mr-1"></i> Add Member</a>
-                <a href="<?= BASE_URL ?>/views/payment_form.php" class="btn btn-gradient-success btn-sm"><i class="fa fa-money-bill mr-1"></i> Payment</a>
-                <a href="<?= BASE_URL ?>/views/reports.php" class="btn btn-gradient-info btn-sm"><i class="fa fa-chart-bar mr-1"></i> Reports</a>
+                <?php if ($is_cashier): ?>
+                    <a href="<?= BASE_URL ?>/views/payment_form.php" class="btn btn-gradient-success btn-sm"><i class="fa fa-money-bill mr-1"></i> New Payment</a>
+                    <a href="<?= BASE_URL ?>/views/payment_bulk.php" class="btn btn-gradient-primary btn-sm"><i class="fa fa-layer-group mr-1"></i> Bulk Payment</a>
+                    <a href="<?= BASE_URL ?>/views/payment_list.php" class="btn btn-gradient-info btn-sm"><i class="fa fa-list mr-1"></i> Payment History</a>
+                <?php else: ?>
+                    <a href="<?= BASE_URL ?>/views/member_form.php" class="btn btn-gradient-primary btn-sm"><i class="fa fa-plus mr-1"></i> Add Member</a>
+                    <a href="<?= BASE_URL ?>/views/payment_form.php" class="btn btn-gradient-success btn-sm"><i class="fa fa-money-bill mr-1"></i> Payment</a>
+                    <a href="<?= BASE_URL ?>/views/reports.php" class="btn btn-gradient-info btn-sm"><i class="fa fa-chart-bar mr-1"></i> Reports</a>
+                <?php endif; ?>
             </div>
         </div>
     </div>
 </div>
 <div class="dashboard-main px-2 px-lg-4 pt-2">
-    <!-- Stat Cards Row -->
+
+<?php if ($is_cashier): ?>
+    <!-- CASHIER DASHBOARD - Payment Statistics Only -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="alert alert-info">
+                <i class="fas fa-cash-register mr-2"></i>
+                <strong>Cashier Dashboard</strong> - Showing your payment collection statistics
+            </div>
+        </div>
+    </div>
+
+    <!-- Cashier Payment Stats Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-md-6">
+            <div class="card border-0 shadow-sm h-100 gradient-card bg-success text-white">
+                <div class="card-body text-center">
+                    <div class="mb-2"><i class="fas fa-coins fa-2x"></i></div>
+                    <div class="h5 mb-1 font-weight-bold">Total Collected</div>
+                    <div class="h3 mb-0 font-weight-bold">₵<?= number_format($total_amount_cashier, 2) ?></div>
+                    <div class="small opacity-75"><?= number_format($total_payments_cashier) ?> payments</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-6">
+            <div class="card border-0 shadow-sm h-100 gradient-card bg-info text-white">
+                <div class="card-body text-center">
+                    <div class="mb-2"><i class="fas fa-calendar-day fa-2x"></i></div>
+                    <div class="h5 mb-1 font-weight-bold">Today's Collections</div>
+                    <div class="h3 mb-0 font-weight-bold">₵<?= number_format($today_amount_cashier, 2) ?></div>
+                    <div class="small opacity-75"><?= number_format($today_payments_cashier) ?> payments</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-4">
+            <div class="card border-0 shadow-sm h-100 gradient-card bg-warning text-white">
+                <div class="card-body text-center">
+                    <div class="mb-2"><i class="fas fa-calendar-week fa-2x"></i></div>
+                    <div class="h5 mb-1 font-weight-bold">This Week</div>
+                    <div class="h3 mb-0 font-weight-bold"><?= number_format($week_payments_cashier) ?></div>
+                    <div class="small opacity-75">payments</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-4">
+            <div class="card border-0 shadow-sm h-100 gradient-card bg-primary text-white">
+                <div class="card-body text-center">
+                    <div class="mb-2"><i class="fas fa-calendar-alt fa-2x"></i></div>
+                    <div class="h5 mb-1 font-weight-bold">This Month</div>
+                    <div class="h3 mb-0 font-weight-bold"><?= number_format($month_payments_cashier) ?></div>
+                    <div class="small opacity-75">payments</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-4">
+            <div class="card border-0 shadow-sm h-100 gradient-card bg-secondary text-white">
+                <div class="card-body text-center">
+                    <div class="mb-2"><i class="fas fa-chart-line fa-2x"></i></div>
+                    <div class="h5 mb-1 font-weight-bold">Average Payment</div>
+                    <div class="h3 mb-0 font-weight-bold">₵<?= $total_payments_cashier > 0 ? number_format($total_amount_cashier / $total_payments_cashier, 2) : '0.00' ?></div>
+                    <div class="small opacity-75">per transaction</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cashier Payment Types and Recent Payments -->
+    <div class="row g-3 mb-4">
+        <div class="col-lg-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-gradient-primary text-white font-weight-bold py-2 d-flex align-items-center">
+                    <i class="fas fa-list-alt mr-2"></i> Your Payment Types Breakdown
+                </div>
+                <div class="card-body p-2">
+                    <?php if ($payment_types_cashier && $payment_types_cashier->num_rows > 0): ?>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-borderless mb-0">
+                                <thead>
+                                    <tr class="text-muted small">
+                                        <th>Payment Type</th>
+                                        <th class="text-center">Count</th>
+                                        <th class="text-right">Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php while ($pt = $payment_types_cashier->fetch_assoc()): ?>
+                                        <tr>
+                                            <td class="font-weight-bold"><?= htmlspecialchars($pt['name'] ?? 'Unknown') ?></td>
+                                            <td class="text-center"><?= number_format($pt['count']) ?></td>
+                                            <td class="text-right font-weight-bold text-success">₵<?= number_format($pt['total_amount'], 2) ?></td>
+                                        </tr>
+                                    <?php endwhile; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php else: ?>
+                        <div class="text-center text-muted py-3">
+                            <i class="fas fa-info-circle fa-2x mb-2"></i>
+                            <p>No payment data available</p>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-gradient-success text-white font-weight-bold py-2 d-flex align-items-center">
+                    <i class="fas fa-history mr-2"></i> Your Recent Payments
+                </div>
+                <div class="card-body p-2">
+                    <?php if ($recent_payments_cashier && $recent_payments_cashier->num_rows > 0): ?>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-borderless mb-0">
+                                <tbody>
+                                    <?php while ($rp = $recent_payments_cashier->fetch_assoc()): ?>
+                                        <tr>
+                                            <td>
+                                                <div class="font-weight-bold"><?= htmlspecialchars(trim(($rp['first_name'] ?? '') . ' ' . ($rp['last_name'] ?? '')) ?: 'Unknown') ?></div>
+                                                <div class="small text-muted"><?= htmlspecialchars($rp['payment_type'] ?? 'Unknown') ?> • <?= htmlspecialchars($rp['identifier'] ?? 'N/A') ?></div>
+                                            </td>
+                                            <td class="text-right">
+                                                <div class="font-weight-bold text-success">₵<?= number_format($rp['amount'], 2) ?></div>
+                                                <div class="small text-muted"><?= date('M j, Y', strtotime($rp['payment_date'])) ?></div>
+                                            </td>
+                                        </tr>
+                                    <?php endwhile; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php else: ?>
+                        <div class="text-center text-muted py-3">
+                            <i class="fas fa-info-circle fa-2x mb-2"></i>
+                            <p>No recent payments</p>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cashier Quick Actions -->
+    <div class="row g-3 mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-gradient-info text-white font-weight-bold py-2">
+                    <i class="fas fa-bolt mr-2"></i> Quick Actions
+                </div>
+                <div class="card-body p-3">
+                    <div class="row">
+                        <div class="col-6 col-md-3 mb-2">
+                            <a href="<?= BASE_URL ?>/views/payment_form.php" class="btn btn-success btn-block">
+                                <i class="fas fa-plus mr-1"></i> New Payment
+                            </a>
+                        </div>
+                        <div class="col-6 col-md-3 mb-2">
+                            <a href="<?= BASE_URL ?>/views/payment_bulk.php" class="btn btn-primary btn-block">
+                                <i class="fas fa-layer-group mr-1"></i> Bulk Payment
+                            </a>
+                        </div>
+                        <div class="col-6 col-md-3 mb-2">
+                            <a href="<?= BASE_URL ?>/views/payment_list.php" class="btn btn-info btn-block">
+                                <i class="fas fa-list mr-1"></i> Payment History
+                            </a>
+                        </div>
+                        <div class="col-6 col-md-3 mb-2">
+                            <a href="<?= BASE_URL ?>/views/reports.php" class="btn btn-warning btn-block">
+                                <i class="fas fa-chart-bar mr-1"></i> Reports
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<?php else: ?>
+    <!-- REGULAR DASHBOARD - Full Statistics -->
+    <!-- Member Stats Cards -->
     <div class="row g-2 mb-3">
         <div class="col-6 col-md-3 mb-2">
             <div class="info-box bg-primary shadow-sm">
@@ -240,7 +498,8 @@ $user_role = isset($_SESSION['role_name']) ? $_SESSION['role_name'] : 'Admin';
             </div>
         </div>
     </div>
-    <!-- Member Stats Cards -->
+
+    <!-- Additional Member Stats Cards -->
     <div class="row g-2 mb-3">
         <div class="col-6 col-md-3 mb-2">
             <div class="card bg-light shadow-sm">
@@ -1659,6 +1918,8 @@ function updateDashboardData() {
     // Implementation depends on your real-time requirements
 }
 </script>
+
+<?php endif; // End cashier conditional ?>
 
 <?php
 $page_content = ob_get_clean();
