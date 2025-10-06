@@ -216,7 +216,7 @@ ob_start();
                                         </div>
                                         <div class="form-group col-md-2">
                                             <label for="bulk_payment_date">Date <span class="text-danger">*</span></label>
-                                            <input type="date" class="form-control form-control-lg" id="bulk_payment_date" name="bulk_payment_date" value="<?= date('Y-m-d') ?>" required>
+                                            <input type="date" class="form-control form-control-lg" id="bulk_payment_date" name="bulk_payment_date" value="<?= date('Y-m-d') ?>" read-only required>
                                         </div>
                                         <div class="form-group col-md-2">
                                             <label for="bulk_payment_period">Period <span class="text-danger">*</span></label>
