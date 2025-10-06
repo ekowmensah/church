@@ -48,8 +48,8 @@ ob_start();
         <!-- <h1 class="h3 mb-0 text-gray-800"><i class="fas fa-university mr-2"></i>Payments</h1>  -->
         <a href="payment_list.php" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back to List</a>
     </div>
-    <div class="row justify-content-center">
-        <div class="col-lg-8">
+    <div class="row">
+        <div class="col-12">
             <div class="card shadow mb-4">
                 <div class="card-header py-3 bg-primary text-white d-flex align-items-center">
                     <h6 class="m-0 font-weight-bold flex-grow-1"><i class="fas fa-user-check mr-2"></i>Find Member</h6>
@@ -57,11 +57,11 @@ ob_start();
                 <div class="card-body pb-1">
                     <form id="searchMemberForm" autocomplete="off">
                         <div class="form-row align-items-center">
-                            <div class="col-md-8 mb-2">
+                            <div class="col-lg-9 col-md-8 mb-2">
                                 <label for="crn">CRN/SRN <span class="text-danger">*</span></label>
                                 <input type="text" class="form-control form-control-lg" id="crn" name="crn" maxlength="50" placeholder="Enter CRN or SRN" required autocomplete="off">
                             </div>
-                            <div class="col-md-4 mb-2 d-flex align-items-end">
+                            <div class="col-lg-3 col-md-4 mb-2 d-flex align-items-end">
                                 <button type="submit" class="btn btn-info btn-lg w-100" id="findMemberBtn"><i class="fas fa-search"></i> Find</button>
                                 <span id="crn-spinner" class="spinner-border text-primary ml-2 d-none" style="width:1.5rem;height:1.5rem;vertical-align:middle;" role="status"><span class="sr-only">Loading...</span></span>
                             </div>
@@ -74,20 +74,20 @@ ob_start();
             <div id="payment-panels" class="d-none animate__animated animate__fadeIn">
                  <ul class="nav nav-tabs mb-3" id="paymentTab" role="tablist">
                     <li class="nav-item">
-                        <a class="nav-link active" id="single-tab" data-toggle="tab" href="#singlePanel" role="tab" aria-controls="singlePanel" aria-selected="true"><i class="fas fa-money-bill-wave"></i> Single Payment</a>
+                        <a class="nav-link" id="single-tab" data-toggle="tab" href="#singlePanel" role="tab" aria-controls="singlePanel" aria-selected="false"><i class="fas fa-money-bill-wave"></i> Single Payment</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" id="bulk-tab" data-toggle="tab" href="#bulkPanel" role="tab" aria-controls="bulkPanel" aria-selected="false"><i class="fas fa-layer-group"></i> Multiple Payment</a>
+                        <a class="nav-link active" id="bulk-tab" data-toggle="tab" href="#bulkPanel" role="tab" aria-controls="bulkPanel" aria-selected="true"><i class="fas fa-layer-group"></i> Multiple Payment</a>
                     </li>
                 </ul> 
                 <div class="tab-content" id="paymentTabContent">
                     <!-- Single Payment Panel -->
-                    <div class="tab-pane fade show active" id="singlePanel" role="tabpanel" aria-labelledby="single-tab">
+                    <div class="tab-pane fade" id="singlePanel" role="tabpanel" aria-labelledby="single-tab">
                         <form id="singlePaymentForm" autocomplete="off">
                             <input type="hidden" name="member_id" id="single_member_id">
 <input type="hidden" name="sundayschool_id" id="single_sundayschool_id">
                             <div class="form-row">
-                                <div class="form-group col-md-4">
+                                <div class="form-group col-xl-3 col-lg-4 col-md-6">
                                     <label for="single_payment_type_id">Payment Type <span class="text-danger">*</span></label>
                                     <select class="form-control form-control-lg" id="single_payment_type_id" name="payment_type_id" required>
                                         <option value="">-- Select Type --</option>
@@ -96,30 +96,23 @@ ob_start();
                                         <?php endwhile; endif; ?>
                                     </select>
                                 </div>
-                                <div class="form-group col-md-3">
+                                <div class="form-group col-xl-2 col-lg-3 col-md-6">
                                     <label for="single_amount">Amount (₵) <span class="text-danger">*</span></label>
                                     <input type="number" step="0.01" min="0" class="form-control form-control-lg" id="single_amount" name="amount" placeholder="e.g. 100.00" required>
                                 </div>
-                                <div class="form-group col-md-3">
+                                <div class="form-group col-xl-2 col-lg-3 col-md-6">
                                     <label for="single_mode">Mode <span class="text-danger">*</span></label>
                                     <select class="form-control form-control-lg" id="single_mode" name="mode" required>
                                         <option value="">-- Select --</option>
                                         <option value="Cash">Cash</option>
-
                                         <option value="Cheque">Cheque</option>
-                                        <!-- <option value="Transfer">Transfer</option>
-                                        
-                                        <option value="POS">POS</option>
-                                        <option value="Online">Online</option>
-                                        <option value="Offline">Offline</option>
-                                        <option value="Other">Other</option> -->
                                     </select>
                                 </div>
-                                <div class="form-group col-md-2">
+                                <div class="form-group col-xl-2 col-lg-2 col-md-6">
                                     <label for="single_payment_date">Date <span class="text-danger">*</span></label>
                                     <input type="date" class="form-control form-control-lg" id="single_payment_date" name="payment_date" value="<?= date('Y-m-d') ?>" readonly required>
                                 </div>
-                                <div class="form-group col-md-6">
+                                <div class="form-group col-xl-3 col-lg-12 col-md-12">
                                     <label for="single_payment_period">Period <span class="text-danger">*</span></label>
                                     <select class="form-control form-control-lg" id="single_payment_period" name="payment_period" required>
                                         <option value="">-- Select Period --</option>
@@ -186,13 +179,13 @@ ob_start();
                         </form>
                     </div>
                     <!-- Bulk Payment Panel -->
-                    <div class="tab-pane fade" id="bulkPanel" role="tabpanel" aria-labelledby="bulk-tab">
+                    <div class="tab-pane fade show active" id="bulkPanel" role="tabpanel" aria-labelledby="bulk-tab">
                         <div class="card border-primary shadow-sm mb-2">
                             <div class="card-header bg-primary text-white py-2"><b>Bulk Payment Entry</b></div>
                             <div class="card-body">
                                 <form id="bulkPaymentEntryForm" autocomplete="off" onsubmit="return false;">
                                     <div class="form-row align-items-end">
-                                        <div class="form-group col-md-4">
+                                        <div class="form-group col-xl-3 col-lg-4 col-md-6">
                                             <label for="bulk_payment_type_id">Payment Type <span class="text-danger">*</span></label>
                                             <select class="form-control form-control-lg" id="bulk_payment_type_id" name="bulk_payment_type_id">
                                                 <option value="">-- Select Type --</option>
@@ -202,11 +195,11 @@ ob_start();
                                                 <?php endwhile; endif; ?>
                                             </select>
                                         </div>
-                                        <div class="form-group col-md-2">
+                                        <div class="form-group col-xl-2 col-lg-3 col-md-6">
                                             <label for="bulk_amount">Amount (₵) <span class="text-danger">*</span></label>
                                             <input type="number" step="0.01" min="0" class="form-control form-control-lg" id="bulk_amount" name="bulk_amount" placeholder="e.g. 100.00">
                                         </div>
-                                        <div class="form-group col-md-2">
+                                        <div class="form-group col-xl-2 col-lg-3 col-md-6">
                                             <label for="bulk_mode">Mode <span class="text-danger">*</span></label>
                                             <select class="form-control form-control-lg" id="bulk_mode" name="bulk_mode">
                                                 <option value="">-- Select --</option>
@@ -214,11 +207,11 @@ ob_start();
                                                 <option value="Cheque">Cheque</option>
                                             </select>
                                         </div>
-                                        <div class="form-group col-md-2">
+                                        <div class="form-group col-xl-2 col-lg-2 col-md-6">
                                             <label for="bulk_payment_date">Date <span class="text-danger">*</span></label>
-                                            <input type="date" class="form-control form-control-lg" id="bulk_payment_date" name="bulk_payment_date" value="<?= date('Y-m-d') ?>" read-only required>
+                                            <input type="date" class="form-control form-control-lg" id="bulk_payment_date" name="bulk_payment_date" value="<?= date('Y-m-d') ?>" readonly required>
                                         </div>
-                                        <div class="form-group col-md-2">
+                                        <div class="form-group col-xl-3 col-lg-12 col-md-12">
                                             <label for="bulk_payment_period">Period <span class="text-danger">*</span></label>
                                             <select class="form-control form-control-lg" id="bulk_payment_period" name="bulk_payment_period" required>
                                                 <option value="">-- Select Period --</option>
