@@ -1,6 +1,7 @@
 <?php
 // reports/payment_types_today.php
 // Modern rewrite: Total Payment Types for Today
+session_start();
 require_once __DIR__.'/../../config/config.php';
 require_once __DIR__.'/../../helpers/auth.php';
 require_once __DIR__.'/../../helpers/permissions.php';
@@ -17,7 +18,7 @@ if (!is_logged_in()) {
 $is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
                   (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
 
-if (!$is_super_admin && !has_permission('view_payment_report')) {
+if (!$is_super_admin && !has_permission('view_payment_types_today')) {
     http_response_code(403);
     if (file_exists(__DIR__.'/../../views/errors/403.php')) {
         include __DIR__.'/../../views/errors/403.php';
