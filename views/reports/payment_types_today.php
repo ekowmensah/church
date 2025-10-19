@@ -36,24 +36,48 @@ $can_export = $is_super_admin || has_permission('export_payment_report');
 
 $date = date('Y-m-d');
 
+// Get current user ID for filtering
+$current_user_id = $_SESSION['user_id'] ?? 0;
+
 // Fetch payment types summary for today
-$sql = "SELECT pt.name AS payment_type, COUNT(p.id) AS total_count, SUM(p.amount) AS total_amount
-        FROM payments p
-        JOIN payment_types pt ON p.payment_type_id = pt.id
-        WHERE DATE(p.payment_date) = ?
-        GROUP BY pt.id
-        ORDER BY total_amount DESC";
-$stmt = $conn->prepare($sql);
-$stmt->bind_param('s', $date);
+// Super admin sees all payments, regular users see only their own payments
+if ($is_super_admin) {
+    $sql = "SELECT pt.name AS payment_type, COUNT(p.id) AS total_count, SUM(p.amount) AS total_amount
+            FROM payments p
+            JOIN payment_types pt ON p.payment_type_id = pt.id
+            WHERE DATE(p.payment_date) = ?
+            GROUP BY pt.id
+            ORDER BY total_amount DESC";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param('s', $date);
+} else {
+    $sql = "SELECT pt.name AS payment_type, COUNT(p.id) AS total_count, SUM(p.amount) AS total_amount
+            FROM payments p
+            JOIN payment_types pt ON p.payment_type_id = pt.id
+            WHERE DATE(p.payment_date) = ? AND p.recorded_by = ?
+            GROUP BY pt.id
+            ORDER BY total_amount DESC";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param('si', $date, $current_user_id);
+}
+
 $stmt->execute();
 $result = $stmt->get_result();
 $types = $result->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
-// Optionally, fetch the total sum for all types for a summary footer
-$total_sql = "SELECT SUM(amount) AS total_amount FROM payments WHERE DATE(payment_date) = ?";
-$total_stmt = $conn->prepare($total_sql);
-$total_stmt->bind_param('s', $date);
+// Fetch the total sum for all types for a summary footer
+// Apply same user filtering logic
+if ($is_super_admin) {
+    $total_sql = "SELECT SUM(amount) AS total_amount FROM payments WHERE DATE(payment_date) = ?";
+    $total_stmt = $conn->prepare($total_sql);
+    $total_stmt->bind_param('s', $date);
+} else {
+    $total_sql = "SELECT SUM(amount) AS total_amount FROM payments WHERE DATE(payment_date) = ? AND recorded_by = ?";
+    $total_stmt = $conn->prepare($total_sql);
+    $total_stmt->bind_param('si', $date, $current_user_id);
+}
+
 $total_stmt->execute();
 $total_stmt->bind_result($grand_total);
 $total_stmt->fetch();
@@ -80,7 +104,7 @@ ob_start();
             <div class="card report-card shadow-lg animate__animated animate__fadeIn my-4">
                 <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between py-3">
                     <div><i class="fas fa-list-alt fa-lg mr-2" data-toggle="tooltip" title="Today's Payment Types"></i>
-                        <span>Total Payment Type(s) for <?= date('l, F j, Y', strtotime($date)) ?></span>
+                        <span>Total Payment Type(s) for <?= date('l, F j, Y', strtotime($date)) ?><?= !$is_super_admin ? ' (My Payments)' : '' ?></span>
                     </div>
                     <div>
                         <?php render_print_button('Print report'); ?>

@@ -2410,3 +2410,85 @@ Processing as CRN only. member_ids=[1286]
 SUCCESS: Inserted payment ID 672 for member 1286, type 4, amount 2
 SUCCESS: Inserted payment ID 673 for member 1286, type 8, amount 1
 SUCCESS: Inserted payment ID 674 for member 1286, type 14, amount 1
+
+--- BULK PAYMENT SUBMIT 2025-10-19 18:10:48 ---
+{"member_ids":[1291],"sundayschool_ids":[],"amounts":{"1291":{"14":"50"}},"church_id":7,"payment_date":"2025-10-19","descriptions":{"1291":{"14":"Payment for October 2025 Monthly Offering/Kofi & Ama"}},"modes":{"1291":{"14":"Cash"}},"periods":{"1291":{"14":"2025-10-01"}},"period_descriptions":{"1291":{"14":"October 2025"}}}
+
+====
+2025-10-19T18:10:48+02:00
+{
+    "member_ids": [
+        1291
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1291": {
+            "14": "50"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-10-19",
+    "descriptions": {
+        "1291": {
+            "14": "Payment for October 2025 Monthly Offering\/Kofi & Ama"
+        }
+    },
+    "modes": {
+        "1291": {
+            "14": "Cash"
+        }
+    },
+    "periods": {
+        "1291": {
+            "14": "2025-10-01"
+        }
+    },
+    "period_descriptions": {
+        "1291": {
+            "14": "October 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1291]
+SUCCESS: Inserted payment ID 690 for member 1291, type 14, amount 50
+
+--- BULK PAYMENT SUBMIT 2025-10-19 18:16:10 ---
+{"member_ids":[1169],"sundayschool_ids":[],"amounts":{"1169":{"8":"100"}},"church_id":7,"payment_date":"2025-10-19","descriptions":{"1169":{"8":"Payment for December 2024 Charity Fund"}},"modes":{"1169":{"8":"Cash"}},"periods":{"1169":{"8":"2024-12-01"}},"period_descriptions":{"1169":{"8":"December 2024"}}}
+
+====
+2025-10-19T18:16:10+02:00
+{
+    "member_ids": [
+        1169
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "1169": {
+            "8": "100"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-10-19",
+    "descriptions": {
+        "1169": {
+            "8": "Payment for December 2024 Charity Fund"
+        }
+    },
+    "modes": {
+        "1169": {
+            "8": "Cash"
+        }
+    },
+    "periods": {
+        "1169": {
+            "8": "2024-12-01"
+        }
+    },
+    "period_descriptions": {
+        "1169": {
+            "8": "December 2024"
+        }
+    }
+}
+Processing as CRN only. member_ids=[1169]
+SUCCESS: Inserted payment ID 691 for member 1169, type 8, amount 100
