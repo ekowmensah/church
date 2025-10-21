@@ -284,7 +284,76 @@ if ($is_cashier && $current_user_id > 0) {
         <div class="col-12">
             <div class="alert alert-info">
                 <i class="fas fa-cash-register mr-2"></i>
-                <strong>Cashier Dashboard</strong> - Showing your payment collection statistics
+                <strong>Cashier Dashboard</strong> - Showing your payment collection statistics and membership overview
+            </div>
+        </div>
+    </div>
+
+    <!-- Membership Stats Cards for Cashier -->
+    <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3 mb-2">
+            <div class="info-box bg-primary shadow-sm">
+                <span class="info-box-icon bg-gradient-primary elevation-1"><i class="fas fa-user-check"></i></span>
+                <div class="info-box-content">
+                    <span class="info-box-text">Full Members</span>
+                    <span class="info-box-number h4 mb-0"><?= number_format($full_member) ?></span>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3 mb-2">
+            <div class="info-box bg-success shadow-sm">
+                <span class="info-box-icon bg-gradient-success elevation-1"><i class="fas fa-user-graduate"></i></span>
+                <div class="info-box-content">
+                    <span class="info-box-text">Catechumens</span>
+                    <span class="info-box-number h4 mb-0"><?= number_format($catechumen) ?></span>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3 mb-2">
+            <div class="info-box bg-warning shadow-sm">
+                <span class="info-box-icon bg-gradient-warning elevation-1"><i class="fas fa-child"></i></span>
+                <div class="info-box-content">
+                    <span class="info-box-text">Junior Members</span>
+                    <span class="info-box-number h4 mb-0"><?= number_format($junior_members) ?></span>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3 mb-2">
+            <div class="info-box bg-danger shadow-sm">
+                <span class="info-box-icon bg-gradient-danger elevation-1"><i class="fas fa-user-slash"></i></span>
+                <div class="info-box-content">
+                    <span class="info-box-text">Adherents</span>
+                    <span class="info-box-number h4 mb-0"><?= number_format($adherent) ?></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Additional Member Stats Cards for Cashier -->
+    <div class="row g-2 mb-3">
+        <div class="col-6 col-md-4 mb-2">
+            <div class="card bg-light shadow-sm">
+                <div class="card-body text-center p-2">
+                    <div class="text-secondary small">Christian Community</div>
+                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-users mr-1 text-primary"></i><?= number_format($registered_members) ?></div>
+                    <div class="text-muted small">Total Registered</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 mb-2">
+            <div class="card bg-light shadow-sm">
+                <div class="card-body text-center p-2">
+                    <div class="text-secondary small">Pending Registration</div>
+                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-user-clock mr-1 text-warning"></i><?= number_format($pending_registration) ?></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 mb-2">
+            <div class="card bg-light shadow-sm">
+                <div class="card-body text-center p-2">
+                    <div class="text-secondary small">Members with No Payments</div>
+                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-user-times mr-1 text-danger"></i><?= number_format($members_no_payments) ?></div>
+                </div>
             </div>
         </div>
     </div>
