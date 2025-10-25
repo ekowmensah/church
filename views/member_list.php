@@ -101,6 +101,61 @@ if (!empty($_GET['status_filter'])) {
 // Build the main query
 $where_clause = implode(' AND ', $where_conditions);
 
+// Build Sunday School WHERE clause with similar filters
+$ss_where_conditions = [];
+$ss_params = [];
+$ss_param_types = "";
+
+// Search filter for Sunday School
+if (!empty($_GET['search'])) {
+    $search = '%' . $_GET['search'] . '%';
+    $ss_where_conditions[] = "(CONCAT(s.last_name, ' ', s.first_name, ' ', s.middle_name) LIKE ? OR s.srn LIKE ? OR s.contact LIKE ?)";
+    $ss_params[] = $search;
+    $ss_params[] = $search;
+    $ss_params[] = $search;
+    $ss_param_types .= "sss";
+}
+
+// Church filter for Sunday School
+if (!empty($_GET['church_id'])) {
+    $ss_where_conditions[] = "s.church_id = ?";
+    $ss_params[] = $_GET['church_id'];
+    $ss_param_types .= "i";
+}
+
+// Bible class filter for Sunday School
+if (!empty($_GET['class_id'])) {
+    $ss_where_conditions[] = "s.class_id = ?";
+    $ss_params[] = $_GET['class_id'];
+    $ss_param_types .= "i";
+}
+
+// Gender filter for Sunday School
+if (!empty($_GET['gender'])) {
+    $ss_where_conditions[] = "s.gender = ?";
+    $ss_params[] = $_GET['gender'];
+    $ss_param_types .= "s";
+}
+
+// Day born filter for Sunday School
+if (!empty($_GET['day_born'])) {
+    $ss_where_conditions[] = "s.dayborn = ?";
+    $ss_params[] = $_GET['day_born'];
+    $ss_param_types .= "s";
+}
+
+// Status filter - only include Sunday School if juvenile is selected or no status filter
+$include_sunday_school = true;
+if (!empty($_GET['status_filter']) && $_GET['status_filter'] !== 'juvenile') {
+    $include_sunday_school = false;
+}
+
+$ss_where_clause = !empty($ss_where_conditions) ? implode(' AND ', $ss_where_conditions) : '1=1';
+
+// Combine all parameters for prepared statements
+$all_params = array_merge($params, $ss_params);
+$all_param_types = $param_types . $ss_param_types;
+
 // Handle CSV export
 if (isset($_GET['export']) && $_GET['export'] === 'csv' && $can_export) {
     header('Content-Type: text/csv');
@@ -133,11 +188,16 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv' && $can_export) {
     FROM sunday_school s
     LEFT JOIN churches c ON s.church_id = c.id
     LEFT JOIN bible_classes cl ON s.class_id = cl.id
-    WHERE 1=1
+    WHERE " . ($include_sunday_school ? $ss_where_clause : "1=0") . "
     
     ORDER BY last_name ASC, first_name ASC";
     
-    $export_result = $conn->query($export_sql);
+    $export_stmt = $conn->prepare($export_sql);
+    if (!empty($all_params)) {
+        $export_stmt->bind_param($all_param_types, ...$all_params);
+    }
+    $export_stmt->execute();
+    $export_result = $export_stmt->get_result();
     
     while ($row = $export_result->fetch_assoc()) {
         // Determine status based on member type
@@ -203,11 +263,11 @@ $count_sql = "SELECT COUNT(*) as total FROM (
     SELECT s.id FROM sunday_school s 
     LEFT JOIN churches c ON s.church_id = c.id 
     LEFT JOIN bible_classes cl ON s.class_id = cl.id 
-    WHERE 1=1
+    WHERE " . ($include_sunday_school ? $ss_where_clause : "1=0") . "
 ) as combined_members";
 $count_stmt = $conn->prepare($count_sql);
-if (!empty($params)) {
-    $count_stmt->bind_param($param_types, ...$params);
+if (!empty($all_params)) {
+    $count_stmt->bind_param($all_param_types, ...$all_params);
 }
 $count_stmt->execute();
 $total_members = $count_stmt->get_result()->fetch_assoc()['total'];
@@ -244,15 +304,15 @@ $sql = "
         FROM sunday_school s
         LEFT JOIN churches c ON s.church_id = c.id
         LEFT JOIN bible_classes cl ON s.class_id = cl.id
-        WHERE 1=1
+        WHERE " . ($include_sunday_school ? $ss_where_clause : "1=0") . "
     ) as combined_results
     ORDER BY " . ($sort_field === 'status' ? 'computed_status' : $sort_field) . " $sort_direction, last_name ASC, first_name ASC
     $limit_clause
 ";
 
 $stmt = $conn->prepare($sql);
-if (!empty($params)) {
-    $stmt->bind_param($param_types, ...$params);
+if (!empty($all_params)) {
+    $stmt->bind_param($all_param_types, ...$all_params);
 }
 $stmt->execute();
 $members = $stmt->get_result();

@@ -46,3 +46,4 @@ test_hubtel_sms.php
 fix_sunday_school_member_ids.sql
 logs/birthday_sms_2025-10-04.log
 views/bulk_payment_debug.log
+permissions.sql

@@ -19,7 +19,7 @@ function get_payment_sms_message($member_name, $amount, $payment_type = '', $dat
         $payment_part = '';
     }
     
-    return "Dear $member_name, your payment of ₵$amount$payment_part has been received by Freeman Methodist Church - KM. Thank You!";
+    return "Dear $member_name, your payment of GHS $amount$payment_part has been received by Freeman Methodist Church - KM. Thank You, and God bless you more!!";
 }
 
 // Special SMS template for harvest payments
@@ -29,7 +29,7 @@ function get_harvest_payment_sms_message($member_name, $amount, $church_name, $d
     $year = date('Y');
     $description = $description ?: 'Harvest Payment';
     
-    return "Hi $member_name, your payment of ₵$amount has been paid to Freeman Methodist Church - KM as $description. Your Total Harvest amount for the year $year is ₵$yearly_total";
+    return "Hi $member_name, your payment of GHS $amount for $description has been recieved by Freeman Methodist Church - KM. Your Total Harvest contribution for $year is now GHS $yearly_total. Thank you, and God bless you more!";
 }
 
 // Helper function to calculate yearly harvest total for a member

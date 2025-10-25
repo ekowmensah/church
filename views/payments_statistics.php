@@ -6,7 +6,6 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 require_once '../config/config.php';
 require_once '../helpers/auth.php';
 require_once '../helpers/permissions.php';
-require_once '../includes/admin_auth.php';
 require_once '../includes/report_ui_helpers.php';
 
 // Only allow logged-in users
@@ -31,6 +30,13 @@ if (!$is_super_admin && !has_permission('payment_statistics')) {
     exit;
 }
 
+// Detect if user is a cashier
+$current_user_id = $_SESSION['user_id'] ?? 0;
+$is_cashier = false;
+if (isset($_SESSION['role_name']) && strtolower($_SESSION['role_name']) === 'cashier') {
+    $is_cashier = true;
+}
+
 // --- CONFIG ---
 $date = isset($_GET['date']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date']) ? $_GET['date'] : date('Y-m-d');
 $currency = '₵';
@@ -53,8 +59,13 @@ $denominations = [
 // --- FETCH TOTAL CASH ---
 $total_cash = 0.00;
 try {
-    $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND mode='cash'");
-    $stmt->bind_param('s', $date);
+    if ($is_cashier) {
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND mode='cash' AND recorded_by=?");
+        $stmt->bind_param('si', $date, $current_user_id);
+    } else {
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND mode='cash'");
+        $stmt->bind_param('s', $date);
+    }
     $stmt->execute();
     $stmt->bind_result($total_cash);
     $stmt->fetch();
@@ -122,9 +133,14 @@ $grand_total = $total_cash + $cheque_entry['total'] + $momo_entry['total'];
     </div>
     <div class="row justify-content-center">
         <div class="col-12 col-md-10 col-lg-8">
+            <?php if ($is_cashier): ?>
+            <div class="alert alert-info mb-3">
+                <i class="fas fa-info-circle mr-2"></i><strong>Cashier View:</strong> Showing only payments recorded by you.
+            </div>
+            <?php endif; ?>
             <div class="card shadow-sm mb-4">
                 <div class="card-header bg-light d-flex align-items-center justify-content-between">
-                    <div><i class="fas fa-chart-bar text-primary mr-2"></i>Payment Statistics</div>
+                    <div><i class="fas fa-chart-bar text-primary mr-2"></i>Payment Statistics<?php if ($is_cashier) echo ' <span class="badge badge-info">My Payments</span>'; ?></div>
                     <button class="btn btn-success btn-sm" data-toggle="modal" data-target="#denomModal"><i class="fas fa-plus-circle mr-1"></i>Add Payment Analysis</button>
                 </div>
                 <div class="card-body">
@@ -241,14 +257,25 @@ $grand_total = $total_cash + $cheque_entry['total'] + $momo_entry['total'];
                                 // Fetch payment type breakdown
                                 $types = [];
                                 try {
-                                    $sql = "SELECT pt.name AS payment_type, SUM(p.amount) AS total_amount, COUNT(p.id) AS count
-                                            FROM payments p
-                                            JOIN payment_types pt ON p.payment_type_id = pt.id
-                                            WHERE DATE(p.payment_date) = ?
-                                            GROUP BY pt.id
-                                            ORDER BY total_amount DESC";
-                                    $stmt = $conn->prepare($sql);
-                                    $stmt->bind_param('s', $date);
+                                    if ($is_cashier) {
+                                        $sql = "SELECT pt.name AS payment_type, SUM(p.amount) AS total_amount, COUNT(p.id) AS count
+                                                FROM payments p
+                                                JOIN payment_types pt ON p.payment_type_id = pt.id
+                                                WHERE DATE(p.payment_date) = ? AND p.recorded_by = ?
+                                                GROUP BY pt.id
+                                                ORDER BY total_amount DESC";
+                                        $stmt = $conn->prepare($sql);
+                                        $stmt->bind_param('si', $date, $current_user_id);
+                                    } else {
+                                        $sql = "SELECT pt.name AS payment_type, SUM(p.amount) AS total_amount, COUNT(p.id) AS count
+                                                FROM payments p
+                                                JOIN payment_types pt ON p.payment_type_id = pt.id
+                                                WHERE DATE(p.payment_date) = ?
+                                                GROUP BY pt.id
+                                                ORDER BY total_amount DESC";
+                                        $stmt = $conn->prepare($sql);
+                                        $stmt->bind_param('s', $date);
+                                    }
                                     $stmt->execute();
                                     $result = $stmt->get_result();
                                     while ($row = $result->fetch_assoc()) {
