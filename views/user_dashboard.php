@@ -39,17 +39,17 @@ $can_view = true; // Already validated above
 // Member Statistics - Strict Classification Based on Confirmed/Baptized Status
 // Only count members with proper confirmed/baptized values set
 
-// Get adherents (explicitly marked as adherents)
-$adherent = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE membership_status = 'Adherent'")->fetch_assoc()['cnt'];
+// Get adherents (explicitly marked as adherents, active only)
+$adherent = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE membership_status = 'Adherent' AND status = 'active'")->fetch_assoc()['cnt'];
 
 // Get junior members (Sunday School)
 $junior_members = $conn->query("SELECT COUNT(*) as cnt FROM sunday_school")->fetch_assoc()['cnt'];
 
-// Full Members: Both baptized AND confirmed (excluding adherents)
-$full_member = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE LOWER(confirmed) = 'yes' AND LOWER(baptized) = 'yes' AND (membership_status IS NULL OR membership_status != 'Adherent')")->fetch_assoc()['cnt'];
+// Full Members: Both baptized AND confirmed (excluding adherents, active only)
+$full_member = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE LOWER(confirmed) = 'yes' AND LOWER(baptized) = 'yes' AND (membership_status IS NULL OR membership_status != 'Adherent') AND status = 'active'")->fetch_assoc()['cnt'];
 
-// Catechumens: Either baptized OR confirmed (but not both) (excluding adherents and full members)
-$catechumen = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE (LOWER(confirmed) = 'yes' OR LOWER(baptized) = 'yes') AND NOT (LOWER(confirmed) = 'yes' AND LOWER(baptized) = 'yes') AND (membership_status IS NULL OR membership_status != 'Adherent')")->fetch_assoc()['cnt'];
+// Catechumens: Either baptized OR confirmed (but not both) (excluding adherents and full members, active only)
+$catechumen = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE (LOWER(confirmed) = 'yes' OR LOWER(baptized) = 'yes') AND NOT (LOWER(confirmed) = 'yes' AND LOWER(baptized) = 'yes') AND (membership_status IS NULL OR membership_status != 'Adherent') AND status = 'active'")->fetch_assoc()['cnt'];
 
 // Total Members = Full Members + Catechumens + Junior Members + Adherents
 // Members without proper confirmed/baptized values are considered "created but not registered yet"
