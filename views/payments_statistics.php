@@ -106,44 +106,52 @@ try {
     $total_cash = 0.00;
     $total_cheque = 0.00;
 }
-// --- HANDLE FORM SUBMIT ---
+// --- LOAD EXISTING ANALYSES FROM DATABASE ---
 $entry = [];
 $entry_total = 0;
-$success = $error = '';
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['payment_mode'])) {
-    $payment_mode = $_POST['payment_mode'] ?? 'cash';
+$cheque_entry = ['count' => 0, 'total' => 0.00, 'details' => ''];
 
-    if ($payment_mode === 'cash' && isset($_POST['denom'])) {
-        foreach ($denominations as $d) {
-            $key = $d['label'];
-            $qty = isset($_POST['denom'][$key]) && is_numeric($_POST['denom'][$key]) ? max(0, intval($_POST['denom'][$key])) : 0;
-            $entry[$key] = $qty;
-            $entry_total += $qty * $d['value'];
-        }
-        if (abs($entry_total - $total_cash) > 0.009) {
-            $error = "Total denominations (₵".number_format($entry_total,2).") do not match cash received (₵".number_format($total_cash,2).")!";
-        } else {
-            $_SESSION['denom_entry_'.$date] = $entry;
-            $success = "Cash denomination entry saved!";
-        }
-    } elseif ($payment_mode === 'cheque') {
-        $cheque_data = [
-            'count' => intval($_POST['cheque_count'] ?? 0),
-            'total' => floatval($_POST['cheque_total'] ?? 0),
-            'details' => trim($_POST['cheque_details'] ?? '')
-        ];
-        $_SESSION['cheque_entry_'.$date] = $cheque_data;
-        $success = "Cheque entry saved!";
+try {
+    // Load analyses for current date and user
+    if ($filter_by_user) {
+        $stmt = $conn->prepare("
+            SELECT payment_mode, denomination_data, denomination_total, cheque_count, cheque_total, cheque_details
+            FROM payment_analyses
+            WHERE analysis_date = ? AND created_by = ?
+        ");
+        $stmt->bind_param('si', $date, $current_user_id);
+    } else {
+        // Super admin can see all analyses, but we'll load the most recent one
+        $stmt = $conn->prepare("
+            SELECT payment_mode, denomination_data, denomination_total, cheque_count, cheque_total, cheque_details, created_by
+            FROM payment_analyses
+            WHERE analysis_date = ?
+            ORDER BY created_at DESC
+            LIMIT 2
+        ");
+        $stmt->bind_param('s', $date);
     }
-} elseif (isset($_SESSION['denom_entry_'.$date])) {
-    $entry = $_SESSION['denom_entry_'.$date];
-    foreach ($denominations as $d) {
-        $entry_total += (isset($entry[$d['label']]) ? $entry[$d['label']] : 0) * $d['value'];
+    
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    while ($row = $result->fetch_assoc()) {
+        if ($row['payment_mode'] === 'cash' && $row['denomination_data']) {
+            $entry = json_decode($row['denomination_data'], true) ?: [];
+            $entry_total = floatval($row['denomination_total']);
+        } elseif ($row['payment_mode'] === 'cheque') {
+            $cheque_entry = [
+                'count' => intval($row['cheque_count']),
+                'total' => floatval($row['cheque_total']),
+                'details' => $row['cheque_details'] ?? ''
+            ];
+        }
     }
+    
+    $stmt->close();
+} catch (Throwable $e) {
+    // Silently fail, use empty defaults
 }
-
-// Load saved cheque analysis data (for manual entry, not the actual total)
-$cheque_entry = $_SESSION['cheque_entry_'.$date] ?? ['count' => 0, 'total' => 0.00, 'details' => ''];
 
 // Calculate grand total from database (Cash + Cheque from actual payments)
 $grand_total = $total_cash + $total_cheque;
@@ -415,10 +423,11 @@ ob_start();
                            <div class="col-2 text-right font-weight-bold">₵<span id="denom-total">0.00</span></div>
                          </div>
                          <div class="d-flex justify-content-end mt-2">
-                           <button type="submit" class="btn btn-primary btn-sm px-4">Save Analysis</button>
+                           <button type="button" id="saveAnalysisBtn" class="btn btn-primary btn-sm px-4">
+                               <i class="fas fa-save mr-1"></i>Save Analysis
+                           </button>
                          </div>
-                         <?php if ($error): ?><div class="alert alert-danger mt-2 py-1 px-2 small"><?= htmlspecialchars($error) ?></div><?php endif; ?>
-                         <?php if ($success): ?><div class="alert alert-success mt-2 py-1 px-2 small"><?= htmlspecialchars($success) ?></div><?php endif; ?>
+                         <div id="analysisMessage" class="mt-2"></div>
                        </form>
                      </div>
                    </div>
@@ -509,6 +518,89 @@ document.addEventListener('DOMContentLoaded', function() {
         } else if (selectedMode === 'cheque') {
             modalTitle.textContent = 'Cheque Payment Analysis';
         }
+    });
+    
+    // Save Analysis Button Handler
+    $('#saveAnalysisBtn').on('click', function() {
+        const btn = $(this);
+        const originalHtml = btn.html();
+        const selectedMode = $('input[name="payment_mode"]:checked').val();
+        const currentDate = '<?= $date ?>';
+        
+        // Disable button and show loading
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i>Saving...');
+        $('#analysisMessage').html('');
+        
+        // Prepare form data
+        const formData = new FormData();
+        formData.append('action', 'save');
+        formData.append('date', currentDate);
+        formData.append('payment_mode', selectedMode);
+        
+        if (selectedMode === 'cash') {
+            // Collect denomination data
+            $('.denom-qty').each(function() {
+                const name = $(this).attr('name');
+                const value = $(this).val() || 0;
+                formData.append(name, value);
+            });
+        } else if (selectedMode === 'cheque') {
+            formData.append('cheque_count', $('#cheque_count').val() || 0);
+            formData.append('cheque_total', $('#cheque_total').val() || 0);
+            formData.append('cheque_details', $('#cheque_details').val() || '');
+        }
+        
+        // Submit via AJAX
+        $.ajax({
+            url: 'ajax_payment_analysis.php',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            dataType: 'json',
+            success: function(response) {
+                if (response.success) {
+                    $('#analysisMessage').html(
+                        '<div class="alert alert-success alert-dismissible fade show py-2 px-3 small">' +
+                        '<button type="button" class="close" data-dismiss="alert">&times;</button>' +
+                        '<i class="fas fa-check-circle mr-2"></i>' + response.message +
+                        '</div>'
+                    );
+                    
+                    // Close modal after 2 seconds
+                    setTimeout(function() {
+                        $('#denomModal').modal('hide');
+                        // Reload page to show updated analysis
+                        location.reload();
+                    }, 2000);
+                } else {
+                    $('#analysisMessage').html(
+                        '<div class="alert alert-danger alert-dismissible fade show py-2 px-3 small">' +
+                        '<button type="button" class="close" data-dismiss="alert">&times;</button>' +
+                        '<i class="fas fa-exclamation-triangle mr-2"></i>' + (response.error || 'Failed to save analysis') +
+                        '</div>'
+                    );
+                }
+            },
+            error: function(xhr) {
+                let errorMsg = 'An error occurred while saving';
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    errorMsg = response.error || errorMsg;
+                } catch(e) {}
+                
+                $('#analysisMessage').html(
+                    '<div class="alert alert-danger alert-dismissible fade show py-2 px-3 small">' +
+                    '<button type="button" class="close" data-dismiss="alert">&times;</button>' +
+                    '<i class="fas fa-exclamation-triangle mr-2"></i>' + errorMsg +
+                    '</div>'
+                );
+            },
+            complete: function() {
+                // Re-enable button
+                btn.prop('disabled', false).html(originalHtml);
+            }
+        });
     });
 });
 </script>
