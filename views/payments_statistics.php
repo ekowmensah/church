@@ -29,12 +29,15 @@ if (!$is_super_admin && !has_permission('payment_statistics')) {
     exit;
 }
 
-// Detect if user is a cashier
+// Detect user role and filtering
 $current_user_id = $_SESSION['user_id'] ?? 0;
-$is_cashier = false;
-if (isset($_SESSION['role_name']) && strtolower($_SESSION['role_name']) === 'cashier') {
-    $is_cashier = true;
-}
+$current_role_id = $_SESSION['role_id'] ?? 0;
+
+// Super admin sees all data, others see only their own
+$filter_by_user = !$is_super_admin;
+
+// User-friendly label
+$view_label = $filter_by_user ? 'My Payments' : 'All Payments';
 
 // --- CONFIG ---
 $date = isset($_GET['date']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date']) ? $_GET['date'] : date('Y-m-d');
@@ -60,7 +63,8 @@ $total_cash = 0.00;
 $total_cheque = 0.00;
 
 try {
-    if ($is_cashier) {
+    if ($filter_by_user) {
+        // Non-admin: Show only payments recorded by this user
         // Fetch cash total
         $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND mode='cash' AND recorded_by=?");
         $stmt->bind_param('si', $date, $current_user_id);
@@ -79,6 +83,7 @@ try {
         $stmt->close();
         $total_cheque = floatval($total_cheque);
     } else {
+        // Super admin: Show all payments
         // Fetch cash total
         $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND mode='cash'");
         $stmt->bind_param('s', $date);
@@ -154,14 +159,14 @@ ob_start();
     </div>
     <div class="row justify-content-center">
         <div class="col-12 col-md-10 col-lg-8">
-            <?php if ($is_cashier): ?>
+            <?php if ($filter_by_user): ?>
             <div class="alert alert-info mb-3">
-                <i class="fas fa-info-circle mr-2"></i><strong>Cashier View:</strong> Showing only payments recorded by you.
+                <i class="fas fa-info-circle mr-2"></i><strong>Personal View:</strong> Showing only payments recorded by you.
             </div>
             <?php endif; ?>
             <div class="card shadow-sm mb-4">
                 <div class="card-header bg-light d-flex align-items-center justify-content-between">
-                    <div><i class="fas fa-chart-bar text-primary mr-2"></i>Payment Statistics<?php if ($is_cashier) echo ' <span class="badge badge-info">My Payments</span>'; ?></div>
+                    <div><i class="fas fa-chart-bar text-primary mr-2"></i>Payment Statistics<?php if ($filter_by_user) echo ' <span class="badge badge-info">' . $view_label . '</span>'; ?></div>
                     <button class="btn btn-success btn-sm" data-toggle="modal" data-target="#denomModal"><i class="fas fa-plus-circle mr-1"></i>Add Payment Analysis</button>
                 </div>
                 <div class="card-body">
@@ -261,7 +266,8 @@ ob_start();
                                 // Fetch payment type breakdown
                                 $types = [];
                                 try {
-                                    if ($is_cashier) {
+                                    if ($filter_by_user) {
+                                        // Non-admin: Show only payments recorded by this user
                                         $sql = "SELECT pt.name AS payment_type, SUM(p.amount) AS total_amount, COUNT(p.id) AS count
                                                 FROM payments p
                                                 JOIN payment_types pt ON p.payment_type_id = pt.id
@@ -271,6 +277,7 @@ ob_start();
                                         $stmt = $conn->prepare($sql);
                                         $stmt->bind_param('si', $date, $current_user_id);
                                     } else {
+                                        // Super admin: Show all payments
                                         $sql = "SELECT pt.name AS payment_type, SUM(p.amount) AS total_amount, COUNT(p.id) AS count
                                                 FROM payments p
                                                 JOIN payment_types pt ON p.payment_type_id = pt.id
