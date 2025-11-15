@@ -155,7 +155,7 @@ function getAnalyses($conn, $user_id, $is_super_admin) {
     if ($is_super_admin) {
         // Super admin sees all analyses
         $sql = "
-            SELECT pa.*, u.username, u.full_name
+            SELECT pa.*, u.name, u.email
             FROM payment_analyses pa
             LEFT JOIN users u ON pa.created_by = u.id
             WHERE pa.analysis_date = ?
@@ -166,7 +166,7 @@ function getAnalyses($conn, $user_id, $is_super_admin) {
     } else {
         // Regular users see only their own
         $sql = "
-            SELECT pa.*, u.username, u.full_name
+            SELECT pa.*, u.name, u.email
             FROM payment_analyses pa
             LEFT JOIN users u ON pa.created_by = u.id
             WHERE pa.analysis_date = ? AND pa.created_by = ?
