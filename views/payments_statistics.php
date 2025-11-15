@@ -1,11 +1,10 @@
 <?php
 // Error reporting for development (remove or comment out in production)
 
-ob_start();
 if (session_status() === PHP_SESSION_NONE) session_start();
 require_once '../config/config.php';
 require_once '../helpers/auth.php';
-require_once '../helpers/permissions.php';
+require_once '../helpers/permissions_v2.php';
 require_once '../includes/report_ui_helpers.php';
 
 // Only allow logged-in users
@@ -40,7 +39,7 @@ if (isset($_SESSION['role_name']) && strtolower($_SESSION['role_name']) === 'cas
 // --- CONFIG ---
 $date = isset($_GET['date']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date']) ? $_GET['date'] : date('Y-m-d');
 $currency = '₵';
-$payment_modes = ['cash', 'cheque', 'momo'];
+$payment_modes = ['cash', 'cheque'];
 $denominations = [
     ['label' => '200 Note', 'value' => 200],
     ['label' => '100 Note', 'value' => 100],
@@ -56,23 +55,51 @@ $denominations = [
     ['label' => '0.20p',    'value' => 0.2],
     ['label' => '0.10p',    'value' => 0.1],
 ];
-// --- FETCH TOTAL CASH ---
+// --- FETCH PAYMENT TOTALS FROM DATABASE ---
 $total_cash = 0.00;
+$total_cheque = 0.00;
+
 try {
     if ($is_cashier) {
+        // Fetch cash total
         $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND mode='cash' AND recorded_by=?");
         $stmt->bind_param('si', $date, $current_user_id);
+        $stmt->execute();
+        $stmt->bind_result($total_cash);
+        $stmt->fetch();
+        $stmt->close();
+        $total_cash = floatval($total_cash);
+        
+        // Fetch cheque total
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND mode='cheque' AND recorded_by=?");
+        $stmt->bind_param('si', $date, $current_user_id);
+        $stmt->execute();
+        $stmt->bind_result($total_cheque);
+        $stmt->fetch();
+        $stmt->close();
+        $total_cheque = floatval($total_cheque);
     } else {
+        // Fetch cash total
         $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND mode='cash'");
         $stmt->bind_param('s', $date);
+        $stmt->execute();
+        $stmt->bind_result($total_cash);
+        $stmt->fetch();
+        $stmt->close();
+        $total_cash = floatval($total_cash);
+        
+        // Fetch cheque total
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND mode='cheque'");
+        $stmt->bind_param('s', $date);
+        $stmt->execute();
+        $stmt->bind_result($total_cheque);
+        $stmt->fetch();
+        $stmt->close();
+        $total_cheque = floatval($total_cheque);
     }
-    $stmt->execute();
-    $stmt->bind_result($total_cash);
-    $stmt->fetch();
-    $stmt->close();
-    $total_cash = floatval($total_cash);
 } catch (Throwable $e) {
     $total_cash = 0.00;
+    $total_cheque = 0.00;
 }
 // --- HANDLE FORM SUBMIT ---
 $entry = [];
@@ -102,14 +129,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['payment_mode'])) {
         ];
         $_SESSION['cheque_entry_'.$date] = $cheque_data;
         $success = "Cheque entry saved!";
-    } elseif ($payment_mode === 'momo') {
-        $momo_data = [
-            'count' => intval($_POST['momo_count'] ?? 0),
-            'total' => floatval($_POST['momo_total'] ?? 0),
-            'details' => trim($_POST['momo_details'] ?? '')
-        ];
-        $_SESSION['momo_entry_'.$date] = $momo_data;
-        $success = "Momo entry saved!";
     }
 } elseif (isset($_SESSION['denom_entry_'.$date])) {
     $entry = $_SESSION['denom_entry_'.$date];
@@ -118,12 +137,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['payment_mode'])) {
     }
 }
 
-// Load saved cheque and momo data
+// Load saved cheque analysis data (for manual entry, not the actual total)
 $cheque_entry = $_SESSION['cheque_entry_'.$date] ?? ['count' => 0, 'total' => 0.00, 'details' => ''];
-$momo_entry = $_SESSION['momo_entry_'.$date] ?? ['count' => 0, 'total' => 0.00, 'details' => ''];
 
-// Calculate grand total from all payment methods
-$grand_total = $total_cash + $cheque_entry['total'] + $momo_entry['total'];
+// Calculate grand total from database (Cash + Cheque from actual payments)
+$grand_total = $total_cash + $total_cheque;
+
+// Start output buffering for page content
+ob_start();
 ?>
 <main class="container py-4 animate__animated animate__fadeIn">
     <div class="row mb-3 justify-content-center">
@@ -186,31 +207,15 @@ $grand_total = $total_cash + $cheque_entry['total'] + $momo_entry['total'];
                                         <div class="row no-gutters align-items-center">
                                             <div class="col mr-2">
                                                 <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Cheque</div>
-                                                <div class="h5 mb-0 font-weight-bold text-gray-800">₵<?= number_format($cheque_entry['total'], 2) ?></div>
-                                                <div class="text-xs text-muted mt-1">
-                                                    <?= $cheque_entry['count'] ?> transaction<?= $cheque_entry['count'] !== 1 ? 's' : '' ?>
-                                                </div>
+                                                <div class="h5 mb-0 font-weight-bold text-gray-800">₵<?= number_format($total_cheque, 2) ?></div>
+                                                <?php if (!empty($cheque_entry['total'])): ?>
+                                                    <div class="text-xs text-muted mt-1">Analysis: Completed</div>
+                                                <?php else: ?>
+                                                    <div class="text-xs text-muted mt-1">Analysis: Pending</div>
+                                                <?php endif; ?>
                                             </div>
                                             <div class="col-auto">
                                                 <i class="fas fa-money-check fa-2x text-success"></i>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="card border-left-info shadow h-100 py-2">
-                                    <div class="card-body">
-                                        <div class="row no-gutters align-items-center">
-                                            <div class="col mr-2">
-                                                <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Momo</div>
-                                                <div class="h5 mb-0 font-weight-bold text-gray-800">₵<?= number_format($momo_entry['total'], 2) ?></div>
-                                                <div class="text-xs text-muted mt-1">
-                                                    <?= $momo_entry['count'] ?> transaction<?= $momo_entry['count'] !== 1 ? 's' : '' ?>
-                                                </div>
-                                            </div>
-                                            <div class="col-auto">
-                                                <i class="fas fa-mobile-alt fa-2x text-info"></i>
                                             </div>
                                         </div>
                                     </div>
@@ -225,14 +230,13 @@ $grand_total = $total_cash + $cheque_entry['total'] + $momo_entry['total'];
                                     <small class="text-muted">
                                         <strong>Grand Total Calculation:</strong><br>
                                         Cash (₵<?= number_format($total_cash, 2) ?>) +
-                                        Cheque (₵<?= number_format($cheque_entry['total'], 2) ?>) +
-                                        Momo (₵<?= number_format($momo_entry['total'], 2) ?>) =
+                                        Cheque (₵<?= number_format($total_cheque, 2) ?>) =
                                     </small>
                                 </div>
                                 <div class="col-md-4 text-right">
                                     <span class="h4 text-primary font-weight-bold">₵<?= number_format($grand_total, 2) ?></span>
                                     <?php
-                                    $analysis_complete = !empty($entry) && $cheque_entry['total'] > 0 && $momo_entry['total'] > 0;
+                                    $analysis_complete = !empty($entry) && !empty($cheque_entry['total']);
                                     if ($analysis_complete): ?>
                                         <br><small class="text-success"><i class="fas fa-check-circle"></i> All methods analyzed</small>
                                     <?php else: ?>
@@ -296,8 +300,8 @@ $grand_total = $total_cash + $cheque_entry['total'] + $momo_entry['total'];
                             </tbody>
                             <tfoot>
                                 <tr class="font-weight-bold bg-light">
-                                    <td class="text-right">Grand Total (All Methods)</td>
-                                    <td><?= array_sum(array_column($types,'count')) + $cheque_entry['count'] + $momo_entry['count'] ?></td>
+                                    <td class="text-right">Grand Total (Cash + Cheque)</td>
+                                    <td><?= array_sum(array_column($types,'count')) ?></td>
                                     <td>₵<?= number_format($grand_total,2) ?></td>
                                 </tr>
                             </tfoot>
@@ -308,7 +312,10 @@ $grand_total = $total_cash + $cheque_entry['total'] + $momo_entry['total'];
         </div>
     </div>
 </main>
-<?php ob_start(); ?>
+<?php 
+$page_content = ob_get_clean();
+ob_start(); 
+?>
                <!-- Denomination Modal -->
                <div class="modal fade" id="denomModal" tabindex="-1" role="dialog" aria-labelledby="denomModalLabel" aria-hidden="true">
                  <div class="modal-dialog modal-lg" role="document">
@@ -395,31 +402,6 @@ $grand_total = $total_cash + $cheque_entry['total'] + $momo_entry['total'];
                            </div>
                          </div>
 
-                         <!-- Momo Analysis -->
-                         <div id="momoAnalysis" class="payment-method-content" style="display: none;">
-                           <div class="alert alert-info">
-                             <i class="fas fa-mobile-alt mr-2"></i>Enter Momo payment details and amounts.
-                           </div>
-                           <div class="row">
-                             <div class="col-md-6">
-                               <div class="form-group">
-                                 <label for="momo_count">Number of Momo Transactions</label>
-                                 <input type="number" min="0" class="form-control" id="momo_count" name="momo_count" value="<?= htmlspecialchars($momo_entry['count']) ?>">
-                               </div>
-                             </div>
-                             <div class="col-md-6">
-                               <div class="form-group">
-                                 <label for="momo_total">Total Momo Amount (₵)</label>
-                                 <input type="number" min="0" step="0.01" class="form-control" id="momo_total" name="momo_total" value="<?= htmlspecialchars($momo_entry['total']) ?>">
-                               </div>
-                             </div>
-                           </div>
-                           <div class="form-group">
-                             <label for="momo_details">Momo Details (Optional)</label>
-                             <textarea class="form-control" id="momo_details" name="momo_details" rows="2" placeholder="Transaction IDs, phone numbers, etc."><?= htmlspecialchars($momo_entry['details']) ?></textarea>
-                           </div>
-                         </div>
-
                          <div class="row align-items-center" id="totalRow">
                            <div class="col-6 text-right font-weight-bold">Total</div>
                            <div class="col-4"></div>
@@ -435,7 +417,6 @@ $grand_total = $total_cash + $cheque_entry['total'] + $momo_entry['total'];
                    </div>
                  </div>
                </div>
-<?php $modal_html = ob_get_clean(); ?>
 <script>
 // Live denomination calculation (only inside modal)
 const denomData = <?= json_encode($denominations) ?>;
@@ -474,14 +455,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const selectedMode = this.value;
             const cashAnalysis = document.getElementById('cashAnalysis');
             const chequeAnalysis = document.getElementById('chequeAnalysis');
-            const momoAnalysis = document.getElementById('momoAnalysis');
             const totalRow = document.getElementById('totalRow');
             const modalTitle = document.getElementById('denomModalLabel');
 
             // Hide all analysis sections
             cashAnalysis.style.display = 'none';
             chequeAnalysis.style.display = 'none';
-            momoAnalysis.style.display = 'none';
 
             if (selectedMode === 'cash') {
                 cashAnalysis.style.display = 'block';
@@ -493,10 +472,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 chequeAnalysis.style.display = 'block';
                 totalRow.style.display = 'none';
                 modalTitle.textContent = 'Cheque Payment Analysis';
-            } else if (selectedMode === 'momo') {
-                momoAnalysis.style.display = 'block';
-                totalRow.style.display = 'none';
-                modalTitle.textContent = 'Momo Payment Analysis';
             }
         });
     });
@@ -526,14 +501,11 @@ document.addEventListener('DOMContentLoaded', function() {
             updateDenomTotals();
         } else if (selectedMode === 'cheque') {
             modalTitle.textContent = 'Cheque Payment Analysis';
-        } else if (selectedMode === 'momo') {
-            modalTitle.textContent = 'Momo Payment Analysis';
         }
     });
 });
 </script>
 <?php
-$page_content = ob_get_clean();
-echo $modal_html; // Output modal HTML at the end to avoid stacking issues
+$modal_html = ob_get_clean();
 include __DIR__.'/../includes/layout.php';
 ?>

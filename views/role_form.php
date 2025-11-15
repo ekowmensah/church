@@ -6,12 +6,20 @@
 
 session_start();
 require_once __DIR__ . '/../config/config.php';
-require_once __DIR__ . '/../helpers/permissions.php';
+require_once __DIR__ . '/../helpers/auth.php';
+require_once __DIR__ . '/../helpers/permissions_v2.php';
 
 // Authentication check
-if (!isset($_SESSION['user_id'])) {
-    header('Location: ../login.php');
-    exit();
+if (!is_logged_in()) {
+    header('Location: ' . BASE_URL . '/login.php');
+    exit;
+}
+
+// Permission check
+if (!has_permission('manage_roles')) {
+    http_response_code(403);
+    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
+    exit;
 }
 
 // Super admin check
@@ -147,6 +155,7 @@ ob_start();
 const EDITING = <?= json_encode($editing) ?>;
 const ROLE_ID = <?= json_encode($role_id) ?>;
 const BASE_URL = <?= json_encode(rtrim(BASE_URL, '/')) ?>;
+const API_BASE = BASE_URL + '/api/rbac';
 
 document.addEventListener("DOMContentLoaded", function() {
     const form = document.getElementById("roleForm");
@@ -256,15 +265,15 @@ document.addEventListener("DOMContentLoaded", function() {
             name: name,
             description: desc
         };
-        if (EDITING) formData.id = ROLE_ID;
-        const url = BASE_URL + "/views/role_api.php" + (EDITING ? `?id=${ROLE_ID}&action=update` : "");
+        
+        const url = EDITING ? `${API_BASE}/roles.php?id=${ROLE_ID}` : `${API_BASE}/roles.php`;
+        const method = EDITING ? "PUT" : "POST";
+        
         fetch(url, {
-            method: "POST",
+            method: method,
             headers: {
-                "Content-Type": "application/json",
-                "X-Requested-With": "XMLHttpRequest"
+                "Content-Type": "application/json"
             },
-            credentials: "same-origin",
             body: JSON.stringify(formData)
         })
         .then(response => {

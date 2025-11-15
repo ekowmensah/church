@@ -3,7 +3,7 @@
 require_once __DIR__.'/../helpers/hubtel_payment_v2.php';
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 
 header('Content-Type: application/json');
 
@@ -13,6 +13,13 @@ if (!is_logged_in()) {
     echo json_encode(['success' => false, 'error' => 'Authentication required']);
     exit;
 }
+// Permission check
+if (!has_permission('view_dashboard')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Forbidden']);
+    exit;
+}
+
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);

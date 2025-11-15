@@ -12,7 +12,7 @@ if (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1) {
     header('Location: member_view.php?id=' . intval($_SESSION['member_id']));
     exit;
 }
-if (function_exists('has_permission') && has_permission('manage_members')) {
+if (has_permission('manage_members')) {
     // Admins/managers should use member_view.php
     header('Location: member_view.php?id=' . intval($_SESSION['member_id']));
     exit;

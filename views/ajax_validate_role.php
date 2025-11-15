@@ -10,6 +10,13 @@ if (!is_logged_in()) {
     echo json_encode(['exists' => false, 'error' => 'Unauthorized']);
     exit;
 }
+// Permission check
+if (!has_permission('view_dashboard')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Forbidden']);
+    exit;
+}
+
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['exists' => false, 'error' => 'Invalid request']);

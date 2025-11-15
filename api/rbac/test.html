@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RBAC API Test Console</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: #4ec9b0;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #858585;
+            margin-bottom: 30px;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .panel {
+            background: #252526;
+            border: 1px solid #3e3e42;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        
+        .panel h2 {
+            color: #569cd6;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        
+        .btn-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        
+        button:hover {
+            background: #1177bb;
+        }
+        
+        button.danger {
+            background: #c5354d;
+        }
+        
+        button.danger:hover {
+            background: #d94a5d;
+        }
+        
+        button.success {
+            background: #16825d;
+        }
+        
+        button.success:hover {
+            background: #1a9870;
+        }
+        
+        .output {
+            background: #1e1e1e;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+            padding: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        
+        .output pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .success-text {
+            color: #4ec9b0;
+        }
+        
+        .error-text {
+            color: #f48771;
+        }
+        
+        .info-text {
+            color: #569cd6;
+        }
+        
+        .loading {
+            color: #dcdcaa;
+        }
+        
+        input, select {
+            background: #3c3c3c;
+            border: 1px solid #3e3e42;
+            color: #d4d4d4;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #858585;
+            font-size: 13px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .stat-card {
+            background: #1e1e1e;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #3e3e42;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4ec9b0;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #858585;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 RBAC API Test Console</h1>
+        <p class="subtitle">Test and explore the RBAC API endpoints</p>
+        
+        <div class="grid">
+            <!-- Permissions Panel -->
+            <div class="panel">
+                <h2>📋 Permissions API</h2>
+                <div class="btn-group">
+                    <button onclick="testAPI('GET', 'permissions.php')">List All</button>
+                    <button onclick="testAPI('GET', 'permissions.php?grouped=true')">Grouped</button>
+                    <button onclick="testAPI('GET', 'permissions.php?id=1')">Get #1</button>
+                    <button onclick="testAPI('GET', 'permissions.php?search=member')">Search</button>
+                </div>
+            </div>
+            
+            <!-- Roles Panel -->
+            <div class="panel">
+                <h2>👥 Roles API</h2>
+                <div class="btn-group">
+                    <button onclick="testAPI('GET', 'roles.php')">List All</button>
+                    <button onclick="testAPI('GET', 'roles.php?hierarchy=true')">Hierarchy</button>
+                    <button onclick="testAPI('GET', 'roles.php?id=1')">Get #1</button>
+                    <button onclick="testAPI('GET', 'roles.php?id=1&permissions')">Permissions</button>
+                </div>
+            </div>
+            
+            <!-- Audit Panel -->
+            <div class="panel">
+                <h2>📝 Audit Logs API</h2>
+                <div class="btn-group">
+                    <button onclick="testAPI('GET', 'audit.php?limit=10')">Recent Logs</button>
+                    <button onclick="testAPI('GET', 'audit.php?stats')">Statistics</button>
+                    <button onclick="testAPI('GET', 'audit.php?active_users&days=7')">Active Users</button>
+                    <button onclick="testAPI('GET', 'audit.php?permission_usage&days=7')">Usage</button>
+                    <button onclick="testAPI('GET', 'audit.php?failed_checks&limit=10')">Failed Checks</button>
+                </div>
+            </div>
+            
+            <!-- Templates Panel -->
+            <div class="panel">
+                <h2>📋 Templates API</h2>
+                <div class="btn-group">
+                    <button onclick="testAPI('GET', 'templates.php')">List All</button>
+                    <button onclick="testAPI('GET', 'templates.php?category=church')">Church</button>
+                    <button onclick="testAPI('GET', 'templates.php?category=ministry')">Ministry</button>
+                    <button onclick="testAPI('GET', 'templates.php?id=2')">Get #2</button>
+                    <button onclick="testAPI('GET', 'templates.php?id=2&usage')">Usage</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Output Panel -->
+        <div class="panel">
+            <h2>📤 Response Output</h2>
+            <div id="output" class="output">
+                <pre class="info-text">Ready to test API endpoints. Click any button above to start.</pre>
+            </div>
+        </div>
+        
+        <!-- Statistics Panel -->
+        <div class="panel">
+            <h2>📊 Quick Statistics</h2>
+            <div class="stats" id="stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-permissions">-</div>
+                    <div class="stat-label">Permissions</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-roles">-</div>
+                    <div class="stat-label">Roles</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-templates">-</div>
+                    <div class="stat-label">Templates</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-audit">-</div>
+                    <div class="stat-label">Audit Entries</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Test API endpoint
+        async function testAPI(method, endpoint) {
+            const output = document.getElementById('output');
+            output.innerHTML = `<pre class="loading">⏳ Loading ${method} ${endpoint}...</pre>`;
+            
+            try {
+                const response = await fetch(endpoint, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                // Format output
+                const formatted = JSON.stringify(data, null, 2);
+                const className = data.success ? 'success-text' : 'error-text';
+                
+                output.innerHTML = `<pre class="${className}">${formatted}</pre>`;
+                
+                // Update stats if available
+                updateStats(data);
+                
+            } catch (error) {
+                output.innerHTML = `<pre class="error-text">❌ Error: ${error.message}</pre>`;
+            }
+        }
+        
+        // Update statistics
+        function updateStats(data) {
+            if (data.data) {
+                // Permissions count
+                if (data.data.permissions) {
+                    document.getElementById('stat-permissions').textContent = data.data.total || data.data.permissions.length;
+                }
+                
+                // Roles count
+                if (data.data.roles) {
+                    document.getElementById('stat-roles').textContent = data.data.total || data.data.roles.length;
+                }
+                
+                // Templates count
+                if (data.data.templates) {
+                    document.getElementById('stat-templates').textContent = data.data.total || data.data.templates.length;
+                }
+                
+                // Audit statistics
+                if (data.data.statistics) {
+                    document.getElementById('stat-audit').textContent = data.data.statistics.total_entries.toLocaleString();
+                }
+            }
+        }
+        
+        // Load initial stats
+        window.onload = async function() {
+            // Load permissions count
+            try {
+                const perms = await fetch('permissions.php').then(r => r.json());
+                if (perms.data) {
+                    document.getElementById('stat-permissions').textContent = perms.data.total;
+                }
+            } catch (e) {}
+            
+            // Load roles count
+            try {
+                const roles = await fetch('roles.php').then(r => r.json());
+                if (roles.data) {
+                    document.getElementById('stat-roles').textContent = roles.data.total;
+                }
+            } catch (e) {}
+            
+            // Load templates count
+            try {
+                const templates = await fetch('templates.php').then(r => r.json());
+                if (templates.data) {
+                    document.getElementById('stat-templates').textContent = templates.data.total;
+                }
+            } catch (e) {}
+            
+            // Load audit stats
+            try {
+                const audit = await fetch('audit.php?stats').then(r => r.json());
+                if (audit.data && audit.data.statistics) {
+                    document.getElementById('stat-audit').textContent = audit.data.statistics.total_entries.toLocaleString();
+                }
+            } catch (e) {}
+        };
+    </script>
+</body>
+</html>

@@ -5,7 +5,7 @@ session_start();
 // AJAX/API endpoint for menu management
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/auth.php';
-require_once __DIR__ . '/../helpers/permissions.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 
 // Set proper headers for AJAX requests
 header('Content-Type: application/json');

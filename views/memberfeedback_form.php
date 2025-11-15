@@ -6,6 +6,14 @@ if (!is_logged_in()) {
     exit;
 }
 
+// Permission check
+if (!has_permission('view_feedback_report')) {
+    http_response_code(403);
+    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
+    exit;
+}
+
+
 // Fetch members for dropdown
 $members = $conn->query("SELECT id, CONCAT(last_name, ', ', first_name, ' ', middle_name) AS name FROM members ORDER BY last_name, first_name");
 // Fetch users for user dropdown (show all users except the current user)

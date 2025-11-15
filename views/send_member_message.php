@@ -8,6 +8,13 @@ if (!is_logged_in()) {
     http_response_code(403);
     exit('Not authorized');
 }
+// Permission check
+if (!has_permission('view_member')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Forbidden']);
+    exit;
+}
+
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $member_id = isset($_POST['member_id']) ? intval($_POST['member_id']) : 0;

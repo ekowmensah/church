@@ -5,7 +5,7 @@ session_start();
 // AJAX/API endpoint for debug menu management
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/auth.php';
-require_once __DIR__ . '/../helpers/permissions.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 
 // Enable error reporting for debugging
 error_reporting(E_ALL);

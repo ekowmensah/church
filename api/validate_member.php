@@ -1,5 +1,4 @@
 <?php
-header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
@@ -9,7 +8,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit(0);
 }
 
+
+session_start();
 require_once __DIR__.'/../config/config.php';
+require_once __DIR__.'/../helpers/auth.php';
+
+
+// Authentication check
+if (!is_logged_in()) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+    exit;
+}
+
 
 try {
     // Get identifier from GET parameter (from app.js) or POST data

@@ -6,7 +6,7 @@ if (!is_logged_in()) {
     exit;
 }
 // Canonical permission check for Audit Form
-require_once __DIR__.'/../helpers/permissions.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 if (!has_permission('user_audit')) {
     http_response_code(403);
     include '../views/errors/403.php';

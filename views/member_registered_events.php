@@ -5,6 +5,13 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
+// Permission check
+if (!has_permission('view_member')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Forbidden']);
+    exit;
+}
+
 $member_id = $_SESSION['member_id'] ?? null;
 if (!$member_id) {
     die('<div class="alert alert-danger">Only members can view registered events.</div>');

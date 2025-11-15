@@ -13,6 +13,13 @@ if (!is_logged_in()) {
     echo json_encode(['success' => false, 'error' => 'Authentication required']);
     exit;
 }
+// Permission check
+if (!has_permission('view_dashboard')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Forbidden']);
+    exit;
+}
+
 
 // Get POST data - expect array of SMS requests
 $input = json_decode(file_get_contents('php://input'), true);

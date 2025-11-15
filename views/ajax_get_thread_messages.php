@@ -8,6 +8,13 @@ if (!is_logged_in()) {
     echo json_encode(['error' => 'Not authenticated']);
     exit;
 }
+// Permission check
+if (!has_permission('view_dashboard')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Forbidden']);
+    exit;
+}
+
 
 // Get thread id and last message timestamp
 $thread_id = isset($_GET['thread_id']) ? intval($_GET['thread_id']) : 0;

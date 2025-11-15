@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 
 // Only allow logged-in users with correct permission
 if (!is_logged_in()) {
@@ -8,7 +9,7 @@ if (!is_logged_in()) {
     exit;
 }
 $is_super_admin = (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
-$can_upload = $is_super_admin || (function_exists('has_permission') && has_permission('manage_members'));
+$can_upload = $is_super_admin || (has_permission('manage_members'));
 if (!$can_upload) {
     die('No permission to upload members.');
 }

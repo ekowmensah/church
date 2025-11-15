@@ -7,6 +7,14 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
+
+// Permission check
+if (!has_permission('view_transfer_list')) {
+    http_response_code(403);
+    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
+    exit;
+}
+
 $page_title = 'Add Member Transfer';
 $error = '';
 $success = '';

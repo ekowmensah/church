@@ -7,6 +7,14 @@ if (!is_logged_in()) {
     exit;
 }
 
+// Permission check
+if (!has_permission('view_organization_list')) {
+    http_response_code(403);
+    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
+    exit;
+}
+
+
 $sql = "SELECT mo.id, o.name AS organization, CONCAT(m.last_name, ' ', m.first_name, ' ', m.middle_name) AS member, mo.role, mo.joined_at
         FROM member_organizations mo
         LEFT JOIN organizations o ON mo.organization_id = o.id

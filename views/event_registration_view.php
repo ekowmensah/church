@@ -5,6 +5,13 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
+// Permission check
+if (!has_permission('view_dashboard')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Forbidden']);
+    exit;
+}
+
 $event_id = isset($_GET['event_id']) ? intval($_GET['event_id']) : 0;
 $unreg_success = false;
 $unreg_error = '';

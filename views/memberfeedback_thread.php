@@ -5,6 +5,13 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
+// Permission check
+if (!has_permission('view_feedback_report')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Forbidden']);
+    exit;
+}
+
 
 // Get thread id (top-level chat id)
 $thread_id = isset($_GET['id']) ? intval($_GET['id']) : 0;

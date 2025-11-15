@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -29,7 +30,7 @@ if (!$payment) {
 
 if ($action === 'undo') {
     // Only admin can undo
-    if ($role_id != 1 && (!function_exists('has_permission') || !has_permission('approve_payment_reversal'))) {
+    if ($role_id != 1 && (!has_permission('approve_payment_reversal'))) {
         die('No permission to undo reversal');
     }
     if (empty($payment['reversal_approved_at'])) {
@@ -51,7 +52,7 @@ if ($action === 'undo') {
 
 if ($action === 'approve') {
     // Only admin can approve
-    if ($role_id != 1 && (!function_exists('has_permission') || !has_permission('approve_payment_reversal'))) {
+    if ($role_id != 1 && (!has_permission('approve_payment_reversal'))) {
         die('No permission to approve reversal');
     }
     if (empty($payment['reversal_requested_at']) || !empty($payment['reversal_approved_at'])) {
@@ -81,7 +82,7 @@ if (!empty($payment['reversal_approved_at']) && empty($payment['reversal_undone_
     exit;
 }
 // Allow only permitted users
-if ($role_id != 1 && (!function_exists('has_permission') || !has_permission('reverse_payment'))) {
+if ($role_id != 1 && (!has_permission('reverse_payment'))) {
     die('No permission to request reversal');
 }
 // Request reversal

@@ -4,7 +4,7 @@
 session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 
 header('Content-Type: application/json');
 

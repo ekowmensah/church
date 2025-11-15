@@ -2,6 +2,7 @@
 //if (session_status() === PHP_SESSION_NONE) session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 
 $error = '';
 $success = '';
@@ -14,11 +15,11 @@ if (!is_logged_in()) {
     // Determine if adding or editing
     $is_edit = (isset($_GET['id']) && is_numeric($_GET['id'])) || $editing;
     if ($is_edit) {
-        if (function_exists('has_permission') && !has_permission('edit_classgroup')) {
+        if (!has_permission('edit_classgroup')) {
             $error = 'No permission to edit class group';
         }
     } else {
-        if (function_exists('has_permission') && !has_permission('add_classgroup')) {
+        if (!has_permission('add_classgroup')) {
             $error = 'No permission to add class group';
         }
     }

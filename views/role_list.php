@@ -2,7 +2,7 @@
 session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -68,14 +68,16 @@ $AJAX_BASE = isset($parsed['path']) ? rtrim($parsed['path'], '/') : '';
 ?>
 <script>
 const BASE_URL = "<?= $AJAX_BASE ?>";
+const API_BASE = BASE_URL + '/api/rbac';
+
 function fetchRoles() {
-    fetch(BASE_URL + '/views/role_api.php')
+    fetch(API_BASE + '/roles.php')
         .then(res => res.json())
         .then(data => {
             const tbody = document.getElementById('rolesTbody');
             tbody.innerHTML = '';
-            if (data.success && data.roles.length > 0) {
-                data.roles.forEach(role => {
+            if (data.success && data.data.roles.length > 0) {
+                data.data.roles.forEach(role => {
                     if (role.name.toLowerCase() === 'super admin') return;
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
@@ -100,10 +102,9 @@ function fetchRoles() {
 function deleteRole(id, btn) {
     if (!confirm('Are you sure you want to delete this role?')) return;
     btn.disabled = true;
-    fetch(BASE_URL + '/views/role_api.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'action=delete&id=' + encodeURIComponent(id)
+    fetch(API_BASE + '/roles.php?id=' + encodeURIComponent(id), {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'}
     })
     .then(res => res.json())
     .then(data => {
@@ -140,20 +141,83 @@ function openPermissionsModal(roleId, roleName) {
 function loadRolePermissions(roleId) {
     $('#permissionsList').html('<div class="text-center py-4"><i class="fas fa-spinner fa-spin"></i> Loading permissions...</div>');
     
-    // Load both permissions and categories
+    console.log('Loading permissions for role:', roleId);
+    console.log('API URLs:', {
+        role: API_BASE + '/roles.php?id=' + encodeURIComponent(roleId) + '&permissions',
+        permissions: API_BASE + '/permissions.php?grouped=true'
+    });
+    
+    // Load role with permissions and all available permissions
     Promise.all([
-        fetch(BASE_URL + '/views/role_permission_api.php?role_id=' + encodeURIComponent(roleId)),
-        fetch(BASE_URL + '/views/permission_categories_api.php')
+        fetch(API_BASE + '/roles.php?id=' + encodeURIComponent(roleId) + '&permissions')
+            .then(r => {
+                console.log('Role API status:', r.status);
+                if (!r.ok) throw new Error('Role API failed: ' + r.status);
+                return r.json();
+            }),
+        fetch(API_BASE + '/permissions.php?grouped=true')
+            .then(r => {
+                console.log('Permissions API status:', r.status);
+                if (!r.ok) throw new Error('Permissions API failed: ' + r.status);
+                return r.json();
+            })
     ])
-    .then(responses => Promise.all(responses.map(r => r.json())))
-    .then(([permData, catData]) => {
-        if (!permData.success) {
-            $('#permissionsList').html('<div class="alert alert-danger">Failed to load permissions.</div>');
+    .then(([roleData, permsData]) => {
+        console.log('Role data:', roleData);
+        console.log('Permissions data:', permsData);
+        console.log('Role data structure:', {
+            success: roleData.success,
+            hasData: !!roleData.data,
+            hasPermissions: !!(roleData.data && roleData.data.permissions),
+            permissionsCount: roleData.data && roleData.data.permissions ? roleData.data.permissions.length : 0
+        });
+        console.log('Perms data structure:', {
+            success: permsData.success,
+            hasData: !!permsData.data,
+            hasPermissions: !!(permsData.data && permsData.data.permissions)
+        });
+        
+        if (!roleData.success || !permsData.success) {
+            const error = !roleData.success ? (roleData.error || 'Unknown role error') : (permsData.error || 'Unknown permissions error');
+            console.error('API returned success=false:', {roleData, permsData});
+            $('#permissionsList').html('<div class="alert alert-danger">Failed to load permissions: ' + error + '</div>');
             return;
         }
         
-        const permissions = permData.permissions;
-        const categories = catData.success ? catData.categories : {};
+        // The API returns permissions directly in data, not in data.role
+        if (!roleData.data || !roleData.data.permissions) {
+            console.error('Invalid role data structure:', roleData);
+            $('#permissionsList').html('<div class="alert alert-danger">Invalid role data structure. Expected data.permissions</div>');
+            return;
+        }
+        
+        if (!permsData.data || !permsData.data.permissions) {
+            console.error('Invalid permissions data structure:', permsData);
+            $('#permissionsList').html('<div class="alert alert-danger">Invalid permissions data structure</div>');
+            return;
+        }
+        
+        const rolePermissions = roleData.data.permissions || [];
+        const rolePermissionIds = rolePermissions.map(p => p.id);
+        const groupedPermissions = permsData.data.permissions;
+        
+        console.log('Processing:', {
+            rolePermissionsCount: rolePermissions.length,
+            groupedCategoriesCount: Object.keys(groupedPermissions).length
+        });
+        
+        // Convert grouped permissions to flat list with assigned flag
+        const permissions = [];
+        const categories = {};
+        
+        Object.entries(groupedPermissions).forEach(([category, perms]) => {
+            categories[category] = [];
+            perms.forEach(perm => {
+                perm.assigned = rolePermissionIds.includes(perm.id);
+                permissions.push(perm);
+                categories[category].push(perm.name);
+            });
+        });
         
         // Create search and bulk actions
         let html = `
@@ -340,8 +404,9 @@ function loadRolePermissions(roleId) {
         });
         
     })
-    .catch(() => {
-        $('#permissionsList').html('<div class="alert alert-danger">Error loading permissions.</div>');
+    .catch((error) => {
+        console.error('Error loading permissions:', error);
+        $('#permissionsList').html('<div class="alert alert-danger">Error loading permissions: ' + error.message + '<br><small>Check console for details</small></div>');
     });
 }
 
@@ -371,12 +436,16 @@ function getPermissionDescription(name) {
 
 $('#savePermissionsBtn').on('click', function() {
     const roleId = $('#permissionsRoleId').val();
-    const formData = $('#rolePermissionsForm').serialize() + '&role_id=' + encodeURIComponent(roleId);
+    const selectedPermissions = [];
+    $('#rolePermissionsForm input[type="checkbox"]:checked').each(function() {
+        selectedPermissions.push(parseInt($(this).val()));
+    });
+    
     $('#savePermissionsBtn').prop('disabled', true).text('Saving...');
-    fetch(BASE_URL + '/views/role_permission_api.php', {
+    fetch(API_BASE + '/roles.php?id=' + encodeURIComponent(roleId) + '&sync_permissions', {
         method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: formData
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ permission_ids: selectedPermissions })
     })
     .then(res => res.json())
     .then(data => {

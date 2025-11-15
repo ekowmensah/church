@@ -1,4 +1,22 @@
 <?php
+session_start();
+require_once __DIR__.'/../config/config.php';
+require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
+
+// Authentication check
+if (!is_logged_in()) {
+    header('Location: ' . BASE_URL . '/login.php');
+    exit;
+}
+
+// Permission check
+if (!has_permission('send_sms')) {
+    http_response_code(403);
+    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
+    exit;
+}
+?>
 // AJAX endpoint to resend an SMS by sms_logs.id
 require_once '../includes/admin_auth.php';
 require_once '../includes/db.php';

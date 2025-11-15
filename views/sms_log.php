@@ -1,4 +1,23 @@
 <?php
+session_start();
+require_once __DIR__.'/../config/config.php';
+require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
+
+// Authentication check
+if (!is_logged_in()) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+    exit;
+}
+
+// Permission check
+if (!has_permission('view_dashboard')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Forbidden']);
+    exit;
+}
+?>
 // sms_log.php - Detailed SMS Log View (Single Log Entry)
 // Professional, clean, mobile-friendly interface
 ob_start();
@@ -24,7 +43,7 @@ if (!$log) {
     http_response_code(404);
     exit('SMS log entry not found.');
 }
-$resend_allowed = function_exists('has_permission') && has_permission('resend_sms');
+$resend_allowed = has_permission('resend_sms');
 ?>
 <main class="container py-4 animate__animated animate__fadeIn">
     <div class="row justify-content-center">

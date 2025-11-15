@@ -1,6 +1,17 @@
 <?php
+
+session_start();
 require_once __DIR__.'/../config/config.php';
-header('Content-Type: application/json');
+require_once __DIR__.'/../helpers/auth.php';
+
+
+// Authentication check
+if (!is_logged_in()) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+    exit;
+}
+
 $member_id = $_GET['member_id'] ?? null;
 $phone = $_GET['phone'] ?? null;
 $where = '';

@@ -1,7 +1,7 @@
 <?php
 // DashboardController: Routes to correct dashboard view based on user type/role
 require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 
 class DashboardController {
     public function index() {

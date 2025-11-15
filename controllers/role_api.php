@@ -28,7 +28,7 @@ $debug_info = [
 
 // Authentication and robust super admin bypass
 require_once __DIR__ . '/../helpers/auth.php';
-require_once __DIR__ . '/../helpers/permissions.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 if (!is_logged_in()) {
     http_response_code(401);
     echo json_encode([

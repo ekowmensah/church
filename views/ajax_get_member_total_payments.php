@@ -8,6 +8,13 @@ if (!is_logged_in()) {
     echo json_encode(['error' => 'Unauthorized']);
     exit;
 }
+// Permission check
+if (!has_permission('view_dashboard')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Forbidden']);
+    exit;
+}
+
 
 // Set content type to JSON
 header('Content-Type: application/json');

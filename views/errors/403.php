@@ -1,5 +1,5 @@
 <?php
-// Generic 403 error fallback
+// Set 403 status code
 http_response_code(403);
 ?>
 <!DOCTYPE html>

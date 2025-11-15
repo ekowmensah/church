@@ -2492,3 +2492,85 @@ SUCCESS: Inserted payment ID 690 for member 1291, type 14, amount 50
 }
 Processing as CRN only. member_ids=[1169]
 SUCCESS: Inserted payment ID 691 for member 1169, type 8, amount 100
+
+--- BULK PAYMENT SUBMIT 2025-11-15 11:31:24 ---
+{"member_ids":[2438],"sundayschool_ids":[],"amounts":{"2438":{"11":"90.00"}},"church_id":7,"payment_date":"2025-11-15","descriptions":{"2438":{"11":"Payment for November 2025 Grace Box"}},"modes":{"2438":{"11":"Cash"}},"periods":{"2438":{"11":"2025-11-01"}},"period_descriptions":{"2438":{"11":"November 2025"}}}
+
+====
+2025-11-15T11:31:24+01:00
+{
+    "member_ids": [
+        2438
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "2438": {
+            "11": "90.00"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-11-15",
+    "descriptions": {
+        "2438": {
+            "11": "Payment for November 2025 Grace Box"
+        }
+    },
+    "modes": {
+        "2438": {
+            "11": "Cash"
+        }
+    },
+    "periods": {
+        "2438": {
+            "11": "2025-11-01"
+        }
+    },
+    "period_descriptions": {
+        "2438": {
+            "11": "November 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[2438]
+SUCCESS: Inserted payment ID 7253 for member 2438, type 11, amount 90
+
+--- BULK PAYMENT SUBMIT 2025-11-15 11:32:02 ---
+{"member_ids":[2438],"sundayschool_ids":[],"amounts":{"2438":{"4":"10"}},"church_id":7,"payment_date":"2025-11-15","descriptions":{"2438":{"4":"Payment for November 2025 HARVEST"}},"modes":{"2438":{"4":"Cheque"}},"periods":{"2438":{"4":"2025-11-01"}},"period_descriptions":{"2438":{"4":"November 2025"}}}
+
+====
+2025-11-15T11:32:02+01:00
+{
+    "member_ids": [
+        2438
+    ],
+    "sundayschool_ids": [],
+    "amounts": {
+        "2438": {
+            "4": "10"
+        }
+    },
+    "church_id": 7,
+    "payment_date": "2025-11-15",
+    "descriptions": {
+        "2438": {
+            "4": "Payment for November 2025 HARVEST"
+        }
+    },
+    "modes": {
+        "2438": {
+            "4": "Cheque"
+        }
+    },
+    "periods": {
+        "2438": {
+            "4": "2025-11-01"
+        }
+    },
+    "period_descriptions": {
+        "2438": {
+            "4": "November 2025"
+        }
+    }
+}
+Processing as CRN only. member_ids=[2438]
+SUCCESS: Inserted payment ID 7254 for member 2438, type 4, amount 10

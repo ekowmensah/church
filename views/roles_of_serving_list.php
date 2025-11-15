@@ -5,6 +5,14 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
+
+// Permission check
+if (!has_permission('manage_roles')) {
+    http_response_code(403);
+    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
+    exit;
+}
+
 // Fetch all roles
 $roles = $conn->query("SELECT * FROM roles_of_serving ORDER BY name ASC");
 ob_start();

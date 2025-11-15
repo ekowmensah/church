@@ -3,7 +3,7 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../includes/sms.php';
 require_once __DIR__.'/../includes/sms_templates.php';
 require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 
 // Canonical permission check for Bulk SMS (send)
 if (!is_logged_in() || !has_permission('send_bulk_sms')) {

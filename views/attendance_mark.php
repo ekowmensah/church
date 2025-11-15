@@ -11,7 +11,7 @@ if (!is_logged_in()) {
 }
 
 // Canonical permission check for Attendance Mark
-require_once __DIR__.'/../helpers/permissions.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 if (!has_permission('mark_attendance')) {
     http_response_code(403);
     include '../views/errors/403.php';

@@ -6,6 +6,13 @@ if (!is_logged_in()) {
     http_response_code(403);
     exit('Unauthorized');
 }
+// Permission check
+if (!has_permission('view_dashboard')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Forbidden']);
+    exit;
+}
+
 
 $user_id = intval($_GET['user_id'] ?? 0);
 $payment_type_id = intval($_GET['payment_type_id'] ?? 0);

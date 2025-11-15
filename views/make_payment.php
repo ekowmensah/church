@@ -5,6 +5,13 @@ if (!is_logged_in()) {
     header('Location: '.BASE_URL.'/login.php');
     exit;
 }
+// Permission check
+if (!has_permission('make_payment')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Forbidden']);
+    exit;
+}
+
 ob_start();
 ?>
 <div class="container py-4" style="max-width: 900px;">

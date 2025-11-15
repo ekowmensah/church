@@ -5,6 +5,14 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
+
+// Permission check
+if (!has_permission('view_event_list')) {
+    http_response_code(403);
+    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
+    exit;
+}
+
 // Fetch event registrations with event and member name
 $sql = "SELECT er.*, e.name AS event_name, m.name AS member_name FROM event_registrations er LEFT JOIN events e ON er.event_id = e.id LEFT JOIN members m ON er.member_id = m.id ORDER BY er.registered_at DESC";
 $regs = $conn->query($sql);

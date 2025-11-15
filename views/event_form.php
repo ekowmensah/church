@@ -7,6 +7,14 @@ if (!is_logged_in()) {
     exit;
 }
 
+// Permission check
+if (!has_permission('view_event_list')) {
+    http_response_code(403);
+    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
+    exit;
+}
+
+
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 $editing = $id > 0;
 $event_name = $event_type_id = $event_date = $event_time = $location = $description = '';
