@@ -1,27 +1,11 @@
 <?php
 session_start();
 require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../includes/member_auth.php';
 
-// Authentication check
-if (!is_logged_in()) {
+if (!isset($_SESSION['member_id'])) {
     http_response_code(401);
     echo json_encode(['success' => false, 'error' => 'Unauthorized']);
-    exit;
-}
-
-// Permission check
-if (!has_permission('view_attendance_list')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'error' => 'Forbidden']);
-    exit;
-}
-?>
-if (session_status() === PHP_SESSION_NONE) session_start();
-require_once __DIR__.'/../includes/member_auth.php';
-if (!isset($_SESSION['member_id'])) {
-    header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
 

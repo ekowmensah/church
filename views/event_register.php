@@ -1,14 +1,10 @@
 <?php
+session_start();
 require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
-if (!is_logged_in()) {
+require_once __DIR__.'/../includes/member_auth.php';
+
+if (!isset($_SESSION['member_id'])) {
     header('Location: ' . BASE_URL . '/login.php');
-    exit;
-}
-// Permission check
-if (!has_permission('view_dashboard')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'error' => 'Forbidden']);
     exit;
 }
 

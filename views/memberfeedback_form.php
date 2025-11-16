@@ -1,18 +1,12 @@
 <?php
+session_start();
 require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
-if (!is_logged_in()) {
+require_once __DIR__.'/../includes/member_auth.php';
+
+if (!isset($_SESSION['member_id'])) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-
-// Permission check
-if (!has_permission('view_feedback_report')) {
-    http_response_code(403);
-    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
-    exit;
-}
-
 
 // Fetch members for dropdown
 $members = $conn->query("SELECT id, CONCAT(last_name, ', ', first_name, ' ', middle_name) AS name FROM members ORDER BY last_name, first_name");

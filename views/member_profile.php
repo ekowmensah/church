@@ -12,11 +12,7 @@ if (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1) {
     header('Location: member_view.php?id=' . intval($_SESSION['member_id']));
     exit;
 }
-if (has_permission('manage_members')) {
-    // Admins/managers should use member_view.php
-    header('Location: member_view.php?id=' . intval($_SESSION['member_id']));
-    exit;
-}
+// Regular members can view their own profile
 // Prefer member_id if present
 $member_id = isset($_SESSION['member_id']) ? intval($_SESSION['member_id']) : 0;
 if (!$member_id && isset($_GET['id'])) {

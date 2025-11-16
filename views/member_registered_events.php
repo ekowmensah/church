@@ -1,26 +1,21 @@
 <?php
+session_start();
 require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
-if (!is_logged_in()) {
+require_once __DIR__.'/../includes/member_auth.php';
+
+if (!isset($_SESSION['member_id'])) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-// Permission check
-if (!has_permission('view_member')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'error' => 'Forbidden']);
-    exit;
-}
 
-$member_id = $_SESSION['member_id'] ?? null;
-if (!$member_id) {
-    die('<div class="alert alert-danger">Only members can view registered events.</div>');
-}
+$member_id = intval($_SESSION['member_id']);
 $sql = "SELECT e.*, er.registered_at FROM event_registrations er LEFT JOIN events e ON er.event_id = e.id WHERE er.member_id = ? ORDER BY e.event_date DESC, e.event_time DESC";
 $stmt = $conn->prepare($sql);
 $stmt->bind_param('i', $member_id);
 $stmt->execute();
 $res = $stmt->get_result();
+
+ob_start();
 ?>
 <div class="container mt-4">
   <div class="card card-body shadow-sm">
