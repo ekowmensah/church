@@ -16,11 +16,6 @@ if (!has_permission('view_sundayschool_list')) {
     echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
     exit;
 }
-?>
-require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions_v2.php';
-require_once __DIR__.'/../includes/admin_auth.php';
 
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 $editing = $id > 0;
@@ -115,7 +110,7 @@ if (!isset($record['other_name'])) $record['other_name'] = '';
         if (!$error) {
         if ($editing) {
             $stmt = $conn->prepare('UPDATE sunday_school SET srn=?, photo=?, last_name=?, middle_name=?, first_name=?, dob=?, gender=?, dayborn=?, contact=?, gps_address=?, residential_address=?, organization=?, school_attend=?, father_name=?, father_contact=?, father_occupation=?, mother_name=?, mother_contact=?, mother_occupation=?, church_id=?, class_id=?, father_member_id=?, mother_member_id=?, father_is_member=?, mother_is_member=? WHERE id=?');
-            $stmt->bind_param('sssssssssssssssiiiiisssssi', $record['srn'],$record['photo'],$record['last_name'],$record['middle_name'],$record['first_name'],$record['dob'],$record['gender'],$record['dayborn'],$record['contact'],$record['gps_address'],$record['residential_address'],$record['organization'],$record['school_attend'],$record['father_name'],$record['father_contact'],$record['father_occupation'],$record['mother_name'],$record['mother_contact'],$record['mother_occupation'],$record['church_id'],$record['class_id'],$record['father_member_id'],$record['mother_member_id'],$record['father_is_member'],$record['mother_is_member'],$id);
+            $stmt->bind_param('sssssssssssssssssssiiisssi', $record['srn'],$record['photo'],$record['last_name'],$record['middle_name'],$record['first_name'],$record['dob'],$record['gender'],$record['dayborn'],$record['contact'],$record['gps_address'],$record['residential_address'],$record['organization'],$record['school_attend'],$record['father_name'],$record['father_contact'],$record['father_occupation'],$record['mother_name'],$record['mother_contact'],$record['mother_occupation'],$record['church_id'],$record['class_id'],$record['father_member_id'],$record['mother_member_id'],$record['father_is_member'],$record['mother_is_member'],$id);
             $stmt->execute();
             $stmt->close();
             $success = 'Record updated.';
@@ -123,7 +118,7 @@ if (!isset($record['other_name'])) $record['other_name'] = '';
             exit;
         } else {
             $stmt = $conn->prepare('INSERT INTO sunday_school (srn, photo, last_name, middle_name, first_name, dob, gender, dayborn, contact, gps_address, residential_address, organization, school_attend, father_name, father_contact, father_occupation, mother_name, mother_contact, mother_occupation, church_id, class_id, father_member_id, mother_member_id, father_is_member, mother_is_member) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-            $stmt->bind_param('sssssssssssssssiiiiisssss',
+            $stmt->bind_param('sssssssssssssssssssiiiss',
                 $record['srn'],
                 $record['photo'],
                 $record['last_name'],
@@ -689,76 +684,6 @@ $(function(){
 });
 </script>
 <script>
-function toggleParentFields() {
-    let church_id = $('#church_id').val();
-    // Father
-    if ($('#father_is_member').val()==='yes') {
-        $('#father_name_row').hide();
-        $('#father_member_row').show();
-        $('#father_member_id').val(null).trigger('change');
-        $('#father_contact_member').val('');
-        $('#father_occupation_member').val('');
-        $('#father_member_id').select2({
-            placeholder: 'Search Father by name or CRN',
-            ajax: {
-                url: church_id ? 'ajax_members_by_church.php' : '',
-                dataType: 'json',
-                delay: 250,
-                data: function(params) {
-                    return {q: params.term, church_id: church_id};
-                },
-                processResults: function (data) {
-                    return {results: data};
-                },
-                cache: true
-            },
-            minimumInputLength: 2
-        });
-    } else {
-        $('#father_name_row').show();
-        $('#father_member_row').hide();
-        if ($('#father_member_id').hasClass('select2-hidden-accessible')) {
-    $('#father_member_id').select2('destroy');
-}
-        $('#father_contact_member').val('');
-        $('#father_occupation_member').val('');
-    }
-    // Mother
-    if ($('#mother_is_member').val()==='yes') {
-        $('#mother_name_row').hide();
-        $('#mother_member_row').show();
-        $('#mother_member_id').val(null).trigger('change');
-        $('#mother_contact_member').val('');
-        $('#mother_occupation_member').val('');
-        $('#mother_member_id').select2({
-            placeholder: 'Search Mother by name or CRN',
-            ajax: {
-                url: church_id ? 'ajax_members_by_church.php' : '',
-                dataType: 'json',
-                delay: 250,
-                data: function(params) {
-                    return {q: params.term, church_id: church_id};
-                },
-                processResults: function (data) {
-                    return {results: data};
-                },
-                cache: true
-            },
-            minimumInputLength: 2
-        });
-    } else {
-        $('#mother_name_row').show();
-        $('#mother_member_row').hide();
-        if ($('#mother_member_id').hasClass('select2-hidden-accessible')) {
-    $('#mother_member_id').select2('destroy');
-}
-        $('#mother_contact_member').val('');
-        $('#mother_occupation_member').val('');
-    }
-}
-$('#father_is_member, #church_id').on('change', toggleFatherField);
-$('#mother_is_member, #church_id').on('change', toggleMotherField);
-
 function toggleFatherField() {
     let church_id = $('#church_id').val();
     var father_val = $('#father_is_member').val();
@@ -845,81 +770,10 @@ function hideAllParentFields() {
     $('#mother_name_row').hide();
 }
 
-function toggleParentFields() {
-    let church_id = $('#church_id').val();
-    // Father
-    var father_val = $('#father_is_member').val();
-    if (!father_val) {
-        $('#father_member_row').hide();
-        $('#father_name_row').hide();
-    } else if (father_val==='yes') {
-        $('#father_name_row').hide();
-        $('#father_member_row').show();
-        $('#father_member_id').val(null).trigger('change');
-        $('#father_contact_member').val('');
-        $('#father_occupation_member').val('');
-        $('#father_member_id').select2({
-            placeholder: 'Search Father by name or CRN',
-            ajax: {
-                url: church_id ? 'ajax_members_by_church.php' : '',
-                dataType: 'json',
-                delay: 250,
-                data: function(params) {
-                    return {q: params.term, church_id: church_id, gender: 'male'};
-                },
-                processResults: function (data) {
-                    return {results: data.results};
-                },
-                cache: true
-            },
-            minimumInputLength: 2
-        });
-    } else {
-        $('#father_name_row').show();
-        $('#father_member_row').hide();
-        $('#father_member_id').select2('destroy');
-        $('#father_contact_member').val('');
-        $('#father_occupation_member').val('');
-    }
-    // Mother
-    var mother_val = $('#mother_is_member').val();
-    if (!mother_val) {
-        $('#mother_member_row').hide();
-        $('#mother_name_row').hide();
-    } else if (mother_val==='yes') {
-        $('#mother_name_row').hide();
-        $('#mother_member_row').show();
-        $('#mother_member_id').val(null).trigger('change');
-        $('#mother_contact_member').val('');
-        $('#mother_occupation_member').val('');
-        $('#mother_member_id').select2({
-            placeholder: 'Search Mother by name or CRN',
-            ajax: {
-                url: church_id ? 'ajax_members_by_church.php' : '',
-                dataType: 'json',
-                delay: 250,
-                data: function(params) {
-                    return {q: params.term, church_id: church_id, gender: 'female'};
-                },
-                processResults: function (data) {
-                    return {results: data.results};
-                },
-                cache: true
-            },
-            minimumInputLength: 2
-        });
-    } else {
-        $('#mother_name_row').show();
-        $('#mother_member_row').hide();
-        $('#mother_member_id').select2('destroy');
-        $('#mother_contact_member').val('');
-        $('#mother_occupation_member').val('');
-    }
-}
-
 $(document).ready(function(){
     hideAllParentFields();
-    toggleParentFields();
+    toggleFatherField();
+    toggleMotherField();
     
     // Load member details for existing selections when editing
     var fatherMemberId = "<?=isset($record['father_member_id'])?$record['father_member_id']:''?>";
@@ -931,6 +785,10 @@ $(document).ready(function(){
     if(motherMemberId){
         loadMemberDetails(motherMemberId, 'mother');
     }
+    
+    // Attach event handlers
+    $('#father_is_member, #church_id').on('change', toggleFatherField);
+    $('#mother_is_member, #church_id').on('change', toggleMotherField);
 });
 
 // Function to load member details
@@ -971,13 +829,19 @@ $('#church_id').on('change', function() {
     $('#mother_occupation_member').val('');
 });
 
-$(document).ready(function(){
-    toggleParentFields();
-});
 </script>
 
-        <button class="btn btn-success" type="submit">Save</button>
-        <a href="sundayschool_list.php" class="btn btn-secondary">Back</a>
-    </form>
+                <div class="form-group mt-4">
+                    <button class="btn btn-success btn-lg" type="submit"><i class="fa fa-save"></i> Save</button>
+                    <a href="sundayschool_list.php" class="btn btn-secondary btn-lg"><i class="fa fa-arrow-left"></i> Back</a>
+                </div>
+            </form>
+        </div>
+    </div>
+      </div>
+    </div>
 </div>
-<?php $page_content = ob_get_clean(); include '../includes/layout.php'; ?>
+<?php
+$page_content = ob_get_clean();
+include '../includes/layout.php';
+?>
