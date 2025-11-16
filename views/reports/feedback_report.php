@@ -41,7 +41,7 @@ $where = "WHERE 1=1";
 $params = [];
 $bind_types = '';
 if (!empty($_GET['church_id'])) {
-    $where .= " AND f.church_id = ?";
+    $where .= " AND m.church_id = ?";
     $params[] = intval($_GET['church_id']);
     $bind_types .= 'i';
 }
@@ -65,7 +65,11 @@ if (!empty($_GET['to_date'])) {
     $params[] = $_GET['to_date'];
     $bind_types .= 's';
 }
-$sql = "SELECT f.*, ch.name AS church_name FROM member_feedback f LEFT JOIN churches ch ON f.church_id = ch.id $where ORDER BY f.submitted_at DESC, f.id DESC";
+$sql = "SELECT f.*, m.crn, CONCAT(m.last_name, ' ', m.first_name) AS member_name, ch.name AS church_name 
+    FROM member_feedback f 
+    LEFT JOIN members m ON f.member_id = m.id 
+    LEFT JOIN churches ch ON m.church_id = ch.id 
+    $where ORDER BY f.submitted_at DESC, f.id DESC";
 $stmt = $conn->prepare($sql);
 if ($params) {
     $stmt->bind_param($bind_types, ...$params);
@@ -74,7 +78,11 @@ $stmt->execute();
 $feedbacks = $stmt->get_result();
 
 // For feedback trend chart: count per month
-$trend_sql = "SELECT DATE_FORMAT(f.submitted_at, '%Y-%m') AS ym, COUNT(*) AS count FROM member_feedback f $where GROUP BY ym ORDER BY ym";
+$trend_sql = "SELECT DATE_FORMAT(f.submitted_at, '%Y-%m') AS ym, COUNT(*) AS count 
+    FROM member_feedback f 
+    LEFT JOIN members m ON f.member_id = m.id 
+    LEFT JOIN churches ch ON m.church_id = ch.id 
+    $where GROUP BY ym ORDER BY ym";
 $trend_stmt = $conn->prepare($trend_sql);
 if ($params) {
     $trend_stmt->bind_param($bind_types, ...$params);
