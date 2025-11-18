@@ -11,6 +11,7 @@ ini_set('error_log', __DIR__ . '/../logs/php_errors.log');
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/role_based_filter.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -70,18 +71,75 @@ if ($is_super_admin || has_permission('view_all_payments')) {
 
 
 // Fetch classes and organizations based on selected church
+// FILTER: Class leaders only see their assigned classes
 $bible_classes = null;
 $organizations = null;
+
+// Get class leader's assigned class IDs (check once, use multiple times)
+$class_leader_class_ids = get_user_class_ids();
+
 if ($filter_church) {
-    $bible_classes = $conn->prepare("SELECT id, name FROM bible_classes WHERE church_id = ? ORDER BY name ASC");
-    $bible_classes->bind_param('i', $filter_church);
-    $bible_classes->execute();
-    $bible_classes = $bible_classes->get_result();
-    
-    $organizations = $conn->prepare("SELECT id, name FROM organizations WHERE church_id = ? ORDER BY name ASC");
-    $organizations->bind_param('i', $filter_church);
-    $organizations->execute();
-    $organizations = $organizations->get_result();
+    if ($class_leader_class_ids !== null) {
+        // Class leader: only show their assigned classes for the selected church
+        $placeholders = implode(',', array_fill(0, count($class_leader_class_ids), '?'));
+        $bible_classes = $conn->prepare("SELECT id, name FROM bible_classes WHERE church_id = ? AND id IN ($placeholders) ORDER BY name ASC");
+        $bind_params = array_merge([$filter_church], $class_leader_class_ids);
+        $bind_types = 'i' . str_repeat('i', count($class_leader_class_ids));
+        $bible_classes->bind_param($bind_types, ...$bind_params);
+        $bible_classes->execute();
+        $bible_classes = $bible_classes->get_result();
+    } else {
+        // Not a class leader: show all classes for the church
+        $bible_classes = $conn->prepare("SELECT id, name FROM bible_classes WHERE church_id = ? ORDER BY name ASC");
+        $bible_classes->bind_param('i', $filter_church);
+        $bible_classes->execute();
+        $bible_classes = $bible_classes->get_result();
+    }
+} else {
+    // No church filter selected
+    if ($class_leader_class_ids !== null) {
+        // Class leader: only show their assigned classes (all churches)
+        $placeholders = implode(',', array_fill(0, count($class_leader_class_ids), '?'));
+        $bible_classes = $conn->prepare("SELECT id, name FROM bible_classes WHERE id IN ($placeholders) ORDER BY name ASC");
+        $bind_types = str_repeat('i', count($class_leader_class_ids));
+        $bible_classes->bind_param($bind_types, ...$class_leader_class_ids);
+        $bible_classes->execute();
+        $bible_classes = $bible_classes->get_result();
+    }
+    // For non-class-leaders, don't populate bible_classes if no church selected (it would be too many)
+}
+
+// Get org leader's assigned org IDs
+$org_leader_org_ids = get_user_organization_ids();
+
+if ($filter_church) {
+    if ($org_leader_org_ids !== null) {
+        // Org leader: only show their assigned organizations
+        $placeholders = implode(',', array_fill(0, count($org_leader_org_ids), '?'));
+        $organizations = $conn->prepare("SELECT id, name FROM organizations WHERE church_id = ? AND id IN ($placeholders) ORDER BY name ASC");
+        $bind_params = array_merge([$filter_church], $org_leader_org_ids);
+        $bind_types = 'i' . str_repeat('i', count($org_leader_org_ids));
+        $organizations->bind_param($bind_types, ...$bind_params);
+        $organizations->execute();
+        $organizations = $organizations->get_result();
+    } else {
+        // Not an org leader: show all organizations for the church
+        $organizations = $conn->prepare("SELECT id, name FROM organizations WHERE church_id = ? ORDER BY name ASC");
+        $organizations->bind_param('i', $filter_church);
+        $organizations->execute();
+        $organizations = $organizations->get_result();
+    }
+} else {
+    // No church filter selected
+    if ($org_leader_org_ids !== null) {
+        // Org leader: only show their assigned organizations (all churches)
+        $placeholders = implode(',', array_fill(0, count($org_leader_org_ids), '?'));
+        $organizations = $conn->prepare("SELECT id, name FROM organizations WHERE id IN ($placeholders) ORDER BY name ASC");
+        $bind_types = str_repeat('i', count($org_leader_org_ids));
+        $organizations->bind_param($bind_types, ...$org_leader_org_ids);
+        $organizations->execute();
+        $organizations = $organizations->get_result();
+    }
 }
 
 // Build SQL with enhanced filters
@@ -109,6 +167,50 @@ FROM payments p
 WHERE 1";
 $params = [];
 $types = '';
+
+// ============================================
+// APPLY ROLE-BASED FILTERING
+// ============================================
+
+// Apply class leader filter (only see payments from their class members)
+// Handle both regular members AND Sunday School students
+$class_ids = get_user_class_ids();
+if ($class_ids !== null) {
+    // For class leaders, filter payments where:
+    // - Payment is for a member in their class (m.class_id IN (...))
+    // - OR payment is for a Sunday School student in their class (ss.class_id IN (...))
+    $placeholders = implode(',', array_fill(0, count($class_ids), '?'));
+    $sql .= " AND ((p.member_id IS NOT NULL AND m.class_id IN ($placeholders)) OR (p.sundayschool_id IS NOT NULL AND ss.class_id IN ($placeholders)))";
+    // Add params twice: once for members, once for Sunday School
+    foreach ($class_ids as $class_id) {
+        $params[] = $class_id;
+        $types .= 'i';
+    }
+    foreach ($class_ids as $class_id) {
+        $params[] = $class_id;
+        $types .= 'i';
+    }
+}
+
+// Apply organizational leader filter (only see payments from their org members)
+$org_filter = apply_organizational_leader_filter('m');
+if (!empty($org_filter['sql'])) {
+    $sql .= " AND " . $org_filter['sql'];
+    foreach ($org_filter['params'] as $param) {
+        $params[] = $param;
+    }
+    $types .= $org_filter['types'];
+}
+
+// Apply cashier filter (only see payments they recorded)
+$cashier_filter = apply_cashier_filter('p');
+if (!empty($cashier_filter['sql'])) {
+    $sql .= " AND " . $cashier_filter['sql'];
+    foreach ($cashier_filter['params'] as $param) {
+        $params[] = $param;
+    }
+    $types .= $cashier_filter['types'];
+}
 
 // Apply filters
 // User filter (for super admin or view_all_payments permission)
@@ -202,7 +304,10 @@ if ($amount_max) {
     $types .= 'd';
 }
 // Restrict to user payments if not allowed to view all
-if (!$can_view_all && $user_id) {
+// BUT: Class leaders and org leaders should see their class/org payments, not just their recorded payments
+$is_leader = ($class_ids !== null || get_user_organization_ids() !== null);
+if (!$can_view_all && $user_id && !$is_leader) {
+    // Only apply recorded_by filter if user is NOT a class/org leader
     $sql .= " AND p.recorded_by = ?";
     $params[] = $user_id;
     $types .= 'i';
@@ -224,12 +329,26 @@ $count_sql = "SELECT COUNT(*) as total FROM (
         LEFT JOIN users u ON p.recorded_by = u.id
         WHERE 1";
 
+// Apply class leader filter to count query
+if ($class_ids !== null) {
+    $placeholders = implode(',', array_fill(0, count($class_ids), '?'));
+    $count_sql .= " AND ((p.member_id IS NOT NULL AND m.class_id IN ($placeholders)) OR (p.sundayschool_id IS NOT NULL AND ss.class_id IN ($placeholders)))";
+}
+
+// Apply organizational leader filter to count query
+$org_ids_for_count = get_user_organization_ids();
+if ($org_ids_for_count !== null) {
+    $placeholders = implode(',', array_fill(0, count($org_ids_for_count), '?'));
+    $count_sql .= " AND m.id IN (SELECT member_id FROM member_organizations WHERE organization_id IN ($placeholders) AND status = 'active')";
+}
+
 // User filter for count query (for super admin or view_all_payments permission)
 if (($is_super_admin || $can_view_all) && $filter_user_id) {
     $count_sql .= " AND p.recorded_by = ?";
 }
 // Restrict to user payments if not allowed to view all
-if (!$can_view_all && $user_id) {
+// BUT: Class leaders and org leaders should see their class/org payments, not just their recorded payments
+if (!$can_view_all && $user_id && !$is_leader) {
     $count_sql .= " AND p.recorded_by = ?";
 }
 // For regular users, the above clause always applies. For super admins/view_all, only filter if dropdown is used.
@@ -280,6 +399,37 @@ $count_sql .= " GROUP BY p.id
 // Build separate count params/types to match count_sql placeholders
 $count_params = [];
 $count_types = '';
+
+// Add class leader filter params to count query
+if ($class_ids !== null) {
+    foreach ($class_ids as $class_id) {
+        $count_params[] = $class_id;
+        $count_types .= 'i';
+    }
+    foreach ($class_ids as $class_id) {
+        $count_params[] = $class_id;
+        $count_types .= 'i';
+    }
+}
+
+// Add org leader filter params to count query
+if ($org_ids_for_count !== null) {
+    foreach ($org_ids_for_count as $org_id) {
+        $count_params[] = $org_id;
+        $count_types .= 'i';
+    }
+}
+
+// Add user filter params
+if (($is_super_admin || $can_view_all) && $filter_user_id) {
+    $count_params[] = $filter_user_id;
+    $count_types .= 'i';
+}
+if (!$can_view_all && $user_id && !$is_leader) {
+    $count_params[] = $user_id;
+    $count_types .= 'i';
+}
+
 if ($filter_church) {
     $count_params[] = $filter_church;
     $count_types .= 'i';
@@ -350,14 +500,7 @@ if ($amount_max) {
     $count_params[] = floatval($amount_max);
     $count_types .= 'd';
 }
-if (($is_super_admin || $can_view_all) && $filter_user_id) {
-    $count_params[] = $filter_user_id;
-    $count_types .= 'i';
-}
-if (!$can_view_all && $user_id) {
-    $count_params[] = $user_id;
-    $count_types .= 'i';
-}
+// Note: User filter params already added earlier (lines 398-406)
 
 if ($count_types) {
     $count_stmt = $conn->prepare($count_sql);

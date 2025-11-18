@@ -442,9 +442,10 @@ $('#savePermissionsBtn').on('click', function() {
     });
     
     $('#savePermissionsBtn').prop('disabled', true).text('Saving...');
-    fetch(API_BASE + '/roles.php?id=' + encodeURIComponent(roleId) + '&sync_permissions', {
+    fetch(API_BASE + '/roles.php?id=' + encodeURIComponent(roleId) + '&sync', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
+        credentials: 'same-origin',
         body: JSON.stringify({ permission_ids: selectedPermissions })
     })
     .then(res => res.json())

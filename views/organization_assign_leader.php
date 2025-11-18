@@ -4,21 +4,21 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 
+header('Content-Type: application/json');
+
 // Authentication check
 if (!is_logged_in()) {
-    header('Location: ' . BASE_URL . '/login.php');
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => 'Unauthorized']);
     exit;
 }
 
 // Permission check
 if (!has_permission('view_organization_list')) {
     http_response_code(403);
-    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
+    echo json_encode(['success' => false, 'error' => 'Forbidden']);
     exit;
 }
-?>
-require_once __DIR__.'/../config/config.php';
-header('Content-Type: application/json');
 
 $org_id = isset($_POST['org_id']) ? intval($_POST['org_id']) : 0;
 $leader_user_id = isset($_POST['leader_user_id']) ? intval($_POST['leader_user_id']) : 0;
@@ -95,13 +95,34 @@ if ($org_data['church_id'] && $church_id && $org_data['church_id'] != $church_id
     exit;
 }
 
-// Update organization with new leader (store user_id as leader_id)
-$stmt = $conn->prepare('UPDATE organizations SET leader_id = ? WHERE id = ?');
-$stmt->bind_param('ii', $leader_user_id, $org_id);
-if ($stmt->execute()) {
-    echo json_encode(['success' => true]);
-} else {
-    echo json_encode(['success' => false, 'error' => 'Database error.']);
+// Start transaction so legacy + new tables stay in sync
+$conn->begin_transaction();
+
+try {
+    // 1. Deactivate existing active leaders for this organization
+    $deactivate = $conn->prepare('UPDATE organization_leaders SET status = "inactive" WHERE organization_id = ? AND status = "active"');
+    $deactivate->bind_param('i', $org_id);
+    $deactivate->execute();
+    $deactivate->close();
+
+    // 2. Insert new leader assignment into organization_leaders table
+    $assigned_by = $_SESSION['user_id'] ?? null;
+    $insert = $conn->prepare('INSERT INTO organization_leaders (organization_id, user_id, assigned_by, status, notes) VALUES (?, ?, ?, "active", "Assigned via Organization List")');
+    $insert->bind_param('iii', $org_id, $leader_user_id, $assigned_by);
+    $insert->execute();
+    $insert->close();
+
+    // 3. Update organizations.leader_id for backward compatibility
+    $stmt = $conn->prepare('UPDATE organizations SET leader_id = ? WHERE id = ?');
+    $stmt->bind_param('ii', $leader_user_id, $org_id);
+    $stmt->execute();
+    $stmt->close();
+
+    $conn->commit();
+    echo json_encode(['success' => true, 'message' => 'Organization leader assigned successfully']);
+} catch (Exception $e) {
+    $conn->rollback();
+    echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
 }
-$stmt->close();
+
 ?>

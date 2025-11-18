@@ -107,20 +107,20 @@ abstract class BaseAPI {
     protected function getRequestData() {
         $data = [];
         
-        // GET parameters
-        if ($this->requestMethod === 'GET') {
-            $data = $_GET;
-        }
+        // Always include GET parameters (for query strings like ?id=6&sync)
+        $data = $_GET;
         
-        // POST/PUT/DELETE body
+        // POST/PUT/DELETE body - merge with GET parameters
         if (in_array($this->requestMethod, ['POST', 'PUT', 'DELETE'])) {
             $input = file_get_contents('php://input');
             $jsonData = json_decode($input, true);
             
             if ($jsonData) {
-                $data = $jsonData;
+                // Merge JSON body with GET parameters (body takes precedence)
+                $data = array_merge($data, $jsonData);
             } else {
-                $data = $_POST;
+                // Merge POST data with GET parameters
+                $data = array_merge($data, $_POST);
             }
         }
         

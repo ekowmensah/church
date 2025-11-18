@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/role_based_filter.php';
 
 // Ensure database connection is available
 global $conn;
@@ -12,6 +13,13 @@ if (!isset($conn)) {
 // Only allow logged-in users
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
+    exit;
+}
+
+// Redirect class leaders to their specialized dashboard
+$class_ids = get_user_class_ids();
+if ($class_ids !== null && !isset($_GET['force_main'])) {
+    header('Location: ' . BASE_URL . '/views/class_leader_dashboard.php');
     exit;
 }
 

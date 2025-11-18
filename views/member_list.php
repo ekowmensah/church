@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/role_based_filter.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -98,6 +99,40 @@ if (!empty($_GET['status_filter'])) {
     }
 }
 
+// ============================================
+// APPLY ROLE-BASED FILTERING
+// ============================================
+
+// Apply class leader filter (only see their assigned class members)
+$class_filter = apply_class_leader_filter('m');
+if (!empty($class_filter['sql'])) {
+    $where_conditions[] = $class_filter['sql'];
+    foreach ($class_filter['params'] as $param) {
+        $params[] = $param;
+    }
+    $param_types .= $class_filter['types'];
+}
+
+// Apply organizational leader filter (only see their organization members)
+$org_filter = apply_organizational_leader_filter('m');
+if (!empty($org_filter['sql'])) {
+    $where_conditions[] = $org_filter['sql'];
+    foreach ($org_filter['params'] as $param) {
+        $params[] = $param;
+    }
+    $param_types .= $org_filter['types'];
+}
+
+// Apply Sunday School role filter (only see juveniles)
+$ss_role_filter = apply_sunday_school_filter('m');
+if (!empty($ss_role_filter['sql'])) {
+    $where_conditions[] = $ss_role_filter['sql'];
+    foreach ($ss_role_filter['params'] as $param) {
+        $params[] = $param;
+    }
+    $param_types .= $ss_role_filter['types'];
+}
+
 // Build the main query
 $where_clause = implode(' AND ', $where_conditions);
 
@@ -148,6 +183,15 @@ if (!empty($_GET['day_born'])) {
 $include_sunday_school = true;
 if (!empty($_GET['status_filter']) && $_GET['status_filter'] !== 'juvenile') {
     $include_sunday_school = false;
+}
+
+// Apply class leader filter to Sunday School as well
+if (!empty($class_filter['sql'])) {
+    $ss_where_conditions[] = str_replace('m.class_id', 's.class_id', $class_filter['sql']);
+    foreach ($class_filter['params'] as $param) {
+        $ss_params[] = $param;
+    }
+    $ss_param_types .= $class_filter['types'];
 }
 
 $ss_where_clause = !empty($ss_where_conditions) ? implode(' AND ', $ss_where_conditions) : '1=1';

@@ -3,6 +3,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/role_based_filter.php';
 
 header('Content-Type: text/html; charset=utf-8');
 
@@ -29,9 +30,24 @@ if (!$church_id) {
 
 $class_id = intval($_GET['class_id'] ?? 0);
 
+// Check if user is a class leader
+$class_leader_class_ids = get_user_class_ids();
+
 // Use prepared statement to prevent SQL injection
-$stmt = $conn->prepare("SELECT id, name FROM bible_classes WHERE church_id = ? ORDER BY name ASC");
-$stmt->bind_param('i', $church_id);
+// FILTER: Class leaders only see their assigned classes
+if ($class_leader_class_ids !== null) {
+    // Class leader: only show their assigned classes
+    $placeholders = implode(',', array_fill(0, count($class_leader_class_ids), '?'));
+    $stmt = $conn->prepare("SELECT id, name FROM bible_classes WHERE church_id = ? AND id IN ($placeholders) ORDER BY name ASC");
+    $bind_params = array_merge([$church_id], $class_leader_class_ids);
+    $bind_types = 'i' . str_repeat('i', count($class_leader_class_ids));
+    $stmt->bind_param($bind_types, ...$bind_params);
+} else {
+    // Not a class leader: show all classes for the church
+    $stmt = $conn->prepare("SELECT id, name FROM bible_classes WHERE church_id = ? ORDER BY name ASC");
+    $stmt->bind_param('i', $church_id);
+}
+
 $stmt->execute();
 $result = $stmt->get_result();
 

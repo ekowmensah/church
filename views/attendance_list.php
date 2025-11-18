@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/role_based_filter.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -103,7 +104,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
 }
 
 // Fetch all sessions with church name (LEFT JOIN)
-$result = $conn->query("SELECT s.*, c.name AS church_name FROM attendance_sessions s LEFT JOIN churches c ON s.church_id = c.id ORDER BY s.service_date DESC, s.id DESC");
+// Apply role-based filtering for class leaders and organizational leaders
+$session_sql = "SELECT s.*, c.name AS church_name FROM attendance_sessions s LEFT JOIN churches c ON s.church_id = c.id WHERE 1";
+$session_params = [];
+$session_types = '';
+
+// Class leaders and org leaders should only see sessions from their church
+if (is_class_leader() || is_organizational_leader()) {
+    // Get the church_id from the leader's member record
+    $user_id = $_SESSION['user_id'] ?? 0;
+    if ($user_id) {
+        $user_church_sql = "SELECT m.church_id FROM users u 
+                           JOIN members m ON u.member_id = m.id 
+                           WHERE u.id = ?";
+        $user_church_stmt = $conn->prepare($user_church_sql);
+        $user_church_stmt->bind_param('i', $user_id);
+        $user_church_stmt->execute();
+        $user_church_result = $user_church_stmt->get_result();
+        if ($user_church_row = $user_church_result->fetch_assoc()) {
+            $session_sql .= " AND s.church_id = ?";
+            $session_params[] = $user_church_row['church_id'];
+            $session_types .= 'i';
+        }
+        $user_church_stmt->close();
+    }
+}
+
+$session_sql .= " ORDER BY s.service_date DESC, s.id DESC";
+
+if (!empty($session_params)) {
+    $result = $conn->prepare($session_sql);
+    $result->bind_param($session_types, ...$session_params);
+    $result->execute();
+    $result = $result->get_result();
+} else {
+    $result = $conn->query($session_sql);
+}
 
 // Fetch session_ids that already have attendance records
 $marked_sessions = [];
