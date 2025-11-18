@@ -202,6 +202,16 @@ if (!empty($org_filter['sql'])) {
     $types .= $org_filter['types'];
 }
 
+// Apply Sunday School role filter (only see payments for juveniles)
+$ss_filter = apply_sunday_school_filter('m');
+if (!empty($ss_filter['sql'])) {
+    $sql .= " AND " . $ss_filter['sql'];
+    foreach ($ss_filter['params'] as $param) {
+        $params[] = $param;
+    }
+    $types .= $ss_filter['types'];
+}
+
 // Apply cashier filter (only see payments they recorded)
 $cashier_filter = apply_cashier_filter('p');
 if (!empty($cashier_filter['sql'])) {
@@ -339,7 +349,12 @@ if ($class_ids !== null) {
 $org_ids_for_count = get_user_organization_ids();
 if ($org_ids_for_count !== null) {
     $placeholders = implode(',', array_fill(0, count($org_ids_for_count), '?'));
-    $count_sql .= " AND m.id IN (SELECT member_id FROM member_organizations WHERE organization_id IN ($placeholders) AND status = 'active')";
+    $count_sql .= " AND m.id IN (SELECT mo_sub.member_id FROM member_organizations mo_sub WHERE mo_sub.organization_id IN ($placeholders))";
+}
+
+// Apply Sunday School role filter to count query
+if (!empty($ss_filter['sql'])) {
+    $count_sql .= " AND " . $ss_filter['sql'];
 }
 
 // User filter for count query (for super admin or view_all_payments permission)

@@ -233,7 +233,7 @@ function apply_organizational_leader_filter($member_table_alias = 'm', $user_id 
     $placeholders = implode(',', array_fill(0, count($org_ids), '?'));
     $sql = "{$member_table_alias}.id IN (
         SELECT member_id FROM member_organizations 
-        WHERE organization_id IN ({$placeholders}) AND status = 'active'
+        WHERE organization_id IN ({$placeholders})
     )";
     $types = str_repeat('i', count($org_ids));
     

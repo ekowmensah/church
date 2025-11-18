@@ -16,10 +16,27 @@ if (!is_logged_in()) {
     exit;
 }
 
-// Redirect class leaders to their specialized dashboard
+// Check both roles first to handle users with multiple roles
 $class_ids = get_user_class_ids();
+$org_ids = get_user_organization_ids();
+
+// If user has both roles, let them choose or prioritize org leader
+if ($class_ids !== null && $org_ids !== null && !isset($_GET['force_main'])) {
+    // User has both roles - prioritize org leader (or add a role selection page)
+    // For now, redirect to org leader dashboard
+    header('Location: ' . BASE_URL . '/views/org_leader_dashboard.php');
+    exit;
+}
+
+// Redirect class leaders to their specialized dashboard
 if ($class_ids !== null && !isset($_GET['force_main'])) {
     header('Location: ' . BASE_URL . '/views/class_leader_dashboard.php');
+    exit;
+}
+
+// Redirect organizational leaders to their specialized dashboard
+if ($org_ids !== null && !isset($_GET['force_main'])) {
+    header('Location: ' . BASE_URL . '/views/org_leader_dashboard.php');
     exit;
 }
 
