@@ -22,7 +22,7 @@ $editing = $id > 0;
 $error = '';
 $success = '';
 $record = [
-    'srn'=>'','photo'=>'','last_name'=>'','middle_name'=>'','first_name'=>'','other_name'=>'','dob'=>'','gender'=>'','dayborn'=>'','contact'=>'','gps_address'=>'','residential_address'=>'','organization'=>'','school_attend'=>'','father_name'=>'','father_contact'=>'','father_occupation'=>'','mother_name'=>'','mother_contact'=>'','mother_occupation'=>'','church_id'=>'','class_id'=>'116','father_member_id'=>'','mother_member_id'=>'','father_is_member'=>'','mother_is_member'=>''
+    'srn'=>'','photo'=>'','last_name'=>'','middle_name'=>'','first_name'=>'','other_name'=>'','dob'=>'','gender'=>'','dayborn'=>'','contact'=>'','gps_address'=>'','residential_address'=>'','organization'=>'','school_attend'=>'','father_name'=>'','father_contact'=>'','father_occupation'=>'','mother_name'=>'','mother_contact'=>'','mother_occupation'=>'','church_id'=>'','class_id'=>'116','father_member_id'=>'','mother_member_id'=>'','father_is_member'=>'','mother_is_member'=>'','baptized'=>'','baptism_date'=>'','school_location'=>'','education_level'=>''
 ];
 if ($editing) {
     $stmt = $conn->prepare('SELECT * FROM sunday_school WHERE id = ?');
@@ -109,16 +109,17 @@ if (!isset($record['other_name'])) $record['other_name'] = '';
         }
         if (!$error) {
         if ($editing) {
-            $stmt = $conn->prepare('UPDATE sunday_school SET srn=?, photo=?, last_name=?, middle_name=?, first_name=?, dob=?, gender=?, dayborn=?, contact=?, gps_address=?, residential_address=?, organization=?, school_attend=?, father_name=?, father_contact=?, father_occupation=?, mother_name=?, mother_contact=?, mother_occupation=?, church_id=?, class_id=?, father_member_id=?, mother_member_id=?, father_is_member=?, mother_is_member=? WHERE id=?');
-            $stmt->bind_param('sssssssssssssssssssiiisssi', $record['srn'],$record['photo'],$record['last_name'],$record['middle_name'],$record['first_name'],$record['dob'],$record['gender'],$record['dayborn'],$record['contact'],$record['gps_address'],$record['residential_address'],$record['organization'],$record['school_attend'],$record['father_name'],$record['father_contact'],$record['father_occupation'],$record['mother_name'],$record['mother_contact'],$record['mother_occupation'],$record['church_id'],$record['class_id'],$record['father_member_id'],$record['mother_member_id'],$record['father_is_member'],$record['mother_is_member'],$id);
+            $stmt = $conn->prepare('UPDATE sunday_school SET srn=?, photo=?, last_name=?, middle_name=?, first_name=?, dob=?, gender=?, dayborn=?, contact=?, gps_address=?, residential_address=?, organization=?, school_attend=?, father_name=?, father_contact=?, father_occupation=?, mother_name=?, mother_contact=?, mother_occupation=?, church_id=?, class_id=?, father_member_id=?, mother_member_id=?, father_is_member=?, mother_is_member=?, baptized=?, baptism_date=?, school_location=?, education_level=? WHERE id=?');
+            $stmt->bind_param('sssssssssssssssssssiiiiissssssi', $record['srn'],$record['photo'],$record['last_name'],$record['middle_name'],$record['first_name'],$record['dob'],$record['gender'],$record['dayborn'],$record['contact'],$record['gps_address'],$record['residential_address'],$record['organization'],$record['school_attend'],$record['father_name'],$record['father_contact'],$record['father_occupation'],$record['mother_name'],$record['mother_contact'],$record['mother_occupation'],$record['church_id'],$record['class_id'],$record['father_member_id'],$record['mother_member_id'],$record['father_is_member'],$record['mother_is_member'],$record['baptized'],$record['baptism_date'],$record['school_location'],$record['education_level'],$id);
             $stmt->execute();
             $stmt->close();
             $success = 'Record updated.';
             header('Location: sundayschool_list.php');
             exit;
         } else {
-            $stmt = $conn->prepare('INSERT INTO sunday_school (srn, photo, last_name, middle_name, first_name, dob, gender, dayborn, contact, gps_address, residential_address, organization, school_attend, father_name, father_contact, father_occupation, mother_name, mother_contact, mother_occupation, church_id, class_id, father_member_id, mother_member_id, father_is_member, mother_is_member) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-            $stmt->bind_param('sssssssssssssssssssiiiss',
+            $stmt = $conn->prepare('INSERT INTO sunday_school (srn, photo, last_name, middle_name, first_name, dob, gender, dayborn, contact, gps_address, residential_address, organization, school_attend, father_name, father_contact, father_occupation, mother_name, mother_contact, mother_occupation, church_id, class_id, father_member_id, mother_member_id, father_is_member, mother_is_member, baptized, baptism_date, school_location, education_level) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+           // $stmt->bind_param('sssssssssssssssssssiiiiissssss',
+              $stmt->bind_param('sssssssssssssssssssiiiissssss', 
                 $record['srn'],
                 $record['photo'],
                 $record['last_name'],
@@ -143,7 +144,11 @@ if (!isset($record['other_name'])) $record['other_name'] = '';
                 $record['father_member_id'],
                 $record['mother_member_id'],
                 $record['father_is_member'],
-                $record['mother_is_member']
+                $record['mother_is_member'],
+                $record['baptized'],
+                $record['baptism_date'],
+                $record['school_location'],
+                $record['education_level']
             );
             $stmt->execute();
             $stmt->close();
@@ -505,7 +510,62 @@ $(document).ready(function(){
                 <label>School Attend</label>
                 <input type="text" name="school_attend" class="form-control" value="<?=htmlspecialchars($record['school_attend'])?>">
             </div>
+            <div class="form-group col-md-4">
+                <label>Location Of School</label>
+                <input type="text" name="school_location" class="form-control" value="<?=htmlspecialchars($record['school_location'])?>">
+            </div>
         </div>
+        <div class="form-row">
+            <div class="form-group col-md-4">
+                <label>Have you been baptized?</label>
+                <select name="baptized" id="baptized" class="form-control">
+                    <option value="">Select...</option>
+                    <option value="yes" <?=($record['baptized']??'')=='yes'?'selected':''?>>Yes</option>
+                    <option value="no" <?=($record['baptized']??'')=='no'?'selected':''?>>No</option>
+                </select>
+            </div>
+            <div class="form-group col-md-4" id="baptism_date_group" style="display:none;">
+                <label>Date Of Baptism</label>
+                <input type="date" name="baptism_date" id="baptism_date" class="form-control" value="<?=htmlspecialchars($record['baptism_date'])?>">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group col-md-6">
+                <label>Level Of Education</label>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="education_level" id="education_basic" value="basic" <?=($record['education_level']??'')=='basic'?'checked':''?>>
+                    <label class="form-check-label" for="education_basic">
+                        Basic
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="education_level" id="education_senior_high" value="senior_high" <?=($record['education_level']??'')=='senior_high'?'checked':''?>>
+                    <label class="form-check-label" for="education_senior_high">
+                        Senior High
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="education_level" id="education_tertiary" value="tertiary" <?=($record['education_level']??'')=='tertiary'?'checked':''?>>
+                    <label class="form-check-label" for="education_tertiary">
+                        Tertiary
+                    </label>
+                </div>
+            </div>
+        </div>
+        <script>
+        $(function(){
+            function toggleBaptismDate(){
+                if($('#baptized').val() === 'yes'){
+                    $('#baptism_date_group').show();
+                } else {
+                    $('#baptism_date_group').hide();
+                    $('#baptism_date').val('');
+                }
+            }
+            $('#baptized').on('change', toggleBaptismDate);
+            toggleBaptismDate();
+        });
+        </script>
         <hr/>
         <div class="ss-section-title" style="font-size: 1.2rem; color: #0d6efd;"><i class="fa-solid fa-people-roof ss-icon"></i> Parent Information</div>
 <div class="ss-parent-section mb-3" style="background: #eaf3fa; border-left: 4px solid #0d6efd; border-radius: 9px; padding: 18px 14px 14px 14px;">
