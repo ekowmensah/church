@@ -25,6 +25,7 @@ $age_to = isset($_GET['age_to']) ? intval($_GET['age_to']) : 0;
 $baptized = isset($_GET['baptized']) ? $_GET['baptized'] : '';
 $education_level = isset($_GET['education_level']) ? $_GET['education_level'] : '';
 $report_type = isset($_GET['report_type']) ? $_GET['report_type'] : 'summary';
+$parent_member = isset($_GET['parent_member']) ? $_GET['parent_member'] : '';
 
 // Build WHERE clause
 $where_conditions = [];
@@ -53,6 +54,21 @@ if ($education_level) {
     $where_conditions[] = "ss.education_level = ?";
     $params[] = $education_level;
     $types .= 's';
+}
+
+// Parent membership filter
+if ($parent_member) {
+    if ($parent_member === 'both') {
+        $where_conditions[] = "(ss.father_is_member = 'yes' AND ss.mother_is_member = 'yes')";
+    } elseif ($parent_member === 'either') {
+        $where_conditions[] = "(ss.father_is_member = 'yes' OR ss.mother_is_member = 'yes')";
+    } elseif ($parent_member === 'father') {
+        $where_conditions[] = "ss.father_is_member = 'yes'";
+    } elseif ($parent_member === 'mother') {
+        $where_conditions[] = "ss.mother_is_member = 'yes'";
+    } elseif ($parent_member === 'none') {
+        $where_conditions[] = "(ss.father_is_member = 'no' AND ss.mother_is_member = 'no')";
+    }
 }
 
 // Age filter
@@ -149,7 +165,9 @@ $detailed_sql = "SELECT
     bc.name as class_name,
     TIMESTAMPDIFF(YEAR, ss.dob, CURDATE()) as age,
     CONCAT(fm.last_name, ' ', fm.first_name) as father_member_name,
-    CONCAT(mm.last_name, ' ', mm.first_name) as mother_member_name
+    fm.crn as father_crn,
+    CONCAT(mm.last_name, ' ', mm.first_name) as mother_member_name,
+    mm.crn as mother_crn
 FROM sunday_school ss
 LEFT JOIN churches c ON ss.church_id = c.id
 LEFT JOIN bible_classes bc ON ss.class_id = bc.id
@@ -351,6 +369,16 @@ ob_start();
         page-break-inside: avoid;
     }
 }
+
+#showAllStudents {
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+#showAllStudents:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
+}
 </style>
 
 <div class="container-fluid px-4">
@@ -424,12 +452,26 @@ ob_start();
                 <label class="form-label"><i class="fas fa-school"></i> School Location</label>
                 <input type="text" id="mainSchoolLocation" class="form-control" placeholder="Search school location...">
             </div>
-            <div class="col-md-6 d-flex align-items-end">
+            <div class="col-md-3">
+                <label class="form-label"><i class="fas fa-users"></i> Parent Membership</label>
+                <select id="mainParentMemberFilter" class="form-control">
+                    <option value="">All Children</option>
+                    <option value="both">Both Parents Members</option>
+                    <option value="either">At Least One Parent Member</option>
+                    <option value="father">Father is Member</option>
+                    <option value="mother">Mother is Member</option>
+                    <option value="none">No Parent is Member</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
                 <button type="button" id="applyMainFilters" class="btn btn-primary me-2">
                     <i class="fas fa-filter"></i> Apply Filters
                 </button>
-                <button type="button" id="resetMainFilters" class="btn btn-secondary">
-                    <i class="fas fa-redo"></i> Reset All
+                <button type="button" id="resetMainFilters" class="btn btn-secondary me-2">
+                    <i class="fas fa-redo"></i> Reset
+                </button>
+                <button type="button" id="showAllStudents" class="btn btn-success">
+                    <i class="fas fa-list"></i> Show All
                 </button>
             </div>
         </div>
@@ -538,7 +580,12 @@ ob_start();
                                 </td>
                                 <td>
                                     <?php if($student['father_is_member'] == 'yes'): ?>
-                                        <small class="text-success"><i class="fas fa-check-circle"></i> <?=htmlspecialchars($father_name)?></small>
+                                        <small class="text-success">
+                                            <i class="fas fa-check-circle"></i> <?=htmlspecialchars($father_name)?>
+                                            <?php if($student['father_crn']): ?>
+                                                <br><span class="badge bg-success" style="font-size: 0.75rem;">CRN: <?=htmlspecialchars($student['father_crn'])?></span>
+                                            <?php endif; ?>
+                                        </small>
                                     <?php else: ?>
                                         <small><?=htmlspecialchars($father_name)?></small>
                                     <?php endif; ?>
@@ -546,7 +593,12 @@ ob_start();
                                 <td><?=htmlspecialchars($student['father_contact'])?></td>
                                 <td>
                                     <?php if($student['mother_is_member'] == 'yes'): ?>
-                                        <small class="text-success"><i class="fas fa-check-circle"></i> <?=htmlspecialchars($mother_name)?></small>
+                                        <small class="text-success">
+                                            <i class="fas fa-check-circle"></i> <?=htmlspecialchars($mother_name)?>
+                                            <?php if($student['mother_crn']): ?>
+                                                <br><span class="badge bg-success" style="font-size: 0.75rem;">CRN: <?=htmlspecialchars($student['mother_crn'])?></span>
+                                            <?php endif; ?>
+                                        </small>
                                     <?php else: ?>
                                         <small><?=htmlspecialchars($mother_name)?></small>
                                     <?php endif; ?>
@@ -705,16 +757,53 @@ $(document).ready(function() {
         $('#mainBaptizedFilter').val('');
         $('#mainEducationFilter').val('');
         $('#mainSchoolLocation').val('');
+        $('#mainParentMemberFilter').val('');
         
         // Reset table - clear all searches and filters
         table.search('').columns().search('').draw();
         
         // Clear any custom search filters
         $.fn.dataTable.ext.search = [];
+        
+        console.log('All filters reset');
+    });
+
+    // Show All Button - Clear filters and show all entries
+    $('#showAllStudents').on('click', function() {
+        // Clear all main filter inputs
+        $('#mainChurchFilter').val('');
+        $('#mainGenderFilter').val('');
+        $('#mainAgeFrom').val('');
+        $('#mainAgeTo').val('');
+        $('#mainBaptizedFilter').val('');
+        $('#mainEducationFilter').val('');
+        $('#mainSchoolLocation').val('');
+        $('#mainParentMemberFilter').val('');
+        
+        // Clear any custom search filters
+        $.fn.dataTable.ext.search = [];
+        
+        // Reset table - clear all searches and filters
+        table.search('').columns().search('');
+        
+        // Change page length to show all entries
+        table.page.len(-1).draw();
+        
+        // Visual feedback
+        var btn = $(this);
+        btn.html('<i class="fas fa-check"></i> Showing All ' + table.rows().count() + ' Students');
+        setTimeout(function() {
+            btn.html('<i class="fas fa-list"></i> Show All');
+        }, 2000);
+        
+        console.log('Showing all ' + table.rows().count() + ' students - filters cleared and page length set to ALL');
     });
 
     // Function to apply all main filters
     function applyAllMainFilters() {
+        // Clear all existing custom filters first
+        $.fn.dataTable.ext.search = [];
+        
         // Church filter (column 4)
         var churchVal = $('#mainChurchFilter').val();
         table.column(4).search(churchVal ? '^' + churchVal + '$' : '', true, false);
@@ -722,20 +811,6 @@ $(document).ready(function() {
         // Gender filter (column 3)
         var genderVal = $('#mainGenderFilter').val();
         table.column(3).search(genderVal ? '^' + genderVal + '$' : '', true, false);
-
-        // Age range filter (column 2)
-        var ageFrom = parseInt($('#mainAgeFrom').val()) || 0;
-        var ageTo = parseInt($('#mainAgeTo').val()) || 999;
-        
-        $.fn.dataTable.ext.search.push(
-            function(settings, data, dataIndex) {
-                var age = parseInt(data[2]) || 0; // Age is in column 2
-                if ((age >= ageFrom && age <= ageTo)) {
-                    return true;
-                }
-                return false;
-            }
-        );
 
         // Baptized filter (column 8)
         var baptizedVal = $('#mainBaptizedFilter').val();
@@ -749,11 +824,78 @@ $(document).ready(function() {
         var schoolLocationVal = $('#mainSchoolLocation').val();
         table.column(7).search(schoolLocationVal, false, false);
 
+        // Age range filter (column 2) - Custom filter
+        var ageFrom = parseInt($('#mainAgeFrom').val()) || 0;
+        var ageTo = parseInt($('#mainAgeTo').val()) || 999;
+        
+        // Parent Membership filter (columns 11 and 13 - Father and Mother) - Custom filter
+        var parentMemberVal = $('#mainParentMemberFilter').val();
+        
+        // Add combined custom filter for age and parent membership
+        $.fn.dataTable.ext.search.push(
+            function(settings, data, dataIndex) {
+                // Age filter check
+                var ageText = data[2] || '0'; // Age is in column 2
+                var age = parseInt(ageText.toString().replace(/[^\d]/g, '')) || 0;
+                var agePass = (age >= ageFrom && age <= ageTo);
+                
+                // Parent membership filter check
+                var parentPass = true;
+                if (parentMemberVal) {
+                    // Get the actual row data from the table
+                    var row = table.row(dataIndex).node();
+                    var fatherCell = $(row).find('td').eq(11).html() || ''; // Father column
+                    var motherCell = $(row).find('td').eq(13).html() || ''; // Mother column
+                    
+                    // Check if parent is a member by looking for the check-circle icon
+                    var fatherIsMember = fatherCell.indexOf('fa-check-circle') > -1;
+                    var motherIsMember = motherCell.indexOf('fa-check-circle') > -1;
+                    
+                    if (parentMemberVal === 'both') {
+                        parentPass = fatherIsMember && motherIsMember;
+                    } else if (parentMemberVal === 'either') {
+                        parentPass = fatherIsMember || motherIsMember;
+                    } else if (parentMemberVal === 'father') {
+                        parentPass = fatherIsMember;
+                    } else if (parentMemberVal === 'mother') {
+                        parentPass = motherIsMember;
+                    } else if (parentMemberVal === 'none') {
+                        parentPass = !fatherIsMember && !motherIsMember;
+                    }
+                }
+                
+                // Both conditions must pass
+                return agePass && parentPass;
+            }
+        );
+
         // Apply all filters
         table.draw();
-
-        // Remove age filter after drawing
-        $.fn.dataTable.ext.search.pop();
+        
+        // Log filter status
+        console.log('Filters applied:', {
+            church: churchVal,
+            gender: genderVal,
+            ageFrom: ageFrom,
+            ageTo: ageTo,
+            baptized: baptizedVal,
+            education: educationVal,
+            schoolLocation: schoolLocationVal,
+            parentMember: parentMemberVal
+        });
+        
+        // Debug: Check first row to see data structure
+        if (parentMemberVal && table.rows().count() > 0) {
+            var firstRow = table.row(0).node();
+            var fatherTest = $(firstRow).find('td').eq(11).html();
+            var motherTest = $(firstRow).find('td').eq(13).html();
+            console.log('Sample parent data:', {
+                father: fatherTest ? fatherTest.substring(0, 100) : 'empty',
+                mother: motherTest ? motherTest.substring(0, 100) : 'empty',
+                fatherHasIcon: fatherTest ? (fatherTest.indexOf('fa-check-circle') > -1) : false,
+                motherHasIcon: motherTest ? (motherTest.indexOf('fa-check-circle') > -1) : false
+            });
+        }
     }
 
     // Allow Enter key to apply filters
