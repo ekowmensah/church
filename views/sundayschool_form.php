@@ -110,7 +110,8 @@ if (!isset($record['other_name'])) $record['other_name'] = '';
         if (!$error) {
         if ($editing) {
             $stmt = $conn->prepare('UPDATE sunday_school SET srn=?, photo=?, last_name=?, middle_name=?, first_name=?, dob=?, gender=?, dayborn=?, contact=?, gps_address=?, residential_address=?, organization=?, school_attend=?, father_name=?, father_contact=?, father_occupation=?, mother_name=?, mother_contact=?, mother_occupation=?, church_id=?, class_id=?, father_member_id=?, mother_member_id=?, father_is_member=?, mother_is_member=?, baptized=?, baptism_date=?, school_location=?, education_level=? WHERE id=?');
-            $stmt->bind_param('sssssssssssssssssssiiiiissssssi', $record['srn'],$record['photo'],$record['last_name'],$record['middle_name'],$record['first_name'],$record['dob'],$record['gender'],$record['dayborn'],$record['contact'],$record['gps_address'],$record['residential_address'],$record['organization'],$record['school_attend'],$record['father_name'],$record['father_contact'],$record['father_occupation'],$record['mother_name'],$record['mother_contact'],$record['mother_occupation'],$record['church_id'],$record['class_id'],$record['father_member_id'],$record['mother_member_id'],$record['father_is_member'],$record['mother_is_member'],$record['baptized'],$record['baptism_date'],$record['school_location'],$record['education_level'],$id);
+            // Type string: 19 strings (s) + 4 integers (i) + 6 strings (s) + 1 integer (i) = 30 total
+            $stmt->bind_param('sssssssssssssssssssiiiissssssi', $record['srn'],$record['photo'],$record['last_name'],$record['middle_name'],$record['first_name'],$record['dob'],$record['gender'],$record['dayborn'],$record['contact'],$record['gps_address'],$record['residential_address'],$record['organization'],$record['school_attend'],$record['father_name'],$record['father_contact'],$record['father_occupation'],$record['mother_name'],$record['mother_contact'],$record['mother_occupation'],$record['church_id'],$record['class_id'],$record['father_member_id'],$record['mother_member_id'],$record['father_is_member'],$record['mother_is_member'],$record['baptized'],$record['baptism_date'],$record['school_location'],$record['education_level'],$id);
             $stmt->execute();
             $stmt->close();
             $success = 'Record updated.';
@@ -211,7 +212,7 @@ ob_start();
 
                     <div class="ss-section-title" style="font-size: 1.2rem; color: #0d6efd;"><i class="fa-solid fa-user-graduate ss-icon"></i> Personal Information <span class="text-danger">*</span></div>
 <div class="form-row">
-    <div class="form-group col-md-4">
+    <div class="form-group col-md-3">
         <label>Church <span class="text-danger">*</span></label>
         <select name="church_id" id="church_id" class="form-control" required>
 <option value="">Select Church</option>
@@ -221,7 +222,7 @@ while($c = $churches->fetch_assoc()): ?>
 <?php endwhile; ?>
 </select>
     </div>
-    <div class="form-group col-md-4">
+    <div class="form-group col-md-3">
         <label>Bible Class <span class="text-danger">*</span></label>
         <select name="class_id" id="class_id" class="form-control" required>
 <option value="116" selected="selected">Sunday School</option>
@@ -291,6 +292,19 @@ $(function(){
 });
 </script>
     </div>
+    <div class="form-group col-md-3 d-flex align-items-end">
+        <div style="width:100%">
+            <label>Date of Birth <span class="text-danger">*</span></label>
+            <input type="date" name="dob" id="dob" class="form-control" value="<?=htmlspecialchars($record['dob'])?>">
+        </div>
+        <span id="age_display" class="ml-2 text-muted small" style="white-space:nowrap"></span>
+    </div>
+    <div class="form-group col-md-2 d-flex align-items-end">
+        <div style="width:100%">
+            <label>Day Born</label>
+            <input type="text" name="dayborn" id="dayborn" class="form-control" value="<?=htmlspecialchars($record['dayborn'])?>" readonly>
+        </div>
+    </div>
 </div>
 <script>
 $(function(){
@@ -306,15 +320,33 @@ $(function(){
         updateSRN();
     });
     $('#class_id').on('change', updateSRN);
+    // NEW: Update SRN when DOB changes (year-based SRN)
+    $('#dob').on('change', updateSRN);
+    
     function updateSRN(){
         var churchId = $('#church_id').val();
-        var classId = $('#class_id').val();
-        if(churchId && classId){
-            $.get('get_next_crn.php', {church_id: churchId, class_id: classId}, function(data){
+        var dob = $('#dob').val();
+        var currentId = <?php echo $editing ? $id : 0; ?>;
+        
+        if(churchId && dob){
+            // New year-based SRN generation
+            $.get('get_next_srn.php', {
+                church_id: churchId,
+                dob: dob,
+                id: currentId
+            }, function(data){
                 $('input[name="srn"]').val(data);
+            }).fail(function(xhr){
+                if(xhr.status === 400){
+                    $('input[name="srn"]').val('').attr('placeholder', 'Enter DOB to generate SRN');
+                } else {
+                    console.error('Failed to generate SRN:', xhr.responseText);
+                }
             });
+        } else if(!dob) {
+            $('input[name="srn"]').val('').attr('placeholder', 'Enter DOB to generate SRN');
         } else {
-            $('input[name="srn"]').val('');
+            $('input[name="srn"]').val('').attr('placeholder', 'Select church and DOB');
         }
     }
     // On page load, if editing or after error, populate classes and SRN
@@ -361,13 +393,24 @@ $(function(){
             $('#mother_member_id').val(motherMemberId).trigger('change');
         }
     }
+    
+    // Initialize SRN on page load if church and DOB are set
+    <?php if ($editing || (!empty($_POST['church_id']) && !empty($_POST['dob']))): ?>
+    // Trigger SRN generation for editing or after form error
+    setTimeout(function() {
+        if($('#church_id').val() && $('#dob').val()) {
+            updateSRN();
+        }
+    }, 500);
+    <?php endif; ?>
 
 });
 </script>
         <div class="form-row">
             <div class="form-group col-md-3">
-                <label>SRN</label>
-                <input type="text" name="srn" class="form-control" value="<?=htmlspecialchars($record['srn'])?>" required readonly>
+                <label>SRN <small class="text-muted">(Auto-generated from DOB)</small></label>
+                <input type="text" name="srn" class="form-control" value="<?=htmlspecialchars($record['srn'])?>" placeholder="Enter DOB to generate SRN" required readonly>
+                <small class="form-text text-muted">Format: FMC-SYYNN-KM (YY=birth year)</small>
             </div>
             <div class="form-group col-md-3">
                 <label>Picture</label><br>
@@ -389,7 +432,7 @@ $(function(){
                 <label>First Name <span class="text-danger">*</span></label>
                 <input type="text" name="first_name" class="form-control" value="<?=isset($record['first_name']) ? htmlspecialchars($record['first_name']) : ''?>">
             </div>
-            <div class="form-group col-md-2">
+            <div class="form-group col-md-3">
                 <label>Gender <span class="text-danger">*</span></label>
                 <select name="gender" class="form-control" required>
                     <option value="">Select</option>
@@ -397,19 +440,6 @@ $(function(){
                     <option value="female" <?=($record['gender']??'')=='female'?'selected':''?>>Female</option>
                     <option value="other" <?=($record['gender']??'')=='other'?'selected':''?>>Other</option>
                 </select>
-            </div>
-            <div class="form-group col-md-3 d-flex align-items-end">
-                <div style="width:100%">
-                    <label>Date of Birth <span class="text-danger">*</span></label>
-                    <input type="date" name="dob" id="dob" class="form-control" value="<?=htmlspecialchars($record['dob'])?>">
-                </div>
-                <span id="age_display" class="ml-2 text-muted small" style="white-space:nowrap"></span>
-            </div>
-            <div class="form-group col-md-2 d-flex align-items-end">
-                <div style="width:100%">
-                    <label>Day Born</label>
-                    <input type="text" name="dayborn" id="dayborn" class="form-control" value="<?=htmlspecialchars($record['dayborn'])?>" readonly>
-                </div>
             </div>
         </div>
 <script>
