@@ -1,5 +1,9 @@
 <?php
-session_start();
+// Check if session is not already started
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
@@ -17,7 +21,7 @@ if (!has_permission('view_health_list')) {
     echo json_encode(['success' => false, 'error' => 'Forbidden']);
     exit;
 }
-?>
+
 // Usage: include this at the top of health_form.php to prefill by member_id or crn
 $prefill_crn = '';
 $prefill_member_id = 0;
