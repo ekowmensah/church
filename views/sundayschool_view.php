@@ -24,6 +24,7 @@ if (!$id) {
 }
 
 $stmt = $conn->prepare('SELECT ss.*, c.name as church_name, c.church_code, c.circuit_code, bc.name as class_name,
+                        o.name as organization_name,
                         CASE 
                             WHEN ss.father_is_member = "yes" AND fm.id IS NOT NULL 
                             THEN CONCAT(fm.last_name, " ", fm.first_name, " ", COALESCE(fm.middle_name, ""))
@@ -57,6 +58,7 @@ $stmt = $conn->prepare('SELECT ss.*, c.name as church_name, c.church_code, c.cir
                         FROM sunday_school ss 
                         LEFT JOIN churches c ON ss.church_id = c.id 
                         LEFT JOIN bible_classes bc ON ss.class_id = bc.id 
+                        LEFT JOIN organizations o ON ss.organization = o.id
                         LEFT JOIN members fm ON ss.father_member_id = fm.id AND ss.father_is_member = "yes"
                         LEFT JOIN members mm ON ss.mother_member_id = mm.id AND ss.mother_is_member = "yes"
                         WHERE ss.id = ? LIMIT 1');
@@ -139,7 +141,7 @@ ob_start();
                 <div class="col-sm-6 mb-2"><i class="fa fa-school text-muted"></i> <b>School Attend:</b> <?= htmlspecialchars($child['school_attend']) ?></div>
                 <div class="col-sm-6 mb-2"><i class="fa fa-map-marker-alt text-muted"></i> <b>GPS Address:</b> <?= htmlspecialchars($child['gps_address']) ?></div>
                 <div class="col-sm-6 mb-2"><i class="fa fa-home text-muted"></i> <b>Residential Address:</b> <?= htmlspecialchars($child['residential_address']) ?></div>
-                <div class="col-sm-6 mb-2"><i class="fa fa-building text-muted"></i> <b>Organisation:</b> <?= htmlspecialchars($child['organization']) ?></div>
+                <div class="col-sm-6 mb-2"><i class="fa fa-building text-muted"></i> <b>Organisation:</b> <?= htmlspecialchars($child['organization_name'] ?? '-') ?></div>
               </div>
               <div class="row mt-3">
                 <div class="col-md-6 mb-3 mb-md-0">
