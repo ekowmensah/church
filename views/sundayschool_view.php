@@ -16,10 +16,6 @@ if (!has_permission('view_sundayschool_list')) {
     echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
     exit;
 }
-?>
-session_start();
-require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../includes/admin_auth.php';
 
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 if (!$id) {
