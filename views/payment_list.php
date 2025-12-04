@@ -60,7 +60,8 @@ if (!in_array($sort_order, ['ASC', 'DESC'])) $sort_order = 'DESC';
 
 // Pagination settings
 $records_per_page = isset($_GET['per_page']) ? intval($_GET['per_page']) : 50;
-if ($records_per_page <= 0 || $records_per_page > 500) $records_per_page = 50;
+$show_all = ($records_per_page == 9999); // Special value for 'Show All'
+if (!$show_all && ($records_per_page <= 0 || $records_per_page > 500)) $records_per_page = 50;
 $current_page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
 $offset = ($current_page - 1) * $records_per_page;
 
@@ -457,10 +458,13 @@ $total_pages = ceil($total_records / $records_per_page);
 $current_page = min($current_page, max(1, $total_pages));
 
 // Add ORDER BY and LIMIT to main query
-$sql .= " GROUP BY p.id ORDER BY $sort_column $sort_order, p.id DESC LIMIT ? OFFSET ?";
-$params[] = $records_per_page;
-$params[] = $offset;
-$types .= 'ii';
+$sql .= " GROUP BY p.id ORDER BY $sort_column $sort_order, p.id DESC";
+if (!$show_all) {
+    $sql .= " LIMIT ? OFFSET ?";
+    $params[] = $records_per_page;
+    $params[] = $offset;
+    $types .= 'ii';
+}
 
 // Execute the main query
 if ($types) {
@@ -958,11 +962,13 @@ ob_start();
             <div class="row mb-3">
                 <div class="col-md-3 mb-3">
                     <label class="form-label fw-bold">Records Per Page</label>
-                    <select class="form-select" name="per_page">
+                    <select class="form-select" name="per_page" onchange="this.form.submit()">
                         <option value="25" <?= $records_per_page == 25 ? 'selected' : '' ?>>25</option>
                         <option value="50" <?= $records_per_page == 50 ? 'selected' : '' ?>>50</option>
                         <option value="100" <?= $records_per_page == 100 ? 'selected' : '' ?>>100</option>
                         <option value="200" <?= $records_per_page == 200 ? 'selected' : '' ?>>200</option>
+                        <option value="500" <?= $records_per_page == 500 ? 'selected' : '' ?>>500</option>
+                        <option value="9999" <?= $show_all ? 'selected' : '' ?>>Show All</option>
                     </select>
                 </div>
                 <?php if ($user_filter_options): ?>
@@ -1150,6 +1156,9 @@ ob_start();
                                     'mobile money' => ['class' => 'warning', 'icon' => 'mobile-alt', 'label' => 'Mobile Money', 'bg' => '#ffc107', 'color' => '#000'],
                                     'momo' => ['class' => 'warning', 'icon' => 'mobile-alt', 'label' => 'Mobile Money', 'bg' => '#ffc107', 'color' => '#000'],
                                     'ussd' => ['class' => 'info', 'icon' => 'phone-square-alt', 'label' => 'USSD', 'bg' => '#17a2b8', 'color' => '#fff'],
+                                    'online' => ['class' => 'primary', 'icon' => 'globe', 'label' => 'Online', 'bg' => '#6f42c1', 'color' => '#fff'],
+                                    'bulk_upload' => ['class' => 'info', 'icon' => 'upload', 'label' => 'Bulk Upload', 'bg' => '#20c997', 'color' => '#fff'],
+                                    'bulk upload' => ['class' => 'info', 'icon' => 'upload', 'label' => 'Bulk Upload', 'bg' => '#20c997', 'color' => '#fff'],
                                     'bank_transfer' => ['class' => 'primary', 'icon' => 'university', 'label' => 'Bank Transfer', 'bg' => '#007bff', 'color' => '#fff'],
                                     'bank transfer' => ['class' => 'primary', 'icon' => 'university', 'label' => 'Bank Transfer', 'bg' => '#007bff', 'color' => '#fff'],
                                     'transfer' => ['class' => 'primary', 'icon' => 'university', 'label' => 'Bank Transfer', 'bg' => '#007bff', 'color' => '#fff'],
@@ -1264,7 +1273,7 @@ ob_start();
         <?php endif; ?>
         
         <!-- Pagination -->
-        <?php if ($total_pages > 1): ?>
+        <?php if (!$show_all && $total_pages > 1): ?>
             <div class="pagination-banking">
                 <?php if ($current_page > 1): ?>
                     <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => 1])) ?>">
@@ -1302,6 +1311,15 @@ ob_start();
                         Showing <?= (($current_page - 1) * $records_per_page) + 1 ?> to 
                         <?= min($current_page * $records_per_page, $total_records) ?> of 
                         <?= number_format($total_records) ?> records
+                    </small>
+                </div>
+            </div>
+        <?php elseif ($show_all): ?>
+            <div class="pagination-banking">
+                <div class="text-muted">
+                    <small>
+                        <i class="fas fa-info-circle mr-2"></i>
+                        Showing all <?= number_format($total_records) ?> records
                     </small>
                 </div>
             </div>

@@ -43,31 +43,35 @@ $success = '';
 $modal_html = '';
 ob_start();
 ?>
-<div class="container-fluid py-4">
-    <div class="d-flex align-items-center justify-content-between mb-4">
-        <!-- <h1 class="h3 mb-0 text-gray-800"><i class="fas fa-university mr-2"></i>Payments</h1>  -->
-        <a href="payment_list.php" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back to List</a>
-    </div>
-    <div class="row">
-        <div class="col-12">
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-12 col-xl-10">
+            <div class="d-flex align-items-center justify-content-between mb-4">
+                <!-- <h1 class="h3 mb-0 text-gray-800"><i class="fas fa-university mr-2"></i>Payments</h1>  -->
+                <a href="payment_list.php" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back to List</a>
+            </div>
             <div class="card shadow mb-4">
                 <div class="card-header py-3 bg-primary text-white d-flex align-items-center">
                     <h6 class="m-0 font-weight-bold flex-grow-1"><i class="fas fa-user-check mr-2"></i>Find Member</h6>
                 </div>
                 <div class="card-body pb-1">
-                    <form id="searchMemberForm" autocomplete="off">
-                        <div class="form-row align-items-center">
-                            <div class="col-lg-9 col-md-8 mb-2">
-                                <label for="crn">CRN/SRN <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control form-control-lg" id="crn" name="crn" maxlength="50" placeholder="Enter CRN or SRN" required autocomplete="off">
-                            </div>
-                            <div class="col-lg-3 col-md-4 mb-2 d-flex align-items-end">
-                                <button type="submit" class="btn btn-info btn-lg w-100" id="findMemberBtn"><i class="fas fa-search"></i> Find</button>
-                                <span id="crn-spinner" class="spinner-border text-primary ml-2 d-none" style="width:1.5rem;height:1.5rem;vertical-align:middle;" role="status"><span class="sr-only">Loading...</span></span>
-                            </div>
+                    <div class="row justify-content-center">
+                        <div class="col-lg-8 col-md-10">
+                            <form id="searchMemberForm" autocomplete="off">
+                                <div class="form-row align-items-center">
+                                    <div class="col-lg-9 col-md-8 mb-2">
+                                        <label for="crn">CRN/SRN <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control form-control-lg" id="crn" name="crn" maxlength="50" placeholder="Enter CRN or SRN" required autocomplete="off">
+                                    </div>
+                                    <div class="col-lg-3 col-md-4 mb-2 d-flex align-items-end">
+                                        <button type="submit" class="btn btn-info btn-lg w-100" id="findMemberBtn"><i class="fas fa-search"></i> Find</button>
+                                        <span id="crn-spinner" class="spinner-border text-primary ml-2 d-none" style="width:1.5rem;height:1.5rem;vertical-align:middle;" role="status"><span class="sr-only">Loading...</span></span>
+                                    </div>
+                                </div>
+                                <div id="crn-feedback" class="small text-danger mt-1 font-weight-bold"></div>
+                            </form>
                         </div>
-                        <div id="crn-feedback" class="small text-danger mt-1 font-weight-bold"></div>
-                    </form>
+                    </div>
                     <div id="member-summary" class="mt-3 d-none"></div>
                 </div>
             </div>
