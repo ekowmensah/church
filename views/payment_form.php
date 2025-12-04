@@ -78,7 +78,7 @@ ob_start();
             <div id="payment-panels" class="d-none animate__animated animate__fadeIn">
                  <ul class="nav nav-tabs mb-3" id="paymentTab" role="tablist">
                     <li class="nav-item">
-                        <a class="nav-link" id="single-tab" data-toggle="tab" href="#singlePanel" role="tab" aria-controls="singlePanel" aria-selected="false"><i class="fas fa-money-bill-wave"></i> Single Payment</a>
+                        <a class="nav-link" id="single-tab" data-toggle="tab" href="#singlePanel" role="tab" aria-controls="singlePanel" aria-selected="false"><i class="fas fa-money-bill-wave"></i> Cheque Payment</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link active" id="bulk-tab" data-toggle="tab" href="#bulkPanel" role="tab" aria-controls="bulkPanel" aria-selected="true"><i class="fas fa-layer-group"></i> Multiple Payment</a>
@@ -108,7 +108,7 @@ ob_start();
                                     <label for="single_mode">Mode <span class="text-danger">*</span></label>
                                     <select class="form-control form-control-lg" id="single_mode" name="mode" required>
                                         <option value="">-- Select --</option>
-                                        <option value="Cash">Cash</option>
+                                     <!--   <option value="Cash">Cash</option> -->
                                         <option value="Cheque">Cheque</option>
                                     </select>
                                 </div>
@@ -211,8 +211,8 @@ ob_start();
                                             <label for="bulk_mode">Mode <span class="text-danger">*</span></label>
                                             <select class="form-control form-control-lg" id="bulk_mode" name="bulk_mode">
                                                 <option value="">-- Select --</option>
-                                                <option value="Cash">Cash</option>
-                                                <option value="Cheque">Cheque</option>
+                                                <option value="Cash" selected>Cash</option>
+                                           <!--     <option value="Cheque">Cheque</option> -->
                                             </select>
                                         </div>
                                         <div class="form-group col-xl-2 col-lg-2 col-md-6">
