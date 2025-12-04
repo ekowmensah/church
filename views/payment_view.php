@@ -387,6 +387,17 @@ ob_start();
                 </div>
             </div>
             
+            <?php if (strtolower($payment['mode']) === 'cheque' && !empty($payment['cheque_number'])): ?>
+            <div class="info-row">
+                <div class="info-label">Cheque Number:</div>
+                <div class="info-value">
+                    <strong class="text-primary" style="font-size: 1.1rem;">
+                        <i class="fas fa-hashtag mr-1"></i><?= htmlspecialchars($payment['cheque_number']) ?>
+                    </strong>
+                </div>
+            </div>
+            <?php endif; ?>
+            
             <?php if (!empty($payment['payment_period'])): ?>
             <div class="info-row">
                 <div class="info-label">Payment Period:</div>

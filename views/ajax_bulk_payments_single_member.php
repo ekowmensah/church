@@ -54,6 +54,7 @@ if (!in_array($mode, $allowed_modes)) {
     
 
     $desc = trim($p['desc'] ?? '');
+    $cheque_number = trim($p['cheque_number'] ?? '');
     if (!$type_id || !$amount || !$mode || !$date || !$period) {
         $msg = 'Missing fields for payment type ID '.$type_id;
         $errors[] = $msg;
@@ -90,8 +91,8 @@ if (!in_array($mode, $allowed_modes)) {
         $church_stmt->close();
         
 
-        $stmt = $conn->prepare('INSERT INTO payments (member_id, payment_type_id, amount, mode, payment_date, payment_period, payment_period_description, description, recorded_by, church_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        $stmt->bind_param('iidsssssii', $member_id, $type_id, $amount, $mode, $date, $period, $period_description, $desc, $user_id, $church_id);
+        $stmt = $conn->prepare('INSERT INTO payments (member_id, payment_type_id, amount, mode, cheque_number, payment_date, payment_period, payment_period_description, description, recorded_by, church_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $stmt->bind_param('iidssssssii', $member_id, $type_id, $amount, $mode, $cheque_number, $date, $period, $period_description, $desc, $user_id, $church_id);
     } else if ($sundayschool_id) {
         // Get church_id from sunday school record
         $church_stmt = $conn->prepare('SELECT church_id FROM sunday_school WHERE id = ?');
@@ -102,8 +103,8 @@ if (!in_array($mode, $allowed_modes)) {
         $church_stmt->close();
         
 
-        $stmt = $conn->prepare('INSERT INTO payments (sundayschool_id, payment_type_id, amount, mode, payment_date, payment_period, payment_period_description, description, recorded_by, church_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        $stmt->bind_param('iidsssssii', $sundayschool_id, $type_id, $amount, $mode, $date, $period, $period_description, $desc, $user_id, $church_id);
+        $stmt = $conn->prepare('INSERT INTO payments (sundayschool_id, payment_type_id, amount, mode, cheque_number, payment_date, payment_period, payment_period_description, description, recorded_by, church_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $stmt->bind_param('iidssssssii', $sundayschool_id, $type_id, $amount, $mode, $cheque_number, $date, $period, $period_description, $desc, $user_id, $church_id);
     } else {
         $errors[] = 'No valid member or Sunday School child specified.';
         $failed[] = ['type_id'=>$type_id, 'reason'=>'No valid member or Sunday School child specified.'];

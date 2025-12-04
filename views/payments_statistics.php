@@ -395,8 +395,92 @@ ob_start();
                          <!-- Cheque Analysis -->
                          <div id="chequeAnalysis" class="payment-method-content" style="display: none;">
                            <div class="alert alert-info">
-                             <i class="fas fa-money-check mr-2"></i>Enter cheque payment details and amounts.
+                             <i class="fas fa-money-check mr-2"></i>Enter cheque payment details and amounts. Cheque numbers from payments will be displayed below.
                            </div>
+                           
+                           <!-- Display cheque payments from database -->
+                           <div class="mb-3">
+                             <h6 class="font-weight-bold">Cheque Payments for <?= date('M j, Y', strtotime($date)) ?></h6>
+                             <div class="table-responsive">
+                               <table class="table table-sm table-bordered">
+                                 <thead class="thead-light">
+                                   <tr>
+                                     <th>Member/Student</th>
+                                     <th>Cheque Number</th>
+                                     <th>Amount (₵)</th>
+                                     <th>Payment Type</th>
+                                   </tr>
+                                 </thead>
+                                 <tbody>
+                                   <?php
+                                   // Fetch cheque payments for the date
+                                   $cheque_payments = [];
+                                   try {
+                                       if ($filter_by_user) {
+                                           $stmt = $conn->prepare("
+                                               SELECT p.*, 
+                                                      COALESCE(m.first_name, ss.first_name) as first_name,
+                                                      COALESCE(m.last_name, ss.last_name) as last_name,
+                                                      COALESCE(m.crn, ss.srn) as identifier,
+                                                      pt.name as payment_type_name
+                                               FROM payments p
+                                               LEFT JOIN members m ON p.member_id = m.id
+                                               LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
+                                               LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
+                                               WHERE DATE(p.payment_date) = ? 
+                                                 AND p.mode = 'cheque' 
+                                                 AND p.recorded_by = ?
+                                               ORDER BY p.id
+                                           ");
+                                           $stmt->bind_param('si', $date, $current_user_id);
+                                       } else {
+                                           $stmt = $conn->prepare("
+                                               SELECT p.*, 
+                                                      COALESCE(m.first_name, ss.first_name) as first_name,
+                                                      COALESCE(m.last_name, ss.last_name) as last_name,
+                                                      COALESCE(m.crn, ss.srn) as identifier,
+                                                      pt.name as payment_type_name
+                                               FROM payments p
+                                               LEFT JOIN members m ON p.member_id = m.id
+                                               LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
+                                               LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
+                                               WHERE DATE(p.payment_date) = ? 
+                                                 AND p.mode = 'cheque'
+                                               ORDER BY p.id
+                                           ");
+                                           $stmt->bind_param('s', $date);
+                                       }
+                                       $stmt->execute();
+                                       $result = $stmt->get_result();
+                                       while ($row = $result->fetch_assoc()) {
+                                           $cheque_payments[] = $row;
+                                       }
+                                       $stmt->close();
+                                   } catch (Throwable $e) {
+                                       // Silently fail
+                                   }
+                                   
+                                   if (empty($cheque_payments)): ?>
+                                     <tr>
+                                       <td colspan="4" class="text-center text-muted">No cheque payments recorded for this date</td>
+                                     </tr>
+                                   <?php else: 
+                                     foreach ($cheque_payments as $cp): ?>
+                                       <tr>
+                                         <td><?= htmlspecialchars(($cp['first_name'] ?? '') . ' ' . ($cp['last_name'] ?? '')) ?><br>
+                                             <small class="text-muted"><?= htmlspecialchars($cp['identifier'] ?? 'N/A') ?></small>
+                                         </td>
+                                         <td><strong><?= htmlspecialchars($cp['cheque_number'] ?? 'Not specified') ?></strong></td>
+                                         <td>₵<?= number_format($cp['amount'], 2) ?></td>
+                                         <td><?= htmlspecialchars($cp['payment_type_name'] ?? 'N/A') ?></td>
+                                       </tr>
+                                     <?php endforeach;
+                                   endif; ?>
+                                 </tbody>
+                               </table>
+                             </div>
+                           </div>
+                           
                            <div class="row">
                              <div class="col-md-6">
                                <div class="form-group">
@@ -412,8 +496,8 @@ ob_start();
                              </div>
                            </div>
                            <div class="form-group">
-                             <label for="cheque_details">Cheque Details (Optional)</label>
-                             <textarea class="form-control" id="cheque_details" name="cheque_details" rows="2" placeholder="Bank names, cheque numbers, etc."><?= htmlspecialchars($cheque_entry['details']) ?></textarea>
+                             <label for="cheque_details">Additional Cheque Details (Optional)</label>
+                             <textarea class="form-control" id="cheque_details" name="cheque_details" rows="2" placeholder="Bank names, additional notes, etc."><?= htmlspecialchars($cheque_entry['details']) ?></textarea>
                            </div>
                          </div>
 

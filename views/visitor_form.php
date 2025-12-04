@@ -61,7 +61,7 @@ $regions = [
 // Marital status options
 $marital_statuses = ['Single', 'Married', 'Divorced', 'Widowed'];
 // Gender options
-$genders = ['Male', 'Female', 'Other'];
+$genders = ['Male', 'Female'];
 
 // If editing, fetch visitor data
 if ($editing) {

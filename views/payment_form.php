@@ -129,7 +129,11 @@ ob_start();
                                 </div>
                             </div>
                             <div class="form-row">
-                                <div class="form-group col-md-12">
+                                <div class="form-group col-md-6" id="single_cheque_number_group" style="display: none;">
+                                    <label for="single_cheque_number">Cheque Number</label>
+                                    <input type="text" class="form-control form-control-lg" id="single_cheque_number" name="cheque_number" placeholder="Enter cheque number" autocomplete="off">
+                                </div>
+                                <div class="form-group col-md-12" id="single_description_group">
                                     <label for="single_description">Description</label>
                                     <input type="text" class="form-control form-control-lg" id="single_description" name="description" placeholder="Optional" autocomplete="off">
                                 </div>
@@ -333,6 +337,19 @@ $(function(){
     // Initial auto-populate on page load (if both fields have value)
     updateDescriptionField();
 
+    // Show/hide cheque number field based on payment mode
+    $('#single_mode').on('change', function() {
+        var mode = $(this).val().toLowerCase();
+        if (mode === 'cheque' || mode === 'check') {
+            $('#single_cheque_number_group').show();
+            $('#single_description_group').removeClass('col-md-12').addClass('col-md-6');
+        } else {
+            $('#single_cheque_number_group').hide();
+            $('#single_cheque_number').val(''); // Clear the field
+            $('#single_description_group').removeClass('col-md-6').addClass('col-md-12');
+        }
+    });
+
     // --- Member Search ---
     $('#searchMemberForm').on('submit', function(e) {
         e.preventDefault();
@@ -476,7 +493,10 @@ $(function(){
         var desc = $('#single_description').val();
         var period = $('#single_payment_period').val();
         var period_text = $('#single_payment_period option:selected').text();
-        var payload = {payments: [{type_id: type_id, amount: amount, mode: mode, date: date, desc: desc, period: period, period_text: period_text, type_text: $('#single_payment_type_id option:selected').text()}]};
+        var cheque_number = $('#single_cheque_number').val();
+        var payment_data = {type_id: type_id, amount: amount, mode: mode, date: date, desc: desc, period: period, period_text: period_text, type_text: $('#single_payment_type_id option:selected').text()};
+        if (cheque_number) payment_data.cheque_number = cheque_number;
+        var payload = {payments: [payment_data]};
         if (member_id) payload.member_id = member_id;
         if (sundayschool_id) payload.sundayschool_id = sundayschool_id;
         console.log('Making AJAX request to ajax_bulk_payments_single_member.php with payload:', payload);

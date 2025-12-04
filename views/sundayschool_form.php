@@ -438,7 +438,7 @@ $(function(){
                     <option value="">Select</option>
                     <option value="male" <?=($record['gender']??'')=='male'?'selected':''?>>Male</option>
                     <option value="female" <?=($record['gender']??'')=='female'?'selected':''?>>Female</option>
-                    <option value="other" <?=($record['gender']??'')=='other'?'selected':''?>>Other</option>
+                <!--    <option value="other" <?=($record['gender']??'')=='other'?'selected':''?>>Other</option> -->
                 </select>
             </div>
         </div>

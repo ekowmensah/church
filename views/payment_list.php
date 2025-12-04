@@ -904,7 +904,7 @@ ob_start();
                         <option value="">All Types</option>
                         <?php while ($pt = $payment_types->fetch_assoc()): ?>
                             <option value="<?= $pt['id'] ?>" <?= $filter_payment_type == $pt['id'] ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($pt['name']) ?>
+                                <?= htmlspecialchars($pt['name'] ?? '') ?>
                             </option>
                         <?php endwhile; ?>
                     </select>
@@ -914,9 +914,9 @@ ob_start();
                     <select class="form-select" name="mode">
                         <option value="">All Modes</option>
                         <?php while ($mode = $payment_modes->fetch_assoc()): ?>
-                            <option value="<?= htmlspecialchars($mode['mode']) ?>" 
+                            <option value="<?= htmlspecialchars($mode['mode'] ?? '') ?>" 
                                     <?= $filter_mode == $mode['mode'] ? 'selected' : '' ?>>
-                                <?= ucwords(str_replace('_', ' ', $mode['mode'])) ?>
+                                <?= ucwords(str_replace('_', ' ', $mode['mode'] ?? 'Unknown')) ?>
                             </option>
                         <?php endwhile; ?>
                     </select>
@@ -933,7 +933,7 @@ ob_start();
                         while ($church = $churches->fetch_assoc()): 
                         ?>
                             <option value="<?= $church['id'] ?>" <?= $filter_church == $church['id'] ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($church['name']) ?>
+                                <?= htmlspecialchars($church['name'] ?? '') ?>
                             </option>
                         <?php endwhile; ?>
                     </select>
@@ -951,7 +951,7 @@ ob_start();
                 <div class="col-md-3 mb-3">
                     <label class="form-label fw-bold">Search</label>
                     <input type="text" class="form-control" name="search" 
-                           placeholder="Name, CRN, ID, description..." value="<?= htmlspecialchars($search_term) ?>">
+                           placeholder="Name, CRN, ID, description..." value="<?= htmlspecialchars($search_term ?? '') ?>">
                 </div>
             </div>
             
@@ -972,7 +972,7 @@ ob_start();
                         <option value="">All Users</option>
                         <?php while ($user = $user_filter_options->fetch_assoc()): ?>
                             <option value="<?= $user['id'] ?>" <?= $filter_user_id == $user['id'] ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($user['name']) ?>
+                                <?= htmlspecialchars($user['name'] ?? '') ?>
                             </option>
                         <?php endwhile; ?>
                     </select>
@@ -1041,14 +1041,6 @@ ob_start();
             <table class="table table-banking">
                 <thead>
                     <tr>
-                        <th class="sortable <?= $sort_by == 'id' ? 'active' : '' ?>" onclick="sortTable('id')">
-                            Transaction ID
-                            <?php if ($sort_by == 'id'): ?>
-                                <span class="sort-indicator">
-                                    <i class="fas fa-sort-<?= $sort_order == 'ASC' ? 'up' : 'down' ?>"></i>
-                                </span>
-                            <?php endif; ?>
-                        </th>
                         <th class="sortable <?= $sort_by == 'payment_date' ? 'active' : '' ?>" onclick="sortTable('payment_date')">
                             Date & Time
                             <?php if ($sort_by == 'payment_date'): ?>
@@ -1100,9 +1092,6 @@ ob_start();
                     ?>
                         <tr <?= $is_reversed ? 'style="opacity: 0.6; background-color: #ffe6e6;"' : ($is_pending_reversal ? 'style="background-color: #fff3cd;"' : '') ?>>
                             <td>
-                                <span class="transaction-id">TXN-<?= str_pad($row['id'], 6, '0', STR_PAD_LEFT) ?></span>
-                            </td>
-                            <td>
                                 <div>
                                     <strong><?= date('M j, Y', strtotime($row['payment_date'])) ?></strong>
                                     <br>
@@ -1112,15 +1101,15 @@ ob_start();
                             <td>
                                 <?php if ($row['member_id']): ?>
                                     <div>
-                                        <strong><?= htmlspecialchars($row['first_name'] . ' ' . $row['last_name']) ?></strong>
+                                        <strong><?= htmlspecialchars(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? '')) ?></strong>
                                         <br>
-                                        <small class="text-muted">CRN: <?= htmlspecialchars($row['crn']) ?></small>
+                                        <small class="text-muted">CRN: <?= htmlspecialchars($row['crn'] ?? '') ?></small>
                                     </div>
                                 <?php elseif ($row['sundayschool_id']): ?>
                                     <div>
-                                        <strong><?= htmlspecialchars($row['ss_first_name'] . ' ' . $row['ss_last_name']) ?></strong>
+                                        <strong><?= htmlspecialchars(($row['ss_first_name'] ?? '') . ' ' . ($row['ss_last_name'] ?? '')) ?></strong>
                                         <br>
-                                        <small class="text-muted">SRN: <?= htmlspecialchars($row['srn']) ?></small>
+                                        <small class="text-muted">SRN: <?= htmlspecialchars($row['srn'] ?? '') ?></small>
                                     </div>
                                 <?php else: ?>
                                     <span class="text-muted">N/A</span>
@@ -1128,7 +1117,7 @@ ob_start();
                             </td>
                             <td>
                                 <span class="badge badge-primary badge-banking">
-                                    <?= htmlspecialchars($row['payment_type']) ?>
+                                    <?= htmlspecialchars($row['payment_type'] ?? 'Unknown') ?>
                                 </span>
                                 <?php if ($row['payment_period'] && $row['payment_period'] != date('Y-m-d', strtotime($row['payment_date']))): ?>
                                     <br>
@@ -1140,40 +1129,51 @@ ob_start();
                             </td>
                             <td>
                                 <span class="text-truncate d-inline-block" style="max-width: 200px;" 
-                                      title="<?= htmlspecialchars($row['description']) ?>">
-                                    <?= htmlspecialchars($row['description']) ?>
+                                      title="<?= htmlspecialchars($row['description'] ?? '') ?>">
+                                    <?= htmlspecialchars($row['description'] ?? '') ?>
                                 </span>
                                 <?php if ($row['recorded_by_username']): ?>
                                     <br>
                                     <small class="text-muted">
-                                        <i class="fas fa-user"></i> <?= htmlspecialchars($row['recorded_by_username']) ?>
+                                        <i class="fas fa-user"></i> <?= htmlspecialchars($row['recorded_by_username'] ?? '') ?>
                                     </small>
                                 <?php endif; ?>
                             </td>
                             <td>
                                 <?php 
-
+                                // Get the mode from the current row and normalize it
+                                $mode = strtolower(trim($row['mode'] ?? 'cash'));
+                                
                                 $mode_badges = [
-                                    'cash' => ['class' => 'success', 'icon' => 'money-bill-wave', 'label' => 'Cash'],
-                                    'mobile_money' => ['class' => 'warning', 'icon' => 'mobile-alt', 'label' => 'Mobile Money'],
-                                    'ussd' => ['class' => 'warning', 'icon' => 'mobile-alt', 'label' => 'USSD'],
-                                    'bank_transfer' => ['class' => 'info', 'icon' => 'university', 'label' => 'Bank Transfer'],
-                                    'cheque' => ['class' => 'secondary', 'icon' => 'money-check', 'label' => 'Cheque'],
-                                    'card' => ['class' => 'primary', 'icon' => 'credit-card', 'label' => 'Card']
+                                    'cash' => ['class' => 'success', 'icon' => 'money-bill-wave', 'label' => 'Cash', 'bg' => '#28a745', 'color' => '#fff'],
+                                    'mobile_money' => ['class' => 'warning', 'icon' => 'mobile-alt', 'label' => 'Mobile Money', 'bg' => '#ffc107', 'color' => '#000'],
+                                    'mobile money' => ['class' => 'warning', 'icon' => 'mobile-alt', 'label' => 'Mobile Money', 'bg' => '#ffc107', 'color' => '#000'],
+                                    'momo' => ['class' => 'warning', 'icon' => 'mobile-alt', 'label' => 'Mobile Money', 'bg' => '#ffc107', 'color' => '#000'],
+                                    'ussd' => ['class' => 'info', 'icon' => 'phone-square-alt', 'label' => 'USSD', 'bg' => '#17a2b8', 'color' => '#fff'],
+                                    'bank_transfer' => ['class' => 'primary', 'icon' => 'university', 'label' => 'Bank Transfer', 'bg' => '#007bff', 'color' => '#fff'],
+                                    'bank transfer' => ['class' => 'primary', 'icon' => 'university', 'label' => 'Bank Transfer', 'bg' => '#007bff', 'color' => '#fff'],
+                                    'transfer' => ['class' => 'primary', 'icon' => 'university', 'label' => 'Bank Transfer', 'bg' => '#007bff', 'color' => '#fff'],
+                                    'cheque' => ['class' => 'secondary', 'icon' => 'money-check', 'label' => 'Cheque', 'bg' => '#6c757d', 'color' => '#fff'],
+                                    'check' => ['class' => 'secondary', 'icon' => 'money-check', 'label' => 'Cheque', 'bg' => '#6c757d', 'color' => '#fff'],
+                                    'card' => ['class' => 'danger', 'icon' => 'credit-card', 'label' => 'Card', 'bg' => '#dc3545', 'color' => '#fff'],
+                                    'credit card' => ['class' => 'danger', 'icon' => 'credit-card', 'label' => 'Card', 'bg' => '#dc3545', 'color' => '#fff']
                                 ];
                                 
-                                // If mode not in predefined list, create a generic badge
+                                // If mode not in predefined list, create a generic badge with debug info
                                 if (isset($mode_badges[$mode])) {
                                     $badge_info = $mode_badges[$mode];
                                 } else {
                                     $badge_info = [
                                         'class' => 'secondary', 
                                         'icon' => 'question-circle', 
-                                        'label' => ucwords(str_replace('_', ' ', $mode ?? 'Unknown'))
+                                        'label' => ucwords(str_replace('_', ' ', $mode ?: 'Unknown')) . ' [' . $mode . ']',
+                                        'bg' => '#6c757d',
+                                        'color' => '#fff'
                                     ];
                                 }
                                 ?>
-                                <span class="badge badge-<?= $badge_info['class'] ?> badge-banking">
+                                <span class="badge badge-<?= $badge_info['class'] ?> badge-banking" 
+                                      style="background-color: <?= $badge_info['bg'] ?>; color: <?= $badge_info['color'] ?>; font-weight: 600;">
                                     <i class="fas fa-<?= $badge_info['icon'] ?>"></i>
                                     <?= $badge_info['label'] ?>
                                 </span>
@@ -1250,7 +1250,7 @@ ob_start();
                 </tbody>
                 <tfoot>
                     <tr class="table-active">
-                        <td colspan="6" class="text-end"><strong>Page Total:</strong></td>
+                        <td colspan="5" class="text-end"><strong>Page Total:</strong></td>
                         <td class="text-end">
                             <strong class="text-success" style="font-size: 1.2rem;">
                                 ₵<?= number_format($total_amount, 2) ?>
