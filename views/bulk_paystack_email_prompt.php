@@ -1,24 +1,6 @@
 <?php
-session_start();
-require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions_v2.php';
-
-// Authentication check
-if (!is_logged_in()) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'error' => 'Unauthorized']);
-    exit;
-}
-
-// Permission check
-if (!has_permission('view_dashboard')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'error' => 'Forbidden']);
-    exit;
-}
-?>
 // Simple modal to prompt for email if missing for Paystack bulk payments
+// This file is included by make_payment.php which already handles authentication
 ?>
 <div class="modal fade" id="paystackEmailPromptModal" tabindex="-1" role="dialog" aria-labelledby="paystackEmailPromptLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered" role="document">
