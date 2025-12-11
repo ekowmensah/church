@@ -342,6 +342,7 @@ if ($result) {
 <script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.pdf.min.js"></script>
 <script>
 $(document).ready(function() {
+    <?php if (!empty($members)): ?>
     var table = $("#membersTable").DataTable({
         dom: 'Bfrtip',
         buttons: [
@@ -396,6 +397,7 @@ $(document).ready(function() {
     });
     // Hide custom buttons if DataTables is used
     $('#export-csv, #export-pdf, #print-table').hide();
+    <?php endif; ?>
 });
 </script>
 <?php $page_content = ob_get_clean(); include __DIR__.'/../../../includes/layout.php'; ?>
