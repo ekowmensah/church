@@ -425,6 +425,7 @@ ob_start();
           <option value="Formal" <?=$member['employment_status']=='Formal'?'selected':''?>>Formal</option>
           <option value="Informal" <?=$member['employment_status']=='Informal'?'selected':''?>>Informal</option>
           <option value="Self Employed" <?=$member['employment_status']=='Self Employed'?'selected':''?>>Self Employed</option>
+          <option value="Unemployed" <?=$member['employment_status']=='Unemployed'?'selected':''?>>Unemployed</option>
           <option value="Retired" <?=$member['employment_status']=='Retired'?'selected':''?>>Retired</option>
           <option value="Student" <?=$member['employment_status']=='Student'?'selected':''?>>Student</option>
         </select>
