@@ -237,8 +237,6 @@ if ((!$class_name || !$phone) && $member_id) {
   </div>
 </div>
 
-<link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/animate.min.css">
-<link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/custom.css">
 <style>
 .card-hover:hover {
   background: #f4f8ff;

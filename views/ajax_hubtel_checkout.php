@@ -1,25 +1,17 @@
 <?php
-//if (session_status() === PHP_SESSION_NONE) session_start();
+if (session_status() === PHP_SESSION_NONE) session_start();
 require_once __DIR__.'/../helpers/hubtel_payment.php';
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions_v2.php';
 
 header('Content-Type: application/json');
 
-// Only allow logged-in users
-if (!is_logged_in()) {
+// Allow both admin users and members
+if (!is_logged_in() && !isset($_SESSION['member_id'])) {
     http_response_code(401);
     echo json_encode(['success' => false, 'error' => 'Authentication required']);
     exit;
 }
-// Permission check
-if (!has_permission('view_dashboard')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'error' => 'Forbidden']);
-    exit;
-}
-
 
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
