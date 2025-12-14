@@ -41,7 +41,7 @@ $search = trim($_GET['search'] ?? '');
 
 // Build member query with filters
 $sql = "SELECT m.id, m.first_name, m.last_name, m.middle_name, m.crn, 
-        bc.name AS class_name, m.gender
+        m.class_id, bc.name AS class_name, m.gender
         FROM members m 
         LEFT JOIN bible_classes bc ON m.class_id = bc.id ";
 if ($filter_org) {
@@ -77,6 +77,25 @@ $stmt->bind_param($types, ...$params);
 $stmt->execute();
 $members_result = $stmt->get_result();
 $members = $members_result ? $members_result->fetch_all(MYSQLI_ASSOC) : [];
+
+// Fetch member organizations for filtering
+$member_orgs = [];
+if (count($members) > 0) {
+    $member_ids = array_column($members, 'id');
+    $placeholders = implode(',', array_fill(0, count($member_ids), '?'));
+    $sql_orgs = "SELECT member_id, GROUP_CONCAT(organization_id) as org_ids 
+                 FROM member_organizations 
+                 WHERE member_id IN ($placeholders) 
+                 GROUP BY member_id";
+    $stmt_orgs = $conn->prepare($sql_orgs);
+    $types_orgs = str_repeat('i', count($member_ids));
+    $stmt_orgs->bind_param($types_orgs, ...$member_ids);
+    $stmt_orgs->execute();
+    $result_orgs = $stmt_orgs->get_result();
+    while ($row = $result_orgs->fetch_assoc()) {
+        $member_orgs[$row['member_id']] = $row['org_ids'];
+    }
+}
 
 // Fetch previous attendance (including draft status)
 $prev_attendance = [];
@@ -157,6 +176,8 @@ ob_start();
 <!DOCTYPE html>
 <html>
 <head>
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/@ttskch/select2-bootstrap4-theme@1.5.2/dist/select2-bootstrap4.min.css" rel="stylesheet" />
     <style>
         .attendance-mark-container {
             background: #f8f9fa;
@@ -402,6 +423,26 @@ ob_start();
                 grid-template-columns: repeat(2, 1fr);
             }
         }
+        
+        /* Select2 custom styling */
+        .select2-container--bootstrap4 .select2-selection {
+            border-radius: 8px;
+            border: 1px solid #ced4da;
+            min-height: 38px;
+        }
+        
+        .select2-container--bootstrap4 .select2-selection--single .select2-selection__rendered {
+            line-height: 36px;
+        }
+        
+        .select2-container--bootstrap4 .select2-dropdown {
+            border-radius: 8px;
+            border: 1px solid #ced4da;
+        }
+        
+        .select2-container--bootstrap4 .select2-results__option--highlighted {
+            background-color: #667eea;
+        }
     </style>
 </head>
 <body>
@@ -454,11 +495,11 @@ ob_start();
     </div>
 
     <div class="filter-card">
-        <h5><i class="fas fa-filter"></i> Filter Members</h5>
+        <h5><i class="fas fa-filter"></i> Filter Members (Real-time)</h5>
         <form method="get" id="filterForm">
             <input type="hidden" name="id" value="<?= $session_id ?>">
             <div class="row">
-                <div class="col-md-3 mb-3">
+                <div class="col-md-4 mb-3">
                     <label class="form-label fw-bold">Bible Class</label>
                     <select class="form-select" name="class_id">
                         <option value="">All Classes</option>
@@ -469,8 +510,9 @@ ob_start();
                             </option>
                         <?php endwhile; endif; ?>
                     </select>
+                 <!--   <small class="text-muted">Select to filter instantly</small> -->
                 </div>
-                <div class="col-md-3 mb-3">
+                <div class="col-md-4 mb-3">
                     <label class="form-label fw-bold">Organization</label>
                     <select class="form-select" name="organization_id">
                         <option value="">All Organizations</option>
@@ -481,18 +523,14 @@ ob_start();
                             </option>
                         <?php endwhile; endif; ?>
                     </select>
+                <!--    <small class="text-muted">Select to filter instantly</small> -->
                 </div>
                 <div class="col-md-4 mb-3">
-                    <label class="form-label fw-bold">Search (Real-time)</label>
+                    <label class="form-label fw-bold">Search</label>
                     <input type="text" class="form-control" id="realtimeSearch" 
                            placeholder="Search by name or CRN..." 
                            value="<?= htmlspecialchars($search) ?>">
-                    <small class="text-muted">Type to filter members instantly</small>
-                </div>
-                <div class="col-md-2 mb-3 d-flex align-items-end gap-2">
-                    <a href="attendance_mark.php?id=<?= $session_id ?>" class="btn btn-secondary">
-                        <i class="fas fa-times"></i> Clear Filters
-                    </a>
+                    <small class="text-muted">Type to filter instantly</small>
                 </div>
             </div>
         </form>
@@ -523,7 +561,9 @@ ob_start();
             <div class="member-card <?= $is_present ? 'present' : 'absent' ?> <?= $is_draft ? 'draft' : '' ?>" 
                  data-member-id="<?= $member['id'] ?>"
                  data-member-name="<?= htmlspecialchars(strtolower($member['last_name'] . ' ' . $member['first_name'] . ' ' . $member['middle_name'])) ?>"
-                 data-member-crn="<?= htmlspecialchars(strtolower($member['crn'] ?? '')) ?>">
+                 data-member-crn="<?= htmlspecialchars(strtolower($member['crn'] ?? '')) ?>"
+                 data-member-class="<?= $member['class_id'] ?? '' ?>"
+                 data-member-org="<?= isset($member_orgs[$member['id']]) ? $member_orgs[$member['id']] : '' ?>">
                 <div class="member-header">
                     <div class="member-info">
                         <h6>
@@ -662,27 +702,64 @@ function confirmFinalize() {
 
 // Real-time search functionality
 const searchInput = document.getElementById('realtimeSearch');
-if (searchInput) {
-    searchInput.addEventListener('input', function() {
-        const searchTerm = this.value.toLowerCase().trim();
-        const memberCards = document.querySelectorAll('.member-card');
+const classFilter = document.querySelector('select[name="class_id"]');
+const orgFilter = document.querySelector('select[name="organization_id"]');
+
+function applyFilters() {
+    const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+    const selectedClass = classFilter ? classFilter.value : '';
+    const selectedOrg = orgFilter ? orgFilter.value : '';
+    const memberCards = document.querySelectorAll('.member-card');
+    
+    let visibleCount = 0;
+    
+    memberCards.forEach(card => {
+        const memberName = card.dataset.memberName || '';
+        const memberCrn = card.dataset.memberCrn || '';
+        const memberClass = card.dataset.memberClass || '';
+        const memberOrg = card.dataset.memberOrg || '';
         
-        memberCards.forEach(card => {
-            const memberName = card.dataset.memberName || '';
-            const memberCrn = card.dataset.memberCrn || '';
-            
-            if (memberName.includes(searchTerm) || memberCrn.includes(searchTerm)) {
-                card.style.display = '';
-            } else {
-                card.style.display = 'none';
-            }
-        });
+        // Check search term
+        const matchesSearch = !searchTerm || 
+                            memberName.includes(searchTerm) || 
+                            memberCrn.includes(searchTerm);
         
-        // Update visible count
-        const visibleCards = document.querySelectorAll('.member-card[style=""]').length;
-        const totalCards = memberCards.length;
-        console.log(`Showing ${visibleCards} of ${totalCards} members`);
+        // Check class filter
+        const matchesClass = !selectedClass || memberClass === selectedClass;
+        
+        // Check organization filter
+        const matchesOrg = !selectedOrg || memberOrg.includes(selectedOrg);
+        
+        if (matchesSearch && matchesClass && matchesOrg) {
+            card.style.display = '';
+            visibleCount++;
+        } else {
+            card.style.display = 'none';
+        }
     });
+    
+    // Update visible count in bulk actions
+    const bulkActionsTitle = document.querySelector('.bulk-actions h6');
+    if (bulkActionsTitle) {
+        bulkActionsTitle.innerHTML = `<i class="fas fa-users"></i> Mark Attendance (${visibleCount} of ${memberCards.length} members shown)`;
+    }
+    
+    console.log(`Showing ${visibleCount} of ${memberCards.length} members`);
+}
+
+// Real-time search
+if (searchInput) {
+    searchInput.addEventListener('input', applyFilters);
+}
+
+// Real-time class filter
+if (classFilter) {
+    classFilter.addEventListener('change', applyFilters);
+}
+
+// Real-time organization filter
+if (orgFilter) {
+    orgFilter.addEventListener('change', applyFilters);
 }
 
 function markAllPresent() {
@@ -729,6 +806,37 @@ document.getElementById('attendanceForm').addEventListener('submit', function() 
 
 // Initialize stats on page load
 updateStats();
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+// Initialize Select2 for searchable dropdowns
+$(document).ready(function() {
+    // Initialize Bible Class dropdown with search
+    $('select[name="class_id"]').select2({
+        theme: 'bootstrap4',
+        placeholder: 'All Classes',
+        allowClear: true,
+        width: '100%'
+    });
+    
+    // Initialize Organization dropdown with search
+    $('select[name="organization_id"]').select2({
+        theme: 'bootstrap4',
+        placeholder: 'All Organizations',
+        allowClear: true,
+        width: '100%'
+    });
+    
+    // Re-attach change event listeners after Select2 initialization
+    $('select[name="class_id"]').on('change', function() {
+        applyFilters();
+    });
+    
+    $('select[name="organization_id"]').on('change', function() {
+        applyFilters();
+    });
+});
 </script>
 
 <?php 
