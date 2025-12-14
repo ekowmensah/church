@@ -93,22 +93,24 @@ $cash_filter = "1"; // No filter, include all payment types
 $user_filter = $is_super_admin ? '' : " AND recorded_by = $user_id";
 
 // --- FILTERED CASH PAYMENT STATS ---
-$total_cash_payments = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter$user_filter")->fetch_assoc()['total'];
-$cash_payments_today = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND DATE(payment_date) = CURDATE()$user_filter")->fetch_assoc()['total'];
-$cash_payments_week = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1)$user_filter")->fetch_assoc()['total'];
-$cash_payments_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE())$user_filter")->fetch_assoc()['total'];
-$cash_payments_last_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND YEAR(payment_date) = YEAR(CURDATE() - INTERVAL 1 MONTH) AND MONTH(payment_date) = MONTH(CURDATE() - INTERVAL 1 MONTH)$user_filter")->fetch_assoc()['total'];
+// Reversal filter: exclude reversed payments (reversal_approved_at IS NOT NULL AND reversal_undone_at IS NULL)
+$reversal_filter = "AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL)";
+$total_cash_payments = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter$user_filter $reversal_filter")->fetch_assoc()['total'];
+$cash_payments_today = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND DATE(payment_date) = CURDATE()$user_filter $reversal_filter")->fetch_assoc()['total'];
+$cash_payments_week = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1)$user_filter $reversal_filter")->fetch_assoc()['total'];
+$cash_payments_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE())$user_filter $reversal_filter")->fetch_assoc()['total'];
+$cash_payments_last_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND YEAR(payment_date) = YEAR(CURDATE() - INTERVAL 1 MONTH) AND MONTH(payment_date) = MONTH(CURDATE() - INTERVAL 1 MONTH)$user_filter $reversal_filter")->fetch_assoc()['total'];
 
 // Payment Statistics (All Payment Types)
-$total_payments = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments")->fetch_assoc()['total'];
-$payments_today = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE DATE(payment_date) = CURDATE()")->fetch_assoc()['total'];
-$payments_this_week = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1)")->fetch_assoc()['total'];
-$payments_this_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE())")->fetch_assoc()['total'];
-$payments_last_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE YEAR(payment_date) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH)) AND MONTH(payment_date) = MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))")->fetch_assoc()['total'];
+$total_payments = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL)")->fetch_assoc()['total'];
+$payments_today = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE DATE(payment_date) = CURDATE() AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL)")->fetch_assoc()['total'];
+$payments_this_week = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1) AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL)")->fetch_assoc()['total'];
+$payments_this_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE()) AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL)")->fetch_assoc()['total'];
+$payments_last_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE YEAR(payment_date) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH)) AND MONTH(payment_date) = MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH)) AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL)")->fetch_assoc()['total'];
 $avg_payment_per_member = $registered_members > 0 ? $total_payments / $registered_members : 0;
 
 // Payment Mode Breakdown
-$payment_modes = $conn->query("SELECT mode, COUNT(id) as count, COALESCE(SUM(amount),0) as total FROM payments GROUP BY mode ORDER BY total DESC");
+$payment_modes = $conn->query("SELECT mode, COUNT(id) as count, COALESCE(SUM(amount),0) as total FROM payments WHERE (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL) GROUP BY mode ORDER BY total DESC");
 
 // Attendance Statistics
 $total_attendance_sessions = $conn->query("SELECT COUNT(*) as cnt FROM attendance_sessions")->fetch_assoc()['cnt'];
@@ -136,14 +138,14 @@ $events_this_month = $conn->query("SELECT COUNT(*) as cnt FROM events WHERE YEAR
 
 // Recent Activity Data
 $recent_members = $conn->query("SELECT m.id, CONCAT(m.last_name, ' ', m.first_name, ' ', m.middle_name) AS name, bc.name AS class, m.status, m.created_at FROM members m LEFT JOIN bible_classes bc ON m.class_id = bc.id ORDER BY m.created_at DESC, m.id DESC LIMIT 8");
-$recent_payments = $conn->query("SELECT p.id, p.amount, p.payment_date, pt.name as payment_type, CONCAT(m.last_name, ' ', m.first_name) as member_name FROM payments p LEFT JOIN payment_types pt ON p.payment_type_id = pt.id LEFT JOIN members m ON p.member_id = m.id ORDER BY p.payment_date DESC LIMIT 8");
+$recent_payments = $conn->query("SELECT p.id, p.amount, p.payment_date, pt.name as payment_type, CONCAT(m.last_name, ' ', m.first_name) as member_name FROM payments p LEFT JOIN payment_types pt ON p.payment_type_id = pt.id LEFT JOIN members m ON p.member_id = m.id WHERE (p.reversal_approved_at IS NULL OR p.reversal_undone_at IS NOT NULL) ORDER BY p.payment_date DESC LIMIT 8");
 $recent_events = $conn->query("SELECT id, name, event_date, location FROM events WHERE event_date >= CURDATE() ORDER BY event_date ASC LIMIT 5");
 
 // All Payment Types Breakdown
-$all_payment_types = $conn->query("SELECT pt.name, COALESCE(SUM(p.amount),0) as total, COUNT(p.id) as count FROM payment_types pt LEFT JOIN payments p ON p.payment_type_id = pt.id GROUP BY pt.id ORDER BY total DESC");
+$all_payment_types = $conn->query("SELECT pt.name, COALESCE(SUM(p.amount),0) as total, COUNT(p.id) as count FROM payment_types pt LEFT JOIN payments p ON p.payment_type_id = pt.id WHERE (p.reversal_approved_at IS NULL OR p.reversal_undone_at IS NOT NULL) GROUP BY pt.id ORDER BY total DESC");
 
 // Top Payment Types (keep for chart or old UI)
-$top_payment_types = $conn->query("SELECT pt.name, COALESCE(SUM(p.amount),0) as total, COUNT(p.id) as count FROM payment_types pt LEFT JOIN payments p ON p.payment_type_id = pt.id GROUP BY pt.id ORDER BY total DESC LIMIT 6");
+$top_payment_types = $conn->query("SELECT pt.name, COALESCE(SUM(p.amount),0) as total, COUNT(p.id) as count FROM payment_types pt LEFT JOIN payments p ON p.payment_type_id = pt.id WHERE (p.reversal_approved_at IS NULL OR p.reversal_undone_at IS NOT NULL) GROUP BY pt.id ORDER BY total DESC LIMIT 6");
 
 // Gender Distribution
 $gender_stats = $conn->query("SELECT gender, COUNT(*) as count FROM members WHERE gender IN ('Male', 'Female') GROUP BY gender");
@@ -177,7 +179,7 @@ for ($i = 11; $i >= 0; $i--) {
     $monthly_growth[] = (int)$member_count;
     
     // Payment data
-    $payment_total = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE DATE_FORMAT(payment_date, '%Y-%m') = '$month'")->fetch_assoc()['total'];
+    $payment_total = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE DATE_FORMAT(payment_date, '%Y-%m') = '$month' AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL)")->fetch_assoc()['total'];
     $monthly_payments_data[] = (float)$payment_total;
 }
 
@@ -227,29 +229,29 @@ if ($is_cashier && $current_user_id > 0) {
     $cashier_filter = " AND recorded_by = $current_user_id";
     
     // Total payments by this cashier
-    $total_payments_cashier = $conn->query("SELECT COUNT(*) as cnt FROM payments WHERE 1 $cashier_filter")->fetch_assoc()['cnt'];
+    $total_payments_cashier = $conn->query("SELECT COUNT(*) as cnt FROM payments WHERE (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL) $cashier_filter")->fetch_assoc()['cnt'];
     
     // Total amount collected by this cashier
-    $total_amount_cashier = $conn->query("SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE 1 $cashier_filter")->fetch_assoc()['total'];
+    $total_amount_cashier = $conn->query("SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL) $cashier_filter")->fetch_assoc()['total'];
     
     // Today's payments by this cashier
-    $today_payments_cashier = $conn->query("SELECT COUNT(*) as cnt FROM payments WHERE DATE(payment_date) = CURDATE() $cashier_filter")->fetch_assoc()['cnt'];
+    $today_payments_cashier = $conn->query("SELECT COUNT(*) as cnt FROM payments WHERE DATE(payment_date) = CURDATE() AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL) $cashier_filter")->fetch_assoc()['cnt'];
     
     // Today's amount by this cashier
-    $today_amount_cashier = $conn->query("SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE DATE(payment_date) = CURDATE() $cashier_filter")->fetch_assoc()['total'];
+    $today_amount_cashier = $conn->query("SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE DATE(payment_date) = CURDATE() AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL) $cashier_filter")->fetch_assoc()['total'];
     
     // This week's payments by this cashier
-    $week_payments_cashier = $conn->query("SELECT COUNT(*) as cnt FROM payments WHERE YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1) $cashier_filter")->fetch_assoc()['cnt'];
+    $week_payments_cashier = $conn->query("SELECT COUNT(*) as cnt FROM payments WHERE YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1) AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL) $cashier_filter")->fetch_assoc()['cnt'];
     
     // This month's payments by this cashier
-    $month_payments_cashier = $conn->query("SELECT COUNT(*) as cnt FROM payments WHERE YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE()) $cashier_filter")->fetch_assoc()['cnt'];
+    $month_payments_cashier = $conn->query("SELECT COUNT(*) as cnt FROM payments WHERE YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE()) AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL) $cashier_filter")->fetch_assoc()['cnt'];
     
     // Payment types breakdown for this cashier
     $payment_types_cashier = $conn->query("
         SELECT pt.name, COUNT(*) as count, SUM(p.amount) as total_amount 
         FROM payments p 
         LEFT JOIN payment_types pt ON p.payment_type_id = pt.id 
-        WHERE 1 $cashier_filter 
+        WHERE (p.reversal_approved_at IS NULL OR p.reversal_undone_at IS NOT NULL) $cashier_filter 
         GROUP BY pt.name 
         ORDER BY total_amount DESC 
         LIMIT 10
@@ -265,7 +267,7 @@ if ($is_cashier && $current_user_id > 0) {
         LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
         LEFT JOIN members m ON p.member_id = m.id
         LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
-        WHERE 1 $cashier_filter 
+        WHERE (p.reversal_approved_at IS NULL OR p.reversal_undone_at IS NOT NULL) $cashier_filter 
         ORDER BY p.payment_date DESC 
         LIMIT 10
     ");

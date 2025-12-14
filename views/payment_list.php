@@ -148,7 +148,7 @@ FROM payments p
     LEFT JOIN member_organizations mo ON mo.member_id = m.id
     LEFT JOIN organizations org ON mo.organization_id = org.id
     LEFT JOIN users u ON p.recorded_by = u.id
-WHERE ((p.reversal_approved_at IS NULL) OR (p.reversal_undone_at IS NOT NULL))";
+WHERE 1=1";
 
 $params = [];
 $types = '';
@@ -301,7 +301,7 @@ $count_sql = "SELECT COUNT(DISTINCT p.id) as total FROM payments p
     LEFT JOIN member_organizations mo ON mo.member_id = m.id
     LEFT JOIN organizations org ON mo.organization_id = org.id
     LEFT JOIN users u ON p.recorded_by = u.id
-WHERE ((p.reversal_approved_at IS NULL) OR (p.reversal_undone_at IS NOT NULL))";
+WHERE 1=1";
 
 // Apply same filters to count query
 $count_params = [];
@@ -485,14 +485,19 @@ $payment_types_count = [];
 
 while ($row = $payments->fetch_assoc()) {
     $payments_array[] = $row;
-    $total_amount += $row['amount'];
-    $payment_count++;
     
-    $mode = $row['mode'] ?? 'cash';
-    $payment_modes_count[$mode] = ($payment_modes_count[$mode] ?? 0) + 1;
-    
-    $type = $row['payment_type'] ?? 'Unknown';
-    $payment_types_count[$type] = ($payment_types_count[$type] ?? 0) + 1;
+    // Only count non-reversed payments in totals
+    $is_reversed = !empty($row['reversal_approved_at']) && empty($row['reversal_undone_at']);
+    if (!$is_reversed) {
+        $total_amount += $row['amount'];
+        $payment_count++;
+        
+        $mode = $row['mode'] ?? 'cash';
+        $payment_modes_count[$mode] = ($payment_modes_count[$mode] ?? 0) + 1;
+        
+        $type = $row['payment_type'] ?? 'Unknown';
+        $payment_types_count[$type] = ($payment_types_count[$type] ?? 0) + 1;
+    }
 }
 
 $avg_amount = $payment_count > 0 ? $total_amount / $payment_count : 0;
@@ -1188,9 +1193,19 @@ ob_start();
                                 </span>
                             </td>
                             <td class="text-end">
-                                <strong class="text-success" style="font-size: 1.1rem;">
+                                <?php 
+                                $is_reversed_amount = !empty($row['reversal_approved_at']) && empty($row['reversal_undone_at']);
+                                ?>
+                                <strong class="<?= $is_reversed_amount ? 'text-danger' : 'text-success' ?>" 
+                                        style="font-size: 1.1rem; <?= $is_reversed_amount ? 'text-decoration: line-through;' : '' ?>">
                                     ₵<?= number_format((float)$row['amount'], 2) ?>
                                 </strong>
+                                <?php if ($is_reversed_amount): ?>
+                                    <br>
+                                    <small class="badge badge-danger" style="font-size: 0.7rem;">
+                                        <i class="fas fa-times-circle"></i> REVERSED
+                                    </small>
+                                <?php endif; ?>
                             </td>
                             <td class="text-center no-print">
                                 <div class="btn-group btn-group-sm">

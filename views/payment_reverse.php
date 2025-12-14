@@ -72,6 +72,28 @@ if ($action === 'approve') {
     exit;
 }
 
+if ($action === 'deny') {
+    // Only admin can deny
+    if ($role_id != 1 && (!has_permission('approve_payment_reversal'))) {
+        die('No permission to deny reversal');
+    }
+    if (empty($payment['reversal_requested_at']) || !empty($payment['reversal_approved_at'])) {
+        header('Location: payment_list.php?error=Not+pending+approval');
+        exit;
+    }
+    // Clear the reversal request
+    $stmt = $conn->prepare("UPDATE payments SET reversal_requested_at = NULL, reversal_requested_by = NULL WHERE id = ?");
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    // Log
+    $stmt = $conn->prepare("INSERT INTO payment_reversal_log (payment_id, action, actor_id, reason) VALUES (?, 'deny', ?, ?)");
+    $reason = 'Denied by admin';
+    $stmt->bind_param('iis', $id, $uid, $reason);
+    $stmt->execute();
+    header('Location: payment_reversal_log.php?reversal_denied=1');
+    exit;
+}
+
 // Request reversal
 if (!empty($payment['reversal_requested_at']) && empty($payment['reversal_approved_at'])) {
     header('Location: payment_list.php?error=Reversal+already+requested');
