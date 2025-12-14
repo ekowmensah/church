@@ -31,8 +31,22 @@ $can_edit = $is_super_admin || has_permission('edit_bibleclass');
 $can_delete = $is_super_admin || has_permission('delete_bibleclass');
 $can_view = true; // Already validated above
 
-// Fetch all bible classes with leader name
-$bibleclasses = $conn->query("SELECT bc.*, u.name as leader_name, u.email as leader_email, u.id as leader_user_id, c.name as church_name FROM bible_classes bc LEFT JOIN users u ON bc.leader_id = u.id LEFT JOIN churches c ON bc.church_id = c.id");
+// Fetch all bible classes with leader name (from users or members table)
+$bibleclasses = $conn->query("
+    SELECT bc.*, 
+           u.name as leader_name, 
+           u.email as leader_email, 
+           u.id as leader_user_id,
+           CONCAT(m.first_name, ' ', m.last_name) as leader_member_name,
+           m.email as leader_member_email,
+           m.id as leader_member_id,
+           c.name as church_name 
+    FROM bible_classes bc 
+    LEFT JOIN users u ON bc.leader_id = u.id 
+    LEFT JOIN bible_class_leaders bcl ON bc.id = bcl.class_id AND bcl.status = 'active'
+    LEFT JOIN members m ON bcl.member_id = m.id
+    LEFT JOIN churches c ON bc.church_id = c.id
+");
 
 // Ensure no output is sent before ob_start()
 ob_start();
@@ -77,7 +91,10 @@ ob_start();
                         <td><?=htmlspecialchars($row['name'])?></td>
                         <td><?=htmlspecialchars($row['code'])?></td>
                         <td>
-    <?php if (empty($row['leader_id']) || $row['leader_id'] == 0): ?>
+    <?php 
+    $has_leader = (!empty($row['leader_id']) && $row['leader_id'] != 0) || !empty($row['leader_member_id']);
+    ?>
+    <?php if (!$has_leader): ?>
     <button class="btn btn-sm btn-outline-success assign-leader-btn" 
         data-class-id="<?= $row['id'] ?>" 
         data-church-id="<?= $row['church_id'] ?>"
@@ -85,10 +102,16 @@ ob_start();
         <i class="fas fa-user-plus"></i> Assign
     </button>
 <?php else: ?>
-    <?php if (!empty($row['leader_name'])): ?>
+    <?php 
+    // Display leader name - prioritize user account, fallback to member
+    if (!empty($row['leader_name'])): ?>
         <?= htmlspecialchars($row['leader_name']) ?> <small class="text-muted">(<?= htmlspecialchars($row['leader_email']) ?>)</small>
+    <?php elseif (!empty($row['leader_member_name'])): ?>
+        <?= htmlspecialchars($row['leader_member_name']) ?> 
+        <small class="text-muted">(<?= htmlspecialchars($row['leader_member_email'] ?? 'No email') ?>)</small>
+        <span class="badge badge-info badge-sm ml-1">Member</span>
     <?php else: ?>
-        <span class="text-danger">Unknown (ID: <?= htmlspecialchars($row['leader_id']) ?>)</span>
+        <span class="text-danger">Unknown Leader</span>
     <?php endif; ?>
     <button class="btn btn-sm btn-outline-primary assign-leader-btn ml-2" 
         data-class-id="<?= $row['id'] ?>" 

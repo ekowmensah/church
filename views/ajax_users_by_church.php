@@ -39,20 +39,26 @@ $class_id = isset($_GET['class_id']) ? intval($_GET['class_id']) : 0;
 // role_id for Class Leader
 $class_leader_role_id = 5;
 
-// Build base query
-$sql = "SELECT u.id, u.name, u.email FROM users u
-    INNER JOIN user_roles ur ON u.id = ur.user_id
-    LEFT JOIN members m ON u.member_id = m.id
-    WHERE ur.role_id = ?";
-$params = [$class_leader_role_id];
-$types = 'i';
-
 // Check if users table has church_id column
 $has_church_id = false;
 $col_res = $conn->query("SHOW COLUMNS FROM users LIKE 'church_id'");
 if ($col_res && $col_res->num_rows > 0) {
     $has_church_id = true;
 }
+
+// Build UNION query to include both:
+// 1. Users with Class Leader role
+// 2. Members of this specific Bible class (even without user accounts)
+$sql = "(SELECT CONCAT('user_', u.id) as unique_id, u.id as user_id, NULL as member_id, 
+         u.name, u.email, 'Class Leader (User)' as source_type
+         FROM users u
+         INNER JOIN user_roles ur ON u.id = ur.user_id
+         LEFT JOIN members m ON u.member_id = m.id
+         WHERE ur.role_id = ?";
+
+$params = [$class_leader_role_id];
+$types = 'i';
+
 if ($church_id && $has_church_id) {
     $sql .= " AND u.church_id = ?";
     $params[] = $church_id;
@@ -70,7 +76,32 @@ if ($q !== '') {
     $params[] = $q_like;
     $types .= 'ss';
 }
-$sql .= " ORDER BY u.name ASC LIMIT 20";
+
+$sql .= ")";
+
+// Add UNION for members of this Bible class
+if ($class_id) {
+    $sql .= " UNION (SELECT CONCAT('member_', m.id) as unique_id, NULL as user_id, m.id as member_id,
+             CONCAT(m.first_name, ' ', m.last_name) as name, 
+             m.email, 'Bible Class Member' as source_type
+             FROM members m
+             WHERE m.class_id = ?";
+    
+    $params[] = $class_id;
+    $types .= 'i';
+    
+    if ($q !== '') {
+        $sql .= " AND (CONCAT(m.first_name, ' ', m.last_name) LIKE ? OR m.email LIKE ? OR m.crn LIKE ?)";
+        $params[] = $q_like;
+        $params[] = $q_like;
+        $params[] = $q_like;
+        $types .= 'sss';
+    }
+    
+    $sql .= ")";
+}
+
+$sql .= " ORDER BY name ASC LIMIT 20";
 
 $stmt = $conn->prepare($sql);
 $stmt->bind_param($types, ...$params);
@@ -78,10 +109,19 @@ $stmt->execute();
 $res = $stmt->get_result();
 $items = [];
 while ($row = $res->fetch_assoc()) {
+    $display_text = $row['name'];
+    if ($row['email']) {
+        $display_text .= ' (' . $row['email'] . ')';
+    }
+    $display_text .= ' [' . $row['source_type'] . ']';
+    
     $items[] = [
-        'id' => $row['id'],
-        'text' => $row['name'] . ' (' . $row['email'] . ')',
-        'email' => $row['email']
+        'id' => $row['unique_id'],
+        'text' => $display_text,
+        'email' => $row['email'] ?? '',
+        'user_id' => $row['user_id'],
+        'member_id' => $row['member_id'],
+        'source_type' => $row['source_type']
     ];
 }
 if (empty($items)) {

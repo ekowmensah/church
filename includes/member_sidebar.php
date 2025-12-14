@@ -86,6 +86,50 @@ if (isset($_SESSION['member_id'])) {
           </a>
         </li>
         
+        <?php
+        // Add Leader Navigation Links (Bible Class & Organization Leaders)
+        require_once __DIR__.'/../helpers/leader_helpers.php';
+        
+        $bible_class_leader = is_bible_class_leader($conn);
+        $org_leader = is_organization_leader($conn);
+        
+        if ($bible_class_leader || $org_leader) {
+        ?>
+        <!-- Leadership Section -->
+        <li class="nav-header" style="color: rgba(255,255,255,0.6); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin: 1.5rem 0 0.5rem 0;">
+          <i class="fas fa-user-tie mr-2"></i>My Leadership
+        </li>
+        
+        <?php if ($bible_class_leader): ?>
+        <li class="nav-item">
+          <a class="nav-link modern-nav-link" href="<?php echo BASE_URL; ?>/views/my_bible_class_leader.php">
+            <div class="nav-icon-wrapper">
+              <i class="nav-icon fas fa-chalkboard-teacher"></i>
+            </div>
+            <span class="nav-text">My Bible Class</span>
+            <div class="nav-indicator"></div>
+          </a>
+        </li>
+        <?php endif; ?>
+        
+        <?php if ($org_leader): ?>
+        <?php 
+        $org_count = count($org_leader);
+        $org_url = $org_count > 1 ? 'my_organizations_leader.php' : 'my_organization_leader.php';
+        $org_label = $org_count > 1 ? 'My Organizations' : 'My Organization';
+        ?>
+        <li class="nav-item">
+          <a class="nav-link modern-nav-link" href="<?php echo BASE_URL; ?>/views/<?= $org_url ?>">
+            <div class="nav-icon-wrapper">
+              <i class="nav-icon fas fa-users-cog"></i>
+            </div>
+            <span class="nav-text"><?= $org_label ?><?php if ($org_count > 1): ?> <span class="badge badge-info"><?= $org_count ?></span><?php endif; ?></span>
+            <div class="nav-indicator"></div>
+          </a>
+        </li>
+        <?php endif; ?>
+        <?php } ?>
+        
         <!-- Personal Section -->
         <li class="nav-header" style="color: rgba(255,255,255,0.6); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin: 1.5rem 0 0.5rem 0;">
           <i class="fas fa-user mr-2"></i>Personal

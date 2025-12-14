@@ -31,7 +31,21 @@ $can_edit = $is_super_admin || has_permission('edit_organization');
 $can_delete = $is_super_admin || has_permission('delete_organization');
 $can_view = true; // Already validated above
 
-$result = $conn->query("SELECT o.*, c.name AS church_name FROM organizations o LEFT JOIN churches c ON o.church_id = c.id ORDER BY o.name ASC");
+$result = $conn->query("
+    SELECT o.*, 
+           c.name AS church_name,
+           u.name as leader_user_name,
+           u.email as leader_user_email,
+           CONCAT(m.first_name, ' ', m.last_name) as leader_member_name,
+           m.email as leader_member_email,
+           m.id as leader_member_id
+    FROM organizations o 
+    LEFT JOIN churches c ON o.church_id = c.id 
+    LEFT JOIN users u ON o.leader_id = u.id
+    LEFT JOIN organization_leaders ol ON o.id = ol.organization_id AND ol.status = 'active'
+    LEFT JOIN members m ON ol.member_id = m.id
+    ORDER BY o.name ASC
+");
 ob_start();
 ?>
 
@@ -76,7 +90,10 @@ $(function(){
                 <td><?= htmlspecialchars($row['church_name'] ?? '-') ?></td>
                 <td><?= htmlspecialchars($row['description']) ?></td>
                 <td>
-                  <?php if (empty($row['leader_id'])): ?>
+                  <?php 
+                  $has_leader = (!empty($row['leader_id']) && $row['leader_id'] != 0) || !empty($row['leader_member_id']);
+                  ?>
+                  <?php if (!$has_leader): ?>
                     <button class="btn btn-sm btn-outline-success assign-leader-btn" 
                         data-org-id="<?= $row['id'] ?>"
                         data-church-id="<?= $row['church_id'] ?>"
@@ -84,24 +101,16 @@ $(function(){
                         <i class="fas fa-user-plus"></i> Assign
                     </button>
                   <?php else: ?>
-                    <?php
-                    // Fetch leader's name/email
-                    $leader = null;
-                    if ($row['leader_id']) {
-                        $stmt = $conn->prepare('SELECT name, email FROM users WHERE id = ?');
-                        $stmt->bind_param('i', $row['leader_id']);
-                        $stmt->execute();
-                        $stmt->bind_result($leader_name, $leader_email);
-                        if ($stmt->fetch()) {
-                            $leader = ['name' => $leader_name, 'email' => $leader_email];
-                        }
-                        $stmt->close();
-                    }
-                    ?>
-                    <?php if ($leader): ?>
-                      <?= htmlspecialchars($leader['name']) ?> <small class="text-muted">(<?= htmlspecialchars($leader['email']) ?>)</small><br>
+                    <?php 
+                    // Display leader name - prioritize user account, fallback to member
+                    if (!empty($row['leader_user_name'])): ?>
+                      <?= htmlspecialchars($row['leader_user_name']) ?> <small class="text-muted">(<?= htmlspecialchars($row['leader_user_email']) ?>)</small><br>
+                    <?php elseif (!empty($row['leader_member_name'])): ?>
+                      <?= htmlspecialchars($row['leader_member_name']) ?> 
+                      <small class="text-muted">(<?= htmlspecialchars($row['leader_member_email'] ?? 'No email') ?>)</small>
+                      <span class="badge badge-info badge-sm ml-1">Member</span><br>
                     <?php else: ?>
-                      <span class="text-danger">Unknown (ID: <?= htmlspecialchars($row['leader_id']) ?>)</span><br>
+                      <span class="text-danger">Unknown Leader</span><br>
                     <?php endif; ?>
                     <button class="btn btn-sm btn-outline-primary assign-leader-btn" 
                         data-org-id="<?= $row['id'] ?>"

@@ -39,12 +39,24 @@ try {
     // role_id for Organizational Leader
     $org_leader_role_id = 6;
 
-    // Build base query - filter by role, church membership, AND organization membership
-    $sql = "SELECT u.id, u.name, u.email FROM users u
-        INNER JOIN user_roles ur ON u.id = ur.user_id
-        INNER JOIN members m ON u.member_id = m.id
-        INNER JOIN member_organizations mo ON m.id = mo.member_id
-        WHERE ur.role_id = ?";
+    // Check if users table has church_id column
+    $has_church_id = false;
+    $col_res = $conn->query("SHOW COLUMNS FROM users LIKE 'church_id'");
+    if ($col_res && $col_res->num_rows > 0) {
+        $has_church_id = true;
+    }
+
+    // Build UNION query to include both:
+    // 1. Users with Organizational Leader role who are members of this organization
+    // 2. Members of this specific organization (even without user accounts)
+    $sql = "(SELECT CONCAT('user_', u.id) as unique_id, u.id as user_id, NULL as member_id,
+             u.name, u.email, 'Organizational Leader (User)' as source_type
+             FROM users u
+             INNER JOIN user_roles ur ON u.id = ur.user_id
+             INNER JOIN members m ON u.member_id = m.id
+             INNER JOIN member_organizations mo ON m.id = mo.member_id
+             WHERE ur.role_id = ?";
+    
     $params = [$org_leader_role_id];
     $types = 'i';
 
@@ -53,13 +65,6 @@ try {
         $sql .= " AND mo.organization_id = ?";
         $params[] = $org_id;
         $types .= 'i';
-    }
-
-    // Check if users table has church_id column and filter by church
-    $has_church_id = false;
-    $col_res = $conn->query("SHOW COLUMNS FROM users LIKE 'church_id'");
-    if ($col_res && $col_res->num_rows > 0) {
-        $has_church_id = true;
     }
     
     if ($church_id && $has_church_id) {
@@ -77,29 +82,57 @@ try {
         $types .= 'ss';
     }
 
-    $sql .= " ORDER BY u.name ASC LIMIT 20";
+    $sql .= ")";
+
+    // Add UNION for members of this organization
+    if ($org_id) {
+        $sql .= " UNION (SELECT CONCAT('member_', m.id) as unique_id, NULL as user_id, m.id as member_id,
+                 CONCAT(m.first_name, ' ', m.last_name) as name,
+                 m.email, 'Organization Member' as source_type
+                 FROM members m
+                 INNER JOIN member_organizations mo ON m.id = mo.member_id
+                 WHERE mo.organization_id = ?";
+        
+        $params[] = $org_id;
+        $types .= 'i';
+        
+        if ($q !== '') {
+            $sql .= " AND (CONCAT(m.first_name, ' ', m.last_name) LIKE ? OR m.email LIKE ? OR m.crn LIKE ?)";
+            $params[] = $q_like;
+            $params[] = $q_like;
+            $params[] = $q_like;
+            $types .= 'sss';
+        }
+        
+        $sql .= ")";
+    }
+
+    $sql .= " ORDER BY name ASC LIMIT 20";
 
     $stmt = $conn->prepare($sql);
     if (!$stmt) {
         throw new Exception('Prepare failed: ' . $conn->error);
     }
 
-    // Bind parameters based on count
-    if (count($params) === 1) {
-        $stmt->bind_param('i', $params[0]);
-    } else {
-        $stmt->bind_param($types, ...$params);
-    }
-
+    $stmt->bind_param($types, ...$params);
     $stmt->execute();
     $result = $stmt->get_result();
 
     $items = [];
     while ($row = $result->fetch_assoc()) {
+        $display_text = $row['name'];
+        if ($row['email']) {
+            $display_text .= ' (' . $row['email'] . ')';
+        }
+        $display_text .= ' [' . $row['source_type'] . ']';
+        
         $items[] = [
-            'id' => $row['id'],
-            'text' => $row['name'] . ' (' . $row['email'] . ')',
-            'email' => $row['email']
+            'id' => $row['unique_id'],
+            'text' => $display_text,
+            'email' => $row['email'] ?? '',
+            'user_id' => $row['user_id'],
+            'member_id' => $row['member_id'],
+            'source_type' => $row['source_type']
         ];
     }
 

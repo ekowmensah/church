@@ -213,6 +213,56 @@ $current_url = $_SERVER['REQUEST_URI'] ?? '';
       }
     }
     
+    // Add Leader Navigation Links (Bible Class & Organization Leaders)
+    require_once __DIR__.'/../helpers/leader_helpers.php';
+    
+    $bible_class_leader = is_bible_class_leader($conn);
+    $org_leader = is_organization_leader($conn);
+    
+    if ($bible_class_leader || $org_leader) {
+      echo '<div class="sidebar-heading" onclick="toggleMenuGroup(\'menu-group-leadership\', this)">';
+      echo '<i class="fas fa-user-tie"></i>';
+      echo '<span>My Leadership</span>';
+      echo '</div>';
+      echo '<div class="menu-group" id="menu-group-leadership">';
+      echo '<ul class="nav nav-pills nav-sidebar flex-column" role="menu">';
+      
+      if ($bible_class_leader) {
+        $is_active = strpos($current_url, 'my_bible_class_leader.php') !== false || strpos($current_url, 'my_bible_class_attendance.php') !== false;
+        echo '<li class="nav-item">';
+        echo '<a href="' . BASE_URL . '/views/my_bible_class_leader.php" class="nav-link' . ($is_active ? ' active' : '') . '">';
+        echo '<i class="nav-icon fas fa-chalkboard-teacher"></i>';
+        echo '<p>My Bible Class</p>';
+        echo '</a>';
+        echo '</li>';
+      }
+      
+      if ($org_leader) {
+        $is_active = strpos($current_url, 'my_organization') !== false;
+        $org_count = count($org_leader);
+        
+        // If multiple organizations, link to selector; if one, link directly to dashboard
+        if ($org_count > 1) {
+          echo '<li class="nav-item">';
+          echo '<a href="' . BASE_URL . '/views/my_organizations_leader.php" class="nav-link' . ($is_active ? ' active' : '') . '">';
+          echo '<i class="nav-icon fas fa-users-cog"></i>';
+          echo '<p>My Organizations <span class="badge badge-info right">' . $org_count . '</span></p>';
+          echo '</a>';
+          echo '</li>';
+        } else {
+          echo '<li class="nav-item">';
+          echo '<a href="' . BASE_URL . '/views/my_organization_leader.php" class="nav-link' . ($is_active ? ' active' : '') . '">';
+          echo '<i class="nav-icon fas fa-users-cog"></i>';
+          echo '<p>My Organization</p>';
+          echo '</a>';
+          echo '</li>';
+        }
+      }
+      
+      echo '</ul>';
+      echo '</div>';
+    }
+    
     // Then render other groups as collapsible accordion
     foreach ($menu as $group => $items): 
       // Skip Dashboard group as it's already rendered above
