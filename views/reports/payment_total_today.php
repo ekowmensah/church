@@ -101,19 +101,20 @@ try {
     if ($is_super_admin && !$filter_cashier) {
         $sql = "
             SELECT 
-                u.id,
-                u.name,
-                u.email,
+                COALESCE(u.id, 0) AS id,
+                COALESCE(u.name, 'By Member') AS name,
+                COALESCE(u.email, 'Self-Service Payment') AS email,
                 COUNT(p.id) AS payment_count,
                 SUM(p.amount) AS total_amount,
                 MIN(p.payment_date) AS first_payment_time,
                 MAX(p.payment_date) AS last_payment_time,
                 COUNT(DISTINCT p.mode) AS modes_used,
-                COUNT(DISTINCT p.payment_type_id) AS payment_types_used
+                COUNT(DISTINCT p.payment_type_id) AS payment_types_used,
+                CASE WHEN p.recorded_by IS NULL THEN 1 ELSE 0 END AS is_self_service
             FROM payments p
             LEFT JOIN users u ON p.recorded_by = u.id
             WHERE DATE(p.payment_date) = ?
-            GROUP BY u.id, u.name, u.email
+            GROUP BY COALESCE(u.id, 0), COALESCE(u.name, 'By Member'), COALESCE(u.email, 'Self-Service Payment'), is_self_service
             ORDER BY total_amount DESC
         ";
         $stmt = $conn->prepare($sql);
@@ -244,8 +245,8 @@ try {
     if ($is_super_admin && !$filter_cashier) {
         $sql = "
             SELECT 
-                u.id AS cashier_id,
-                u.name AS cashier_name,
+                COALESCE(u.id, 0) AS cashier_id,
+                COALESCE(u.name, 'By Member') AS cashier_name,
                 pt.name AS payment_type,
                 COUNT(p.id) AS payment_count,
                 SUM(p.amount) AS total_amount
@@ -253,8 +254,8 @@ try {
             LEFT JOIN users u ON p.recorded_by = u.id
             JOIN payment_types pt ON p.payment_type_id = pt.id
             WHERE DATE(p.payment_date) = ?
-            GROUP BY u.id, u.name, pt.name
-            ORDER BY u.name, total_amount DESC
+            GROUP BY COALESCE(u.id, 0), COALESCE(u.name, 'By Member'), pt.name
+            ORDER BY COALESCE(u.name, 'By Member'), total_amount DESC
         ";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param('s', $date);
@@ -270,16 +271,16 @@ try {
     if ($is_super_admin && !$filter_cashier) {
         $sql = "
             SELECT 
-                u.id AS cashier_id,
-                u.name AS cashier_name,
+                COALESCE(u.id, 0) AS cashier_id,
+                COALESCE(u.name, 'By Member') AS cashier_name,
                 p.mode,
                 COUNT(p.id) AS payment_count,
                 SUM(p.amount) AS total_amount
             FROM payments p
             LEFT JOIN users u ON p.recorded_by = u.id
             WHERE DATE(p.payment_date) = ?
-            GROUP BY u.id, u.name, p.mode
-            ORDER BY u.name, total_amount DESC
+            GROUP BY COALESCE(u.id, 0), COALESCE(u.name, 'By Member'), p.mode
+            ORDER BY COALESCE(u.name, 'By Member'), total_amount DESC
         ";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param('s', $date);
@@ -305,7 +306,7 @@ try {
                 COALESCE(m.first_name, ss.first_name, 'N/A') AS payer_first_name,
                 COALESCE(m.last_name, ss.last_name, '') AS payer_last_name,
                 COALESCE(m.crn, ss.srn, 'N/A') AS payer_id,
-                u.name AS recorded_by_name
+                COALESCE(u.name, 'By Member') AS recorded_by_name
             FROM payments p
             LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
             LEFT JOIN members m ON p.member_id = m.id
@@ -329,7 +330,7 @@ try {
                 COALESCE(m.first_name, ss.first_name, 'N/A') AS payer_first_name,
                 COALESCE(m.last_name, ss.last_name, '') AS payer_last_name,
                 COALESCE(m.crn, ss.srn, 'N/A') AS payer_id,
-                u.name AS recorded_by_name
+                COALESCE(u.name, 'By Member') AS recorded_by_name
             FROM payments p
             LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
             LEFT JOIN members m ON p.member_id = m.id
@@ -353,7 +354,7 @@ try {
                 COALESCE(m.first_name, ss.first_name, 'N/A') AS payer_first_name,
                 COALESCE(m.last_name, ss.last_name, '') AS payer_last_name,
                 COALESCE(m.crn, ss.srn, 'N/A') AS payer_id,
-                u.name AS recorded_by_name
+                COALESCE(u.name, 'By Member') AS recorded_by_name
             FROM payments p
             LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
             LEFT JOIN members m ON p.member_id = m.id
@@ -556,8 +557,13 @@ ob_start();
                         ?>
                         <tr>
                             <td><?= $idx + 1 ?></td>
-                            <td><strong><?= htmlspecialchars($row['name'] ?: 'Unknown') ?></strong></td>
-                            <td><span class="badge badge-secondary"><?= htmlspecialchars($row['email'] ?: 'N/A') ?></span></td>
+                            <td>
+                                <strong><?= htmlspecialchars($row['name']) ?></strong>
+                                <?php if ($row['is_self_service'] ?? 0): ?>
+                                    <span class="badge badge-info ml-2"><i class="fas fa-mobile-alt"></i> Self-Service</span>
+                                <?php endif; ?>
+                            </td>
+                            <td><span class="badge badge-secondary"><?= htmlspecialchars($row['email']) ?></span></td>
                             <td class="text-center"><span class="badge badge-info badge-pill"><?= number_format($row['payment_count']) ?></span></td>
                             <td class="text-right"><strong class="text-success">₵<?= number_format($row['total_amount'], 2) ?></strong></td>
                             <td class="text-center">₵<?= number_format($avg_amount, 2) ?></td>
@@ -571,9 +577,13 @@ ob_start();
                                 </div>
                             </td>
                             <td class="text-center">
-                                <a href="?date=<?= $date ?>&cashier=<?= $row['id'] ?>" class="btn btn-sm btn-outline-primary">
-                                    <i class="fas fa-eye"></i> View
-                                </a>
+                                <?php if ($row['id'] > 0): ?>
+                                    <a href="?date=<?= $date ?>&cashier=<?= $row['id'] ?>" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-eye"></i> View
+                                    </a>
+                                <?php else: ?>
+                                    <span class="text-muted"><i class="fas fa-info-circle"></i> Self-Service</span>
+                                <?php endif; ?>
                             </td>
                         </tr>
                         <?php endforeach; ?>

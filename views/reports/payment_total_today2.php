@@ -75,15 +75,16 @@ try {
     if ($is_super_admin) {
         $sql = "
             SELECT 
-                u.id,
-                u.name,
-                u.email,
+                COALESCE(u.id, 0) AS id,
+                COALESCE(u.name, 'By Member') AS name,
+                COALESCE(u.email, 'Self-Service Payment') AS email,
                 COUNT(p.id) AS payment_count,
-                SUM(p.amount) AS total_amount
+                SUM(p.amount) AS total_amount,
+                CASE WHEN p.recorded_by IS NULL THEN 1 ELSE 0 END AS is_self_service
             FROM payments p
             LEFT JOIN users u ON p.recorded_by = u.id
             WHERE DATE(p.payment_date) = ?
-            GROUP BY u.id, u.name, u.email
+            GROUP BY COALESCE(u.id, 0), COALESCE(u.name, 'By Member'), COALESCE(u.email, 'Self-Service Payment'), is_self_service
             ORDER BY total_amount DESC
         ";
         $stmt = $conn->prepare($sql);
@@ -248,8 +249,13 @@ ob_start();
                                     ?>
                                     <tr>
                                         <td><?= $idx + 1 ?></td>
-                                        <td><?= htmlspecialchars($row['name'] ?: 'Unknown') ?></td>
-                                        <td><span class="badge badge-secondary"><?= htmlspecialchars($row['email'] ?: 'N/A') ?></span></td>
+                                        <td>
+                                            <?= htmlspecialchars($row['name']) ?>
+                                            <?php if ($row['is_self_service'] ?? 0): ?>
+                                                <span class="badge badge-info ml-2"><i class="fas fa-mobile-alt"></i> Self-Service</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><span class="badge badge-secondary"><?= htmlspecialchars($row['email']) ?></span></td>
                                         <td class="text-right"><?= number_format($row['payment_count']) ?></td>
                                         <td class="text-right font-weight-bold">₵<?= number_format($row['total_amount'], 2) ?></td>
                                         <td class="text-right">

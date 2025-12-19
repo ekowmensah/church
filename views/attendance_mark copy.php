@@ -319,203 +319,125 @@ ob_start();
             flex-wrap: wrap;
         }
         
-        .members-list-container {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 3px 15px rgba(0,0,0,0.08);
-            overflow: hidden;
+        .members-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
             margin-bottom: 25px;
         }
         
-        .members-table {
-            width: 100%;
-            border-collapse: collapse;
+        .member-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
         }
         
-        .members-table thead {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+        .member-card:hover {
+            box-shadow: 0 5px 20px rgba(0,0,0,0.15);
         }
         
-        .members-table thead th {
-            padding: 12px 8px;
-            text-align: left;
-            font-weight: 600;
-            font-size: 0.85rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+        .member-card.present {
+            border-color: #28a745;
+            background: #f8fff9;
         }
         
-        .members-table tbody tr {
-            border-bottom: 1px solid #e9ecef;
-            transition: background-color 0.2s ease;
+        .member-card.absent {
+            border-color: #e0e0e0;
         }
         
-        .members-table tbody tr:hover {
-            background-color: #f8f9fa;
+        .member-card.sick {
+            border-color: #ffc107;
+            background: #fffbf0;
         }
         
-        .members-table tbody tr.draft {
-            background-color: #fffbf0;
-            border-left: 4px solid #ffc107;
+        .member-card.permission {
+            border-color: #17a2b8;
+            background: #f0f9fb;
         }
         
-        .members-table tbody td {
-            padding: 10px 8px;
-            vertical-align: middle;
-            font-size: 0.9rem;
+        .member-card.distance {
+            border-color: #fd7e14;
+            background: #fff8f0;
         }
         
-        .member-name {
-            font-weight: 600;
+        .member-card.invalid {
+            border-color: #6c757d;
+            background: #f8f9fa;
+        }
+        
+        .member-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+        
+        .member-info h6 {
+            margin: 0 0 5px 0;
+            font-size: 1.1rem;
             color: #2c3e50;
-            font-size: 0.95rem;
         }
         
         .member-crn {
+            font-size: 0.85rem;
             color: #6c757d;
-            font-size: 0.85rem;
         }
         
-        .member-meta {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        
-        .status-radio-group {
-            display: flex;
-            gap: 4px;
-            flex-wrap: nowrap;
-            align-items: center;
-            justify-content: flex-start;
-        }
-        
-        .status-select-mobile {
-            display: none;
+        .status-selector {
             width: 100%;
-            padding: 8px;
+            padding: 8px 12px;
             border: 2px solid #e0e0e0;
-            border-radius: 6px;
-            font-size: 0.85rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
             font-weight: 500;
             cursor: pointer;
+            transition: all 0.3s ease;
             background: white;
-            transition: all 0.2s ease;
         }
         
-        .status-select-mobile:focus {
+        .status-selector:focus {
             outline: none;
             border-color: #667eea;
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
         
-        .status-select-mobile.status-present {
+        .status-selector.status-present {
             border-color: #28a745;
             background: #f8fff9;
             color: #28a745;
         }
         
-        .status-select-mobile.status-absent {
+        .status-selector.status-absent {
             border-color: #dc3545;
             background: #fff5f5;
             color: #dc3545;
         }
         
-        .status-select-mobile.status-sick {
+        .status-selector.status-sick {
             border-color: #ffc107;
             background: #fffbf0;
             color: #d39e00;
         }
         
-        .status-select-mobile.status-permission {
+        .status-selector.status-permission {
             border-color: #17a2b8;
             background: #f0f9fb;
             color: #117a8b;
         }
         
-        .status-select-mobile.status-distance {
+        .status-selector.status-distance {
             border-color: #fd7e14;
             background: #fff8f0;
             color: #e8590c;
         }
         
-        .status-select-mobile.status-invalid {
+        .status-selector.status-invalid {
             border-color: #6c757d;
             background: #f8f9fa;
             color: #495057;
-        }
-        
-        .status-radio {
-            position: relative;
-        }
-        
-        .status-radio input[type="radio"] {
-            position: absolute;
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        
-        .status-radio label {
-            display: inline-block;
-            padding: 4px 8px;
-            border: 2px solid #e0e0e0;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.75rem;
-            font-weight: 500;
-            transition: all 0.2s ease;
-            background: white;
-            margin: 0;
-            white-space: nowrap;
-            line-height: 1.2;
-        }
-        
-        .status-radio label:hover {
-            border-color: #667eea;
-            transform: translateY(-1px);
-        }
-        
-        .status-radio input[type="radio"]:checked + label {
-            font-weight: 600;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-        }
-        
-        .status-radio.present input[type="radio"]:checked + label {
-            background: #28a745;
-            border-color: #28a745;
-            color: white;
-        }
-        
-        .status-radio.absent input[type="radio"]:checked + label {
-            background: #dc3545;
-            border-color: #dc3545;
-            color: white;
-        }
-        
-        .status-radio.sick input[type="radio"]:checked + label {
-            background: #ffc107;
-            border-color: #ffc107;
-            color: #000;
-        }
-        
-        .status-radio.permission input[type="radio"]:checked + label {
-            background: #17a2b8;
-            border-color: #17a2b8;
-            color: white;
-        }
-        
-        .status-radio.distance input[type="radio"]:checked + label {
-            background: #fd7e14;
-            border-color: #fd7e14;
-            color: white;
-        }
-        
-        .status-radio.invalid input[type="radio"]:checked + label {
-            background: #6c757d;
-            border-color: #6c757d;
-            color: white;
         }
         
         .member-meta {
@@ -547,140 +469,22 @@ ob_start();
             min-width: 200px;
         }
         
+        .member-card.draft {
+            border-left: 4px solid #ffc107;
+        }
+        
         .badge-sm {
             font-size: 0.65rem;
             padding: 2px 6px;
         }
         
-        .row-number {
-            font-weight: 600;
-            color: #6c757d;
-            font-size: 0.9rem;
-        }
-        
-        @media (max-width: 1200px) {
-            .status-radio label {
-                padding: 3px 6px;
-                font-size: 0.7rem;
-            }
-            
-            .status-radio-group {
-                gap: 3px;
-            }
-        }
-        
-        @media (max-width: 992px) {
-            .stats-row {
-                grid-template-columns: repeat(4, 1fr);
-            }
-            
-            .members-table thead th:nth-child(4),
-            .members-table tbody td:nth-child(4) {
-                display: none;
-            }
-            
-            .status-radio label {
-                padding: 3px 5px;
-                font-size: 0.65rem;
-            }
-        }
-        
         @media (max-width: 768px) {
-            .stats-row {
-                grid-template-columns: repeat(2, 1fr);
-            }
-            
-            .members-table {
-                font-size: 0.8rem;
-                display: block;
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-            }
-            
-            .members-table thead th,
-            .members-table tbody td {
-                padding: 8px 4px;
-            }
-            
-            .members-table thead th:nth-child(1) {
-                width: 30px;
-            }
-            
-            .members-table thead th:nth-child(5),
-            .members-table tbody td:nth-child(5) {
-                display: none;
-            }
-            
-            .status-radio-group {
-                display: none !important;
-            }
-            
-            .status-select-mobile {
-                display: block;
-            }
-            
-            .member-name {
-                font-size: 0.85rem;
-            }
-            
-            .member-crn {
-                font-size: 0.75rem;
-            }
-            
-            .bulk-actions {
-                flex-direction: column;
-                align-items: stretch;
-            }
-            
-            .bulk-actions-buttons {
-                width: 100%;
-                justify-content: space-between;
-            }
-            
-            .bulk-actions-buttons .btn {
-                flex: 1;
-                font-size: 0.8rem;
-                padding: 6px 8px;
-            }
-        }
-        
-        @media (max-width: 576px) {
-            .attendance-header {
-                flex-direction: column;
-                gap: 15px;
-            }
-            
-            .session-info {
-                flex-direction: column;
-                gap: 10px;
-            }
-            
-            .stats-row {
+            .members-grid {
                 grid-template-columns: 1fr;
             }
             
-            .filter-card .row {
-                margin: 0;
-            }
-            
-            .filter-card .col-md-4 {
-                padding: 0 0 10px 0;
-            }
-            
-            .members-table thead th:nth-child(3),
-            .members-table tbody td:nth-child(3) {
-                display: none;
-            }
-            
-            .save-buttons-fixed {
-                left: 10px;
-                right: 10px;
-                bottom: 10px;
-            }
-            
-            .save-buttons-fixed .btn {
-                min-width: 100%;
-                font-size: 0.9rem;
+            .stats-row {
+                grid-template-columns: repeat(2, 1fr);
             }
         }
         
@@ -824,134 +628,57 @@ ob_start();
             </div>
         </div>
 
-        <div class="members-list-container">
-            <table class="members-table" id="membersTable">
-                <thead>
-                    <tr>
-                        <th style="width: 50px;">#</th>
-                        <th style="width: 250px;">Member</th>
-                        <th style="width: 120px;">CRN</th>
-                        <th style="width: 150px;">Class</th>
-                        <th style="width: 80px;">Gender</th>
-                        <th>Attendance Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach($members as $index => $member): 
-                        $current_status = strtolower($prev_attendance[$member['id']] ?? 'absent');
-                        $is_draft = isset($draft_status[$member['id']]) && $draft_status[$member['id']] == 1;
-                    ?>
-                    <tr class="<?= $is_draft ? 'draft' : '' ?>" 
-                        data-member-id="<?= $member['id'] ?>"
-                        data-member-name="<?= htmlspecialchars(strtolower($member['last_name'] . ' ' . $member['first_name'] . ' ' . $member['middle_name'])) ?>"
-                        data-member-crn="<?= htmlspecialchars(strtolower($member['crn'] ?? '')) ?>"
-                        data-member-class="<?= $member['class_id'] ?? '' ?>"
-                        data-member-org="<?= isset($member_orgs[$member['id']]) ? $member_orgs[$member['id']] : '' ?>">
-                        <td class="row-number"><?= $index + 1 ?></td>
-                        <td>
-                            <div class="member-name">
-                                <?= htmlspecialchars($member['last_name'] . ', ' . $member['first_name']) ?>
-                                <?php if ($is_draft): ?>
-                                    <span class="badge badge-warning badge-sm ml-1">DRAFT</span>
-                                <?php endif; ?>
-                            </div>
-                        </td>
-                        <td>
-                            <span class="member-crn">
-                                <i class="fas fa-id-card"></i> <?= htmlspecialchars($member['crn'] ?? 'N/A') ?>
-                            </span>
-                        </td>
-                        <td>
-                            <?php if ($member['class_name']): ?>
-                                <span class="meta-badge">
-                                    <i class="fas fa-book"></i> <?= htmlspecialchars($member['class_name']) ?>
-                                </span>
-                            <?php else: ?>
-                                <span class="text-muted">-</span>
+        <div class="members-grid" id="membersGrid">
+            <?php foreach($members as $member): 
+                $current_status = strtolower($prev_attendance[$member['id']] ?? 'absent');
+                $is_draft = isset($draft_status[$member['id']]) && $draft_status[$member['id']] == 1;
+            ?>
+            <div class="member-card <?= $current_status ?> <?= $is_draft ? 'draft' : '' ?>" 
+                 data-member-id="<?= $member['id'] ?>"
+                 data-member-name="<?= htmlspecialchars(strtolower($member['last_name'] . ' ' . $member['first_name'] . ' ' . $member['middle_name'])) ?>"
+                 data-member-crn="<?= htmlspecialchars(strtolower($member['crn'] ?? '')) ?>"
+                 data-member-class="<?= $member['class_id'] ?? '' ?>"
+                 data-member-org="<?= isset($member_orgs[$member['id']]) ? $member_orgs[$member['id']] : '' ?>">
+                <div class="member-header">
+                    <div class="member-info">
+                        <h6>
+                            <?= htmlspecialchars($member['last_name'] . ', ' . $member['first_name']) ?>
+                            <?php if ($is_draft): ?>
+                                <span class="badge badge-warning badge-sm ml-1">DRAFT</span>
                             <?php endif; ?>
-                        </td>
-                        <td>
-                            <?php if ($member['gender']): ?>
-                                <i class="fas fa-<?= strtolower($member['gender']) === 'male' ? 'mars' : 'venus' ?>"></i>
-                                <?= htmlspecialchars($member['gender']) ?>
-                            <?php else: ?>
-                                <span class="text-muted">-</span>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <!-- Radio buttons for desktop -->
-                            <div class="status-radio-group">
-                                <div class="status-radio present">
-                                    <input type="radio" 
-                                           id="status_<?= $member['id'] ?>_present" 
-                                           name="attendance[<?= $member['id'] ?>]" 
-                                           value="present" 
-                                           <?= $current_status === 'present' ? 'checked' : '' ?>
-                                           onchange="updateMemberRadio(this)">
-                                    <label for="status_<?= $member['id'] ?>_present">✓ Present</label>
-                                </div>
-                                <div class="status-radio absent">
-                                    <input type="radio" 
-                                           id="status_<?= $member['id'] ?>_absent" 
-                                           name="attendance[<?= $member['id'] ?>]" 
-                                           value="absent" 
-                                           <?= $current_status === 'absent' ? 'checked' : '' ?>
-                                           onchange="updateMemberRadio(this)">
-                                    <label for="status_<?= $member['id'] ?>_absent">✗ Absent</label>
-                                </div>
-                                <div class="status-radio sick">
-                                    <input type="radio" 
-                                           id="status_<?= $member['id'] ?>_sick" 
-                                           name="attendance[<?= $member['id'] ?>]" 
-                                           value="sick" 
-                                           <?= $current_status === 'sick' ? 'checked' : '' ?>
-                                           onchange="updateMemberRadio(this)">
-                                    <label for="status_<?= $member['id'] ?>_sick">🤒 Sick</label>
-                                </div>
-                                <div class="status-radio permission">
-                                    <input type="radio" 
-                                           id="status_<?= $member['id'] ?>_permission" 
-                                           name="attendance[<?= $member['id'] ?>]" 
-                                           value="permission" 
-                                           <?= $current_status === 'permission' ? 'checked' : '' ?>
-                                           onchange="updateMemberRadio(this)">
-                                    <label for="status_<?= $member['id'] ?>_permission">📋 Permission</label>
-                                </div>
-                                <div class="status-radio distance">
-                                    <input type="radio" 
-                                           id="status_<?= $member['id'] ?>_distance" 
-                                           name="attendance[<?= $member['id'] ?>]" 
-                                           value="distance" 
-                                           <?= $current_status === 'distance' ? 'checked' : '' ?>
-                                           onchange="updateMemberRadio(this)">
-                                    <label for="status_<?= $member['id'] ?>_distance">🛣️ Distance</label>
-                                </div>
-                                <div class="status-radio invalid">
-                                    <input type="radio" 
-                                           id="status_<?= $member['id'] ?>_invalid" 
-                                           name="attendance[<?= $member['id'] ?>]" 
-                                           value="invalid" 
-                                           <?= $current_status === 'invalid' ? 'checked' : '' ?>
-                                           onchange="updateMemberRadio(this)">
-                                    <label for="status_<?= $member['id'] ?>_invalid">⚠️ Invalid</label>
-                                </div>
-                            </div>
-                            <!-- Select dropdown for mobile -->
-                            <select class="status-select-mobile status-<?= $current_status ?>" 
-                                    data-member-id="<?= $member['id'] ?>"
-                                    onchange="updateMemberSelect(this)">
-                                <option value="present" <?= $current_status === 'present' ? 'selected' : '' ?>>✓ Present</option>
-                                <option value="absent" <?= $current_status === 'absent' ? 'selected' : '' ?>>✗ Absent</option>
-                                <option value="sick" <?= $current_status === 'sick' ? 'selected' : '' ?>>🤒 Sick</option>
-                                <option value="permission" <?= $current_status === 'permission' ? 'selected' : '' ?>>📋 Permission</option>
-                                <option value="distance" <?= $current_status === 'distance' ? 'selected' : '' ?>>🛣️ Distance</option>
-                                <option value="invalid" <?= $current_status === 'invalid' ? 'selected' : '' ?>>⚠️ Invalid</option>
-                            </select>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+                        </h6>
+                        <div class="member-crn">
+                            <i class="fas fa-id-card"></i> <?= htmlspecialchars($member['crn'] ?? 'N/A') ?>
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <select class="status-selector status-<?= $current_status ?>" 
+                            name="attendance[<?= $member['id'] ?>]" 
+                            onchange="updateMemberStatus(this)">
+                        <option value="present" <?= $current_status === 'present' ? 'selected' : '' ?>>✓ Present</option>
+                        <option value="absent" <?= $current_status === 'absent' ? 'selected' : '' ?>>✗ Absent</option>
+                        <option value="sick" <?= $current_status === 'sick' ? 'selected' : '' ?>>🤒 Sick</option>
+                        <option value="permission" <?= $current_status === 'permission' ? 'selected' : '' ?>>📋 Permission</option>
+                        <option value="distance" <?= $current_status === 'distance' ? 'selected' : '' ?>>🛣️ Distance</option>
+                        <option value="invalid" <?= $current_status === 'invalid' ? 'selected' : '' ?>>⚠️ Invalid</option>
+                    </select>
+                </div>
+                <div class="member-meta">
+                    <?php if ($member['class_name']): ?>
+                        <span class="meta-badge">
+                            <i class="fas fa-book"></i> <?= htmlspecialchars($member['class_name']) ?>
+                        </span>
+                    <?php endif; ?>
+                    <?php if ($member['gender']): ?>
+                        <span class="meta-badge">
+                            <i class="fas fa-<?= strtolower($member['gender']) === 'male' ? 'mars' : 'venus' ?>"></i>
+                            <?= htmlspecialchars($member['gender']) ?>
+                        </span>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
         </div>
 
         <div class="save-buttons-fixed">
@@ -968,59 +695,27 @@ ob_start();
 <script>
 let autoSaveTimeout = null;
 
-function updateMemberRadio(radioElement) {
-    const row = radioElement.closest('tr');
-    const memberId = row.dataset.memberId;
-    const status = radioElement.value;
-    
-    // Sync with mobile select if it exists
-    const mobileSelect = row.querySelector('.status-select-mobile');
-    if (mobileSelect) {
-        mobileSelect.value = status;
-        mobileSelect.className = 'status-select-mobile status-' + status;
-    }
-    
-    // Mark as draft
-    row.classList.add('draft');
-    const nameCell = row.querySelector('.member-name');
-    if (!nameCell.querySelector('.badge-warning')) {
-        const draftBadge = document.createElement('span');
-        draftBadge.className = 'badge badge-warning badge-sm ml-1';
-        draftBadge.textContent = 'DRAFT';
-        nameCell.appendChild(draftBadge);
-    }
-    
-    updateStats();
-    
-    // Auto-save as draft after 1 second of inactivity
-    clearTimeout(autoSaveTimeout);
-    autoSaveTimeout = setTimeout(() => {
-        saveDraft(memberId, status);
-    }, 1000);
-}
-
-function updateMemberSelect(selectElement) {
-    const row = selectElement.closest('tr');
-    const memberId = selectElement.dataset.memberId;
+function updateMemberStatus(selectElement) {
+    const card = selectElement.closest('.member-card');
+    const memberId = card.dataset.memberId;
     const status = selectElement.value;
     
-    // Update select styling
-    selectElement.className = 'status-select-mobile status-' + status;
+    // Remove all status classes
+    card.classList.remove('present', 'absent', 'sick', 'permission', 'distance', 'invalid');
+    // Add current status class
+    card.classList.add(status);
     
-    // Sync with radio buttons
-    const radioButton = row.querySelector(`input[name="attendance[${memberId}]"][value="${status}"]`);
-    if (radioButton) {
-        radioButton.checked = true;
-    }
+    // Update select styling
+    selectElement.className = 'status-selector status-' + status;
     
     // Mark as draft
-    row.classList.add('draft');
-    const nameCell = row.querySelector('.member-name');
-    if (!nameCell.querySelector('.badge-warning')) {
+    card.classList.add('draft');
+    const nameHeader = card.querySelector('.member-info h6');
+    if (!nameHeader.querySelector('.badge-warning')) {
         const draftBadge = document.createElement('span');
         draftBadge.className = 'badge badge-warning badge-sm ml-1';
         draftBadge.textContent = 'DRAFT';
-        nameCell.appendChild(draftBadge);
+        nameHeader.appendChild(draftBadge);
     }
     
     updateStats();
@@ -1052,8 +747,9 @@ function saveDraft(memberId, status) {
 }
 
 function updateStats() {
-    const rows = document.querySelectorAll('#membersTable tbody tr');
-    const total = rows.length;
+    const selectors = document.querySelectorAll('select[name^="attendance"]');
+    const cards = document.querySelectorAll('.member-card');
+    const total = selectors.length;
     let present = 0;
     let absent = 0;
     let sick = 0;
@@ -1062,30 +758,20 @@ function updateStats() {
     let invalid = 0;
     let drafts = 0;
     
-    rows.forEach(row => {
-        // Try to get status from radio button first, then from select
-        let status = null;
-        const checkedRadio = row.querySelector('input[type="radio"]:checked');
-        if (checkedRadio) {
-            status = checkedRadio.value;
-        } else {
-            const mobileSelect = row.querySelector('.status-select-mobile');
-            if (mobileSelect) {
-                status = mobileSelect.value;
-            }
+    selectors.forEach(select => {
+        const status = select.value;
+        switch(status) {
+            case 'present': present++; break;
+            case 'absent': absent++; break;
+            case 'sick': sick++; break;
+            case 'permission': permission++; break;
+            case 'distance': distance++; break;
+            case 'invalid': invalid++; break;
         }
-        
-        if (status) {
-            switch(status) {
-                case 'present': present++; break;
-                case 'absent': absent++; break;
-                case 'sick': sick++; break;
-                case 'permission': permission++; break;
-                case 'distance': distance++; break;
-                case 'invalid': invalid++; break;
-            }
-        }
-        if (row.classList.contains('draft')) drafts++;
+    });
+    
+    cards.forEach(card => {
+        if (card.classList.contains('draft')) drafts++;
     });
     
     const rate = total > 0 ? ((present / total) * 100).toFixed(1) : 0;
@@ -1101,7 +787,7 @@ function updateStats() {
 }
 
 function confirmFinalize() {
-    const draftCount = document.querySelectorAll('#membersTable tbody tr.draft').length;
+    const draftCount = document.querySelectorAll('.member-card.draft').length;
     if (draftCount > 0) {
         return confirm(`You have ${draftCount} draft mark(s). Finalizing will save all attendance records permanently. Continue?`);
     }
@@ -1117,18 +803,20 @@ function applyFilters() {
     const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
     const selectedClass = classFilter ? classFilter.value : '';
     const selectedOrg = orgFilter ? orgFilter.value : '';
+    const memberCards = document.querySelectorAll('.member-card');
     
-    const rows = document.querySelectorAll('#membersTable tbody tr');
     let visibleCount = 0;
     
-    rows.forEach(row => {
-        const memberName = row.dataset.memberName || '';
-        const memberCrn = row.dataset.memberCrn || '';
-        const memberClass = row.dataset.memberClass || '';
-        const memberOrg = row.dataset.memberOrg || '';
+    memberCards.forEach(card => {
+        const memberName = card.dataset.memberName || '';
+        const memberCrn = card.dataset.memberCrn || '';
+        const memberClass = card.dataset.memberClass || '';
+        const memberOrg = card.dataset.memberOrg || '';
         
         // Check search term
-        const matchesSearch = !searchTerm || memberName.includes(searchTerm) || memberCrn.includes(searchTerm);
+        const matchesSearch = !searchTerm || 
+                            memberName.includes(searchTerm) || 
+                            memberCrn.includes(searchTerm);
         
         // Check class filter
         const matchesClass = !selectedClass || memberClass === selectedClass;
@@ -1137,20 +825,20 @@ function applyFilters() {
         const matchesOrg = !selectedOrg || memberOrg.includes(selectedOrg);
         
         if (matchesSearch && matchesClass && matchesOrg) {
-            row.style.display = '';
+            card.style.display = '';
             visibleCount++;
         } else {
-            row.style.display = 'none';
+            card.style.display = 'none';
         }
     });
     
     // Update visible count in bulk actions
     const bulkActionsTitle = document.querySelector('.bulk-actions h6');
     if (bulkActionsTitle) {
-        bulkActionsTitle.innerHTML = `<i class="fas fa-users"></i> Mark Attendance (${visibleCount} of ${rows.length} members shown)`;
+        bulkActionsTitle.innerHTML = `<i class="fas fa-users"></i> Mark Attendance (${visibleCount} of ${memberCards.length} members shown)`;
     }
     
-    console.log(`Showing ${visibleCount} of ${rows.length} members`);
+    console.log(`Showing ${visibleCount} of ${memberCards.length} members`);
 }
 
 // Real-time search
@@ -1169,62 +857,26 @@ if (orgFilter) {
 }
 
 function markAllPresent() {
-    const rows = document.querySelectorAll('#membersTable tbody tr');
-    rows.forEach(row => {
-        if (row.style.display !== 'none') {
-            const presentRadio = row.querySelector('input[value="present"]');
-            const mobileSelect = row.querySelector('.status-select-mobile');
-            
-            if (presentRadio) {
-                presentRadio.checked = true;
-                updateMemberRadio(presentRadio);
-            } else if (mobileSelect) {
-                mobileSelect.value = 'present';
-                updateMemberSelect(mobileSelect);
-            }
-        }
+    const selectors = document.querySelectorAll('select[name^="attendance"]');
+    selectors.forEach(select => {
+        select.value = 'present';
+        updateMemberStatus(select);
     });
 }
 
 function markAllAbsent() {
-    const rows = document.querySelectorAll('#membersTable tbody tr');
-    rows.forEach(row => {
-        if (row.style.display !== 'none') {
-            const absentRadio = row.querySelector('input[value="absent"]');
-            const mobileSelect = row.querySelector('.status-select-mobile');
-            
-            if (absentRadio) {
-                absentRadio.checked = true;
-                updateMemberRadio(absentRadio);
-            } else if (mobileSelect) {
-                mobileSelect.value = 'absent';
-                updateMemberSelect(mobileSelect);
-            }
-        }
+    const selectors = document.querySelectorAll('select[name^="attendance"]');
+    selectors.forEach(select => {
+        select.value = 'absent';
+        updateMemberStatus(select);
     });
 }
 
 function toggleAll() {
-    const rows = document.querySelectorAll('#membersTable tbody tr');
-    rows.forEach(row => {
-        if (row.style.display !== 'none') {
-            const checkedRadio = row.querySelector('input[type="radio"]:checked');
-            const mobileSelect = row.querySelector('.status-select-mobile');
-            
-            if (checkedRadio) {
-                const newStatus = checkedRadio.value === 'present' ? 'absent' : 'present';
-                const newRadio = row.querySelector(`input[value="${newStatus}"]`);
-                if (newRadio) {
-                    newRadio.checked = true;
-                    updateMemberRadio(newRadio);
-                }
-            } else if (mobileSelect) {
-                const currentStatus = mobileSelect.value;
-                const newStatus = currentStatus === 'present' ? 'absent' : 'present';
-                mobileSelect.value = newStatus;
-                updateMemberSelect(mobileSelect);
-            }
-        }
+    const selectors = document.querySelectorAll('select[name^="attendance"]');
+    selectors.forEach(select => {
+        select.value = select.value === 'present' ? 'absent' : 'present';
+        updateMemberStatus(select);
     });
 }
 
@@ -1235,7 +887,7 @@ document.getElementById('attendanceForm').addEventListener('change', function() 
 });
 
 window.addEventListener('beforeunload', function(e) {
-    const draftCount = document.querySelectorAll('#membersTable tbody tr.draft').length;
+    const draftCount = document.querySelectorAll('.member-card.draft').length;
     if (formChanged && draftCount > 0) {
         e.preventDefault();
         e.returnValue = 'You have unsaved draft marks. Are you sure you want to leave?';

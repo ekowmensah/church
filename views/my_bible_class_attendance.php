@@ -123,10 +123,14 @@ if (count($member_ids) > 0) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $marked = $_POST['attendance'] ?? [];
     $marked_by = $_SESSION['user_id'] ?? $_SESSION['member_id'] ?? null;
+    $valid_statuses = ['present', 'absent', 'sick', 'permission', 'distance', 'invalid'];
     
     foreach ($members as $m) {
         $member_id = $m['id'];
-        $status = isset($marked[$member_id]) && $marked[$member_id] === 'present' ? 'present' : 'absent';
+        // Get status from POST data, default to 'absent' if not set or invalid
+        $status = isset($marked[$member_id]) && in_array($marked[$member_id], $valid_statuses) 
+                  ? $marked[$member_id] 
+                  : 'absent';
         
         $stmt = $conn->prepare("REPLACE INTO attendance_records (session_id, member_id, status, marked_by, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())");
         $stmt->bind_param('iisi', $session_id, $member_id, $status, $marked_by);
@@ -142,11 +146,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $total_members = count($members);
 $present_count = 0;
 $absent_count = 0;
+$sick_count = 0;
+$permission_count = 0;
+$distance_count = 0;
+$invalid_count = 0;
 foreach ($members as $m) {
-    if (isset($prev_attendance[$m['id']]) && strtolower($prev_attendance[$m['id']]) === 'present') {
-        $present_count++;
-    } else {
-        $absent_count++;
+    $status = strtolower($prev_attendance[$m['id']] ?? 'absent');
+    switch($status) {
+        case 'present':
+            $present_count++;
+            break;
+        case 'sick':
+            $sick_count++;
+            break;
+        case 'permission':
+            $permission_count++;
+            break;
+        case 'distance':
+            $distance_count++;
+            break;
+        case 'invalid':
+            $invalid_count++;
+            break;
+        default:
+            $absent_count++;
     }
 }
 $attendance_rate = $total_members > 0 ? round(($present_count / $total_members) * 100, 1) : 0;
@@ -179,7 +202,11 @@ ob_start();
 .stat-box.total { border-left-color: #667eea; }
 .stat-box.present { border-left-color: #28a745; }
 .stat-box.absent { border-left-color: #dc3545; }
-.stat-box.rate { border-left-color: #17a2b8; }
+.stat-box.sick { border-left-color: #ffc107; }
+.stat-box.permission { border-left-color: #17a2b8; }
+.stat-box.distance { border-left-color: #fd7e14; }
+.stat-box.invalid { border-left-color: #6c757d; }
+.stat-box.rate { border-left-color: #667eea; }
 
 .stat-value {
     font-size: 2rem;
@@ -195,73 +222,246 @@ ob_start();
     margin-bottom: 8px;
 }
 
-.members-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 15px;
+.members-list-container {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 3px 15px rgba(0,0,0,0.08);
+    overflow: hidden;
     margin-bottom: 25px;
 }
 
-.member-card {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
-    transition: all 0.3s ease;
-    border: 2px solid transparent;
+.members-table {
+    width: 100%;
+    border-collapse: collapse;
 }
 
-.member-card.present {
-    border-color: #28a745;
-    background: #f8fff9;
+.members-table thead {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
 }
 
-.member-card.absent {
-    border-color: #e0e0e0;
+.members-table thead th {
+    padding: 12px 8px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
-.attendance-toggle {
+.members-table tbody tr {
+    border-bottom: 1px solid #e9ecef;
+    transition: background-color 0.2s ease;
+}
+
+.members-table tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+.members-table tbody td {
+    padding: 10px 8px;
+    vertical-align: middle;
+    font-size: 0.9rem;
+}
+
+.member-name {
+    font-weight: 600;
+    color: #2c3e50;
+    font-size: 0.95rem;
+}
+
+.member-crn {
+    color: #6c757d;
+    font-size: 0.85rem;
+}
+
+.row-number {
+    font-weight: 600;
+    color: #6c757d;
+    font-size: 0.9rem;
+}
+
+.status-radio-group {
+    display: flex;
+    gap: 4px;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.status-radio {
     position: relative;
-    width: 60px;
-    height: 30px;
 }
 
-.attendance-toggle input {
+.status-radio input[type="radio"] {
+    position: absolute;
     opacity: 0;
     width: 0;
     height: 0;
 }
 
-.toggle-slider {
-    position: absolute;
+.status-radio label {
+    display: inline-block;
+    padding: 4px 8px;
+    border: 2px solid #e0e0e0;
+    border-radius: 4px;
     cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: #ccc;
-    transition: .4s;
-    border-radius: 30px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    background: white;
+    margin: 0;
+    white-space: nowrap;
+    line-height: 1.2;
 }
 
-.toggle-slider:before {
-    position: absolute;
-    content: "";
-    height: 22px;
-    width: 22px;
-    left: 4px;
-    bottom: 4px;
-    background-color: white;
-    transition: .4s;
-    border-radius: 50%;
+.status-radio label:hover {
+    border-color: #667eea;
+    transform: translateY(-1px);
 }
 
-input:checked + .toggle-slider {
-    background-color: #28a745;
+.status-radio input[type="radio"]:checked + label {
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
 
-input:checked + .toggle-slider:before {
-    transform: translateX(30px);
+.status-radio.present input[type="radio"]:checked + label {
+    background: #28a745;
+    border-color: #28a745;
+    color: white;
+}
+
+.status-radio.absent input[type="radio"]:checked + label {
+    background: #dc3545;
+    border-color: #dc3545;
+    color: white;
+}
+
+.status-radio.sick input[type="radio"]:checked + label {
+    background: #ffc107;
+    border-color: #ffc107;
+    color: #000;
+}
+
+.status-radio.permission input[type="radio"]:checked + label {
+    background: #17a2b8;
+    border-color: #17a2b8;
+    color: white;
+}
+
+.status-radio.distance input[type="radio"]:checked + label {
+    background: #fd7e14;
+    border-color: #fd7e14;
+    color: white;
+}
+
+.status-radio.invalid input[type="radio"]:checked + label {
+    background: #6c757d;
+    border-color: #6c757d;
+    color: white;
+}
+
+.status-select-mobile {
+    display: none;
+    width: 100%;
+    padding: 8px;
+    border: 2px solid #e0e0e0;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    background: white;
+    transition: all 0.2s ease;
+}
+
+.status-select-mobile:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.status-select-mobile.status-present {
+    border-color: #28a745;
+    background: #f8fff9;
+    color: #28a745;
+}
+
+.status-select-mobile.status-absent {
+    border-color: #dc3545;
+    background: #fff5f5;
+    color: #dc3545;
+}
+
+.status-select-mobile.status-sick {
+    border-color: #ffc107;
+    background: #fffbf0;
+    color: #d39e00;
+}
+
+.status-select-mobile.status-permission {
+    border-color: #17a2b8;
+    background: #f0f9fb;
+    color: #117a8b;
+}
+
+.status-select-mobile.status-distance {
+    border-color: #fd7e14;
+    background: #fff8f0;
+    color: #e8590c;
+}
+
+.status-select-mobile.status-invalid {
+    border-color: #6c757d;
+    background: #f8f9fa;
+    color: #495057;
+}
+
+@media (max-width: 1200px) {
+    .status-radio label {
+        padding: 3px 6px;
+        font-size: 0.7rem;
+    }
+    .status-radio-group {
+        gap: 3px;
+    }
+}
+
+@media (max-width: 992px) {
+    .status-radio label {
+        padding: 3px 5px;
+        font-size: 0.65rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .members-table {
+        font-size: 0.8rem;
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .members-table thead th,
+    .members-table tbody td {
+        padding: 8px 4px;
+    }
+    .status-radio-group {
+        display: none !important;
+    }
+    .status-select-mobile {
+        display: block;
+    }
+    .member-name {
+        font-size: 0.85rem;
+    }
+    .member-crn {
+        font-size: 0.75rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .stat-value {
+        font-size: 1.5rem;
+    }
 }
 </style>
 
@@ -284,27 +484,51 @@ input:checked + .toggle-slider:before {
 </div>
 
 <div class="row mb-4">
-    <div class="col-md-3">
+    <div class="col-lg-2 col-md-4 col-6 mb-3">
         <div class="stat-box total">
-            <div class="stat-label">Total Members</div>
+            <div class="stat-label">Total</div>
             <div class="stat-value" id="total-count"><?= $total_members ?></div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-lg-2 col-md-4 col-6 mb-3">
         <div class="stat-box present">
-            <div class="stat-label">Present</div>
+            <div class="stat-label"><i class="fas fa-check-circle"></i> Present</div>
             <div class="stat-value" id="present-count"><?= $present_count ?></div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-lg-2 col-md-4 col-6 mb-3">
         <div class="stat-box absent">
-            <div class="stat-label">Absent</div>
+            <div class="stat-label"><i class="fas fa-times-circle"></i> Absent</div>
             <div class="stat-value" id="absent-count"><?= $absent_count ?></div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-lg-2 col-md-4 col-6 mb-3">
+        <div class="stat-box sick">
+            <div class="stat-label"><i class="fas fa-thermometer"></i> Sick</div>
+            <div class="stat-value" id="sick-count"><?= $sick_count ?></div>
+        </div>
+    </div>
+    <div class="col-lg-2 col-md-4 col-6 mb-3">
+        <div class="stat-box permission">
+            <div class="stat-label"><i class="fas fa-user-check"></i> Permission</div>
+            <div class="stat-value" id="permission-count"><?= $permission_count ?></div>
+        </div>
+    </div>
+    <div class="col-lg-2 col-md-4 col-6 mb-3">
+        <div class="stat-box distance">
+            <div class="stat-label"><i class="fas fa-road"></i> Distance</div>
+            <div class="stat-value" id="distance-count"><?= $distance_count ?></div>
+        </div>
+    </div>
+    <div class="col-lg-2 col-md-4 col-6 mb-3">
+        <div class="stat-box invalid">
+            <div class="stat-label"><i class="fas fa-exclamation-triangle"></i> Invalid</div>
+            <div class="stat-value" id="invalid-count"><?= $invalid_count ?></div>
+        </div>
+    </div>
+    <div class="col-lg-2 col-md-4 col-6 mb-3">
         <div class="stat-box rate">
-            <div class="stat-label">Attendance Rate</div>
+            <div class="stat-label"><i class="fas fa-chart-line"></i> Rate</div>
             <div class="stat-value" id="attendance-rate"><?= $attendance_rate ?>%</div>
         </div>
     </div>
@@ -327,35 +551,112 @@ input:checked + .toggle-slider:before {
         </div>
     </div>
 
-    <div class="members-grid">
-        <?php foreach($members as $member): 
-            $is_present = isset($prev_attendance[$member['id']]) && 
-                         strtolower($prev_attendance[$member['id']]) === 'present';
-        ?>
-        <div class="member-card <?= $is_present ? 'present' : 'absent' ?>">
-            <div class="d-flex justify-content-between align-items-start mb-2">
-                <div class="d-flex align-items-center">
-                    <img src="<?= BASE_URL ?>/uploads/members/<?= htmlspecialchars($member['photo'] ?? 'default.png') ?>" 
-                         alt="Photo" 
-                         style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover; margin-right: 10px;">
-                    <div>
-                        <h6 class="mb-0"><?= htmlspecialchars($member['last_name'] . ', ' . $member['first_name']) ?></h6>
-                        <small class="text-muted">
+    <div class="members-list-container">
+        <table class="members-table" id="membersTable">
+            <thead>
+                <tr>
+                    <th style="width: 50px;">#</th>
+                    <th style="width: 60px;">Photo</th>
+                    <th style="width: 250px;">Member</th>
+                    <th style="width: 120px;">CRN</th>
+                    <th>Attendance Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach($members as $index => $member): 
+                    $current_status = strtolower($prev_attendance[$member['id']] ?? 'absent');
+                ?>
+                <tr data-member-id="<?= $member['id'] ?>">
+                    <td class="row-number"><?= $index + 1 ?></td>
+                    <td>
+                        <img src="<?= BASE_URL ?>/uploads/members/<?= htmlspecialchars($member['photo'] ?? 'default.png') ?>" 
+                             alt="Photo" 
+                             style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;">
+                    </td>
+                    <td>
+                        <div class="member-name">
+                            <?= htmlspecialchars($member['last_name'] . ', ' . $member['first_name']) ?>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="member-crn">
                             <i class="fas fa-id-card"></i> <?= htmlspecialchars($member['crn'] ?? 'N/A') ?>
-                        </small>
-                    </div>
-                </div>
-                <label class="attendance-toggle">
-                    <input type="checkbox" 
-                           name="attendance[<?= $member['id'] ?>]" 
-                           value="present" 
-                           <?= $is_present ? 'checked' : '' ?>
-                           onchange="updateMemberCard(this)">
-                    <span class="toggle-slider"></span>
-                </label>
-            </div>
-        </div>
-        <?php endforeach; ?>
+                        </span>
+                    </td>
+                    <td>
+                        <!-- Radio buttons for desktop -->
+                        <div class="status-radio-group">
+                            <div class="status-radio present">
+                                <input type="radio" 
+                                       id="status_<?= $member['id'] ?>_present" 
+                                       name="attendance[<?= $member['id'] ?>]" 
+                                       value="present" 
+                                       <?= $current_status === 'present' ? 'checked' : '' ?>
+                                       onchange="updateMemberRadio(this)">
+                                <label for="status_<?= $member['id'] ?>_present">✓ Present</label>
+                            </div>
+                            <div class="status-radio absent">
+                                <input type="radio" 
+                                       id="status_<?= $member['id'] ?>_absent" 
+                                       name="attendance[<?= $member['id'] ?>]" 
+                                       value="absent" 
+                                       <?= $current_status === 'absent' ? 'checked' : '' ?>
+                                       onchange="updateMemberRadio(this)">
+                                <label for="status_<?= $member['id'] ?>_absent">✗ Absent</label>
+                            </div>
+                            <div class="status-radio sick">
+                                <input type="radio" 
+                                       id="status_<?= $member['id'] ?>_sick" 
+                                       name="attendance[<?= $member['id'] ?>]" 
+                                       value="sick" 
+                                       <?= $current_status === 'sick' ? 'checked' : '' ?>
+                                       onchange="updateMemberRadio(this)">
+                                <label for="status_<?= $member['id'] ?>_sick">🤒 Sick</label>
+                            </div>
+                            <div class="status-radio permission">
+                                <input type="radio" 
+                                       id="status_<?= $member['id'] ?>_permission" 
+                                       name="attendance[<?= $member['id'] ?>]" 
+                                       value="permission" 
+                                       <?= $current_status === 'permission' ? 'checked' : '' ?>
+                                       onchange="updateMemberRadio(this)">
+                                <label for="status_<?= $member['id'] ?>_permission">📋 Permission</label>
+                            </div>
+                            <div class="status-radio distance">
+                                <input type="radio" 
+                                       id="status_<?= $member['id'] ?>_distance" 
+                                       name="attendance[<?= $member['id'] ?>]" 
+                                       value="distance" 
+                                       <?= $current_status === 'distance' ? 'checked' : '' ?>
+                                       onchange="updateMemberRadio(this)">
+                                <label for="status_<?= $member['id'] ?>_distance">🛣️ Distance</label>
+                            </div>
+                            <div class="status-radio invalid">
+                                <input type="radio" 
+                                       id="status_<?= $member['id'] ?>_invalid" 
+                                       name="attendance[<?= $member['id'] ?>]" 
+                                       value="invalid" 
+                                       <?= $current_status === 'invalid' ? 'checked' : '' ?>
+                                       onchange="updateMemberRadio(this)">
+                                <label for="status_<?= $member['id'] ?>_invalid">⚠️ Invalid</label>
+                            </div>
+                        </div>
+                        <!-- Select dropdown for mobile -->
+                        <select class="status-select-mobile status-<?= $current_status ?>" 
+                                data-member-id="<?= $member['id'] ?>"
+                                onchange="updateMemberSelect(this)">
+                            <option value="present" <?= $current_status === 'present' ? 'selected' : '' ?>>✓ Present</option>
+                            <option value="absent" <?= $current_status === 'absent' ? 'selected' : '' ?>>✗ Absent</option>
+                            <option value="sick" <?= $current_status === 'sick' ? 'selected' : '' ?>>🤒 Sick</option>
+                            <option value="permission" <?= $current_status === 'permission' ? 'selected' : '' ?>>📋 Permission</option>
+                            <option value="distance" <?= $current_status === 'distance' ? 'selected' : '' ?>>🛣️ Distance</option>
+                            <option value="invalid" <?= $current_status === 'invalid' ? 'selected' : '' ?>>⚠️ Invalid</option>
+                        </select>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
     </div>
 
     <div class="text-center mb-4">
@@ -369,51 +670,119 @@ input:checked + .toggle-slider:before {
 </form>
 
 <script>
-function updateMemberCard(checkbox) {
-    const card = checkbox.closest('.member-card');
-    if (checkbox.checked) {
-        card.classList.add('present');
-        card.classList.remove('absent');
-    } else {
-        card.classList.remove('present');
-        card.classList.add('absent');
+function updateMemberRadio(radioElement) {
+    const row = radioElement.closest('tr');
+    const memberId = row.dataset.memberId;
+    const status = radioElement.value;
+    
+    // Sync with mobile select if it exists
+    const mobileSelect = row.querySelector('.status-select-mobile');
+    if (mobileSelect) {
+        mobileSelect.value = status;
+        mobileSelect.className = 'status-select-mobile status-' + status;
     }
+    
+    updateStats();
+}
+
+function updateMemberSelect(selectElement) {
+    const row = selectElement.closest('tr');
+    const memberId = selectElement.dataset.memberId;
+    const status = selectElement.value;
+    
+    // Update select styling
+    selectElement.className = 'status-select-mobile status-' + status;
+    
+    // Sync with radio buttons
+    const radioButton = row.querySelector(`input[name="attendance[${memberId}]"][value="${status}"]`);
+    if (radioButton) {
+        radioButton.checked = true;
+    }
+    
     updateStats();
 }
 
 function updateStats() {
-    const checkboxes = document.querySelectorAll('input[type="checkbox"][name^="attendance"]');
-    const total = checkboxes.length;
+    const rows = document.querySelectorAll('#membersTable tbody tr');
+    const total = rows.length;
     let present = 0;
+    let absent = 0;
+    let sick = 0;
+    let permission = 0;
+    let distance = 0;
+    let invalid = 0;
     
-    checkboxes.forEach(cb => {
-        if (cb.checked) present++;
+    rows.forEach(row => {
+        // Try to get status from radio button first, then from select
+        let status = null;
+        const checkedRadio = row.querySelector('input[type="radio"]:checked');
+        if (checkedRadio) {
+            status = checkedRadio.value;
+        } else {
+            const mobileSelect = row.querySelector('.status-select-mobile');
+            if (mobileSelect) {
+                status = mobileSelect.value;
+            }
+        }
+        
+        if (status) {
+            switch(status) {
+                case 'present': present++; break;
+                case 'absent': absent++; break;
+                case 'sick': sick++; break;
+                case 'permission': permission++; break;
+                case 'distance': distance++; break;
+                case 'invalid': invalid++; break;
+            }
+        }
     });
     
-    const absent = total - present;
     const rate = total > 0 ? ((present / total) * 100).toFixed(1) : 0;
     
     document.getElementById('total-count').textContent = total;
     document.getElementById('present-count').textContent = present;
     document.getElementById('absent-count').textContent = absent;
+    document.getElementById('sick-count').textContent = sick;
+    document.getElementById('permission-count').textContent = permission;
+    document.getElementById('distance-count').textContent = distance;
+    document.getElementById('invalid-count').textContent = invalid;
     document.getElementById('attendance-rate').textContent = rate + '%';
 }
 
 function markAllPresent() {
-    const checkboxes = document.querySelectorAll('input[type="checkbox"][name^="attendance"]');
-    checkboxes.forEach(cb => {
-        cb.checked = true;
-        updateMemberCard(cb);
+    const rows = document.querySelectorAll('#membersTable tbody tr');
+    rows.forEach(row => {
+        const presentRadio = row.querySelector('input[value="present"]');
+        const mobileSelect = row.querySelector('.status-select-mobile');
+        
+        if (presentRadio) {
+            presentRadio.checked = true;
+            updateMemberRadio(presentRadio);
+        } else if (mobileSelect) {
+            mobileSelect.value = 'present';
+            updateMemberSelect(mobileSelect);
+        }
     });
 }
 
 function markAllAbsent() {
-    const checkboxes = document.querySelectorAll('input[type="checkbox"][name^="attendance"]');
-    checkboxes.forEach(cb => {
-        cb.checked = false;
-        updateMemberCard(cb);
+    const rows = document.querySelectorAll('#membersTable tbody tr');
+    rows.forEach(row => {
+        const absentRadio = row.querySelector('input[value="absent"]');
+        const mobileSelect = row.querySelector('.status-select-mobile');
+        
+        if (absentRadio) {
+            absentRadio.checked = true;
+            updateMemberRadio(absentRadio);
+        } else if (mobileSelect) {
+            mobileSelect.value = 'absent';
+            updateMemberSelect(mobileSelect);
+        }
     });
 }
+
+// Initialize stats on page load
+updateStats();
 </script>
 
 <?php
