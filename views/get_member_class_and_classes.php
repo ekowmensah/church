@@ -6,19 +6,20 @@ require_once __DIR__.'/../helpers/permissions_v2.php';
 
 // Authentication check
 if (!is_logged_in()) {
-    header('Location: ' . BASE_URL . '/login.php');
+    header('Content-Type: application/json');
+    http_response_code(401);
+    echo json_encode(['error' => 'Authentication required']);
     exit;
 }
 
 // Permission check
 if (!has_permission('view_member')) {
+    header('Content-Type: application/json');
     http_response_code(403);
-    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
+    echo json_encode(['error' => 'Permission denied']);
     exit;
 }
-?>
-// get_member_class_and_classes.php
-require_once __DIR__.'/../config/config.php';
+
 header('Content-Type: application/json');
 $member_id = intval($_GET['member_id'] ?? 0);
 if (!$member_id) {

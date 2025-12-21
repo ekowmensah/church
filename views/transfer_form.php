@@ -2,6 +2,8 @@
 //if (session_status() === PHP_SESSION_NONE) session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
+
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -86,13 +88,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $church = $result->fetch_assoc();
             $church_code = $church ? $church['church_code'] : '';
             $circuit_code = $church ? $church['circuit_code'] : '';
-            // Get next sequential number for this class
-            $stmt = $conn->prepare('SELECT COUNT(*) as cnt FROM members WHERE class_id = ?');
-            $stmt->bind_param('i', $new_class_id);
+            // Get max sequence number used in CRN/SRN for this church/class
+            $max_seq = 0;
+            // Check members table
+            $stmt = $conn->prepare('SELECT crn FROM members WHERE class_id = ? AND church_id = ? AND crn IS NOT NULL');
+            $stmt->bind_param('ii', $new_class_id, $new_church_id);
             $stmt->execute();
             $result = $stmt->get_result();
-            $count = $result->fetch_assoc()['cnt'];
-            $seq = str_pad($count, 2, '0', STR_PAD_LEFT); // Use count (not +1) because member already transferred
+            while ($row = $result->fetch_assoc()) {
+                if (preg_match('/'.preg_quote($church_code.'-'.$class_code, '/').'([0-9]+)-'.preg_quote($circuit_code, '/').'/i', $row['crn'], $m)) {
+                    $num = intval($m[1]);
+                    if ($num > $max_seq) $max_seq = $num;
+                }
+            }
+            $stmt->close();
+            // Check sunday_school table
+            $stmt = $conn->prepare('SELECT srn FROM sunday_school WHERE class_id = ? AND church_id = ? AND srn IS NOT NULL');
+            $stmt->bind_param('ii', $new_class_id, $new_church_id);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            while ($row = $result->fetch_assoc()) {
+                if (preg_match('/'.preg_quote($church_code.'-'.$class_code, '/').'([0-9]+)-'.preg_quote($circuit_code, '/').'/i', $row['srn'], $m)) {
+                    $num = intval($m[1]);
+                    if ($num > $max_seq) $max_seq = $num;
+                }
+            }
+            $stmt->close();
+            // Generate next sequence number (minimum 2 digits)
+            $seq = str_pad($max_seq + 1, 2, '0', STR_PAD_LEFT);
             // Compose CRN
             $new_crn = $church_code . '-' . $class_code . $seq . '-' . $circuit_code;
             $stmt2 = $conn->prepare("UPDATE members SET crn = ? WHERE id = ?");
