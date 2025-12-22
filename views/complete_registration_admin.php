@@ -473,8 +473,9 @@ ob_start();
         <input type="date" class="form-control" name="date_of_enrollment" id="date_of_enrollment" value="<?=htmlspecialchars($member['date_of_enrollment'])?>">
       </div>
       <div class="form-group col-md-4">
-        <label for="organizations">Organization(s)</label>
-        <select class="form-control" name="organizations[]" id="organizations" multiple>
+        <label for="organizations">Organization(s)</label><span class="text-danger">*</span>
+      
+        <select class="form-control" name="organizations[]" id="organizations" multiple required>
           <?php
           $orgs = $conn->query("SELECT id, name FROM organizations ORDER BY name ASC");
           $member_orgs = [];

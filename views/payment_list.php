@@ -1157,9 +1157,9 @@ ob_start();
                                 
                                 $mode_badges = [
                                     'cash' => ['class' => 'success', 'icon' => 'money-bill-wave', 'label' => 'Cash', 'bg' => '#28a745', 'color' => '#fff'],
-                                    'mobile_money' => ['class' => 'warning', 'icon' => 'mobile-alt', 'label' => 'Mobile Money', 'bg' => '#ffc107', 'color' => '#000'],
-                                    'mobile money' => ['class' => 'warning', 'icon' => 'mobile-alt', 'label' => 'Mobile Money', 'bg' => '#ffc107', 'color' => '#000'],
-                                    'momo' => ['class' => 'warning', 'icon' => 'mobile-alt', 'label' => 'Mobile Money', 'bg' => '#ffc107', 'color' => '#000'],
+                                    'mobile_money' => ['class' => 'warning', 'icon' => 'mobile-alt', 'label' => 'USSD', 'bg' => '#ffc107', 'color' => '#000'],
+                                    'mobile money' => ['class' => 'warning', 'icon' => 'mobile-alt', 'label' => 'USSD', 'bg' => '#ffc107', 'color' => '#000'],
+                                    'momo' => ['class' => 'warning', 'icon' => 'mobile-alt', 'label' => 'USSD', 'bg' => '#ffc107', 'color' => '#000'],
                                     'ussd' => ['class' => 'info', 'icon' => 'phone-square-alt', 'label' => 'USSD', 'bg' => '#17a2b8', 'color' => '#fff'],
                                     'online' => ['class' => 'primary', 'icon' => 'globe', 'label' => 'Online', 'bg' => '#6f42c1', 'color' => '#fff'],
                                     'bulk_upload' => ['class' => 'info', 'icon' => 'upload', 'label' => 'Bulk Upload', 'bg' => '#20c997', 'color' => '#fff'],
