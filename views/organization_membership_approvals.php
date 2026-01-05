@@ -1,5 +1,5 @@
 <?php
-//if (session_status() === PHP_SESSION_NONE) session_start();
+if (session_status() === PHP_SESSION_NONE) session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
@@ -93,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 FROM organization_membership_approvals oma
                 INNER JOIN organizations o ON oma.organization_id = o.id
                 INNER JOIN members m ON oma.member_id = m.id
-                WHERE oma.id = ? AND oma.status = "pending"
+                WHERE oma.id = ? AND oma.status = \'pending\'
             ';
             
             $verify_params = [$approval_id];
@@ -123,7 +123,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         WHERE id = ?
                     ');
                     $update_stmt->bind_param('isi', $_SESSION['user_id'], $notes, $approval_id);
-                    $update_stmt->execute();
+                    if (!$update_stmt->execute()) {
+                        throw new Exception('Failed to update approval status: ' . $update_stmt->error);
+                    }
                     
                     // Add to member_organizations
                     $member_org_stmt = $conn->prepare('
@@ -132,10 +134,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         ON DUPLICATE KEY UPDATE organization_id = organization_id
                     ');
                     $member_org_stmt->bind_param('ii', $approval_data['member_id'], $approval_data['organization_id']);
-                    $member_org_stmt->execute();
+                    if (!$member_org_stmt->execute()) {
+                        throw new Exception('Failed to add member to organization: ' . $member_org_stmt->error);
+                    }
                     
                     $conn->commit();
-                    $success = "Membership approved for " . htmlspecialchars($approval_data['first_name'] . ' ' . $approval_data['last_name']);
+                    $_SESSION['approval_success'] = "Membership approved for " . htmlspecialchars($approval_data['first_name'] . ' ' . $approval_data['last_name']);
+                    header('Location: ' . $_SERVER['PHP_SELF']);
+                    exit;
                 } catch (Exception $e) {
                     $conn->rollback();
                     $error = "Error approving membership: " . $e->getMessage();
@@ -148,8 +154,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     WHERE id = ?
                 ');
                 $update_stmt->bind_param('isi', $_SESSION['user_id'], $notes, $approval_id);
-                $update_stmt->execute();
-                $success = "Membership rejected for " . htmlspecialchars($approval_data['first_name'] . ' ' . $approval_data['last_name']);
+                if (!$update_stmt->execute()) {
+                    $error = 'Failed to update rejection status: ' . $update_stmt->error;
+                } else {
+                    $_SESSION['approval_success'] = "Membership rejected for " . htmlspecialchars($approval_data['first_name'] . ' ' . $approval_data['last_name']);
+                    header('Location: ' . $_SERVER['PHP_SELF']);
+                    exit;
+                }
             }
         } else {
             $error = "Invalid approval request or insufficient permissions.";
@@ -161,23 +172,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
 // Get pending approval requests for organizations this user leads
 $org_ids = array_column($user_organizations, 'id');
-$org_ids_placeholder = str_repeat('?,', count($org_ids) - 1) . '?';
 
-$pending_query = "
-    SELECT oma.id, oma.member_id, oma.organization_id, oma.requested_at,
-           o.name as organization_name,
-           m.first_name, m.last_name, m.email, m.phone, m.crn
-    FROM organization_membership_approvals oma
-    INNER JOIN organizations o ON oma.organization_id = o.id
-    INNER JOIN members m ON oma.member_id = m.id
-    WHERE oma.status = 'pending' AND oma.organization_id IN ($org_ids_placeholder)
-    ORDER BY oma.requested_at ASC
-";
+// Handle case where user has no organizations
+if (empty($org_ids)) {
+    // Create empty result set
+    $pending_result = new stdClass();
+    $pending_result->num_rows = 0;
+} else {
+    $org_ids_placeholder = str_repeat('?,', count($org_ids) - 1) . '?';
+    
+    $pending_query = "
+        SELECT oma.id, oma.member_id, oma.organization_id, oma.requested_at,
+               o.name as organization_name,
+               m.first_name, m.last_name, m.email, m.phone, m.crn
+        FROM organization_membership_approvals oma
+        INNER JOIN organizations o ON oma.organization_id = o.id
+        INNER JOIN members m ON oma.member_id = m.id
+        WHERE oma.status = 'pending' AND oma.organization_id IN ($org_ids_placeholder)
+        ORDER BY oma.requested_at ASC
+    ";
+    
+    $pending_stmt = $conn->prepare($pending_query);
+    $pending_stmt->bind_param(str_repeat('i', count($org_ids)), ...$org_ids);
+    $pending_stmt->execute();
+    $pending_result = $pending_stmt->get_result();
+}
 
-$pending_stmt = $conn->prepare($pending_query);
-$pending_stmt->bind_param(str_repeat('i', count($org_ids)), ...$org_ids);
-$pending_stmt->execute();
-$pending_result = $pending_stmt->get_result();
+// Check for session success message
+if (isset($_SESSION['approval_success'])) {
+    $success = $_SESSION['approval_success'];
+    unset($_SESSION['approval_success']);
+}
 
 ob_start();
 ?>
@@ -279,12 +304,10 @@ ob_start();
 
 <?php
 $page_content = ob_get_clean();
-include '../includes/layout.php';
 
-// Modal output - moved to end to fix overlay/JS issues
+// Prepare modal HTML
 ob_start();
 ?>
-
 <!-- Approval Modal -->
 <div class="modal fade" id="approvalModal" tabindex="-1" role="dialog">
     <div class="modal-dialog" role="document">
@@ -314,7 +337,12 @@ ob_start();
         </div>
     </div>
 </div>
+<?php
+$modal_html = ob_get_clean();
 
+// Prepare JavaScript
+ob_start();
+?>
 <script>
 $(document).ready(function() {
     // Handle approve button clicks
@@ -346,7 +374,8 @@ $(document).ready(function() {
     });
 });
 </script>
-
 <?php
-echo ob_get_clean();
+$additional_js = ob_get_clean();
+
+include '../includes/layout.php';
 ?>

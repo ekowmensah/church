@@ -1377,7 +1377,7 @@ function sortTable(column) {
 function exportToExcel() {
     const params = new URLSearchParams(window.location.search);
     params.set('export', 'excel');
-    window.location.href = 'export_payments.php?' + params.toString();
+    window.location.href = 'payment_export.php?' + params.toString();
 }
 
 function deletePayment(id) {

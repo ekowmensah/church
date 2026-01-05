@@ -29,7 +29,7 @@ if (!$is_super_admin && !has_permission('view_payment_list')) {
 }
 
 // Check if export parameter is set
-if (!isset($_POST['export']) || $_POST['export'] !== 'excel') {
+if (!isset($_GET['export']) || $_GET['export'] !== 'excel') {
     header('Location: payment_list.php');
     exit;
 }
@@ -37,21 +37,21 @@ if (!isset($_POST['export']) || $_POST['export'] !== 'excel') {
 // Set permission flags
 $can_view_all = $is_super_admin || has_permission('view_all_payments');
 
-// Get filter values from POST data (same as payment_list.php)
-$filter_class = $_POST['class_id'] ?? '';
-$filter_org = $_POST['organization_id'] ?? '';
-$filter_gender = $_POST['gender'] ?? '';
-$filter_church = $_POST['church_id'] ?? '';
-$filter_payment_type = $_POST['payment_type_id'] ?? '';
-$filter_mode = $_POST['mode'] ?? '';
-$filter_user_id = $_POST['user_id'] ?? '';
-$filter_period_from = $_POST['period_from'] ?? '';
-$filter_period_to = $_POST['period_to'] ?? '';
-$search_term = trim($_POST['search'] ?? '');
-$date_from = $_POST['date_from'] ?? '';
-$date_to = $_POST['date_to'] ?? '';
-$amount_min = $_POST['amount_min'] ?? '';
-$amount_max = $_POST['amount_max'] ?? '';
+// Get filter values from GET data (passed via URL query string)
+$filter_class = $_GET['class_id'] ?? '';
+$filter_org = $_GET['organization_id'] ?? '';
+$filter_gender = $_GET['gender'] ?? '';
+$filter_church = $_GET['church_id'] ?? '';
+$filter_payment_type = $_GET['payment_type_id'] ?? '';
+$filter_mode = $_GET['mode'] ?? '';
+$filter_user_id = $_GET['user_id'] ?? '';
+$filter_period_from = $_GET['period_from'] ?? '';
+$filter_period_to = $_GET['period_to'] ?? '';
+$search_term = trim($_GET['search'] ?? '');
+$date_from = $_GET['date_from'] ?? '';
+$date_to = $_GET['date_to'] ?? '';
+$amount_min = $_GET['amount_min'] ?? '';
+$amount_max = $_GET['amount_max'] ?? '';
 
 // Build SQL query (same logic as payment_list.php but without pagination)
 $user_id = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
