@@ -150,6 +150,46 @@ while ($row = $trend_res->fetch_assoc()) {
     </div>
   </form>
 
+  <!-- Export Buttons Section -->
+  <?php if ($can_export): ?>
+  <div class="card mb-4 shadow-sm">
+    <div class="card-header bg-gradient-primary text-white">
+      <h6 class="m-0 font-weight-bold"><i class="fas fa-file-export"></i> Export Reports</h6>
+    </div>
+    <div class="card-body">
+      <div class="row">
+        <div class="col-md-3 mb-2">
+          <button onclick="exportByPeriod()" class="btn btn-success btn-block">
+            <i class="fas fa-calendar-alt"></i> Export by Period
+          </button>
+          <small class="text-muted d-block mt-1">Group by payment period/month</small>
+        </div>
+        <div class="col-md-3 mb-2">
+          <button onclick="exportByMonth()" class="btn btn-info btn-block">
+            <i class="fas fa-calendar"></i> Export by Month
+          </button>
+          <small class="text-muted d-block mt-1">Monthly summary with statistics</small>
+        </div>
+        <div class="col-md-3 mb-2">
+          <button onclick="exportByType()" class="btn btn-warning btn-block">
+            <i class="fas fa-tags"></i> Export by Payment Type
+          </button>
+          <small class="text-muted d-block mt-1">Group by payment type</small>
+        </div>
+        <div class="col-md-3 mb-2">
+          <button onclick="exportByChurch()" class="btn btn-primary btn-block">
+            <i class="fas fa-church"></i> Export by Church
+          </button>
+          <small class="text-muted d-block mt-1">Group by church location</small>
+        </div>
+      </div>
+      <div class="alert alert-info mt-3 mb-0">
+        <i class="fas fa-info-circle"></i> <strong>Note:</strong> All exports will include the current filter settings applied above.
+      </div>
+    </div>
+  </div>
+  <?php endif; ?>
+
   <div class="card mb-4">
     <div class="card-header bg-light">
       <strong>Payment Trend (Total per Month)</strong>
@@ -305,10 +345,48 @@ $(document).ready(function() {
         }
     });
 });
+
+// Export functions
+function exportByPeriod() {
+    const params = new URLSearchParams(window.location.search);
+    params.set('export', 'excel');
+    window.location.href = 'export_payment_by_period.php?' + params.toString();
+}
+
+function exportByMonth() {
+    const params = new URLSearchParams(window.location.search);
+    params.set('export', 'excel');
+    window.location.href = 'export_payment_by_month.php?' + params.toString();
+}
+
+function exportByType() {
+    const params = new URLSearchParams(window.location.search);
+    params.set('export', 'excel');
+    window.location.href = 'export_payment_by_type.php?' + params.toString();
+}
+
+function exportByChurch() {
+    const params = new URLSearchParams(window.location.search);
+    params.set('export', 'excel');
+    window.location.href = 'export_payment_by_church.php?' + params.toString();
+}
 </script>
 <style>
 .btn-xs { padding: 0.14rem 0.34rem !important; font-size: 0.89rem !important; line-height: 1.15 !important; border-radius: 0.22rem !important; }
 #paymentTable th, #paymentTable td { vertical-align: middle !important; }
+.bg-gradient-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+.card-header h6 i {
+    margin-right: 8px;
+}
+.btn-block {
+    transition: all 0.3s ease;
+}
+.btn-block:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
 </style>
 
 <?php
