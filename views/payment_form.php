@@ -48,7 +48,10 @@ ob_start();
         <div class="col-12 col-xl-10">
             <div class="d-flex align-items-center justify-content-between mb-4">
                 <!-- <h1 class="h3 mb-0 text-gray-800"><i class="fas fa-university mr-2"></i>Payments</h1>  -->
-                <a href="payment_list.php" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back to List</a>
+                <div>
+                    <a href="payment_bulk_upload.php" class="btn btn-warning btn-sm mr-2"><i class="fas fa-upload"></i> Bulk Upload</a>
+                    <a href="payment_list.php" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back to List</a>
+                </div>
             </div>
             <div class="card shadow mb-4">
                 <div class="card-header py-3 bg-primary text-white d-flex align-items-center">
