@@ -26,7 +26,7 @@ ob_start();
             <small class="text-muted d-block" style="font-size: 0.6em;">Balance Brought Forward & Historical Payments</small>
         </h2>
         <div>
-            <a href="make_payment.php" class="btn btn-outline-secondary mr-2">
+            <a href="payment_form.php" class="btn btn-outline-secondary mr-2">
                 <i class="fas fa-arrow-left"></i> Back to Payments
             </a>
             <button type="button" class="btn btn-info" data-toggle="modal" data-target="#templateModal">
