@@ -95,163 +95,359 @@ if ($export) {
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment;filename=bibleclass_payment_report.csv');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['#','CRN','Full Name','Bible Class','Payment Type','Amount','Date']);
+    fputcsv($out, ['#','CRN','Full Name','Bible Class','Payment Type','Amount (GHS)','Date']);
+    $csv_total = 0;
     foreach ($payments as $i => $row) {
+        $csv_total += floatval($row['amount']);
         fputcsv($out, [
             $i + 1,
             $row['crn'],
             $row['last_name'] . ', ' . $row['first_name'],
             $row['class_name'],
             $row['payment_type'],
-            $row['amount'],
+            'GHS ' . number_format($row['amount'], 2),
             $row['payment_date']
         ]);
     }
+    fputcsv($out, ['','','','','Total','GHS ' . number_format($csv_total, 2),'']);
     fclose($out);
     exit;
 }
+// Compute summary statistics
+$total_amount = 0;
+$unique_members = [];
+$unique_classes = [];
+$payment_type_totals = [];
+foreach ($payments as $row) {
+    $total_amount += floatval($row['amount']);
+    if (!empty($row['crn'])) $unique_members[$row['crn']] = true;
+    if (!empty($row['class_name'])) $unique_classes[$row['class_name']] = true;
+    $pt = $row['payment_type'] ?: 'Unknown';
+    if (!isset($payment_type_totals[$pt])) $payment_type_totals[$pt] = 0;
+    $payment_type_totals[$pt] += floatval($row['amount']);
+}
+$record_count = count($payments);
+$member_count = count($unique_members);
+$class_count = count($unique_classes);
+$avg_payment = $record_count > 0 ? $total_amount / $record_count : 0;
+
+// Build active filter description
+$active_filters = [];
+if ($class_id) {
+    foreach ($classes as $cl) {
+        if (intval($cl['id']) === $class_id) { $active_filters[] = $cl['name']; break; }
+    }
+}
+if ($payment_type_id) {
+    foreach ($types_arr as $t) {
+        if (intval($t['id']) === $payment_type_id) { $active_filters[] = $t['name']; break; }
+    }
+}
+if ($date_from) $active_filters[] = "From: $date_from";
+if ($date_to) $active_filters[] = "To: $date_to";
+
 ob_start();
 ?>
-<div class="container mt-4">
-    <a href="../../reports.php" class="btn btn-secondary mb-3"><i class="fas fa-arrow-left mr-1"></i>Back to Reports</a>
-    <h2 class="mb-4 font-weight-bold"><i class="fas fa-chalkboard-teacher mr-2"></i>Bible Class Payment Report</h2>
-    <form method="get" class="form-inline mb-3">
-        <div class="form-group mr-2">
-            <label for="class_id" class="mr-2 font-weight-bold">Bible Class:</label>
-            <select name="class_id" id="class_id" class="form-control">
-                <option value="0">All</option>
-                <?php foreach ($classes as $cl): ?>
-                    <option value="<?php echo $cl['id']; ?>"<?php if ($class_id === intval($cl['id'])) echo ' selected'; ?>><?php echo htmlspecialchars($cl['name']); ?></option>
-                <?php endforeach; ?>
-            </select>
+
+<!-- Content Header -->
+<div class="content-header">
+    <div class="container-fluid">
+        <div class="row mb-2">
+            <div class="col-sm-6">
+                <h1 class="m-0" style="font-size:1.6rem;">
+                    <i class="fas fa-chalkboard-teacher mr-2 text-primary"></i>Bible Class Payment Report
+                </h1>
+            </div>
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-right">
+                    <li class="breadcrumb-item"><a href="<?= BASE_URL ?>/views/user_dashboard.php"><i class="fas fa-home"></i> Dashboard</a></li>
+                    <li class="breadcrumb-item"><a href="<?= BASE_URL ?>/views/reports.php">Reports</a></li>
+                    <li class="breadcrumb-item active">Bible Class Payments</li>
+                </ol>
+            </div>
         </div>
-        <div class="form-group mr-2">
-            <label for="payment_type" class="mr-2 font-weight-bold">Payment Type:</label>
-            <select name="payment_type" id="payment_type" class="form-control">
-                <option value="0">All</option>
-                <?php foreach ($types_arr as $type): ?>
-                    <option value="<?php echo $type['id']; ?>"<?php if ($payment_type_id === intval($type['id'])) echo ' selected'; ?>><?php echo htmlspecialchars($type['name']); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <div class="form-group mr-2">
-            <label for="date_from" class="mr-2 font-weight-bold">From:</label>
-            <input type="date" name="date_from" id="date_from" class="form-control" value="<?= htmlspecialchars($date_from) ?>" />
-        </div>
-        <div class="form-group mr-2">
-            <label for="date_to" class="mr-2 font-weight-bold">To:</label>
-            <input type="date" name="date_to" id="date_to" class="form-control" value="<?= htmlspecialchars($date_to) ?>" />
-        </div>
-        <button type="submit" class="btn btn-primary">Filter</button>
-    </form>
-    <div class="mb-3">
-        <?php if ($can_export): ?>
-        <button id="export-csv" class="btn btn-success btn-sm mr-2"><i class="fas fa-file-csv"></i> Export CSV</button>
-        <button id="export-pdf" class="btn btn-danger btn-sm mr-2"><i class="fas fa-file-pdf"></i> Export PDF</button>
-        <?php endif; ?>
-        <button id="print-table" class="btn btn-secondary btn-sm"><i class="fas fa-print"></i> Print</button>
-    </div>
-    <div class="table-responsive">
-        <table id="bibleclass-payments-table" class="table table-bordered table-hover">
-            <thead class="thead-light">
-                <tr>
-                    <th>#</th>
-                    <th>CRN</th>
-                    <th>Full Name</th>
-                    <th>Bible Class</th>
-                    <th>Payment Type</th>
-                    <th>Amount</th>
-                    <th>Date</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php 
-                $total_amount = 0;
-                if (empty($payments)): ?>
-                    <tr>
-                        <td></td>
-                        <td></td>
-                        <td class="text-center">No payments found.</td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                    </tr>
-                <?php else: ?>
-                    <?php foreach ($payments as $i => $row): 
-                        $total_amount += floatval($row['amount']); ?>
-                        <tr>
-                            <td><?= $i + 1 ?></td>
-                            <td><?= htmlspecialchars($row['crn']) ?></td>
-                            <td><?= htmlspecialchars($row['last_name'] . ', ' . $row['first_name']) ?></td>
-                            <td><?= htmlspecialchars($row['class_name'] ?: '-') ?></td>
-                            <td><?= htmlspecialchars($row['payment_type'] ?: '-') ?></td>
-                            <td>₵<?= number_format($row['amount'],2) ?></td>
-                            <td><?= htmlspecialchars($row['payment_date']) ?></td>
-                        </tr>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </tbody>
-            <tfoot>
-                <tr class="font-weight-bold bg-light">
-                    <td class="text-right">Total</td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td>₵<?= number_format($total_amount,2) ?></td>
-                    <td></td>
-                </tr>
-            </tfoot>
-        </table>
     </div>
 </div>
-<!-- DataTables and JS export dependencies -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css">
-<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+
+<section class="content">
+<div class="container-fluid">
+
+    <!-- Summary Cards -->
+    <div class="row">
+        <div class="col-lg-3 col-md-6 col-sm-6">
+            <div class="small-box bg-info">
+                <div class="inner">
+                    <h3>GHS <?= number_format($total_amount, 2) ?></h3>
+                    <p>Total Amount</p>
+                </div>
+                <div class="icon"><i class="fas fa-money-bill-wave"></i></div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 col-sm-6">
+            <div class="small-box bg-success">
+                <div class="inner">
+                    <h3><?= number_format($record_count) ?></h3>
+                    <p>Total Transactions</p>
+                </div>
+                <div class="icon"><i class="fas fa-receipt"></i></div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 col-sm-6">
+            <div class="small-box bg-warning">
+                <div class="inner">
+                    <h3><?= number_format($member_count) ?></h3>
+                    <p>Unique Members</p>
+                </div>
+                <div class="icon"><i class="fas fa-users"></i></div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 col-sm-6">
+            <div class="small-box bg-primary">
+                <div class="inner">
+                    <h3>GHS <?= number_format($avg_payment, 2) ?></h3>
+                    <p>Average per Transaction</p>
+                </div>
+                <div class="icon"><i class="fas fa-calculator"></i></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Card -->
+    <div class="card card-outline card-primary collapsed-card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-filter mr-2"></i>Filters
+                <?php if (!empty($active_filters)): ?>
+                    <span class="ml-2">
+                        <?php foreach ($active_filters as $af): ?>
+                            <span class="badge badge-info"><?= htmlspecialchars($af) ?></span>
+                        <?php endforeach; ?>
+                    </span>
+                <?php endif; ?>
+            </h3>
+            <div class="card-tools">
+                <button type="button" class="btn btn-tool" data-card-widget="collapse">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
+        </div>
+        <div class="card-body" style="display:none;">
+            <form method="get" id="filterForm">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label for="class_id"><i class="fas fa-book-reader mr-1 text-muted"></i>Bible Class</label>
+                            <select name="class_id" id="class_id" class="form-control form-control-sm">
+                                <option value="0">-- All Classes --</option>
+                                <?php foreach ($classes as $cl): ?>
+                                    <option value="<?= $cl['id'] ?>"<?= $class_id === intval($cl['id']) ? ' selected' : '' ?>><?= htmlspecialchars($cl['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label for="payment_type"><i class="fas fa-tags mr-1 text-muted"></i>Payment Type</label>
+                            <select name="payment_type" id="payment_type" class="form-control form-control-sm">
+                                <option value="0">-- All Types --</option>
+                                <?php foreach ($types_arr as $type): ?>
+                                    <option value="<?= $type['id'] ?>"<?= $payment_type_id === intval($type['id']) ? ' selected' : '' ?>><?= htmlspecialchars($type['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label for="date_from"><i class="fas fa-calendar mr-1 text-muted"></i>Date From</label>
+                            <input type="date" name="date_from" id="date_from" class="form-control form-control-sm" value="<?= htmlspecialchars($date_from) ?>">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label for="date_to"><i class="fas fa-calendar-check mr-1 text-muted"></i>Date To</label>
+                            <input type="date" name="date_to" id="date_to" class="form-control form-control-sm" value="<?= htmlspecialchars($date_to) ?>">
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 text-right">
+                        <a href="?" class="btn btn-default btn-sm mr-2"><i class="fas fa-undo mr-1"></i>Reset</a>
+                        <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-search mr-1"></i>Apply Filters</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Data Table Card -->
+    <div class="card card-outline card-dark">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-table mr-2"></i>Payment Records
+                <small class="text-muted ml-2">(<?= number_format($record_count) ?> records<?= $class_count > 0 ? " across $class_count class" . ($class_count > 1 ? 'es' : '') : '' ?>)</small>
+            </h3>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table id="bibleclass-payments-table" class="table table-bordered table-hover table-striped mb-0">
+                    <thead>
+                        <tr style="background:linear-gradient(135deg,#3c8dbc,#367fa9);color:#fff;">
+                            <th style="width:50px;">#</th>
+                            <th>CRN</th>
+                            <th>Full Name</th>
+                            <th>Bible Class</th>
+                            <th>Payment Type</th>
+                            <th class="text-right" style="width:130px;">Amount</th>
+                            <th style="width:120px;">Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($payments)): ?>
+                            <tr>
+                                <td colspan="7" class="text-center py-5 text-muted">
+                                    <i class="fas fa-inbox fa-3x mb-3 d-block"></i>
+                                    No payments found matching your criteria.
+                                </td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach ($payments as $i => $row): ?>
+                                <tr>
+                                    <td class="text-center text-muted"><?= $i + 1 ?></td>
+                                    <td><code><?= htmlspecialchars($row['crn']) ?></code></td>
+                                    <td class="font-weight-bold"><?= htmlspecialchars($row['last_name'] . ', ' . $row['first_name']) ?></td>
+                                    <td><span class="badge badge-light border"><?= htmlspecialchars($row['class_name'] ?: '-') ?></span></td>
+                                    <td><span class="badge badge-info"><?= htmlspecialchars($row['payment_type'] ?: '-') ?></span></td>
+                                    <td class="text-right font-weight-bold">GHS <?= number_format($row['amount'], 2) ?></td>
+                                    <td><?= date('d M Y', strtotime($row['payment_date'])) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                    <tfoot>
+                        <tr style="background:#f4f6f9; border-top:2px solid #3c8dbc;">
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td class="text-right font-weight-bold" style="font-size:1.05rem;">Grand Total</td>
+                            <td class="text-right font-weight-bold text-primary" style="font-size:1.1rem;">GHS <?= number_format($total_amount, 2) ?></td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+</section>
+
+<!-- DataTables CSS (Bootstrap 4 integration) -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap4.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.bootstrap4.min.css">
+
+<!-- DataTables JS -->
 <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap4.min.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.bootstrap4.min.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.print.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/pdfmake.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/vfs_fonts.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.pdf.min.js"></script>
+
 <script>
 $(document).ready(function() {
+    // Expand filter card if any filters are active
+    <?php if (!empty($active_filters)): ?>
+    $('.collapsed-card .card-header .btn-tool').trigger('click');
+    <?php endif; ?>
+
     var table = $("#bibleclass-payments-table").DataTable({
-        dom: 'Bfrtip',
+        dom: '<"row mb-2"<"col-sm-6 col-md-4"l><"col-sm-6 col-md-8 text-right"B>>' +
+             'rtip',
         buttons: [
+            <?php if ($can_export): ?>
             {
                 extend: 'csv',
-                text: '<i class="fas fa-file-csv"></i> CSV',
-                className: 'btn btn-success btn-sm mr-2',
-                title: 'Bible Class Payment Report'
+                text: '<i class="fas fa-file-csv mr-1"></i>CSV',
+                className: 'btn btn-sm btn-outline-success',
+                title: 'Bible Class Payment Report',
+                footer: true,
+                exportOptions: { columns: ':visible' }
             },
             {
                 extend: 'pdf',
-                text: '<i class="fas fa-file-pdf"></i> PDF',
-                className: 'btn btn-danger btn-sm mr-2',
-                title: 'Bible Class Payment Report'
+                text: '<i class="fas fa-file-pdf mr-1"></i>PDF',
+                className: 'btn btn-sm btn-outline-danger',
+                title: 'Bible Class Payment Report',
+                footer: false,
+                orientation: 'landscape',
+                exportOptions: { columns: ':visible' },
+                customize: function(doc) {
+                    doc.defaultStyle.fontSize = 9;
+                    doc.styles.tableHeader.fontSize = 10;
+                    doc.styles.tableHeader.fillColor = '#3c8dbc';
+                    // Manually add totals row
+                    var body = doc.content[1].table.body;
+                    var colCount = body[0].length;
+                    var totalRow = [];
+                    for (var j = 0; j < colCount; j++) {
+                        if (j === colCount - 2) {
+                            totalRow.push({ text: 'GHS <?= number_format($total_amount, 2) ?>', bold: true, fillColor: '#f4f6f9', fontSize: 10, alignment: 'right' });
+                        } else if (j === colCount - 3) {
+                            totalRow.push({ text: 'Grand Total', bold: true, fillColor: '#f4f6f9', fontSize: 10, alignment: 'right' });
+                        } else {
+                            totalRow.push({ text: '', fillColor: '#f4f6f9' });
+                        }
+                    }
+                    body.push(totalRow);
+                }
             },
             {
                 extend: 'print',
-                text: '<i class="fas fa-print"></i> Print',
-                className: 'btn btn-secondary btn-sm',
-                title: 'Bible Class Payment Report'
-            }
+                text: '<i class="fas fa-print mr-1"></i>Print',
+                className: 'btn btn-sm btn-outline-secondary',
+                title: 'Bible Class Payment Report',
+                footer: true,
+                exportOptions: { columns: ':visible' }
+            },
+            <?php endif; ?>
         ],
-        paging: false,
-        searching: false,
-        info: false,
-        ordering: false
+        paging: true,
+        pageLength: 25,
+        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
+        searching: true,
+        info: true,
+        ordering: true,
+        order: [],
+        language: {
+            search: '<i class="fas fa-search text-muted"></i>',
+            searchPlaceholder: 'Search records...',
+            lengthMenu: 'Show _MENU_ entries',
+            info: 'Showing _START_ to _END_ of _TOTAL_ records',
+            infoEmpty: 'No records available',
+            infoFiltered: '(filtered from _MAX_ total)',
+            paginate: {
+                first: '<i class="fas fa-angle-double-left"></i>',
+                previous: '<i class="fas fa-angle-left"></i>',
+                next: '<i class="fas fa-angle-right"></i>',
+                last: '<i class="fas fa-angle-double-right"></i>'
+            }
+        }
     });
-    // Hide custom buttons if DataTables is used
-    $('#export-csv, #export-pdf, #print-table').hide();
-    // Wire up custom buttons to DataTables
-    $('#export-csv').on('click', function() { table.button('.buttons-csv').trigger(); });
-    $('#export-pdf').on('click', function() { table.button('.buttons-pdf').trigger(); });
-    $('#print-table').on('click', function() { table.button('.buttons-print').trigger(); });
 });
 </script>
+
+<style>
+.small-box .inner h3 { font-size: 1.6rem; }
+.small-box .inner p { font-size: 0.85rem; }
+.dataTables_wrapper .dt-buttons .btn { margin-left: 4px; }
+.dataTables_filter input { border-radius: 20px !important; padding-left: 12px !important; }
+table.dataTable thead th { border-bottom: none; }
+table.dataTable tfoot td { border-top: 2px solid #3c8dbc; }
+.table-striped tbody tr:nth-of-type(odd) { background-color: rgba(0,0,0,.02); }
+</style>
+
 <?php $page_content = ob_get_clean(); include dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'includes' . DIRECTORY_SEPARATOR . 'layout.php'; ?>
