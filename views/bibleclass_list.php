@@ -40,12 +40,19 @@ $bibleclasses = $conn->query("
            CONCAT(m.first_name, ' ', m.last_name) as leader_member_name,
            m.email as leader_member_email,
            m.id as leader_member_id,
-           c.name as church_name 
+           c.name as church_name,
+           COALESCE(bcm.member_count, 0) as member_count
     FROM bible_classes bc 
     LEFT JOIN users u ON bc.leader_id = u.id 
     LEFT JOIN bible_class_leaders bcl ON bc.id = bcl.class_id AND bcl.status = 'active'
     LEFT JOIN members m ON bcl.member_id = m.id
     LEFT JOIN churches c ON bc.church_id = c.id
+    LEFT JOIN (
+        SELECT class_id, COUNT(*) as member_count
+        FROM members
+        WHERE class_id IS NOT NULL
+        GROUP BY class_id
+    ) bcm ON bcm.class_id = bc.id
 ");
 
 // Ensure no output is sent before ob_start()
@@ -80,6 +87,7 @@ ob_start();
                     <tr>
                         <th>Name</th>
                         <th>Code</th>
+                        <th>Members</th>
                         <th>Leader</th>
                         <th>Church</th>
                         <?php if ($can_edit || $can_delete): ?><th>Actions</th><?php endif; ?>
@@ -90,6 +98,7 @@ ob_start();
                     <tr>
                         <td><?=htmlspecialchars($row['name'])?></td>
                         <td><?=htmlspecialchars($row['code'])?></td>
+                        <td><?= (int) $row['member_count'] ?></td>
                         <td>
     <?php 
     $has_leader = (!empty($row['leader_id']) && $row['leader_id'] != 0) || !empty($row['leader_member_id']);

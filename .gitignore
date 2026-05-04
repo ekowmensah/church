@@ -47,3 +47,12 @@ fix_sunday_school_member_ids.sql
 logs/birthday_sms_2025-10-04.log
 views/bulk_payment_debug.log
 permissions.sql
+migrations/2026_upgrade/2026_03_21_0102_standardize_emergency_contact_relationships.sql
+migrations/2026_upgrade/2026_03_21_0900_indexes_fk_hardening.sql
+migrations/2026_upgrade/2026_03_21_0901_repair_members_id_auto_increment.sql
+migrations/2026_upgrade/2026_05_04_live_server_git_changes.sql
+migrations/2026_upgrade/README.md
+migrations/2026_upgrade/run_migrations.php
+migrations/2026_upgrade/rollbacks/2026_03_21_0901_repair_members_id_auto_increment.rollback.sql
+Analysis complete for.docx
+~$Freeman Major Update.docx
