@@ -1,19 +1,76 @@
 <?php
 ob_start();
 require_once __DIR__.'/../config/config.php';
+
+function sync_member_user_account(mysqli $conn, int $member_id, string $full_name, string $email, string $phone, string $password_hash, string $photo, int $church_id): void
+{
+    $user_id = 0;
+
+    $stmt = $conn->prepare('SELECT id FROM users WHERE member_id = ? LIMIT 1');
+    $stmt->bind_param('i', $member_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    if ($row = $result->fetch_assoc()) {
+        $user_id = (int) $row['id'];
+    }
+    $stmt->close();
+
+    if ($user_id <= 0 && $email !== '') {
+        $stmt = $conn->prepare('SELECT u.id FROM users u WHERE u.email = ? AND u.member_id IS NULL AND NOT EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id) LIMIT 1');
+        $stmt->bind_param('s', $email);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        if ($row = $result->fetch_assoc()) {
+            $user_id = (int) $row['id'];
+        }
+        $stmt->close();
+    }
+
+    if ($user_id <= 0 && $phone !== '') {
+        $stmt = $conn->prepare('SELECT u.id FROM users u WHERE u.phone = ? AND u.member_id IS NULL AND NOT EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id) LIMIT 1');
+        $stmt->bind_param('s', $phone);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        if ($row = $result->fetch_assoc()) {
+            $user_id = (int) $row['id'];
+        }
+        $stmt->close();
+    }
+
+    if ($user_id > 0) {
+        $stmt = $conn->prepare('UPDATE users SET member_id = ?, church_id = ?, name = ?, email = ?, phone = ?, password_hash = ?, status = \'active\', photo = ? WHERE id = ?');
+        $stmt->bind_param('iisssssi', $member_id, $church_id, $full_name, $email, $phone, $password_hash, $photo, $user_id);
+        $stmt->execute();
+        $stmt->close();
+        return;
+    }
+
+    $user_status = 'active';
+    $stmt = $conn->prepare('INSERT INTO users (member_id, church_id, name, email, phone, password_hash, status, photo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    $stmt->bind_param('iissssss', $member_id, $church_id, $full_name, $email, $phone, $password_hash, $user_status, $photo);
+    $stmt->execute();
+    $stmt->close();
+}
+
 // Self-registration: member finds self by registration_token, not by admin ID
-$token = $_GET['token'] ?? '';
+$token = trim($_GET['token'] ?? $_POST['token'] ?? '');
 $error = '';
 $success = '';
 $member = null;
-if ($token) {
+$member_id = 0;
+if ($token !== '') {
     $stmt = $conn->prepare('SELECT * FROM members WHERE registration_token = ? AND status = "pending" LIMIT 1');
     $stmt->bind_param('s', $token);
     $stmt->execute();
     $result = $stmt->get_result();
     $member = $result->fetch_assoc();
+    $stmt->close();
     if ($member) {
-        $member_id = $member['id'];
+        $member_id = isset($member['id']) ? (int) $member['id'] : 0;
+        if ($member_id <= 0) {
+            $member = null;
+            $error = 'Unable to determine which member this registration belongs to.';
+        }
     } else {
         $error = 'Invalid or expired registration link.';
     }
@@ -21,7 +78,7 @@ if ($token) {
     $error = 'Missing registration token.';
 } 
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
     // Gather all fields
     $password = $_POST['password'] ?? '';
     $first_name = trim($_POST['first_name'] ?? '');
@@ -34,6 +91,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member) {
     $address = trim($_POST['address'] ?? '');
     $gps_address = trim($_POST['gps_address'] ?? '');
     $marital_status = $_POST['marital_status'] ?? '';
+    $marriage_type = trim($_POST['marriage_type'] ?? '');
+    $spouse_crn = trim($_POST['spouse_crn'] ?? '');
+    $spouse_name = trim($_POST['spouse_name'] ?? '');
     $home_town = trim($_POST['home_town'] ?? '');
     $region = trim($_POST['region'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
@@ -41,6 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member) {
     $email = trim($_POST['email'] ?? '');
     $employment_status = $_POST['employment_status'] ?? '';
     $profession = trim($_POST['profession'] ?? '');
+    $occupation = trim($_POST['occupation'] ?? '');
     $baptized = $_POST['baptized'] ?? '';
     $confirmed = $_POST['confirmed'] ?? '';
     $date_of_baptism = $_POST['date_of_baptism'] ?? null;
@@ -48,10 +109,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member) {
     $membership_status = $_POST['membership_status'] ?? '';
     $date_of_enrollment = $_POST['date_of_enrollment'] ?? null;
     $status = 'active';
+    $allowed_marriage_types = ['Customary', 'Ordinance', 'Blessing', 'Court Registration'];
+    if ($marital_status !== 'Married') {
+        $marriage_type = null;
+        $spouse_crn = '';
+        $spouse_name = '';
+    } elseif (!in_array($marriage_type, $allowed_marriage_types, true)) {
+        $marriage_type = '';
+    }
     // Org(s) multiple select
-    $organizations = $_POST['organizations'] ?? [];
+    $organizations = array_values(array_filter(array_map('intval', (array) ($_POST['organizations'] ?? [])), static function ($id) {
+        return $id > 0;
+    }));
     // Roles of Serving multiple select
-    $roles_of_serving = $_POST['roles_of_serving'] ?? [];
+    $roles_of_serving = array_values(array_filter(array_map('intval', (array) ($_POST['roles_of_serving'] ?? [])), static function ($id) {
+        return $id > 0;
+    }));
     // Emergency contacts (dynamic)
     $emergency_contacts = $_POST['emergency_contacts'] ?? [];
     // Photo upload
@@ -93,63 +166,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member) {
         return !empty($c['name']) && !empty($c['mobile']) && !empty($c['relationship']);
     });
     // Remove $membership_status from required fields (field removed from form)
-    if (!$first_name || !$last_name || !$gender || !$dob || !$place_of_birth || !$marital_status || !$home_town || !$region || !$phone || count($valid_contacts) === 0 || !$employment_status || !$baptized || !$confirmed || !$password) {
+    if (!$first_name || !$last_name || !$gender || !$dob || !$place_of_birth || !$marital_status || ($marital_status === 'Married' && !$marriage_type) || !$home_town || !$region || !$phone || count($valid_contacts) === 0 || !$employment_status || !$baptized || !$confirmed || !$password) {
         // Debug output for troubleshooting
         error_log('DEBUG: valid_contacts count: ' . count($valid_contacts));
         error_log('DEBUG: emergency_contacts: ' . print_r($emergency_contacts, true));
         $error = 'Please fill in all required fields (at least one emergency contact).';
     } else {
         $password_hash = password_hash($password, PASSWORD_DEFAULT);
-        $stmt = $conn->prepare('UPDATE members SET first_name=?, middle_name=?, last_name=?, gender=?, dob=?, day_born=?, place_of_birth=?, address=?, gps_address=?, marital_status=?, home_town=?, region=?, phone=?, telephone=?, email=?, employment_status=?, profession=?, baptized=?, confirmed=?, date_of_baptism=?, date_of_confirmation=?, membership_status=?, date_of_enrollment=?, photo=?, status=?, password_hash=?, registration_token=NULL WHERE id=?');
-        $stmt->bind_param('ssssssssssssssssssssssssssi',
-            $first_name, $middle_name, $last_name, $gender, $dob, $day_born, $place_of_birth, $address, $gps_address, $marital_status, $home_town, $region, $phone, $telephone, $email,
-            $employment_status, $profession, $baptized, $confirmed, $date_of_baptism, $date_of_confirmation, $membership_status, $date_of_enrollment, $photo, $status, $password_hash, $member_id
-        );
-        $stmt->execute();
-        $affected_rows = $stmt->affected_rows;
-        $stmt->close();
-        // Update emergency contacts (delete old, insert new)
-        $conn->query("DELETE FROM member_emergency_contacts WHERE member_id=" . intval($member['id']));
-        if (!empty($valid_contacts)) {
-            $ec_stmt = $conn->prepare("INSERT INTO member_emergency_contacts (member_id, name, mobile, relationship) VALUES (?, ?, ?, ?)");
-            foreach ($valid_contacts as $c) {
-                $ec_stmt->bind_param('isss', $member['id'], $c['name'], $c['mobile'], $c['relationship']);
-                $ec_stmt->execute();
+        try {
+            $conn->begin_transaction();
+
+            $stmt = $conn->prepare('UPDATE members SET first_name=?, middle_name=?, last_name=?, gender=?, dob=?, day_born=?, place_of_birth=?, address=?, gps_address=?, marital_status=?, spouse_crn=?, spouse_name=?, marriage_type=?, home_town=?, region=?, phone=?, telephone=?, email=?, employment_status=?, profession=?, occupation=?, baptized=?, confirmed=?, date_of_baptism=?, date_of_confirmation=?, membership_status=?, date_of_enrollment=?, photo=?, status=?, password_hash=?, registration_token=NULL WHERE id=?');
+            $member_update_types = str_repeat('s', 30) . 'i';
+            $stmt->bind_param($member_update_types,
+                $first_name, $middle_name, $last_name, $gender, $dob, $day_born, $place_of_birth, $address, $gps_address, $marital_status, $spouse_crn, $spouse_name, $marriage_type, $home_town, $region, $phone, $telephone, $email,
+                $employment_status, $profession, $occupation, $baptized, $confirmed, $date_of_baptism, $date_of_confirmation, $membership_status, $date_of_enrollment, $photo, $status, $password_hash, $member_id
+            );
+            $stmt->execute();
+            $affected_rows = $stmt->affected_rows;
+            $stmt->close();
+
+            // Update emergency contacts (delete old, insert new)
+            $conn->query("DELETE FROM member_emergency_contacts WHERE member_id=" . $member_id);
+            if (!empty($valid_contacts)) {
+                $ec_stmt = $conn->prepare("INSERT INTO member_emergency_contacts (member_id, name, mobile, relationship) VALUES (?, ?, ?, ?)");
+                foreach ($valid_contacts as $c) {
+                    $contact_name = $c['name'];
+                    $contact_mobile = $c['mobile'];
+                    $contact_relationship = $c['relationship'];
+                    $ec_stmt->bind_param('isss', $member_id, $contact_name, $contact_mobile, $contact_relationship);
+                    $ec_stmt->execute();
+                }
+                $ec_stmt->close();
             }
-            $ec_stmt->close();
-        }
-        // Handle organization membership requests (pending approval workflow)
-        $safe_member_id = isset($member['id']) ? intval($member['id']) : 0;
-if ($safe_member_id > 0) {
-    // Clear any existing pending requests for this member
-    $conn->query("DELETE FROM organization_membership_approvals WHERE member_id=" . $safe_member_id);
-} else {
-    throw new Exception('Invalid member_id for organization update.');
-}
-        if (!empty($organizations)) {
-            // Insert organization selections as pending approval requests
-            $approval_stmt = $conn->prepare("INSERT INTO organization_membership_approvals (member_id, organization_id, status) VALUES (?, ?, 'pending')");
-            foreach ($organizations as $org_id) {
-                $approval_stmt->bind_param('ii', $member['id'], $org_id);
-                $approval_stmt->execute();
+
+            // Handle organization membership requests (pending approval workflow)
+            $conn->query("DELETE FROM organization_membership_approvals WHERE member_id=" . $member_id);
+            if (!empty($organizations)) {
+                $approval_stmt = $conn->prepare("INSERT INTO organization_membership_approvals (member_id, organization_id, status) VALUES (?, ?, 'pending')");
+                foreach ($organizations as $org_id) {
+                    $organization_id = (int) $org_id;
+                    $approval_stmt->bind_param('ii', $member_id, $organization_id);
+                    $approval_stmt->execute();
+                }
+                $approval_stmt->close();
             }
-            $approval_stmt->close();
-        }
-        // Update roles of serving (delete old, insert new)
-        if ($safe_member_id > 0) {
-    $conn->query("DELETE FROM member_roles_of_serving WHERE member_id=" . $safe_member_id);
-} else {
-    throw new Exception('Invalid member_id for roles of serving update.');
-}
-        if (!empty($roles_of_serving)) {
-            $role_stmt = $conn->prepare("INSERT INTO member_roles_of_serving (member_id, role_id) VALUES (?, ?)");
-            foreach ($roles_of_serving as $role_id) {
-                $role_stmt->bind_param('ii', $member['id'], $role_id);
-                $role_stmt->execute();
+
+            // Update roles of serving (delete old, insert new)
+            $conn->query("DELETE FROM member_roles_of_serving WHERE member_id=" . $member_id);
+            if (!empty($roles_of_serving)) {
+                $role_stmt = $conn->prepare("INSERT INTO member_roles_of_serving (member_id, role_id) VALUES (?, ?)");
+                foreach ($roles_of_serving as $role_id) {
+                    $serving_role_id = (int) $role_id;
+                    $role_stmt->bind_param('ii', $member_id, $serving_role_id);
+                    $role_stmt->execute();
+                }
+                $role_stmt->close();
             }
-            $role_stmt->close();
+
+            $full_name = trim(preg_replace('/\s+/', ' ', $first_name . ' ' . $middle_name . ' ' . $last_name));
+            $church_id = isset($member['church_id']) ? (int) $member['church_id'] : 0;
+            sync_member_user_account($conn, $member_id, $full_name, $email, $phone, $password_hash, $photo, $church_id);
+
+            $conn->commit();
+        } catch (Throwable $e) {
+            $conn->rollback();
+            error_log('Complete registration DB sync failed: ' . $e->getMessage());
+            $error = 'Database error. Please try again.';
+            $affected_rows = -1;
         }
-        if ($affected_rows >= 0) {
+
+        if ($affected_rows >= 0 && !$error) {
             // Send SMS with CRN
             require_once __DIR__.'/../includes/sms.php';
             $login_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . $base_url . '/login.php';
@@ -161,7 +248,7 @@ if ($safe_member_id > 0) {
             }
             // Self-registration: auto-login member and redirect to dashboard
             session_regenerate_id(true);
-            $_SESSION['member_id'] = $member['id'];
+            $_SESSION['member_id'] = $member_id;
             $_SESSION['crn'] = $member['crn'];
             $_SESSION['member_name'] = $first_name.' '.$last_name;
             $_SESSION['role'] = 'member';
@@ -171,7 +258,7 @@ if ($safe_member_id > 0) {
             $_SESSION['show_registration_toast'] = true;
             header('Location: ' . BASE_URL . '/views/member_dashboard.php');
             exit;
-        } else {
+        } elseif (!$error) {
             $error = 'Database error. Please try again.';
         }
     }
@@ -195,7 +282,8 @@ ob_start();
                     <div class="alert alert-success mb-4"> <?= htmlspecialchars($success) ?> </div>
                 <?php endif; ?>
                 <?php if ($member && !$success): ?>
-                <form method="post" enctype="multipart/form-data" autocomplete="off">
+                <form method="post" action="<?= htmlspecialchars(BASE_URL . '/views/complete_registration.php?token=' . urlencode($token)) ?>" enctype="multipart/form-data" autocomplete="off">
+                    <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>">
 
 <!-- SECTION: Account Credentials -->
 <div class="card mb-4 border-primary">
@@ -329,11 +417,32 @@ ob_start();
           <option value="Divorced" <?=$member['marital_status']=='Divorced'?'selected':''?>>Divorced</option>
         </select>
       </div>
-      <div class="form-group col-md-4">
+      <!-- Spouse field - shown when marital status is Married (combined search/manual) -->
+      <div class="form-group col-md-4" id="spouse-group" style="display:none;">
+        <label for="spouse_crn">Spouse Name or CRN</label>
+        <select class="form-control" name="spouse_crn" id="spouse_crn">
+          <option value="">-- Search by CRN/name/phone or type name --</option>
+        </select>
+        <input type="hidden" name="spouse_name" id="spouse_name" value="<?=htmlspecialchars($member['spouse_name'] ?? '')?>">
+        <small class="form-text text-muted">Search for member or type spouse's full name</small>
+      </div>
+      <div class="form-group col-md-4" id="marriage-type-group" style="display:none;">
+        <label for="marriage_type">Nature of Marriage <span class="text-danger">*</span></label>
+        <select class="form-control" name="marriage_type" id="marriage_type">
+          <option value="">-- Select --</option>
+          <option value="Customary" <?=($member['marriage_type'] ?? '') === 'Customary' ? 'selected' : ''?>>Customary</option>
+          <option value="Ordinance" <?=($member['marriage_type'] ?? '') === 'Ordinance' ? 'selected' : ''?>>Ordinance</option>
+          <option value="Blessing" <?=($member['marriage_type'] ?? '') === 'Blessing' ? 'selected' : ''?>>Blessing</option>
+          <option value="Court Registration" <?=($member['marriage_type'] ?? '') === 'Court Registration' ? 'selected' : ''?>>Court Registration</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group col-md-6">
         <label for="home_town">Home Town <span class="text-danger">*</span></label>
         <input type="text" class="form-control" name="home_town" id="home_town" value="<?=htmlspecialchars($member['home_town'])?>" required>
       </div>
-      <div class="form-group col-md-4">
+      <div class="form-group col-md-6">
         <label for="region">Region <span class="text-danger">*</span></label>
         <select class="form-control" name="region" id="region" data-selected="<?=htmlspecialchars($member['region'])?>" required>
           <option value="">-- Select Region --</option>
@@ -379,31 +488,41 @@ ob_start();
   <div class="card-body p-3">
     <div id="emergency-contacts-list">
       <div class="form-row emergency-contact-row">
-        <div class="form-group col-md-4">
-          <input type="text" class="form-control" name="emergency_contacts[1][name]" placeholder="Contact Name" value="<?=htmlspecialchars($member['emergency_contact1_name'] ?? '')?>" required>
+        <div class="form-group col-md-7">
+          <label>Contact Person (Name or Member CRN)</label>
+          <select class="form-control emergency-contact-search" name="emergency_contacts[1][crn]" data-idx="1">
+            <option value="">-- Search by CRN/name/phone or type name --</option>
+          </select>
+          <input type="hidden" class="emergency-contact-name" name="emergency_contacts[1][name]" value="<?=htmlspecialchars($member['emergency_contact1_name'] ?? '')?>">
+          <input type="hidden" class="emergency-contact-mobile" name="emergency_contacts[1][mobile]" value="<?=htmlspecialchars($member['emergency_contact1_mobile'] ?? '')?>">
+          <small class="form-text text-muted">Search for member or type full name</small>
         </div>
         <div class="form-group col-md-4">
-          <input type="text" class="form-control" name="emergency_contacts[1][mobile]" placeholder="Mobile" value="<?=htmlspecialchars($member['emergency_contact1_mobile'] ?? '')?>" required>
-        </div>
-        <div class="form-group col-md-3">
+          <label>Relationship</label>
           <input type="text" class="form-control" name="emergency_contacts[1][relationship]" placeholder="Relationship" value="<?=htmlspecialchars($member['emergency_contact1_relationship'] ?? '')?>" required>
         </div>
         <div class="form-group col-md-1">
+          <label>&nbsp;</label>
           <button class="btn btn-danger remove-emergency-contact" type="button" style="margin-top:2px;"><i class="fa fa-trash"></i></button>
         </div>
       </div>
       <?php if (!empty($member['emergency_contact2_name']) || !empty($member['emergency_contact2_mobile']) || !empty($member['emergency_contact2_relationship'])): ?>
       <div class="form-row emergency-contact-row">
-        <div class="form-group col-md-4">
-          <input type="text" class="form-control" name="emergency_contacts[2][name]" placeholder="Contact Name" value="<?=htmlspecialchars($member['emergency_contact2_name'])?>">
+        <div class="form-group col-md-7">
+          <label>Contact Person (Name or Member CRN)</label>
+          <select class="form-control emergency-contact-search" name="emergency_contacts[2][crn]" data-idx="2">
+            <option value="">-- Search by CRN/name/phone or type name --</option>
+          </select>
+          <input type="hidden" class="emergency-contact-name" name="emergency_contacts[2][name]" value="<?=htmlspecialchars($member['emergency_contact2_name'])?>">
+          <input type="hidden" class="emergency-contact-mobile" name="emergency_contacts[2][mobile]" value="<?=htmlspecialchars($member['emergency_contact2_mobile'])?>">
+          <small class="form-text text-muted">Search for member or type full name</small>
         </div>
         <div class="form-group col-md-4">
-          <input type="text" class="form-control" name="emergency_contacts[2][mobile]" placeholder="Mobile" value="<?=htmlspecialchars($member['emergency_contact2_mobile'])?>">
-        </div>
-        <div class="form-group col-md-3">
+          <label>Relationship</label>
           <input type="text" class="form-control" name="emergency_contacts[2][relationship]" placeholder="Relationship" value="<?=htmlspecialchars($member['emergency_contact2_relationship'])?>">
         </div>
         <div class="form-group col-md-1">
+          <label>&nbsp;</label>
           <button class="btn btn-danger remove-emergency-contact" type="button" style="margin-top:2px;"><i class="fa fa-trash"></i></button>
         </div>
       </div>
@@ -418,7 +537,7 @@ ob_start();
   <div class="card-header bg-light border-primary"><strong>Employment & Profession</strong></div>
   <div class="card-body p-3">
     <div class="form-row">
-      <div class="form-group col-md-6">
+      <div class="form-group col-md-4">
         <label for="employment_status">Current Employment Status <span class="text-danger">*</span></label>
         <select class="form-control" name="employment_status" id="employment_status" required>
           <option value="">-- Select --</option>
@@ -430,9 +549,13 @@ ob_start();
           <option value="Student" <?=$member['employment_status']=='Student'?'selected':''?>>Student</option>
         </select>
       </div>
-      <div class="form-group col-md-6">
+      <div class="form-group col-md-4">
         <label for="profession">Profession</label>
         <input type="text" class="form-control" name="profession" id="profession" value="<?=htmlspecialchars($member['profession'])?>">
+      </div>
+      <div class="form-group col-md-4">
+        <label for="occupation">Occupation</label>
+        <input type="text" class="form-control" name="occupation" id="occupation" value="<?=htmlspecialchars($member['occupation'] ?? '')?>">
       </div>
     </div>
   </div>
@@ -493,9 +616,9 @@ ob_start();
           <?php
           $orgs = $conn->query("SELECT id, name FROM organizations ORDER BY name ASC");
           $member_orgs = [];
-          if (isset($member['id'])) {
+          if ($member_id > 0) {
             // Load pending approval requests instead of current memberships
-            $orgq = $conn->query("SELECT organization_id FROM organization_membership_approvals WHERE member_id=".intval($member['id'])." AND status='pending'");
+            $orgq = $conn->query("SELECT organization_id FROM organization_membership_approvals WHERE member_id=".$member_id." AND status='pending'");
             while($oo = $orgq->fetch_assoc()) $member_orgs[] = $oo['organization_id'];
           }
           while($org = $orgs->fetch_assoc()): ?>
@@ -510,8 +633,8 @@ ob_start();
           <?php
           $roles = $conn->query("SELECT id, name FROM roles_of_serving ORDER BY name ASC");
           $member_roles = [];
-          if (isset($member['id'])) {
-            $roleq = $conn->query("SELECT role_id FROM member_roles_of_serving WHERE member_id=".intval($member['id']));
+          if ($member_id > 0) {
+            $roleq = $conn->query("SELECT role_id FROM member_roles_of_serving WHERE member_id=".$member_id);
             while($ro = $roleq->fetch_assoc()) $member_roles[] = $ro['role_id'];
           }
           while($role = $roles->fetch_assoc()): ?>
