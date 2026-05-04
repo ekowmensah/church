@@ -91,7 +91,7 @@ function build_hubtel_portal_payment_sms(
     $amount,
     $payment_period_description,
     $payment_type_name,
-    $crn,
+    $payer_reference = '',
     $church_name = 'Freeman Methodist Church - KM',
     $harvest_year = null,
     $harvest_total = null,
@@ -99,7 +99,7 @@ function build_hubtel_portal_payment_sms(
     $fallback_date = null
 ) {
     $full_name = normalize_payment_sms_value($full_name);
-    $crn = normalize_payment_sms_value($crn);
+    $payer_reference = normalize_payment_sms_value($payer_reference);
     $church_name = normalize_payment_sms_value($church_name) ?: 'Freeman Methodist Church - KM';
     $reference_text = get_payment_reference_text($payment_period_description, $payment_period, $payment_type_name, $fallback_date);
     $formatted_amount = number_format((float) $amount, 2);
@@ -108,7 +108,10 @@ function build_hubtel_portal_payment_sms(
     if ($reference_text !== '') {
         $message .= " for $reference_text";
     }
-    $message .= " by $crn has been paid to $church_name.";
+    if ($payer_reference !== '') {
+        $message .= " by $payer_reference";
+    }
+    $message .= " has been paid to $church_name.";
 
     if ($harvest_year !== null && $harvest_total !== null) {
         $formatted_total = number_format((float) $harvest_total, 2);
@@ -123,7 +126,7 @@ function build_hubtel_ussd_member_payment_sms(
     $amount,
     $payment_period_description,
     $payment_type_name,
-    $sender_name,
+    $sender_name = '',
     $church_name = 'Freeman Methodist Church - KM',
     $harvest_year = null,
     $harvest_total = null,
@@ -131,7 +134,7 @@ function build_hubtel_ussd_member_payment_sms(
     $fallback_date = null
 ) {
     $full_name = normalize_payment_sms_value($full_name);
-    $sender_name = normalize_payment_sms_value($sender_name) ?: $full_name;
+    $sender_name = normalize_payment_sms_value($sender_name);
     $church_name = normalize_payment_sms_value($church_name) ?: 'Freeman Methodist Church - KM';
     $reference_text = get_payment_reference_text($payment_period_description, $payment_period, $payment_type_name, $fallback_date);
     $formatted_amount = number_format((float) $amount, 2);
@@ -140,7 +143,10 @@ function build_hubtel_ussd_member_payment_sms(
     if ($reference_text !== '') {
         $message .= " for $reference_text";
     }
-    $message .= " by $sender_name has been received by $church_name.";
+    if ($sender_name !== '') {
+        $message .= " by $sender_name";
+    }
+    $message .= " has been received by $church_name.";
 
     if ($harvest_year !== null && $harvest_total !== null) {
         $formatted_total = number_format((float) $harvest_total, 2);

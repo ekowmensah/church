@@ -26,6 +26,29 @@ function normalize_callback_phone($phone) {
     return $phone;
 }
 
+function normalize_phone_for_compare($phone) {
+    $digits = preg_replace('/\D+/', '', (string) $phone);
+    if ($digits === '') {
+        return '';
+    }
+    return substr($digits, -9);
+}
+
+function phones_match($left, $right) {
+    $left = normalize_phone_for_compare($left);
+    $right = normalize_phone_for_compare($right);
+
+    return $left !== '' && $left === $right;
+}
+
+function extract_portal_payer_reference($description) {
+    if (preg_match('/\bby\s+([A-Z0-9-]+)\s*$/i', trim((string) $description), $matches)) {
+        return trim($matches[1]);
+    }
+
+    return '';
+}
+
 function fetch_member_sms_profile($conn, $member_id) {
     $stmt = $conn->prepare("
         SELECT
@@ -222,12 +245,29 @@ if ($clientReference) {
                                 );
                             }
 
+                            $payer_reference = '';
+                            $portal_description = $paymentRow['description'] ?? ($intent['description'] ?? '');
+                            $portal_payer_reference = extract_portal_payer_reference($portal_description);
+                            $customer_name = normalize_payment_sms_value($intent['customer_name'] ?? '');
+                            $is_self_portal_payment = false;
+                            if (!empty($intent['customer_phone']) && phones_match($intent['customer_phone'], $member['phone'])) {
+                                $is_self_portal_payment = true;
+                            } elseif ($portal_payer_reference !== '' && !empty($member['crn']) && strcasecmp($portal_payer_reference, $member['crn']) === 0) {
+                                $is_self_portal_payment = true;
+                            } elseif ($customer_name !== '' && strcasecmp($customer_name, normalize_payment_sms_value($member['full_name'])) === 0) {
+                                $is_self_portal_payment = true;
+                            }
+
+                            if (!$is_self_portal_payment) {
+                                $payer_reference = $portal_payer_reference !== '' ? $portal_payer_reference : $customer_name;
+                            }
+
                             $sms_message = build_hubtel_portal_payment_sms(
                                 $member['full_name'],
                                 $paymentRow['amount'],
                                 $paymentRow['payment_period_description'],
                                 $payment_type_name,
-                                $member['crn'] ?: ($intent['customer_name'] ?? 'MEMBER'),
+                                $payer_reference,
                                 $church_name,
                                 $harvest_year,
                                 $harvest_total,
@@ -328,6 +368,11 @@ if ($clientReference) {
                                 $customer_name = $member['full_name'];
                             }
 
+                            $show_by_sender = (!empty($target_member_id) && empty($payer_member_id))
+                                || (!empty($payer_member_id) && (int) $payer_member_id !== (int) $final_member_id)
+                                || (!empty($customer_phone) && !phones_match($customer_phone, $member['phone']));
+                            $sender_name_for_message = $show_by_sender ? $customer_name : '';
+
                             $harvest_year = null;
                             $harvest_total = null;
                             if (is_harvest_payment_type($payment_type_name)) {
@@ -345,7 +390,7 @@ if ($clientReference) {
                                 $amount,
                                 $payment_period_description,
                                 $payment_type_name,
-                                $customer_name,
+                                $sender_name_for_message,
                                 $church_name,
                                 $harvest_year,
                                 $harvest_total,

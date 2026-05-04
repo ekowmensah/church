@@ -85,6 +85,17 @@ function fetch_active_church_name($conn, $church_id) {
     return $church['name'] ?? 'Freeman Methodist Church - KM';
 }
 
+function phones_match_shortcode($left, $right) {
+    $left = preg_replace('/\D+/', '', (string) $left);
+    $right = preg_replace('/\D+/', '', (string) $right);
+
+    if ($left === '' || $right === '') {
+        return false;
+    }
+
+    return substr($left, -9) === substr($right, -9);
+}
+
 // Log raw input for debugging
 $raw_input = file_get_contents('php://input');
 log_raw($raw_input);
@@ -399,6 +410,11 @@ try {
 
             log_debug("SMS check: phone=$customer_phone, status=" . ($order_info['Status'] ?? 'none'));
             if (!empty($beneficiary_phone) && strtolower($order_info['Status'] ?? '') === 'paid') {
+                $show_by_sender = $is_cross_payment
+                    || (!empty($target_member_id) && empty($payer_member_id))
+                    || (!empty($customer_phone) && !phones_match_shortcode($customer_phone, $beneficiary_phone));
+                $sender_name_for_message = $show_by_sender ? $payer_name : '';
+
                 $harvest_year = null;
                 $harvest_total = null;
                 if (is_harvest_payment_type($donation_type)) {
@@ -412,7 +428,7 @@ try {
                     $amount,
                     $payment_period_description,
                     $donation_type,
-                    $payer_name,
+                    $sender_name_for_message,
                     $church_name,
                     $harvest_year,
                     $harvest_total,
