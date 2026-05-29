@@ -43,6 +43,80 @@ $view_label = $filter_by_user ? 'My Payments' : 'All Payments';
 $date = isset($_GET['date']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date']) ? $_GET['date'] : date('Y-m-d');
 $currency = '₵';
 $payment_modes = ['cash', 'cheque'];
+$payment_method_summary = [];
+
+function normalize_payment_mode_key(string $mode): string
+{
+    $key = strtolower(trim($mode));
+    $key = str_replace([' ', '-'], '_', $key);
+    if ($key === '') {
+        return 'unknown';
+    }
+    if (in_array($key, ['check', 'cheques'], true)) {
+        return 'cheque';
+    }
+    if (in_array($key, ['mobilemoney', 'mobile_money', 'momo'], true)) {
+        return 'mobile_money';
+    }
+    if (in_array($key, ['banktransfer', 'bank_transfer', 'transfer'], true)) {
+        return 'transfer';
+    }
+    return $key;
+}
+
+function payment_mode_label(string $mode): string
+{
+    $map = [
+        'cash' => 'Cash',
+        'cheque' => 'Cheque',
+        'mobile_money' => 'Mobile Money',
+        'transfer' => 'Transfer',
+        'pos' => 'POS',
+        'online' => 'Online',
+        'offline' => 'Offline',
+        'paystack' => 'Paystack',
+        'card' => 'Card',
+        'other' => 'Other',
+        'unknown' => 'Unknown',
+    ];
+    return $map[$mode] ?? ucwords(str_replace('_', ' ', $mode));
+}
+
+function payment_mode_color(string $mode): string
+{
+    $map = [
+        'cash' => 'primary',
+        'cheque' => 'success',
+        'mobile_money' => 'warning',
+        'transfer' => 'info',
+        'pos' => 'secondary',
+        'online' => 'dark',
+        'offline' => 'secondary',
+        'paystack' => 'dark',
+        'card' => 'info',
+        'other' => 'secondary',
+        'unknown' => 'secondary',
+    ];
+    return $map[$mode] ?? 'secondary';
+}
+
+function payment_mode_icon(string $mode): string
+{
+    $map = [
+        'cash' => 'money-bill-wave',
+        'cheque' => 'money-check',
+        'mobile_money' => 'mobile-alt',
+        'transfer' => 'exchange-alt',
+        'pos' => 'cash-register',
+        'online' => 'globe',
+        'offline' => 'wallet',
+        'paystack' => 'credit-card',
+        'card' => 'credit-card',
+        'other' => 'coins',
+        'unknown' => 'question-circle',
+    ];
+    return $map[$mode] ?? 'wallet';
+}
 $denominations = [
     ['label' => '200 Note', 'value' => 200],
     ['label' => '100 Note', 'value' => 100],
@@ -61,12 +135,13 @@ $denominations = [
 // --- FETCH PAYMENT TOTALS FROM DATABASE ---
 $total_cash = 0.00;
 $total_cheque = 0.00;
+$total_all_methods = 0.00;
 
 try {
     if ($filter_by_user) {
         // Non-admin: Show only payments recorded by this user
         // Fetch cash total
-        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND mode='cash' AND recorded_by=?");
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND LOWER(TRIM(mode))='cash' AND recorded_by=?");
         $stmt->bind_param('si', $date, $current_user_id);
         $stmt->execute();
         $stmt->bind_result($total_cash);
@@ -75,17 +150,26 @@ try {
         $total_cash = floatval($total_cash);
         
         // Fetch cheque total
-        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND mode='cheque' AND recorded_by=?");
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND LOWER(TRIM(mode)) IN ('cheque','check') AND recorded_by=?");
         $stmt->bind_param('si', $date, $current_user_id);
         $stmt->execute();
         $stmt->bind_result($total_cheque);
         $stmt->fetch();
         $stmt->close();
         $total_cheque = floatval($total_cheque);
+
+        // Total received for all payment modes (cashier scope)
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND recorded_by=?");
+        $stmt->bind_param('si', $date, $current_user_id);
+        $stmt->execute();
+        $stmt->bind_result($total_all_methods);
+        $stmt->fetch();
+        $stmt->close();
+        $total_all_methods = floatval($total_all_methods);
     } else {
         // Super admin: Show all payments
         // Fetch cash total
-        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND mode='cash'");
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND LOWER(TRIM(mode))='cash'");
         $stmt->bind_param('s', $date);
         $stmt->execute();
         $stmt->bind_result($total_cash);
@@ -94,17 +178,48 @@ try {
         $total_cash = floatval($total_cash);
         
         // Fetch cheque total
-        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND mode='cheque'");
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND LOWER(TRIM(mode)) IN ('cheque','check')");
         $stmt->bind_param('s', $date);
         $stmt->execute();
         $stmt->bind_result($total_cheque);
         $stmt->fetch();
         $stmt->close();
         $total_cheque = floatval($total_cheque);
+
+        // Total received for all payment modes (admin scope)
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=?");
+        $stmt->bind_param('s', $date);
+        $stmt->execute();
+        $stmt->bind_result($total_all_methods);
+        $stmt->fetch();
+        $stmt->close();
+        $total_all_methods = floatval($total_all_methods);
     }
+
+    // Dynamic payment mode summary (cashier scope for non-admin, all scope for admin)
+    if ($filter_by_user) {
+        $stmt = $conn->prepare("SELECT COALESCE(mode,'') AS mode, COUNT(id) AS cnt, COALESCE(SUM(amount),0) AS total FROM payments WHERE DATE(payment_date)=? AND recorded_by=? GROUP BY mode ORDER BY total DESC");
+        $stmt->bind_param('si', $date, $current_user_id);
+    } else {
+        $stmt = $conn->prepare("SELECT COALESCE(mode,'') AS mode, COUNT(id) AS cnt, COALESCE(SUM(amount),0) AS total FROM payments WHERE DATE(payment_date)=? GROUP BY mode ORDER BY total DESC");
+        $stmt->bind_param('s', $date);
+    }
+    $stmt->execute();
+    $mode_result = $stmt->get_result();
+    while ($mode_row = $mode_result->fetch_assoc()) {
+        $mode_key = normalize_payment_mode_key((string) ($mode_row['mode'] ?? ''));
+        if (!isset($payment_method_summary[$mode_key])) {
+            $payment_method_summary[$mode_key] = ['count' => 0, 'total' => 0.0];
+        }
+        $payment_method_summary[$mode_key]['count'] += (int) $mode_row['cnt'];
+        $payment_method_summary[$mode_key]['total'] += (float) $mode_row['total'];
+    }
+    $stmt->close();
 } catch (Throwable $e) {
     $total_cash = 0.00;
     $total_cheque = 0.00;
+    $total_all_methods = 0.00;
+    $payment_method_summary = [];
 }
 // --- LOAD EXISTING ANALYSES FROM DATABASE ---
 $entry = [];
@@ -153,8 +268,8 @@ try {
     // Silently fail, use empty defaults
 }
 
-// Calculate grand total from database (Cash + Cheque from actual payments)
-$grand_total = $total_cash + $total_cheque;
+// Calculate grand total from database (all payment methods)
+$grand_total = $total_all_methods;
 
 // Start output buffering for page content
 ob_start();
@@ -189,51 +304,50 @@ ob_start();
                             </div>
                         </div>
                     </div>
-
                     <!-- Payment Method Summary -->
                     <div class="mb-4">
                         <h6 class="font-weight-bold mb-3">Payment Method Summary</h6>
                         <div class="row">
-                            <div class="col-md-4">
-                                <div class="card border-left-primary shadow h-100 py-2">
-                                    <div class="card-body">
-                                        <div class="row no-gutters align-items-center">
-                                            <div class="col mr-2">
-                                                <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Cash</div>
-                                                <div class="h5 mb-0 font-weight-bold text-gray-800">₵<?= number_format($total_cash, 2) ?></div>
-                                                <?php if (!empty($entry)): ?>
-                                                    <div class="text-xs text-muted mt-1">Analysis: Completed</div>
-                                                <?php else: ?>
-                                                    <div class="text-xs text-muted mt-1">Analysis: Pending</div>
-                                                <?php endif; ?>
-                                            </div>
-                                            <div class="col-auto">
-                                                <i class="fas fa-money-bill-wave fa-2x text-primary"></i>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="card border-left-success shadow h-100 py-2">
-                                    <div class="card-body">
-                                        <div class="row no-gutters align-items-center">
-                                            <div class="col mr-2">
-                                                <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Cheque</div>
-                                                <div class="h5 mb-0 font-weight-bold text-gray-800">₵<?= number_format($total_cheque, 2) ?></div>
-                                                <?php if (!empty($cheque_entry['total'])): ?>
-                                                    <div class="text-xs text-muted mt-1">Analysis: Completed</div>
-                                                <?php else: ?>
-                                                    <div class="text-xs text-muted mt-1">Analysis: Pending</div>
-                                                <?php endif; ?>
-                                            </div>
-                                            <div class="col-auto">
-                                                <i class="fas fa-money-check fa-2x text-success"></i>
+                            <?php if (!empty($payment_method_summary)): ?>
+                                <?php
+                                uasort($payment_method_summary, static function ($a, $b) {
+                                    return $b['total'] <=> $a['total'];
+                                });
+                                ?>
+                                <?php foreach ($payment_method_summary as $mode_key => $mode_data): ?>
+                                <?php
+                                $mode_color = payment_mode_color($mode_key);
+                                $mode_icon = payment_mode_icon($mode_key);
+                                ?>
+                                <div class="col-md-4 mb-3">
+                                    <div class="card border-left-<?= htmlspecialchars($mode_color) ?> shadow h-100 py-2">
+                                        <div class="card-body">
+                                            <div class="row no-gutters align-items-center">
+                                                <div class="col mr-2">
+                                                    <div class="text-xs font-weight-bold text-<?= htmlspecialchars($mode_color) ?> text-uppercase mb-1"><?= htmlspecialchars(payment_mode_label($mode_key)) ?></div>
+                                                    <div class="h5 mb-0 font-weight-bold text-gray-800">₵<?= number_format((float) $mode_data['total'], 2) ?></div>
+                                                    <div class="text-xs text-muted mt-1"><?= number_format((int) $mode_data['count']) ?> transaction(s)</div>
+                                                    <?php if ($mode_key === 'cash'): ?>
+                                                        <div class="text-xs text-muted mt-1">Analysis: <?= !empty($entry) ? 'Completed' : 'Pending' ?></div>
+                                                    <?php elseif ($mode_key === 'cheque'): ?>
+                                                        <div class="text-xs text-muted mt-1">Analysis: <?= !empty($cheque_entry['total']) ? 'Completed' : 'Pending' ?></div>
+                                                    <?php else: ?>
+                                                        <div class="text-xs text-muted mt-1">Analysis: N/A</div>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <div class="col-auto">
+                                                    <i class="fas fa-<?= htmlspecialchars($mode_icon) ?> fa-2x text-<?= htmlspecialchars($mode_color) ?>"></i>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <div class="col-12">
+                                    <div class="alert alert-light border text-muted mb-0">No payment modes found for this date.</div>
+                                </div>
+                            <?php endif; ?>
                         </div>
 
                         <!-- Grand Total Calculation Display -->
@@ -242,8 +356,7 @@ ob_start();
                                 <div class="col-md-8">
                                     <small class="text-muted">
                                         <strong>Grand Total Calculation:</strong><br>
-                                        Cash (₵<?= number_format($total_cash, 2) ?>) +
-                                        Cheque (₵<?= number_format($total_cheque, 2) ?>) =
+                                        Total received from all payment methods for <?= htmlspecialchars($date) ?>.
                                     </small>
                                 </div>
                                 <div class="col-md-4 text-right">
@@ -275,23 +388,26 @@ ob_start();
                                 $types = [];
                                 try {
                                     if ($filter_by_user) {
-                                        // Non-admin: Show only payments recorded by this user
-                                        $sql = "SELECT pt.name AS payment_type, SUM(p.amount) AS total_amount, COUNT(p.id) AS count
-                                                FROM payments p
-                                                JOIN payment_types pt ON p.payment_type_id = pt.id
-                                                WHERE DATE(p.payment_date) = ? AND p.recorded_by = ?
-                                                GROUP BY pt.id
-                                                ORDER BY total_amount DESC";
+                                        // Non-admin/cashier: show all payment types, scoped to own records
+                                        $sql = "SELECT pt.name AS payment_type, COALESCE(SUM(p.amount),0) AS total_amount, COALESCE(COUNT(p.id),0) AS count
+                                                FROM payment_types pt
+                                                LEFT JOIN payments p
+                                                  ON p.payment_type_id = pt.id
+                                                 AND DATE(p.payment_date) = ?
+                                                 AND p.recorded_by = ?
+                                                GROUP BY pt.id, pt.name
+                                                ORDER BY total_amount DESC, pt.name ASC";
                                         $stmt = $conn->prepare($sql);
                                         $stmt->bind_param('si', $date, $current_user_id);
                                     } else {
-                                        // Super admin: Show all payments
-                                        $sql = "SELECT pt.name AS payment_type, SUM(p.amount) AS total_amount, COUNT(p.id) AS count
-                                                FROM payments p
-                                                JOIN payment_types pt ON p.payment_type_id = pt.id
-                                                WHERE DATE(p.payment_date) = ?
-                                                GROUP BY pt.id
-                                                ORDER BY total_amount DESC";
+                                        // Admin: show all payment types with overall totals
+                                        $sql = "SELECT pt.name AS payment_type, COALESCE(SUM(p.amount),0) AS total_amount, COALESCE(COUNT(p.id),0) AS count
+                                                FROM payment_types pt
+                                                LEFT JOIN payments p
+                                                  ON p.payment_type_id = pt.id
+                                                 AND DATE(p.payment_date) = ?
+                                                GROUP BY pt.id, pt.name
+                                                ORDER BY total_amount DESC, pt.name ASC";
                                         $stmt = $conn->prepare($sql);
                                         $stmt->bind_param('s', $date);
                                     }
@@ -315,7 +431,7 @@ ob_start();
                             </tbody>
                             <tfoot>
                                 <tr class="font-weight-bold bg-light">
-                                    <td class="text-right">Grand Total (Cash + Cheque)</td>
+                                    <td class="text-right">Grand Total (All Payment Methods)</td>
                                     <td><?= array_sum(array_column($types,'count')) ?></td>
                                     <td>₵<?= number_format($grand_total,2) ?></td>
                                 </tr>
@@ -535,8 +651,8 @@ function updateDenomTotals() {
         // Highlight error if not matching cash
         let expected = 0;
         <?php
-        // Set expected to cash total (from payment type breakdown)
-        foreach ($types as $t) if (strtolower($t['payment_type'])==='cash') echo "expected = ".floatval($t['total_amount']).";";
+        // Set expected to cash-mode total
+        echo "expected = " . floatval($total_cash) . ";";
         ?>
         totalCell.parentElement.classList.remove('bg-danger','bg-warning','bg-success','text-white','text-dark');
         if (Math.abs(total-expected) < 0.01) {
@@ -692,3 +808,5 @@ document.addEventListener('DOMContentLoaded', function() {
 $modal_html = ob_get_clean();
 include __DIR__.'/../includes/layout.php';
 ?>
+
+
