@@ -56,3 +56,12 @@ migrations/2026_upgrade/run_migrations.php
 migrations/2026_upgrade/rollbacks/2026_03_21_0901_repair_members_id_auto_increment.rollback.sql
 Analysis complete for.docx
 ~$Freeman Major Update.docx
+migrations/2026_upgrade/rollbacks/2026_05_04_1100_bible_class_capacity_hardening.rollback.sql
+migrations/2026_upgrade/SHARED_HOSTING_DEPLOY.md
+migrations/2026_upgrade/run_migrations.php
+migrations/2026_upgrade/README.md
+migrations/2026_upgrade/2026_05_04_1100_bible_class_capacity_hardening.sql
+migrations/2026_upgrade/2026_03_21_0900_indexes_fk_hardening.sql
+migrations/2026_upgrade/2026_03_21_0102_standardize_emergency_contact_relationships.sql
+MyFreeman Major Update.docx
+migrations/2026_upgrade/2026_03_21_0102_standardize_emergency_contact_relationships.sql
