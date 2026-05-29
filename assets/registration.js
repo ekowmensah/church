@@ -108,6 +108,16 @@ $(document).ready(function () {
     });
 
     // 4. Dynamic Emergency Contacts
+    function getRelationshipFieldHtml(idx) {
+        var relationshipOptionsHtml = (window.RELATIONSHIP_OPTIONS_HTML || '').trim();
+        if (relationshipOptionsHtml !== '') {
+            return '<select class="form-control emergency-contact-relationship" name="emergency_contacts[' + idx + '][relationship]" required>' +
+                relationshipOptionsHtml +
+                '</select>';
+        }
+        return '<input type="text" class="form-control" name="emergency_contacts[' + idx + '][relationship]" placeholder="Relationship" required>';
+    }
+
     $(document).on('click', '#add-emergency-contact', function (e) {
         e.preventDefault();
         let idx = $('.emergency-contact-row').length + 1;
@@ -123,7 +133,7 @@ $(document).ready(function () {
             </div>
             <div class="form-group col-md-4">
                 <label>Relationship</label>
-                <input type="text" class="form-control" name="emergency_contacts[${idx}][relationship]" placeholder="Relationship" required>
+                ${getRelationshipFieldHtml(idx)}
             </div>
             <div class="form-group col-md-1">
                 <label>&nbsp;</label>

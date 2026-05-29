@@ -79,6 +79,27 @@ if ($token !== '') {
     $error = 'Missing registration token.';
 } 
 
+$relationship_options = [];
+$relationship_defaults = ['Husband', 'Wife', 'Son', 'Daughter', 'Mother', 'Father', 'Brother', 'Sister', 'Uncle', 'Auntie', 'Grandfather', 'Grandmother', 'Other'];
+$relationship_query = $conn->query("SELECT name FROM relationship_types WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
+if ($relationship_query) {
+    while ($relationship_row = $relationship_query->fetch_assoc()) {
+        $relationship_name = trim((string) ($relationship_row['name'] ?? ''));
+        if ($relationship_name !== '') {
+            $relationship_options[] = $relationship_name;
+        }
+    }
+}
+if (empty($relationship_options)) {
+    $relationship_options = $relationship_defaults;
+}
+$relationship_options = array_values(array_unique($relationship_options));
+$relationship_options_html = '<option value="">-- Select Relationship --</option>';
+foreach ($relationship_options as $relationship_option) {
+    $safe_relationship_option = htmlspecialchars($relationship_option, ENT_QUOTES, 'UTF-8');
+    $relationship_options_html .= '<option value="' . $safe_relationship_option . '">' . $safe_relationship_option . '</option>';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
     // Gather all fields
     $affected_rows = -1;
@@ -513,7 +534,16 @@ ob_start();
         </div>
         <div class="form-group col-md-4">
           <label>Relationship</label>
-          <input type="text" class="form-control" name="emergency_contacts[1][relationship]" placeholder="Relationship" value="<?=htmlspecialchars($member['emergency_contact1_relationship'] ?? '')?>" required>
+          <?php $selected_relationship_1 = trim((string) ($member['emergency_contact1_relationship'] ?? '')); ?>
+          <select class="form-control emergency-contact-relationship" name="emergency_contacts[1][relationship]" required>
+            <option value="">-- Select Relationship --</option>
+            <?php foreach ($relationship_options as $relationship_option): ?>
+              <option value="<?= htmlspecialchars($relationship_option) ?>" <?= $selected_relationship_1 === $relationship_option ? 'selected' : '' ?>><?= htmlspecialchars($relationship_option) ?></option>
+            <?php endforeach; ?>
+            <?php if ($selected_relationship_1 !== '' && !in_array($selected_relationship_1, $relationship_options, true)): ?>
+              <option value="<?= htmlspecialchars($selected_relationship_1) ?>" selected><?= htmlspecialchars($selected_relationship_1) ?> (Custom)</option>
+            <?php endif; ?>
+          </select>
         </div>
         <div class="form-group col-md-1">
           <label>&nbsp;</label>
@@ -533,7 +563,16 @@ ob_start();
         </div>
         <div class="form-group col-md-4">
           <label>Relationship</label>
-          <input type="text" class="form-control" name="emergency_contacts[2][relationship]" placeholder="Relationship" value="<?=htmlspecialchars($member['emergency_contact2_relationship'])?>">
+          <?php $selected_relationship_2 = trim((string) ($member['emergency_contact2_relationship'] ?? '')); ?>
+          <select class="form-control emergency-contact-relationship" name="emergency_contacts[2][relationship]">
+            <option value="">-- Select Relationship --</option>
+            <?php foreach ($relationship_options as $relationship_option): ?>
+              <option value="<?= htmlspecialchars($relationship_option) ?>" <?= $selected_relationship_2 === $relationship_option ? 'selected' : '' ?>><?= htmlspecialchars($relationship_option) ?></option>
+            <?php endforeach; ?>
+            <?php if ($selected_relationship_2 !== '' && !in_array($selected_relationship_2, $relationship_options, true)): ?>
+              <option value="<?= htmlspecialchars($selected_relationship_2) ?>" selected><?= htmlspecialchars($selected_relationship_2) ?> (Custom)</option>
+            <?php endif; ?>
+          </select>
         </div>
         <div class="form-group col-md-1">
           <label>&nbsp;</label>
@@ -663,6 +702,7 @@ ob_start();
 
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.full.min.js"></script>
                 <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
+                <script>window.RELATIONSHIP_OPTIONS_HTML = <?= json_encode($relationship_options_html) ?>;</script>
                 <script src="<?= BASE_URL ?>/assets/registration.js"></script>
 <script>
 $(function(){

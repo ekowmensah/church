@@ -1,15 +1,27 @@
 <?php
 session_start();
 require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../includes/member_auth.php';
+require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 
-if (!isset($_SESSION['member_id'])) {
+if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
 
+$is_member_session = isset($_SESSION['member_id']);
+$has_feedback_permission = has_permission('view_feedback_report') || has_permission('view_dashboard');
+if (!$is_member_session && !$has_feedback_permission) {
+    http_response_code(403);
+    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
+    exit;
+}
+
+$post_save_redirect = $is_member_session ? 'memberfeedback_my.php' : 'memberfeedback_list.php';
+$back_link = $post_save_redirect;
+
 // Fetch members for dropdown
-$members = $conn->query("SELECT id, CONCAT(last_name, ', ', first_name, ' ', middle_name) AS name FROM members ORDER BY last_name, first_name");
+$members = $conn->query("SELECT id, CONCAT(TRIM(CONCAT(last_name, ', ', first_name, ' ', COALESCE(middle_name, ''))), CASE WHEN crn IS NOT NULL AND crn <> '' THEN CONCAT(' (', crn, ')') ELSE '' END) AS name FROM members ORDER BY last_name, first_name");
 // Fetch users for user dropdown (show all users except the current user)
 $users = $conn->query("SELECT id, name FROM users WHERE id != " . intval($_SESSION['user_id'] ?? 0) . " ORDER BY name");
 
@@ -37,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare('INSERT INTO member_feedback_thread (recipient_type, recipient_id, sender_type, sender_id, message, sent_at) VALUES (?, ?, ?, ?, ?, NOW())');
         $stmt->bind_param('sisis', $recipient_type, $recipient_id, $sender_type, $sender_id, $message);
         if ($stmt->execute()) {
-            header('Location: memberfeedback_my.php?saved=1');
+            header('Location: ' . $post_save_redirect . '?saved=1');
             exit;
         } else {
             $form_msg = 'Error saving feedback.';
@@ -86,7 +98,7 @@ ob_start();
             <option value="">Select member...</option>
             <?php 
             // Always re-fetch members for select to ensure options are present after JS show/hide
-            $members_for_select = $conn->query("SELECT id, CONCAT(last_name, ', ', first_name, ' ', middle_name) AS name FROM members ORDER BY last_name, first_name");
+            $members_for_select = $conn->query("SELECT id, CONCAT(TRIM(CONCAT(last_name, ', ', first_name, ' ', COALESCE(middle_name, ''))), CASE WHEN crn IS NOT NULL AND crn <> '' THEN CONCAT(' (', crn, ')') ELSE '' END) AS name FROM members ORDER BY last_name, first_name");
             if ($members_for_select && $members_for_select->num_rows > 0): 
                 while($m = $members_for_select->fetch_assoc()): ?>
                 <option value="<?= $m['id'] ?>" <?= ($feedback['recipient_type']=='member' && $feedback['recipient_id']==$m['id'] ? 'selected' : '') ?>><?= htmlspecialchars($m['name']) ?></option>
@@ -113,7 +125,7 @@ ob_start();
     </div>
     <div class="form-group d-flex justify-content-between mt-4">
         <button type="submit" class="btn btn-success px-4"><i class="fas fa-save mr-1"></i> Send</button>
-        <a href="memberfeedback_list.php" class="btn btn-secondary px-4"><i class="fas fa-arrow-left mr-1"></i> Back to List</a>
+        <a href="<?= htmlspecialchars($back_link) ?>" class="btn btn-secondary px-4"><i class="fas fa-arrow-left mr-1"></i> Back to List</a>
     </div>
 </form>
 <script>
@@ -157,7 +169,7 @@ document.querySelectorAll('.autosize').forEach(function(textarea) {
 <script>
 $(function() {
     $('#member_id').select2({ width: '100%', theme: 'bootstrap4', placeholder: 'Select member...' });
-    $('#responded_by').select2({ width: '100%', theme: 'bootstrap4', placeholder: 'Select responder...' });
+    $('#user_id').select2({ width: '100%', theme: 'bootstrap4', placeholder: 'Select user...' });
 });
 </script>
 <?php
