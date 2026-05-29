@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -9,7 +10,9 @@ if (!is_logged_in()) {
     exit;
 }
 // Permission check
-if (!has_permission('view_dashboard')) {
+$has_feedback_permission = has_permission('view_feedback_report') || has_permission('view_dashboard');
+$is_member_session = isset($_SESSION['member_id']);
+if (!$is_member_session && !$has_feedback_permission) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Forbidden']);
     exit;
