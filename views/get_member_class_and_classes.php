@@ -3,6 +3,7 @@ session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/bible_class_capacity.php';
 
 // Authentication check
 if (!is_logged_in()) {
@@ -43,13 +44,45 @@ if (!$church_id) {
     echo json_encode(['class_id'=>$class_id,'class_name'=>$class_name ?: '', 'classes'=>[]]);
     exit;
 }
-// Get all classes in this church
-$stmt2 = $conn->prepare('SELECT id, name FROM bible_classes WHERE church_id = ? ORDER BY name ASC');
+
+$capacity_rules_available = bible_class_rules_table_exists($conn);
+$rules_select_max = $capacity_rules_available ? 'COALESCE(bcr.max_members, 25)' : '25';
+$rules_select_enforce = $capacity_rules_available ? 'COALESCE(bcr.enforce_limit, 1)' : '1';
+$rules_join = $capacity_rules_available ? 'LEFT JOIN bible_class_rules bcr ON bcr.class_id = bc.id' : '';
+
+// Get all classes in this church with capacity metadata
+$stmt2 = $conn->prepare("
+    SELECT
+        bc.id,
+        bc.name,
+        {$rules_select_max} AS max_members,
+        {$rules_select_enforce} AS enforce_limit,
+        COALESCE(bcm.active_member_count, 0) AS active_member_count
+    FROM bible_classes bc
+    {$rules_join}
+    LEFT JOIN (
+        SELECT class_id, COUNT(*) AS active_member_count
+        FROM members
+        WHERE status = 'active'
+        GROUP BY class_id
+    ) bcm ON bcm.class_id = bc.id
+    WHERE bc.church_id = ?
+    ORDER BY bc.name ASC
+");
 $stmt2->bind_param('i', $church_id);
 $stmt2->execute();
 $res2 = $stmt2->get_result();
 $classes = [];
 while ($r = $res2->fetch_assoc()) {
+    $active_count = (int) ($r['active_member_count'] ?? 0);
+    $max_members = (int) ($r['max_members'] ?? 25);
+    $enforce_limit = (int) ($r['enforce_limit'] ?? 1) === 1;
+    $is_full = $enforce_limit && $active_count >= $max_members;
+    $r['is_full'] = $is_full;
+    $r['remaining_slots'] = $enforce_limit ? max(0, $max_members - $active_count) : null;
+    $r['label'] = $enforce_limit
+        ? $r['name'] . " ({$active_count}/{$max_members}" . ($is_full ? ', FULL' : '') . ')'
+        : $r['name'] . " ({$active_count}, no limit)";
     $classes[] = $r;
 }
 echo json_encode([

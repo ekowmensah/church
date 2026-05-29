@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/bible_class_capacity.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -29,6 +30,16 @@ $can_complete_registration = has_permission('complete_member_registration');
 $message = '';
 $message_type = '';
 
+if (!empty($_SESSION['flash_success'])) {
+    $message = (string) $_SESSION['flash_success'];
+    $message_type = 'success';
+    unset($_SESSION['flash_success']);
+} elseif (!empty($_SESSION['flash_error'])) {
+    $message = (string) $_SESSION['flash_error'];
+    $message_type = 'danger';
+    unset($_SESSION['flash_error']);
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_action'])) {
     $action = $_POST['bulk_action'];
     $member_ids = $_POST['member_ids'] ?? [];
@@ -40,14 +51,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_action'])) {
         switch ($action) {
             case 'activate':
                 if ($can_activate) {
-                    $stmt = $conn->prepare("UPDATE members SET status = 'active', deactivated_at = NULL WHERE id IN ($placeholders)");
-                    $stmt->bind_param(str_repeat('i', count($ids)), ...$ids);
-                    if ($stmt->execute()) {
-                        $message = count($ids) . ' member(s) activated successfully.';
-                        $message_type = 'success';
-                    } else {
-                        $message = 'Error activating members.';
+                    $fetch_stmt = $conn->prepare("SELECT id, class_id, status, deactivated_at FROM members WHERE id = ? LIMIT 1");
+                    $activate_stmt = $conn->prepare("UPDATE members SET status = 'active', deactivated_at = NULL WHERE id = ? AND status IN ('pending', 'de-activated')");
+
+                    if (!$fetch_stmt || !$activate_stmt) {
+                        $message = 'Error preparing activation statements.';
                         $message_type = 'danger';
+                        break;
+                    }
+
+                    $activated_count = 0;
+                    $blocked_count = 0;
+                    $error_count = 0;
+
+                    foreach ($ids as $member_id) {
+                        $fetch_stmt->bind_param('i', $member_id);
+                        if (!$fetch_stmt->execute()) {
+                            $error_count++;
+                            continue;
+                        }
+
+                        $row = $fetch_stmt->get_result()->fetch_assoc();
+                        if (!$row) {
+                            continue;
+                        }
+
+                        $class_id = (int) ($row['class_id'] ?? 0);
+                        $status = (string) ($row['status'] ?? '');
+                        $deactivated_at = $row['deactivated_at'] ?? null;
+
+                        if ($status !== 'pending' && $status !== 'de-activated') {
+                            continue;
+                        }
+
+                        $capacity = bible_class_validate_capacity($conn, $class_id, $member_id);
+                        if (!$capacity['allowed']) {
+                            $blocked_count++;
+                            continue;
+                        }
+
+                        $activate_stmt->bind_param('i', $member_id);
+                        if ($activate_stmt->execute()) {
+                            if ($activate_stmt->affected_rows > 0) {
+                                $activated_count++;
+                            }
+                        } else if (is_bible_class_capacity_error($activate_stmt->error)) {
+                            $blocked_count++;
+                        } else {
+                            $error_count++;
+                        }
+                    }
+
+                    $fetch_stmt->close();
+                    $activate_stmt->close();
+
+                    if ($activated_count > 0 && $blocked_count === 0 && $error_count === 0) {
+                        $message = $activated_count . ' member(s) activated successfully.';
+                        $message_type = 'success';
+                    } elseif ($activated_count > 0 || $blocked_count > 0) {
+                        $parts = [];
+                        if ($activated_count > 0) {
+                            $parts[] = $activated_count . ' activated';
+                        }
+                        if ($blocked_count > 0) {
+                            $parts[] = $blocked_count . ' blocked (class full)';
+                        }
+                        if ($error_count > 0) {
+                            $parts[] = $error_count . ' failed';
+                        }
+                        $message = 'Activation completed: ' . implode(', ', $parts) . '.';
+                        $message_type = $error_count > 0 ? 'warning' : ($blocked_count > 0 ? 'warning' : 'success');
+                    } elseif ($error_count > 0) {
+                        $message = 'Error activating selected members.';
+                        $message_type = 'danger';
+                    } else {
+                        $message = 'No members were activated.';
+                        $message_type = 'warning';
                     }
                 }
                 break;

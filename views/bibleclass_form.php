@@ -3,6 +3,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/bible_class_capacity.php';
 
 $error = '';
 $success = '';
@@ -83,25 +84,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error) {
         }
     if (!$error) {
         if ($editing) {
+            $conn->begin_transaction();
             $stmt = $conn->prepare('UPDATE bible_classes SET name=?, code=?, church_id=? WHERE id=?');
             $stmt->bind_param('ssii', $name, $code, $church_id, $id);
-            $stmt->execute();
-            if ($stmt->affected_rows >= 0) {
+            $updated = $stmt->execute();
+            if ($updated && ensure_bible_class_rule($conn, $id)) {
+                $conn->commit();
                 header('Location: bibleclass_list.php?updated=1');
                 exit;
             } else {
+                $conn->rollback();
                 $error = 'Database error. Please try again.';
             }
+            $stmt->close();
         } else {
+            $conn->begin_transaction();
             $stmt = $conn->prepare('INSERT INTO bible_classes (name, code, church_id) VALUES (?, ?, ?)');
             $stmt->bind_param('ssi', $name, $code, $church_id);
-            $stmt->execute();
-            if ($stmt->affected_rows > 0) {
+            $inserted = $stmt->execute();
+            $new_class_id = (int) $conn->insert_id;
+            if ($inserted && $new_class_id > 0 && ensure_bible_class_rule($conn, $new_class_id)) {
+                $conn->commit();
                 header('Location: bibleclass_list.php?added=1');
                 exit;
             } else {
+                $conn->rollback();
                 $error = 'Database error. Please try again.';
             }
+            $stmt->close();
         }
     }
     $class_group_id = isset($_POST['class_group_id']) ? intval($_POST['class_group_id']) : '';

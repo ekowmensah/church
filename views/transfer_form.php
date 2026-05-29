@@ -3,6 +3,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/bible_class_capacity.php';
 
 
 if (!is_logged_in()) {
@@ -40,91 +41,129 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else if ($from_class_id == $to_class_id) {
         $error = 'From Class and To Class cannot be the same.';
     } else {
-        // Get old CRN before update
+        // Get old CRN before transfer
         $old_crn = '';
-        $crn_stmt = $conn->prepare("SELECT crn FROM members WHERE id = ?");
+        $member_status = '';
+        $crn_stmt = $conn->prepare("SELECT crn, status FROM members WHERE id = ?");
         $crn_stmt->bind_param('i', $member_id);
         $crn_stmt->execute();
-        $crn_stmt->bind_result($old_crn);
+        $crn_stmt->bind_result($old_crn, $member_status);
         $crn_stmt->fetch();
         $crn_stmt->close();
-        // Insert transfer with old_crn
-        $stmt = $conn->prepare("INSERT INTO member_transfers (member_id, from_class_id, to_class_id, transfer_date, transferred_by, old_crn) VALUES (?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param('iiisis', $member_id, $from_class_id, $to_class_id, $transfer_date, $transferred_by, $old_crn);
-        if ($stmt->execute()) {
-            // Update member's class_id and church_id to reflect new assignment
-            $stmt_update = $conn->prepare('UPDATE members SET class_id = ?, church_id = (SELECT church_id FROM bible_classes WHERE id = ?) WHERE id = ?');
-            $stmt_update->bind_param('iii', $to_class_id, $to_class_id, $member_id);
-            $stmt_update->execute();
-            // Get old CRN before update
-            $old_crn = '';
-            $crn_stmt = $conn->prepare("SELECT crn FROM members WHERE id = ?");
-            $crn_stmt->bind_param('i', $member_id);
-            $crn_stmt->execute();
-            $crn_stmt->bind_result($old_crn);
-            $crn_stmt->fetch();
-            $crn_stmt->close();
-            // Generate new CRN for member using get_next_crn.php logic
-            // Fetch new class and church for member
-            $stmt_class = $conn->prepare('SELECT class_id, church_id FROM members WHERE id = ? LIMIT 1');
-            $stmt_class->bind_param('i', $member_id);
-            $stmt_class->execute();
-            $class_result = $stmt_class->get_result();
-            $class_row = $class_result->fetch_assoc();
-            $new_class_id = $class_row['class_id'];
-            $new_church_id = $class_row['church_id'];
-            // Get class code
-            $stmt = $conn->prepare('SELECT code FROM bible_classes WHERE id = ? LIMIT 1');
-            $stmt->bind_param('i', $new_class_id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            $class = $result->fetch_assoc();
-            $class_code = $class ? $class['code'] : '';
-            // Get church code and circuit/location code
-            $stmt = $conn->prepare('SELECT church_code, circuit_code FROM churches WHERE id = ? LIMIT 1');
-            $stmt->bind_param('i', $new_church_id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            $church = $result->fetch_assoc();
-            $church_code = $church ? $church['church_code'] : '';
-            $circuit_code = $church ? $church['circuit_code'] : '';
-            // Get max sequence number used in CRN/SRN for this church/class
-            $max_seq = 0;
-            // Check members table
-            $stmt = $conn->prepare('SELECT crn FROM members WHERE class_id = ? AND church_id = ? AND crn IS NOT NULL');
-            $stmt->bind_param('ii', $new_class_id, $new_church_id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            while ($row = $result->fetch_assoc()) {
-                if (preg_match('/'.preg_quote($church_code.'-'.$class_code, '/').'([0-9]+)-'.preg_quote($circuit_code, '/').'/i', $row['crn'], $m)) {
-                    $num = intval($m[1]);
-                    if ($num > $max_seq) $max_seq = $num;
+
+        if ($old_crn === '') {
+            $error = 'Unable to load member CRN for transfer.';
+        } else {
+            $migration_msgs = [];
+            try {
+                $conn->begin_transaction();
+
+                // Record transfer
+                $stmt = $conn->prepare("INSERT INTO member_transfers (member_id, from_class_id, to_class_id, transfer_date, transferred_by, old_crn) VALUES (?, ?, ?, ?, ?, ?)");
+                $stmt->bind_param('iiisis', $member_id, $from_class_id, $to_class_id, $transfer_date, $transferred_by, $old_crn);
+                if (!$stmt->execute()) {
+                    throw new Exception($stmt->error ?: 'Failed to record transfer.');
                 }
-            }
-            $stmt->close();
-            // Check sunday_school table
-            $stmt = $conn->prepare('SELECT srn FROM sunday_school WHERE class_id = ? AND church_id = ? AND srn IS NOT NULL');
-            $stmt->bind_param('ii', $new_class_id, $new_church_id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            while ($row = $result->fetch_assoc()) {
-                if (preg_match('/'.preg_quote($church_code.'-'.$class_code, '/').'([0-9]+)-'.preg_quote($circuit_code, '/').'/i', $row['srn'], $m)) {
-                    $num = intval($m[1]);
-                    if ($num > $max_seq) $max_seq = $num;
+                $stmt->close();
+
+                // App-level fallback for shared hosting where trigger migrations cannot run.
+                if ($member_status === 'active') {
+                    $capacity = bible_class_validate_capacity($conn, $to_class_id, $member_id);
+                    if (!$capacity['allowed']) {
+                        throw new Exception('Bible class membership limit reached (max 25 active members).');
+                    }
                 }
-            }
-            $stmt->close();
-            // Generate next sequence number (minimum 2 digits)
-            $seq = str_pad($max_seq + 1, 2, '0', STR_PAD_LEFT);
-            // Compose CRN
-            $new_crn = $church_code . '-' . $class_code . $seq . '-' . $circuit_code;
-            $stmt2 = $conn->prepare("UPDATE members SET crn = ? WHERE id = ?");
-            $stmt2->bind_param('si', $new_crn, $member_id);
-            if ($stmt2->execute()) {
-                // Migrate all related data from old CRN to new CRN
-                $migration_msgs = [];
-                // Attendance Records: No change needed (uses member_id, not crn)
-                // Migrate CRN in other tables only if they exist
+
+                // Update member class/church
+                $stmt_update = $conn->prepare('UPDATE members SET class_id = ?, church_id = (SELECT church_id FROM bible_classes WHERE id = ?) WHERE id = ?');
+                $stmt_update->bind_param('iii', $to_class_id, $to_class_id, $member_id);
+                if (!$stmt_update->execute()) {
+                    throw new Exception($stmt_update->error ?: 'Failed to update member class.');
+                }
+                $stmt_update->close();
+
+                // Fetch updated class/church for CRN regeneration
+                $stmt_class = $conn->prepare('SELECT class_id, church_id FROM members WHERE id = ? LIMIT 1');
+                $stmt_class->bind_param('i', $member_id);
+                $stmt_class->execute();
+                $class_result = $stmt_class->get_result();
+                $class_row = $class_result->fetch_assoc();
+                $stmt_class->close();
+
+                if (!$class_row) {
+                    throw new Exception('Failed to load updated member class details.');
+                }
+
+                $new_class_id = (int) $class_row['class_id'];
+                $new_church_id = (int) $class_row['church_id'];
+
+                // Get class code
+                $stmt = $conn->prepare('SELECT code FROM bible_classes WHERE id = ? LIMIT 1');
+                $stmt->bind_param('i', $new_class_id);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $class = $result->fetch_assoc();
+                $stmt->close();
+                $class_code = $class ? $class['code'] : '';
+
+                // Get church code and circuit code
+                $stmt = $conn->prepare('SELECT church_code, circuit_code FROM churches WHERE id = ? LIMIT 1');
+                $stmt->bind_param('i', $new_church_id);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $church = $result->fetch_assoc();
+                $stmt->close();
+                $church_code = $church ? $church['church_code'] : '';
+                $circuit_code = $church ? $church['circuit_code'] : '';
+
+                if ($class_code === '' || $church_code === '' || $circuit_code === '') {
+                    throw new Exception('Unable to generate a new CRN because class/church codes are incomplete.');
+                }
+
+                // Get max sequence number used in CRN/SRN for this church/class
+                $max_seq = 0;
+
+                $stmt = $conn->prepare('SELECT crn FROM members WHERE class_id = ? AND church_id = ? AND crn IS NOT NULL');
+                $stmt->bind_param('ii', $new_class_id, $new_church_id);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                while ($row = $result->fetch_assoc()) {
+                    if (preg_match('/'.preg_quote($church_code.'-'.$class_code, '/').'([0-9]+)-'.preg_quote($circuit_code, '/').'/i', $row['crn'], $m)) {
+                        $num = intval($m[1]);
+                        if ($num > $max_seq) {
+                            $max_seq = $num;
+                        }
+                    }
+                }
+                $stmt->close();
+
+                $stmt = $conn->prepare('SELECT srn FROM sunday_school WHERE class_id = ? AND church_id = ? AND srn IS NOT NULL');
+                $stmt->bind_param('ii', $new_class_id, $new_church_id);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                while ($row = $result->fetch_assoc()) {
+                    if (preg_match('/'.preg_quote($church_code.'-'.$class_code, '/').'([0-9]+)-'.preg_quote($circuit_code, '/').'/i', $row['srn'], $m)) {
+                        $num = intval($m[1]);
+                        if ($num > $max_seq) {
+                            $max_seq = $num;
+                        }
+                    }
+                }
+                $stmt->close();
+
+                $seq = str_pad($max_seq + 1, 2, '0', STR_PAD_LEFT);
+                $new_crn = $church_code . '-' . $class_code . $seq . '-' . $circuit_code;
+
+                $stmt2 = $conn->prepare("UPDATE members SET crn = ? WHERE id = ?");
+                $stmt2->bind_param('si', $new_crn, $member_id);
+                if (!$stmt2->execute()) {
+                    throw new Exception($stmt2->error ?: 'Failed to update member CRN.');
+                }
+                $stmt2->close();
+
+                $conn->commit();
+
+                // Migrate CRN in optional linked tables
                 $tables = [
                     ['table'=>'spiritual_activity_logs', 'label'=>'Spiritual activity logs'],
                     ['table'=>'contributions', 'label'=>'Contributions']
@@ -133,10 +172,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $check = $conn->query("SHOW TABLES LIKE '".$conn->real_escape_string($tbl['table'])."'");
                     if ($check && $check->num_rows) {
                         $conn->query("UPDATE `{$tbl['table']}` SET crn = '".$conn->real_escape_string($new_crn)."' WHERE crn = '".$conn->real_escape_string($old_crn)."'");
-                        if ($conn->affected_rows > 0) $migration_msgs[] = $tbl['label'].' migrated.';
+                        if ($conn->affected_rows > 0) {
+                            $migration_msgs[] = $tbl['label'].' migrated.';
+                        }
                     }
                 }
+
                 $success = 'Transfer recorded successfully!<br>New CRN: <b>' . htmlspecialchars($new_crn) . '</b>';
+
                 // Send new CRN SMS after transfer
                 $member_stmt = $conn->prepare('SELECT phone, first_name FROM members WHERE id = ? LIMIT 1');
                 $member_stmt->bind_param('i', $member_id);
@@ -146,7 +189,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $member_stmt->close();
                 if (!empty($phone)) {
                     require_once __DIR__.'/../includes/sms.php';
-                    // Fetch new Bible class name
                     $class_stmt = $conn->prepare('SELECT name FROM bible_classes WHERE id = ? LIMIT 1');
                     $class_stmt->bind_param('i', $new_class_id);
                     $class_stmt->execute();
@@ -162,13 +204,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                 }
-                if ($migration_msgs) $success .= '<br>' . implode('<br>', $migration_msgs);
-            } else {
-                $success = 'Transfer recorded, but failed to update CRN.';
+
+                if ($migration_msgs) {
+                    $success .= '<br>' . implode('<br>', $migration_msgs);
+                }
+            } catch (Throwable $ex) {
+                $conn->rollback();
+                $msg = $ex->getMessage();
+                if (is_bible_class_capacity_error($msg)) {
+                    $error = 'Transfer blocked: ' . bible_class_capacity_error_message();
+                } else {
+                    $error = 'Error recording transfer: ' . $msg;
+                }
             }
-            // Optionally: header('Location: transfer_list.php?added=1'); exit;
-        } else {
-            $error = 'Error recording transfer: ' . $conn->error;
         }
     }
 }
@@ -317,6 +365,14 @@ $(document).ready(function() {
     function setFormEnabled(enabled) {
         $('#from_class_name, #from_class_id, #to_class_id, #transfer_date, button[type=submit]').prop('disabled', !enabled);
     }
+    function escapeHtml(text) {
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
     setFormEnabled(false);
     function loadMemberClassAndClasses(memberId, selectedToClassId) {
         if (!memberId) {
@@ -339,7 +395,10 @@ $(document).ready(function() {
             if (res && res.classes && Array.isArray(res.classes)) {
                 res.classes.forEach(function(c) {
                     var selected = selectedToClassId && c.id == selectedToClassId ? ' selected' : '';
-                    options += '<option value="'+c.id+'"'+selected+'>'+c.name+'</option>';
+                    var isFull = !!c.is_full && !selected;
+                    var disabled = isFull ? ' disabled' : '';
+                    var label = c.label || c.name;
+                    options += '<option value="'+c.id+'"'+selected+disabled+'>'+escapeHtml(label)+'</option>';
                 });
             }
             $('#to_class_id').html(options);

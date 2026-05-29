@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/bible_class_capacity.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -31,8 +32,10 @@ $can_edit = $is_super_admin || has_permission('edit_bibleclass');
 $can_delete = $is_super_admin || has_permission('delete_bibleclass');
 $can_view = true; // Already validated above
 
+$capacity_rules_available = bible_class_rules_table_exists($conn);
+
 // Fetch all bible classes with leader name (from users or members table)
-$bibleclasses = $conn->query("
+$bibleclass_sql = "
     SELECT bc.*, 
            u.name as leader_name, 
            u.email as leader_email, 
@@ -41,19 +44,25 @@ $bibleclasses = $conn->query("
            m.email as leader_member_email,
            m.id as leader_member_id,
            c.name as church_name,
-           COALESCE(bcm.member_count, 0) as member_count
+           COALESCE(bcm.active_member_count, 0) as active_member_count,
+           " . ($capacity_rules_available ? "COALESCE(bcr.max_members, 25)" : "25") . " as max_members,
+           " . ($capacity_rules_available ? "COALESCE(bcr.enforce_limit, 1)" : "1") . " as enforce_limit
     FROM bible_classes bc 
     LEFT JOIN users u ON bc.leader_id = u.id 
     LEFT JOIN bible_class_leaders bcl ON bc.id = bcl.class_id AND bcl.status = 'active'
     LEFT JOIN members m ON bcl.member_id = m.id
     LEFT JOIN churches c ON bc.church_id = c.id
+    " . ($capacity_rules_available ? "LEFT JOIN bible_class_rules bcr ON bcr.class_id = bc.id" : "") . "
     LEFT JOIN (
-        SELECT class_id, COUNT(*) as member_count
+        SELECT class_id, COUNT(*) as active_member_count
         FROM members
         WHERE class_id IS NOT NULL
+          AND status = 'active'
         GROUP BY class_id
     ) bcm ON bcm.class_id = bc.id
-");
+";
+
+$bibleclasses = $conn->query($bibleclass_sql);
 
 // Ensure no output is sent before ob_start()
 ob_start();
@@ -98,7 +107,25 @@ ob_start();
                     <tr>
                         <td><?=htmlspecialchars($row['name'])?></td>
                         <td><?=htmlspecialchars($row['code'])?></td>
-                        <td><?= (int) $row['member_count'] ?></td>
+                        <td>
+                            <?php
+                            $active_members = (int) $row['active_member_count'];
+                            $max_members = (int) $row['max_members'];
+                            $enforce_limit = (int) $row['enforce_limit'] === 1;
+                            $remaining_slots = max(0, $max_members - $active_members);
+                            ?>
+                            <?php if ($enforce_limit): ?>
+                                <span class="font-weight-bold"><?= $active_members ?> / <?= $max_members ?></span>
+                                <?php if ($remaining_slots === 0): ?>
+                                    <span class="badge badge-danger ml-1">FULL</span>
+                                <?php else: ?>
+                                    <small class="text-muted d-block"><?= $remaining_slots ?> slot<?= $remaining_slots === 1 ? '' : 's' ?> left</small>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <span class="font-weight-bold"><?= $active_members ?></span>
+                                <small class="text-muted d-block">Limit not enforced</small>
+                            <?php endif; ?>
+                        </td>
                         <td>
     <?php 
     $has_leader = (!empty($row['leader_id']) && $row['leader_id'] != 0) || !empty($row['leader_member_id']);

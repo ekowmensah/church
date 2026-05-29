@@ -3,6 +3,7 @@ ob_start();
 session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../includes/admin_auth.php'; // restrict to admin roles
+require_once __DIR__.'/../helpers/bible_class_capacity.php';
 
 function sync_member_user_account(mysqli $conn, int $member_id, string $full_name, string $email, string $phone, string $password_hash, string $photo, int $church_id): void
 {
@@ -84,6 +85,7 @@ if ($member_id > 0) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
     // Gather all fields
+    $affected_rows = -1;
     $password = $_POST['password'] ?? '';
     $first_name = trim($_POST['first_name'] ?? '');
     $middle_name = trim($_POST['middle_name'] ?? '');
@@ -176,6 +178,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
         error_log('DEBUG: emergency_contacts: ' . print_r($emergency_contacts, true));
         $error = 'Please fill in all required fields (at least one emergency contact).';
     } else {
+        $target_class_id = (int) ($member['class_id'] ?? 0);
+        $capacity = bible_class_validate_capacity($conn, $target_class_id, $member_id);
+        if (!$capacity['allowed']) {
+            $error = 'Registration cannot be completed: ' . bible_class_capacity_error_message();
+        }
+    }
+
+    if (!$error) {
         $password_hash = password_hash($password, PASSWORD_DEFAULT);
         try {
             $conn->begin_transaction();
@@ -186,7 +196,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
                 $first_name, $middle_name, $last_name, $gender, $dob, $day_born, $place_of_birth, $address, $gps_address, $marital_status, $spouse_crn, $spouse_name, $marriage_type, $home_town, $region, $phone, $telephone, $email,
                 $employment_status, $profession, $occupation, $baptized, $confirmed, $date_of_baptism, $date_of_confirmation, $membership_status, $date_of_enrollment, $photo, $status, $password_hash, $member_id
             );
-            $stmt->execute();
+            if (!$stmt->execute()) {
+                throw new Exception($stmt->error ?: 'Failed to update member during registration.');
+            }
             $affected_rows = $stmt->affected_rows;
             $stmt->close();
 
@@ -236,11 +248,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
         } catch (Throwable $e) {
             $conn->rollback();
             error_log('Admin complete registration DB sync failed: ' . $e->getMessage());
-            $error = 'Database error. Please try again.';
+            $error = is_bible_class_capacity_error($e->getMessage())
+                ? ('Registration cannot be completed: ' . bible_class_capacity_error_message())
+                : 'Database error. Please try again.';
             $affected_rows = -1;
         }
+    }
 
-        if ($affected_rows >= 0 && !$error) {
+    if ($affected_rows >= 0 && !$error) {
             require_once __DIR__.'/../includes/sms.php';
             $sms_sent = true;
             $sms_message = "Dear {$first_name}, your registration is complete. CRN: {$member['crn']}, Password: {$password}";
@@ -254,9 +269,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
                 ? 'Registration complete! SMS sent to member.'
                 : 'Registration complete! SMS could not be sent right now.';
             echo '<script>setTimeout(function(){ window.location.href = "' . BASE_URL . '/views/register_member.php"; }, 2000);</script>';
-        } elseif (!$error) {
-            $error = 'Database error. Please try again.';
-        }
+    } elseif (!$error) {
+        $error = 'Database error. Please try again.';
     }
 }
 
@@ -539,6 +553,7 @@ ob_start();
           <option value="Formal" <?=$member['employment_status']=='Formal'?'selected':''?>>Formal</option>
           <option value="Informal" <?=$member['employment_status']=='Informal'?'selected':''?>>Informal</option>
           <option value="Self Employed" <?=$member['employment_status']=='Self Employed'?'selected':''?>>Self Employed</option>
+          <option value="Unemployed" <?=$member['employment_status']=='Unemployed'?'selected':''?>>Unemployed</option>
           <option value="Retired" <?=$member['employment_status']=='Retired'?'selected':''?>>Retired</option>
           <option value="Student" <?=$member['employment_status']=='Student'?'selected':''?>>Student</option>
         </select>
@@ -605,9 +620,9 @@ ob_start();
         <input type="date" class="form-control" name="date_of_enrollment" id="date_of_enrollment" value="<?=htmlspecialchars($member['date_of_enrollment'])?>">
       </div>
       <div class="form-group col-md-4">
-        <label for="organizations">Organization(s)</label><span class="text-danger">*</span>
-      
-        <select class="form-control" name="organizations[]" id="organizations" multiple required>
+        <label for="organizations">Organization(s)</label>
+
+        <select class="form-control" name="organizations[]" id="organizations" multiple>
           <?php
           $orgs = $conn->query("SELECT id, name FROM organizations ORDER BY name ASC");
           $member_orgs = [];
@@ -619,7 +634,7 @@ ob_start();
             <option value="<?=$org['id']?>" <?=in_array($org['id'], $member_orgs)?'selected':''?>><?=htmlspecialchars($org['name'])?></option>
           <?php endwhile; ?>
         </select>
-        <small class="form-text text-muted">Hold Ctrl or use search to select multiple organizations.</small>
+        <small class="form-text text-muted">Selected organizations will be assigned immediately.</small>
       </div>
       <div class="form-group col-md-4">
         <label for="roles_of_serving">Roles of Serving</label>
@@ -661,13 +676,15 @@ $(function(){
     $('#roles_of_serving').select2({
         placeholder: 'Select roles of serving',
         allowClear: true,
-        width: '100%'
+        width: '100%',
+        minimumResultsForSearch: 0
     });
     // Enable Select2 for organizations if not already
     $('#organizations').select2({
         placeholder: 'Select organizations',
         allowClear: true,
-        width: '100%'
+        width: '100%',
+        minimumResultsForSearch: 0
     });
 });
 </script>

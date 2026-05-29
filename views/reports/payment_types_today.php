@@ -107,6 +107,9 @@ ob_start();
                         <span>Total Payment Type(s) for <?= date('l, F j, Y', strtotime($date)) ?><?= !$is_super_admin ? ' (My Payments)' : '' ?></span>
                     </div>
                     <div>
+                        <a href="<?= BASE_URL ?>/views/reports/details/payment_mode_vs_payment_type_report.php?start_date=<?= urlencode($date) ?>&end_date=<?= urlencode($date) ?>" class="btn btn-warning btn-sm mr-2">
+                            <i class="fas fa-table mr-1"></i> Mode vs Type Analysis
+                        </a>
                         <?php render_print_button('Print report'); ?>
                     </div>
                 </div>

@@ -1,6 +1,7 @@
 <?php
 ob_start();
 require_once __DIR__.'/../config/config.php';
+require_once __DIR__.'/../helpers/bible_class_capacity.php';
 
 function sync_member_user_account(mysqli $conn, int $member_id, string $full_name, string $email, string $phone, string $password_hash, string $photo, int $church_id): void
 {
@@ -80,6 +81,7 @@ if ($token !== '') {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
     // Gather all fields
+    $affected_rows = -1;
     $password = $_POST['password'] ?? '';
     $first_name = trim($_POST['first_name'] ?? '');
     $middle_name = trim($_POST['middle_name'] ?? '');
@@ -172,6 +174,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
         error_log('DEBUG: emergency_contacts: ' . print_r($emergency_contacts, true));
         $error = 'Please fill in all required fields (at least one emergency contact).';
     } else {
+        $target_class_id = (int) ($member['class_id'] ?? 0);
+        $capacity = bible_class_validate_capacity($conn, $target_class_id, $member_id);
+        if (!$capacity['allowed']) {
+            $error = 'Registration cannot be completed: ' . bible_class_capacity_error_message();
+        }
+    }
+
+    if (!$error) {
         $password_hash = password_hash($password, PASSWORD_DEFAULT);
         try {
             $conn->begin_transaction();
@@ -182,7 +192,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
                 $first_name, $middle_name, $last_name, $gender, $dob, $day_born, $place_of_birth, $address, $gps_address, $marital_status, $spouse_crn, $spouse_name, $marriage_type, $home_town, $region, $phone, $telephone, $email,
                 $employment_status, $profession, $occupation, $baptized, $confirmed, $date_of_baptism, $date_of_confirmation, $membership_status, $date_of_enrollment, $photo, $status, $password_hash, $member_id
             );
-            $stmt->execute();
+            if (!$stmt->execute()) {
+                throw new Exception($stmt->error ?: 'Failed to update member during registration.');
+            }
             $affected_rows = $stmt->affected_rows;
             $stmt->close();
 
@@ -232,11 +244,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
         } catch (Throwable $e) {
             $conn->rollback();
             error_log('Complete registration DB sync failed: ' . $e->getMessage());
-            $error = 'Database error. Please try again.';
+            $error = is_bible_class_capacity_error($e->getMessage())
+                ? ('Registration cannot be completed: ' . bible_class_capacity_error_message())
+                : 'Database error. Please try again.';
             $affected_rows = -1;
         }
+    }
 
-        if ($affected_rows >= 0 && !$error) {
+    if ($affected_rows >= 0 && !$error) {
             // Send SMS with CRN
             require_once __DIR__.'/../includes/sms.php';
             $login_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . $base_url . '/login.php';
@@ -258,9 +273,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
             $_SESSION['show_registration_toast'] = true;
             header('Location: ' . BASE_URL . '/views/member_dashboard.php');
             exit;
-        } elseif (!$error) {
-            $error = 'Database error. Please try again.';
-        }
+    } elseif (!$error) {
+        $error = 'Database error. Please try again.';
     }
 }
 

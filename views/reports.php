@@ -154,6 +154,12 @@ $report_categories = [
             'title' => 'Payments by User Report',
             'icon' => 'fa-user-circle',
             'desc' => 'Aggregate payments grouped by user (admin/staff).'
+        ],
+        [
+            'file' => BASE_URL.'/views/reports/details/payment_mode_vs_payment_type_report.php',
+            'title' => 'Payment Mode vs Type Report',
+            'icon' => 'fa-table',
+            'desc' => 'Cross-analysis of payment modes against payment types with filters.'
         ]
     ],
     'Health Reports' => [

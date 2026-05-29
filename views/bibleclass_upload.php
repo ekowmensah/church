@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/bible_class_capacity.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -57,7 +58,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['classes_file'])) {
                     if (!$stmt->execute()) {
                         $upload_errors[] = "Row $row_num: Insert failed (".$stmt->error.").";
                     } else {
-                        $count++;
+                        $class_id = (int) $conn->insert_id;
+                        if (!ensure_bible_class_rule($conn, $class_id)) {
+                            $upload_errors[] = "Row $row_num: Class created but failed to create capacity rule.";
+                        } else {
+                            $count++;
+                        }
                     }
                     $stmt->close();
                 }

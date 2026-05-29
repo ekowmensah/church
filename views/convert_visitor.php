@@ -3,6 +3,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/bible_class_capacity.php';
 
 $error = '';
 $success = '';
@@ -122,6 +123,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($stmt->num_rows > 0) {
             $error = 'A member with this phone or email already exists.';
         } else {
+            $capacity = bible_class_validate_capacity($conn, $class_id);
+            if (!$capacity['allowed']) {
+                $error = 'Member creation blocked: ' . bible_class_capacity_error_message();
+            }
+        }
+        if (!$error) {
             // Generate registration token
             $registration_token = bin2hex(random_bytes(16));
             // Insert new member
@@ -184,83 +191,105 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             } else {
-                $error = 'Database error. Please try again.';
+                $error = is_bible_class_capacity_error($stmt->error)
+                    ? ('Member creation blocked: ' . bible_class_capacity_error_message())
+                    : 'Database error. Please try again.';
             }
         }
     } else if ($editing) {
-        $stmt = $conn->prepare('UPDATE members SET first_name=?, middle_name=?, last_name=?, crn=?, phone=?, email=?, class_id=?, church_id=? WHERE id=?');
-        $stmt->bind_param('sssssssii', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $id);
-        $stmt->execute();
-        if ($stmt->affected_rows >= 0) {
-            $success = 'Member updated. (Notification would be sent here)';
-        } else {
-            $error = 'Database error. Please try again.';
+        $member_status = (string) ($member['status'] ?? '');
+        $current_class_id = (int) ($member['class_id'] ?? 0);
+        if ($member_status === 'active' && $current_class_id !== $class_id) {
+            $capacity = bible_class_validate_capacity($conn, $class_id, $id);
+            if (!$capacity['allowed']) {
+                $error = 'Member update blocked: ' . bible_class_capacity_error_message();
+            }
+        }
+
+        if (!$error) {
+            $stmt = $conn->prepare('UPDATE members SET first_name=?, middle_name=?, last_name=?, crn=?, phone=?, email=?, class_id=?, church_id=? WHERE id=?');
+            $stmt->bind_param('sssssssii', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $id);
+            $stmt->execute();
+            if ($stmt->affected_rows >= 0) {
+                $success = 'Member updated. (Notification would be sent here)';
+            } else if (is_bible_class_capacity_error($stmt->error)) {
+                $error = 'Member update blocked: ' . bible_class_capacity_error_message();
+            } else {
+                $error = 'Database error. Please try again.';
+            }
         }
     } else {
         // Fallback: normal add member (should not occur from convert_visitor)
-        $stmt = $conn->prepare('INSERT INTO members (first_name, middle_name, last_name, crn, phone, email, class_id, church_id, registration_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        $registration_token = bin2hex(random_bytes(16));
-        $stmt->bind_param('ssssssiss', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $registration_token);
-        $stmt->execute();
-        if ($stmt->affected_rows > 0) {
-            $registration_link = BASE_URL . '/views/complete_registration.php?token=' . urlencode($registration_token);
-            $success = 'Member added successfully!<br>Registration link: <a href="' . $registration_link . '" target="_blank">' . htmlspecialchars($registration_link) . '</a>';
-            // Send registration SMS if phone is provided
-            if (!empty($phone)) {
-                require_once __DIR__.'/../includes/sms.php';
-                require_once __DIR__.'/../includes/sms_templates.php';
-                try {
-                    $tpl = get_sms_template('registration_link', $conn);
-                    if ($tpl) {
-                        $msg = fill_sms_template($tpl['body'], [
-                            'name' => $first_name,
-                            'link' => $registration_link
-                        ]);
-                        error_log("Attempting to send SMS to $phone (member add)");
-                        $smsResult = send_sms($phone, $msg);
-                        error_log('SMS API Response (member add): ' . print_r($smsResult, true));
-                        $logResult = log_sms($phone, $msg, null, 'registration', null, [
-                            'member_name' => $first_name,
-                            'link' => $registration_link,
-                            'phone' => $phone,
-                            'template' => 'registration_link'
-                        ]);
-                        error_log('SMS Log Result (member add): ' . print_r($logResult, true));
-                        $smsSent = isset($smsResult['status']) && $smsResult['status'] === 'success';
-                        $smsError = $smsResult['message'] ?? 'Unknown error';
-                        error_log('SMS Send Status (member add): ' . ($smsSent ? 'Success' : 'Failed - ' . $smsError));
-                        if ($isAjax) {
-                            $response['sms_sent'] = $smsSent;
-                            $response['sms_error'] = $smsSent ? null : $smsError;
-                            if ($smsSent) {
-                                $success = 'Member added successfully! Registration link has been sent via SMS.<br>Registration link: <a href="' . $registration_link . '" target="_blank">' . htmlspecialchars($registration_link) . '</a>';
-                                $response['message'] = $success;
-                            } else {
-                                $success = 'Member added, but failed to send SMS: ' . $smsError . '<br>Please send this registration link manually: <a href="' . $registration_link . '" target="_blank">' . htmlspecialchars($registration_link) . '</a>';
-                                $response['message'] = $success;
+        $capacity = bible_class_validate_capacity($conn, $class_id);
+        if (!$capacity['allowed']) {
+            $error = 'Member creation blocked: ' . bible_class_capacity_error_message();
+        } else {
+            $stmt = $conn->prepare('INSERT INTO members (first_name, middle_name, last_name, crn, phone, email, class_id, church_id, registration_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $registration_token = bin2hex(random_bytes(16));
+            $stmt->bind_param('ssssssiss', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $registration_token);
+            $stmt->execute();
+            if ($stmt->affected_rows > 0) {
+                $registration_link = BASE_URL . '/views/complete_registration.php?token=' . urlencode($registration_token);
+                $success = 'Member added successfully!<br>Registration link: <a href="' . $registration_link . '" target="_blank">' . htmlspecialchars($registration_link) . '</a>';
+                // Send registration SMS if phone is provided
+                if (!empty($phone)) {
+                    require_once __DIR__.'/../includes/sms.php';
+                    require_once __DIR__.'/../includes/sms_templates.php';
+                    try {
+                        $tpl = get_sms_template('registration_link', $conn);
+                        if ($tpl) {
+                            $msg = fill_sms_template($tpl['body'], [
+                                'name' => $first_name,
+                                'link' => $registration_link
+                            ]);
+                            error_log("Attempting to send SMS to $phone (member add)");
+                            $smsResult = send_sms($phone, $msg);
+                            error_log('SMS API Response (member add): ' . print_r($smsResult, true));
+                            $logResult = log_sms($phone, $msg, null, 'registration', null, [
+                                'member_name' => $first_name,
+                                'link' => $registration_link,
+                                'phone' => $phone,
+                                'template' => 'registration_link'
+                            ]);
+                            error_log('SMS Log Result (member add): ' . print_r($logResult, true));
+                            $smsSent = isset($smsResult['status']) && $smsResult['status'] === 'success';
+                            $smsError = $smsResult['message'] ?? 'Unknown error';
+                            error_log('SMS Send Status (member add): ' . ($smsSent ? 'Success' : 'Failed - ' . $smsError));
+                            if ($isAjax) {
+                                $response['sms_sent'] = $smsSent;
+                                $response['sms_error'] = $smsSent ? null : $smsError;
+                                if ($smsSent) {
+                                    $success = 'Member added successfully! Registration link has been sent via SMS.<br>Registration link: <a href="' . $registration_link . '" target="_blank">' . htmlspecialchars($registration_link) . '</a>';
+                                    $response['message'] = $success;
+                                } else {
+                                    $success = 'Member added, but failed to send SMS: ' . $smsError . '<br>Please send this registration link manually: <a href="' . $registration_link . '" target="_blank">' . htmlspecialchars($registration_link) . '</a>';
+                                    $response['message'] = $success;
+                                }
+                            }
+                        } else {
+                            $errorMsg = 'Failed to load SMS template: registration_link';
+                            error_log($errorMsg);
+                            if ($isAjax) {
+                                $response['sms_sent'] = false;
+                                $response['sms_error'] = $errorMsg;
+                                $response['message'] = 'Member added, but failed to load SMS template. Please send the registration link manually.';
                             }
                         }
-                    } else {
-                        $errorMsg = 'Failed to load SMS template: registration_link';
+                    } catch (Exception $e) {
+                        $errorMsg = 'SMS sending exception (member add): ' . $e->getMessage();
                         error_log($errorMsg);
                         if ($isAjax) {
                             $response['sms_sent'] = false;
-                            $response['sms_error'] = $errorMsg;
-                            $response['message'] = 'Member added, but failed to load SMS template. Please send the registration link manually.';
+                            $response['sms_error'] = $e->getMessage();
+                            $response['message'] = 'Member added, but an error occurred while sending SMS: ' . $e->getMessage();
                         }
                     }
-                } catch (Exception $e) {
-                    $errorMsg = 'SMS sending exception (member add): ' . $e->getMessage();
-                    error_log($errorMsg);
-                    if ($isAjax) {
-                        $response['sms_sent'] = false;
-                        $response['sms_error'] = $e->getMessage();
-                        $response['message'] = 'Member added, but an error occurred while sending SMS: ' . $e->getMessage();
-                    }
                 }
+            } else if (is_bible_class_capacity_error($stmt->error)) {
+                $error = 'Member creation blocked: ' . bible_class_capacity_error_message();
+            } else {
+                $error = 'Database error. Please try again.';
             }
-        } else {
-            $error = 'Database error. Please try again.';
         }
     }
         $member = compact('first_name','middle_name','last_name','crn','phone','email','class_id','church_id');

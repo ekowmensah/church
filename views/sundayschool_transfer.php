@@ -3,6 +3,7 @@ session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/bible_class_capacity.php';
 
 // Authentication check
 if (!is_logged_in()) {
@@ -127,6 +128,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($stmt->num_rows > 0) {
         $error = 'A member with this CRN or phone already exists.';
     } else {
+        $capacity = bible_class_validate_capacity($conn, (int) $member['class_id']);
+        if (!$capacity['allowed']) {
+            $error = 'Transfer blocked: ' . bible_class_capacity_error_message();
+        }
+    }
+
+    if (!$error) {
         // Transfer photo file if present
         $photo_filename = $member['photo'];
         if ($photo_filename) {
@@ -166,7 +174,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: member_view.php?id='.$new_member_id);
             exit;
         } else {
-            $error = 'Failed to create member.';
+            $error = is_bible_class_capacity_error($stmt->error)
+                ? ('Transfer blocked: ' . bible_class_capacity_error_message())
+                : 'Failed to create member.';
         }
     }
 }
