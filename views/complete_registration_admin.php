@@ -2,25 +2,54 @@
 ob_start();
 session_start();
 require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../includes/admin_auth.php'; // restrict to admin roles
+require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
+require_once __DIR__.'/../helpers/spouse_link_helper.php';
+
+if (!is_logged_in()) {
+    header('Location: ' . BASE_URL . '/login.php');
+    exit;
+}
+
+$is_super_admin = (isset($_SESSION['user_id']) && (int) $_SESSION['user_id'] === 3)
+    || (isset($_SESSION['role_id']) && (int) $_SESSION['role_id'] === 1);
+if (!$is_super_admin && !has_permission('edit_member')) {
+    http_response_code(403);
+    if (file_exists(__DIR__.'/errors/403.php')) {
+        include __DIR__.'/errors/403.php';
+    } elseif (file_exists(dirname(__DIR__).'/views/errors/403.php')) {
+        include dirname(__DIR__).'/views/errors/403.php';
+    } else {
+        echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to edit member profiles.</p></div>';
+    }
+    exit;
+}
 
 function sync_member_user_account(mysqli $conn, int $member_id, string $full_name, string $email, string $phone, string $password_hash, string $photo, int $church_id): void
 {
     $user_id = 0;
 
-    $stmt = $conn->prepare('SELECT id FROM users WHERE member_id = ? LIMIT 1');
-    $stmt->bind_param('i', $member_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    if ($row = $result->fetch_assoc()) {
-        $user_id = (int) $row['id'];
+    // Prefer exact phone match first to avoid hitting unique-phone conflicts when
+    // a member has multiple legacy user rows.
+    if ($phone !== '') {
+        $stmt = $conn->prepare('SELECT id, member_id FROM users WHERE phone = ? LIMIT 1');
+        $stmt->bind_param('s', $phone);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        if ($row = $result->fetch_assoc()) {
+            $matched_member_id = isset($row['member_id']) ? (int) $row['member_id'] : 0;
+            if ($matched_member_id > 0 && $matched_member_id !== $member_id) {
+                throw new Exception('Phone number is already linked to another member account.');
+            }
+            $user_id = (int) $row['id'];
+        }
+        $stmt->close();
     }
-    $stmt->close();
 
-    if ($user_id <= 0 && $email !== '') {
-        $stmt = $conn->prepare('SELECT u.id FROM users u WHERE u.email = ? AND u.member_id IS NULL AND NOT EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id) LIMIT 1');
-        $stmt->bind_param('s', $email);
+    if ($user_id <= 0) {
+        $stmt = $conn->prepare('SELECT id FROM users WHERE member_id = ? ORDER BY id ASC LIMIT 1');
+        $stmt->bind_param('i', $member_id);
         $stmt->execute();
         $result = $stmt->get_result();
         if ($row = $result->fetch_assoc()) {
@@ -29,12 +58,16 @@ function sync_member_user_account(mysqli $conn, int $member_id, string $full_nam
         $stmt->close();
     }
 
-    if ($user_id <= 0 && $phone !== '') {
-        $stmt = $conn->prepare('SELECT u.id FROM users u WHERE u.phone = ? AND u.member_id IS NULL AND NOT EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id) LIMIT 1');
-        $stmt->bind_param('s', $phone);
+    if ($user_id <= 0 && $email !== '') {
+        $stmt = $conn->prepare('SELECT id, member_id FROM users WHERE email = ? LIMIT 1');
+        $stmt->bind_param('s', $email);
         $stmt->execute();
         $result = $stmt->get_result();
         if ($row = $result->fetch_assoc()) {
+            $matched_member_id = isset($row['member_id']) ? (int) $row['member_id'] : 0;
+            if ($matched_member_id > 0 && $matched_member_id !== $member_id) {
+                throw new Exception('Email is already linked to another member account.');
+            }
             $user_id = (int) $row['id'];
         }
         $stmt->close();
@@ -55,6 +88,107 @@ function sync_member_user_account(mysqli $conn, int $member_id, string $full_nam
     $stmt->close();
 }
 
+function normalize_html_date(?string $dateValue): string
+{
+    $dateValue = trim((string) $dateValue);
+    if ($dateValue === '' || $dateValue === '0000-00-00') {
+        return '';
+    }
+
+    $date = DateTime::createFromFormat('Y-m-d', $dateValue);
+    if ($date instanceof DateTime && $date->format('Y-m-d') === $dateValue) {
+        return $dateValue;
+    }
+
+    return '';
+}
+
+function normalize_nullable_date_for_db($dateValue): ?string
+{
+    $dateValue = trim((string) $dateValue);
+    if ($dateValue === '' || $dateValue === '0000-00-00') {
+        return null;
+    }
+
+    $date = DateTime::createFromFormat('Y-m-d', $dateValue);
+    if ($date instanceof DateTime && $date->format('Y-m-d') === $dateValue) {
+        return $dateValue;
+    }
+
+    return null;
+}
+
+function get_members_table_columns(mysqli $conn): array
+{
+    static $columns = null;
+    if (is_array($columns)) {
+        return $columns;
+    }
+
+    $columns = [];
+    $result = $conn->query('SHOW COLUMNS FROM members');
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            if (isset($row['Field'])) {
+                $columns[(string) $row['Field']] = true;
+            }
+        }
+        $result->free();
+    }
+
+    return $columns;
+}
+
+function get_members_enum_values(mysqli $conn, string $columnName): array
+{
+    static $enumCache = [];
+    if (isset($enumCache[$columnName])) {
+        return $enumCache[$columnName];
+    }
+
+    $values = [];
+    $stmt = $conn->prepare("
+        SELECT COLUMN_TYPE
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'members'
+          AND COLUMN_NAME = ?
+        LIMIT 1
+    ");
+    if ($stmt) {
+        $stmt->bind_param('s', $columnName);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $row = $result ? $result->fetch_assoc() : null;
+        $stmt->close();
+
+        $columnType = (string) ($row['COLUMN_TYPE'] ?? '');
+        if (preg_match("/^enum\\((.*)\\)$/i", $columnType, $m)) {
+            $rawItems = str_getcsv($m[1], ',', "'");
+            foreach ($rawItems as $item) {
+                $item = trim((string) $item);
+                if ($item !== '') {
+                    $values[] = $item;
+                }
+            }
+        }
+    }
+
+    $enumCache[$columnName] = $values;
+    return $values;
+}
+
+function bind_dynamic_params(mysqli_stmt $stmt, string $types, array &$values): bool
+{
+    $refs = [];
+    $refs[] = $types;
+    foreach ($values as $idx => $_) {
+        $refs[] = &$values[$idx];
+    }
+
+    return (bool) call_user_func_array([$stmt, 'bind_param'], $refs);
+}
+
 //require_once __DIR__.'/../includes/header.php';
 //require_once __DIR__.'/../includes/sidebar.php';
 
@@ -65,19 +199,28 @@ $base_url = rtrim(dirname(dirname($script_name)), '/\\');
 if ($base_url === '/' || $base_url === '' || $base_url === '.') $base_url = '';
 $logo_url = $base_url . '/assets/logo.png';
 
-$member_id = isset($_GET['id']) ? intval($_GET['id']) : intval($_POST['id'] ?? 0);
+    $member_id = isset($_GET['id']) ? intval($_GET['id']) : intval($_POST['id'] ?? 0);
+$is_admin_edit = (string) ($_GET['admin_edit'] ?? $_POST['admin_edit'] ?? '0') === '1';
+$page_title = $is_admin_edit ? 'Admin: Edit Member Profile' : 'Admin: Complete Member Registration';
+$submit_label = $is_admin_edit ? 'Save Profile Changes' : 'Complete Registration';
 $error = '';
 $success = '';
 $member = null;
+$is_password_required = !$is_admin_edit;
 if ($member_id > 0) {
-    $stmt = $conn->prepare('SELECT * FROM members WHERE id = ? AND status = "pending" LIMIT 1');
+    $member_lookup_sql = $is_admin_edit
+        ? 'SELECT * FROM members WHERE id = ? LIMIT 1'
+        : 'SELECT * FROM members WHERE id = ? AND status = "pending" LIMIT 1';
+    $stmt = $conn->prepare($member_lookup_sql);
     $stmt->bind_param('i', $member_id);
     $stmt->execute();
     $result = $stmt->get_result();
     $member = $result->fetch_assoc();
     $stmt->close();
     if (!$member) {
-        $error = 'Invalid or expired registration link.';
+        $error = $is_admin_edit ? 'Member not found.' : 'Invalid or expired registration link.';
+    } elseif ($is_admin_edit) {
+        $is_password_required = ((string) ($member['password_hash'] ?? '')) === '';
     }
 } else {
     $error = 'Missing member ID.';
@@ -104,10 +247,79 @@ foreach ($relationship_options as $relationship_option) {
     $relationship_options_html .= '<option value="' . $safe_relationship_option . '">' . $safe_relationship_option . '</option>';
 }
 
+$form_emergency_contacts = [];
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $posted_contacts = $_POST['emergency_contacts'] ?? [];
+    if (is_array($posted_contacts)) {
+        foreach ($posted_contacts as $posted_contact) {
+            if (!is_array($posted_contact)) {
+                continue;
+            }
+            $entry = [
+                'crn' => trim((string) ($posted_contact['crn'] ?? '')),
+                'name' => trim((string) ($posted_contact['name'] ?? '')),
+                'mobile' => trim((string) ($posted_contact['mobile'] ?? '')),
+                'relationship' => trim((string) ($posted_contact['relationship'] ?? '')),
+            ];
+            if ($entry['crn'] !== '' || $entry['name'] !== '' || $entry['mobile'] !== '' || $entry['relationship'] !== '') {
+                $form_emergency_contacts[] = $entry;
+            }
+        }
+    }
+} elseif ($member && $member_id > 0) {
+    $emergency_stmt = $conn->prepare('SELECT name, mobile, relationship FROM member_emergency_contacts WHERE member_id = ? ORDER BY id ASC');
+    if ($emergency_stmt) {
+        $emergency_stmt->bind_param('i', $member_id);
+        $emergency_stmt->execute();
+        $emergency_result = $emergency_stmt->get_result();
+        while ($emergency_result && ($emergency_row = $emergency_result->fetch_assoc())) {
+            $form_emergency_contacts[] = [
+                'crn' => '',
+                'name' => trim((string) ($emergency_row['name'] ?? '')),
+                'mobile' => trim((string) ($emergency_row['mobile'] ?? '')),
+                'relationship' => trim((string) ($emergency_row['relationship'] ?? '')),
+            ];
+        }
+        $emergency_stmt->close();
+    }
+}
+
+if (empty($form_emergency_contacts)) {
+    $form_emergency_contacts[] = ['crn' => '', 'name' => '', 'mobile' => '', 'relationship' => ''];
+}
+
+$spouse_name_value = trim((string) (($_SERVER['REQUEST_METHOD'] === 'POST')
+    ? ($_POST['spouse_name'] ?? '')
+    : ($member['spouse_name'] ?? '')));
+$spouse_crn_value = trim((string) (($_SERVER['REQUEST_METHOD'] === 'POST')
+    ? ($_POST['spouse_crn'] ?? '')
+    : ($member['spouse_crn'] ?? '')));
+$spouse_initial_value = '';
+$spouse_initial_label = '';
+
+if ($spouse_crn_value !== '') {
+    $spouse_initial_value = $spouse_crn_value;
+    $spouse_initial_label = $spouse_name_value !== '' ? ($spouse_name_value . ' (' . $spouse_crn_value . ')') : $spouse_crn_value;
+} elseif ($spouse_name_value !== '') {
+    $spouse_initial_value = $spouse_name_value;
+    $spouse_initial_label = $spouse_name_value;
+}
+
+$dob_input_value = normalize_html_date($member['dob'] ?? '');
+$date_of_baptism_input_value = normalize_html_date($member['date_of_baptism'] ?? '');
+$date_of_confirmation_input_value = normalize_html_date($member['date_of_confirmation'] ?? '');
+$date_of_enrollment_input_value = normalize_html_date($member['date_of_enrollment'] ?? '');
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
     // Gather all fields
     $affected_rows = -1;
+    $members_columns = get_members_table_columns($conn);
+    $status_enum_values = get_members_enum_values($conn, 'status');
+    $employment_enum_values = get_members_enum_values($conn, 'employment_status');
+    $membership_enum_values = get_members_enum_values($conn, 'membership_status');
     $password = $_POST['password'] ?? '';
+    $current_password_hash = (string) ($member['password_hash'] ?? '');
+    $is_password_required = !$is_admin_edit || $current_password_hash === '';
     $first_name = trim($_POST['first_name'] ?? '');
     $middle_name = trim($_POST['middle_name'] ?? '');
     $last_name = trim($_POST['last_name'] ?? '');
@@ -126,16 +338,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
     $phone = trim($_POST['phone'] ?? '');
     $telephone = trim($_POST['telephone'] ?? '');
     $email = trim($_POST['email'] ?? '');
-    $employment_status = $_POST['employment_status'] ?? '';
+    $employment_status = trim((string) ($_POST['employment_status'] ?? ''));
+    if (!empty($employment_enum_values) && !in_array($employment_status, $employment_enum_values, true)) {
+        if ($employment_status === 'Unemployed' && in_array('Informal', $employment_enum_values, true)) {
+            $employment_status = 'Informal';
+        } elseif (isset($member['employment_status']) && in_array((string) $member['employment_status'], $employment_enum_values, true)) {
+            $employment_status = (string) $member['employment_status'];
+        } else {
+            $employment_status = $employment_enum_values[0] ?? '';
+        }
+    }
     $profession = trim($_POST['profession'] ?? '');
     $occupation = trim($_POST['occupation'] ?? '');
     $baptized = $_POST['baptized'] ?? '';
     $confirmed = $_POST['confirmed'] ?? '';
-    $date_of_baptism = $_POST['date_of_baptism'] ?? null;
-    $date_of_confirmation = $_POST['date_of_confirmation'] ?? null;
-    $membership_status = $_POST['membership_status'] ?? '';
-    $date_of_enrollment = $_POST['date_of_enrollment'] ?? null;
-    $status = 'active';
+    $date_of_baptism = normalize_nullable_date_for_db($_POST['date_of_baptism'] ?? null);
+    $date_of_confirmation = normalize_nullable_date_for_db($_POST['date_of_confirmation'] ?? null);
+    $membership_status = isset($_POST['membership_status']) ? trim((string) $_POST['membership_status']) : '';
+    if ($membership_status === '') {
+        $membership_status = isset($member['membership_status']) && $member['membership_status'] !== '' ? $member['membership_status'] : null;
+    }
+    if ($membership_status !== null && !empty($membership_enum_values) && !in_array((string) $membership_status, $membership_enum_values, true)) {
+        if (isset($member['membership_status']) && in_array((string) $member['membership_status'], $membership_enum_values, true)) {
+            $membership_status = (string) $member['membership_status'];
+        } else {
+            $membership_status = null;
+        }
+    }
+    $date_of_enrollment = normalize_nullable_date_for_db($_POST['date_of_enrollment'] ?? null);
+    $status = $is_admin_edit ? (string) ($member['status'] ?? 'active') : 'active';
+    if ($status === '') {
+        $status = 'active';
+    }
+    if (!empty($status_enum_values) && !in_array($status, $status_enum_values, true)) {
+        if (in_array('active', $status_enum_values, true)) {
+            $status = 'active';
+        } else {
+            $status = $status_enum_values[0];
+        }
+    }
     $allowed_marriage_types = ['Customary', 'Ordinance', 'Blessing', 'Court Registration'];
     if ($marital_status !== 'Married') {
         $marriage_type = null;
@@ -193,30 +434,128 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
         return !empty($c['name']) && !empty($c['mobile']) && !empty($c['relationship']);
     });
     // Remove $membership_status from required fields (field removed from form)
-    if (!$first_name || !$last_name || !$gender || !$dob || !$place_of_birth || !$marital_status || ($marital_status === 'Married' && !$marriage_type) || !$home_town || !$region || !$phone || count($valid_contacts) === 0 || !$employment_status || !$baptized || !$confirmed || !$password) {
+    if (!$first_name || !$last_name || !$gender || !$dob || !$place_of_birth || !$marital_status || ($marital_status === 'Married' && !$marriage_type) || !$home_town || !$region || !$phone || count($valid_contacts) === 0 || !$employment_status || !$baptized || !$confirmed || ($is_password_required && !$password)) {
         // Debug output for troubleshooting
         error_log('DEBUG: valid_contacts count: ' . count($valid_contacts));
         error_log('DEBUG: emergency_contacts: ' . print_r($emergency_contacts, true));
         $error = 'Please fill in all required fields (at least one emergency contact).';
     } else {
+        // Enforce phone uniqueness at member level.
+        $stmt_phone_member = $conn->prepare('SELECT id, crn, first_name, last_name FROM members WHERE phone = ? AND id <> ? LIMIT 1');
+        if ($stmt_phone_member) {
+            $stmt_phone_member->bind_param('si', $phone, $member_id);
+            $stmt_phone_member->execute();
+            $res_phone_member = $stmt_phone_member->get_result();
+            $phone_conflict_member = $res_phone_member ? $res_phone_member->fetch_assoc() : null;
+            $stmt_phone_member->close();
+            if ($phone_conflict_member) {
+                $conflict_name = trim((string) (($phone_conflict_member['first_name'] ?? '') . ' ' . ($phone_conflict_member['last_name'] ?? '')));
+                $conflict_crn = trim((string) ($phone_conflict_member['crn'] ?? ''));
+                $error = 'Phone number already belongs to another member'
+                    . ($conflict_name !== '' ? ' (' . $conflict_name . ')' : '')
+                    . ($conflict_crn !== '' ? ' - CRN: ' . $conflict_crn : '')
+                    . '.';
+            }
+        }
+
+        // Enforce phone uniqueness at login-account level as well.
+        if (!$error) {
+            $stmt_phone_user = $conn->prepare('SELECT id, member_id FROM users WHERE phone = ? LIMIT 1');
+            if ($stmt_phone_user) {
+                $stmt_phone_user->bind_param('s', $phone);
+                $stmt_phone_user->execute();
+                $res_phone_user = $stmt_phone_user->get_result();
+                $phone_conflict_user = $res_phone_user ? $res_phone_user->fetch_assoc() : null;
+                $stmt_phone_user->close();
+                if ($phone_conflict_user) {
+                    $existing_user_member_id = isset($phone_conflict_user['member_id']) ? (int) $phone_conflict_user['member_id'] : 0;
+                    if ($existing_user_member_id > 0 && $existing_user_member_id !== $member_id) {
+                        $error = 'Phone number is already linked to another member account. Use a different number.';
+                    }
+                }
+            }
+        }
+
+        if ($error) {
+            // stop further checks
+        } else {
         $target_class_id = (int) ($member['class_id'] ?? 0);
         $capacity = bible_class_validate_capacity($conn, $target_class_id, $member_id);
         if (!$capacity['allowed']) {
             $error = 'Registration cannot be completed: ' . bible_class_capacity_error_message();
         }
+        }
     }
 
     if (!$error) {
-        $password_hash = password_hash($password, PASSWORD_DEFAULT);
+        $password_hash = $password !== '' ? password_hash($password, PASSWORD_DEFAULT) : $current_password_hash;
         try {
             $conn->begin_transaction();
 
-            $stmt = $conn->prepare('UPDATE members SET first_name=?, middle_name=?, last_name=?, gender=?, dob=?, day_born=?, place_of_birth=?, address=?, gps_address=?, marital_status=?, spouse_crn=?, spouse_name=?, marriage_type=?, home_town=?, region=?, phone=?, telephone=?, email=?, employment_status=?, profession=?, occupation=?, baptized=?, confirmed=?, date_of_baptism=?, date_of_confirmation=?, membership_status=?, date_of_enrollment=?, photo=?, status=?, password_hash=?, registration_token=NULL WHERE id=?');
-            $member_update_types = str_repeat('s', 30) . 'i';
-            $stmt->bind_param($member_update_types,
-                $first_name, $middle_name, $last_name, $gender, $dob, $day_born, $place_of_birth, $address, $gps_address, $marital_status, $spouse_crn, $spouse_name, $marriage_type, $home_town, $region, $phone, $telephone, $email,
-                $employment_status, $profession, $occupation, $baptized, $confirmed, $date_of_baptism, $date_of_confirmation, $membership_status, $date_of_enrollment, $photo, $status, $password_hash, $member_id
-            );
+            $update_pairs = [
+                ['first_name', $first_name],
+                ['middle_name', $middle_name],
+                ['last_name', $last_name],
+                ['gender', $gender],
+                ['dob', $dob],
+                ['day_born', $day_born],
+                ['place_of_birth', $place_of_birth],
+                ['address', $address],
+                ['gps_address', $gps_address],
+                ['marital_status', $marital_status],
+                ['spouse_crn', $spouse_crn],
+                ['spouse_name', $spouse_name],
+                ['marriage_type', $marriage_type],
+                ['home_town', $home_town],
+                ['region', $region],
+                ['phone', $phone],
+                ['telephone', $telephone],
+                ['email', $email],
+                ['employment_status', $employment_status],
+                ['profession', $profession],
+                ['occupation', $occupation],
+                ['baptized', $baptized],
+                ['confirmed', $confirmed],
+                ['date_of_baptism', $date_of_baptism],
+                ['date_of_confirmation', $date_of_confirmation],
+                ['membership_status', $membership_status],
+                ['date_of_enrollment', $date_of_enrollment],
+                ['photo', $photo],
+                ['status', $status],
+                ['password_hash', $password_hash],
+            ];
+
+            $update_sql_parts = [];
+            $member_update_values = [];
+            $member_update_types = '';
+            foreach ($update_pairs as [$column, $value]) {
+                if (!isset($members_columns[$column])) {
+                    continue;
+                }
+                $update_sql_parts[] = $column . ' = ?';
+                $member_update_values[] = $value;
+                $member_update_types .= 's';
+            }
+
+            if (!$is_admin_edit && isset($members_columns['registration_token'])) {
+                $update_sql_parts[] = 'registration_token = NULL';
+            }
+
+            if (empty($update_sql_parts)) {
+                throw new Exception('No updatable members columns found for this schema.');
+            }
+
+            $member_update_sql = 'UPDATE members SET ' . implode(', ', $update_sql_parts) . ' WHERE id = ?';
+            $stmt = $conn->prepare($member_update_sql);
+            if (!$stmt) {
+                throw new Exception($conn->error ?: 'Failed to prepare member update statement.');
+            }
+
+            $member_update_types .= 'i';
+            $member_update_values[] = $member_id;
+            if (!bind_dynamic_params($stmt, $member_update_types, $member_update_values)) {
+                throw new Exception($stmt->error ?: 'Failed to bind member update params.');
+            }
             if (!$stmt->execute()) {
                 throw new Exception($stmt->error ?: 'Failed to update member during registration.');
             }
@@ -269,14 +608,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
         } catch (Throwable $e) {
             $conn->rollback();
             error_log('Admin complete registration DB sync failed: ' . $e->getMessage());
-            $error = is_bible_class_capacity_error($e->getMessage())
-                ? ('Registration cannot be completed: ' . bible_class_capacity_error_message())
-                : 'Database error. Please try again.';
+            if (is_bible_class_capacity_error($e->getMessage())) {
+                $error = 'Registration cannot be completed: ' . bible_class_capacity_error_message();
+            } elseif ($is_admin_edit) {
+                $error = 'Database error: ' . $e->getMessage();
+            } else {
+                $error = 'Database error. Please try again.';
+            }
             $affected_rows = -1;
         }
     }
 
     if ($affected_rows >= 0 && !$error) {
+        $spouse_request_notice = '';
+        if (
+            isset($marital_status, $spouse_crn)
+            && $marital_status === 'Married'
+            && trim((string) $spouse_crn) !== ''
+        ) {
+            $spouse_request_result = spouse_link_create_request_by_crn($conn, (int) $member_id, (string) $spouse_crn);
+            if (!empty($spouse_request_result['ok']) && in_array(($spouse_request_result['status'] ?? ''), ['created', 'pending_exists'], true)) {
+                $spouse_request_notice = ' ' . ($spouse_request_result['message'] ?? '');
+            }
+        }
+
+        if ($is_admin_edit) {
+            $success = 'Member profile updated successfully.' . $spouse_request_notice;
+            echo '<script>setTimeout(function(){ window.location.href = "member_list.php"; }, 1500);</script>';
+        } else {
             require_once __DIR__.'/../includes/sms.php';
             $sms_sent = true;
             $sms_message = "Dear {$first_name}, your registration is complete. CRN: {$member['crn']}, Password: {$password}";
@@ -289,7 +648,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
             $success = $sms_sent
                 ? 'Registration complete! SMS sent to member.'
                 : 'Registration complete! SMS could not be sent right now.';
-            echo '<script>setTimeout(function(){ window.location.href = "' . BASE_URL . '/views/register_member.php"; }, 2000);</script>';
+            $success .= $spouse_request_notice;
+            echo '<script>setTimeout(function(){ window.location.href = "register_member.php"; }, 2000);</script>';
+        }
     } elseif (!$error) {
         $error = 'Database error. Please try again.';
     }
@@ -304,7 +665,7 @@ ob_start();
     <div class="col-lg-10">
         <div class="card shadow mb-4" style="background:#fff;z-index:2;position:relative;max-width:900px;margin:40px auto 40px auto;">
             <div class="card-header py-3 bg-primary text-white">
-                <h6 class="m-0 font-weight-bold">Admin: Complete Member Registration</h6>
+                <h6 class="m-0 font-weight-bold"><?= htmlspecialchars($page_title) ?></h6>
             </div>
             <div class="card-body">
                 <?php if ($error): ?>
@@ -313,8 +674,9 @@ ob_start();
                     <div class="alert alert-success mb-4"> <?= htmlspecialchars($success) ?> </div>
                 <?php endif; ?>
                 <?php if ($member && !$success): ?>
-                <form method="post" action="<?= htmlspecialchars(BASE_URL . '/views/complete_registration_admin.php?id=' . $member_id) ?>" enctype="multipart/form-data" autocomplete="off">
+                <form method="post" action="<?= htmlspecialchars('complete_registration_admin.php?id=' . $member_id . '&admin_edit=' . ($is_admin_edit ? '1' : '0')) ?>" enctype="multipart/form-data" autocomplete="off">
                     <input type="hidden" name="id" value="<?= (int) $member_id ?>">
+                    <input type="hidden" name="admin_edit" value="<?= $is_admin_edit ? '1' : '0' ?>">
 
 <!-- SECTION: Account Credentials -->
 <div class="card mb-4 border-primary">
@@ -371,14 +733,18 @@ ob_start();
         </div>
       </div>
       <div class="form-group col-md-4">
-        <label for="password">Create Password <span class="text-danger">*</span></label>
+        <label for="password">
+          <?= $is_admin_edit ? 'Change Password' : 'Create Password <span class="text-danger">*</span>' ?>
+        </label>
         <div class="input-group">
-          <input type="password" class="form-control" name="password" id="password" required minlength="6" autocomplete="new-password" placeholder="Create a password">
+          <input type="password" class="form-control" name="password" id="password" <?= $is_password_required ? 'required' : '' ?> minlength="6" autocomplete="new-password" placeholder="<?= $is_admin_edit ? 'Leave blank to keep current password' : 'Create a password' ?>">
           <div class="input-group-append">
             <span class="input-group-text toggle-password" style="cursor:pointer;"><i class="fa fa-eye"></i></span>
           </div>
         </div>
-        <small class="form-text text-muted">Password will be used to log in with your CRN as username.</small>
+        <small class="form-text text-muted">
+          <?= $is_admin_edit ? 'Leave blank to keep current password.' : 'Password will be used to log in with your CRN as username.' ?>
+        </small>
       </div>
     </div>
   </div>
@@ -416,7 +782,7 @@ ob_start();
       </div>
       <div class="form-group col-md-3">
         <label for="dob">Date of Birth <span class="text-danger">*</span></label>
-        <input type="date" class="form-control" name="dob" id="dob" value="<?=htmlspecialchars($member['dob'])?>" required>
+        <input type="date" class="form-control" name="dob" id="dob" value="<?=htmlspecialchars($dob_input_value)?>" required>
       </div>
       <div class="form-group col-md-3">
         <label for="day_born">Day Born</label>
@@ -469,8 +835,11 @@ ob_start();
         <label for="spouse_crn">Spouse Name or CRN</label>
         <select class="form-control" name="spouse_crn" id="spouse_crn">
           <option value="">-- Search by CRN/name/phone or type name --</option>
+          <?php if ($spouse_initial_value !== ''): ?>
+            <option value="<?= htmlspecialchars($spouse_initial_value) ?>" selected><?= htmlspecialchars($spouse_initial_label) ?></option>
+          <?php endif; ?>
         </select>
-        <input type="hidden" name="spouse_name" id="spouse_name" value="<?=htmlspecialchars($member['spouse_name'] ?? '')?>">
+        <input type="hidden" name="spouse_name" id="spouse_name" value="<?=htmlspecialchars($spouse_name_value)?>">
         <small class="form-text text-muted">Search for member or type spouse's full name</small>
       </div>
       <div class="form-group col-md-4" id="marriage-type-group" style="display:none;">
@@ -534,26 +903,38 @@ ob_start();
   <div class="card-header bg-light border-primary"><strong>Emergency Contacts</strong></div>
   <div class="card-body p-3">
     <div id="emergency-contacts-list">
+      <?php foreach ($form_emergency_contacts as $contact_idx_zero => $contact_entry): ?>
+      <?php
+        $contact_idx = $contact_idx_zero + 1;
+        $contact_crn = trim((string) ($contact_entry['crn'] ?? ''));
+        $contact_name = trim((string) ($contact_entry['name'] ?? ''));
+        $contact_mobile = trim((string) ($contact_entry['mobile'] ?? ''));
+        $contact_relationship = trim((string) ($contact_entry['relationship'] ?? ''));
+        $contact_select_value = $contact_crn !== '' ? $contact_crn : $contact_name;
+        $contact_select_label = $contact_name !== '' ? $contact_name : $contact_select_value;
+      ?>
       <div class="form-row emergency-contact-row">
         <div class="form-group col-md-7">
           <label>Contact Person (Name or Member CRN)</label>
-          <select class="form-control emergency-contact-search" name="emergency_contacts[1][crn]" data-idx="1">
+          <select class="form-control emergency-contact-search" name="emergency_contacts[<?= (int) $contact_idx ?>][crn]" data-idx="<?= (int) $contact_idx ?>">
             <option value="">-- Search by CRN/name/phone or type name --</option>
+            <?php if ($contact_select_value !== ''): ?>
+              <option value="<?= htmlspecialchars($contact_select_value) ?>" selected><?= htmlspecialchars($contact_select_label) ?></option>
+            <?php endif; ?>
           </select>
-          <input type="hidden" class="emergency-contact-name" name="emergency_contacts[1][name]" value="<?=htmlspecialchars($member['emergency_contact1_name'] ?? '')?>">
-          <input type="hidden" class="emergency-contact-mobile" name="emergency_contacts[1][mobile]" value="<?=htmlspecialchars($member['emergency_contact1_mobile'] ?? '')?>">
+          <input type="hidden" class="emergency-contact-name" name="emergency_contacts[<?= (int) $contact_idx ?>][name]" value="<?= htmlspecialchars($contact_name) ?>">
+          <input type="hidden" class="emergency-contact-mobile" name="emergency_contacts[<?= (int) $contact_idx ?>][mobile]" value="<?= htmlspecialchars($contact_mobile) ?>">
           <small class="form-text text-muted">Search for member or type full name</small>
         </div>
         <div class="form-group col-md-4">
           <label>Relationship</label>
-          <?php $selected_relationship_1 = trim((string) ($member['emergency_contact1_relationship'] ?? '')); ?>
-          <select class="form-control emergency-contact-relationship" name="emergency_contacts[1][relationship]" required>
+          <select class="form-control emergency-contact-relationship" name="emergency_contacts[<?= (int) $contact_idx ?>][relationship]" <?= $contact_idx === 1 ? 'required' : '' ?>>
             <option value="">-- Select Relationship --</option>
             <?php foreach ($relationship_options as $relationship_option): ?>
-              <option value="<?= htmlspecialchars($relationship_option) ?>" <?= $selected_relationship_1 === $relationship_option ? 'selected' : '' ?>><?= htmlspecialchars($relationship_option) ?></option>
+              <option value="<?= htmlspecialchars($relationship_option) ?>" <?= $contact_relationship === $relationship_option ? 'selected' : '' ?>><?= htmlspecialchars($relationship_option) ?></option>
             <?php endforeach; ?>
-            <?php if ($selected_relationship_1 !== '' && !in_array($selected_relationship_1, $relationship_options, true)): ?>
-              <option value="<?= htmlspecialchars($selected_relationship_1) ?>" selected><?= htmlspecialchars($selected_relationship_1) ?> (Custom)</option>
+            <?php if ($contact_relationship !== '' && !in_array($contact_relationship, $relationship_options, true)): ?>
+              <option value="<?= htmlspecialchars($contact_relationship) ?>" selected><?= htmlspecialchars($contact_relationship) ?> (Custom)</option>
             <?php endif; ?>
           </select>
         </div>
@@ -562,36 +943,7 @@ ob_start();
           <button class="btn btn-danger remove-emergency-contact" type="button" style="margin-top:2px;"><i class="fa fa-trash"></i></button>
         </div>
       </div>
-      <?php if (!empty($member['emergency_contact2_name']) || !empty($member['emergency_contact2_mobile']) || !empty($member['emergency_contact2_relationship'])): ?>
-      <div class="form-row emergency-contact-row">
-        <div class="form-group col-md-7">
-          <label>Contact Person (Name or Member CRN)</label>
-          <select class="form-control emergency-contact-search" name="emergency_contacts[2][crn]" data-idx="2">
-            <option value="">-- Search by CRN/name/phone or type name --</option>
-          </select>
-          <input type="hidden" class="emergency-contact-name" name="emergency_contacts[2][name]" value="<?=htmlspecialchars($member['emergency_contact2_name'])?>">
-          <input type="hidden" class="emergency-contact-mobile" name="emergency_contacts[2][mobile]" value="<?=htmlspecialchars($member['emergency_contact2_mobile'])?>">
-          <small class="form-text text-muted">Search for member or type full name</small>
-        </div>
-        <div class="form-group col-md-4">
-          <label>Relationship</label>
-          <?php $selected_relationship_2 = trim((string) ($member['emergency_contact2_relationship'] ?? '')); ?>
-          <select class="form-control emergency-contact-relationship" name="emergency_contacts[2][relationship]">
-            <option value="">-- Select Relationship --</option>
-            <?php foreach ($relationship_options as $relationship_option): ?>
-              <option value="<?= htmlspecialchars($relationship_option) ?>" <?= $selected_relationship_2 === $relationship_option ? 'selected' : '' ?>><?= htmlspecialchars($relationship_option) ?></option>
-            <?php endforeach; ?>
-            <?php if ($selected_relationship_2 !== '' && !in_array($selected_relationship_2, $relationship_options, true)): ?>
-              <option value="<?= htmlspecialchars($selected_relationship_2) ?>" selected><?= htmlspecialchars($selected_relationship_2) ?> (Custom)</option>
-            <?php endif; ?>
-          </select>
-        </div>
-        <div class="form-group col-md-1">
-          <label>&nbsp;</label>
-          <button class="btn btn-danger remove-emergency-contact" type="button" style="margin-top:2px;"><i class="fa fa-trash"></i></button>
-        </div>
-      </div>
-      <?php endif; ?>
+      <?php endforeach; ?>
     </div>
     <button class="btn btn-outline-primary mb-3" id="add-emergency-contact" type="button"><i class="fa fa-plus"></i> Add Emergency Contact</button>
   </div>
@@ -655,11 +1007,11 @@ ob_start();
       </div>
       <div class="form-group col-md-3" style="display:none;">
         <label for="date_of_baptism">Date of Baptism</label>
-        <input type="date" class="form-control" name="date_of_baptism" id="date_of_baptism" value="<?=htmlspecialchars($member['date_of_baptism'])?>">
+        <input type="date" class="form-control" name="date_of_baptism" id="date_of_baptism" value="<?=htmlspecialchars($date_of_baptism_input_value)?>">
       </div>
       <div class="form-group col-md-3" style="display:none;">
         <label for="date_of_confirmation">Date of Confirmation</label>
-        <input type="date" class="form-control" name="date_of_confirmation" id="date_of_confirmation" value="<?=htmlspecialchars($member['date_of_confirmation'])?>">
+        <input type="date" class="form-control" name="date_of_confirmation" id="date_of_confirmation" value="<?=htmlspecialchars($date_of_confirmation_input_value)?>">
       </div>
     </div>
   </div>
@@ -673,7 +1025,7 @@ ob_start();
 
       <div class="form-group col-md-4">
         <label for="date_of_enrollment">Date of Enrollment at Freeman Society</label>
-        <input type="date" class="form-control" name="date_of_enrollment" id="date_of_enrollment" value="<?=htmlspecialchars($member['date_of_enrollment'])?>">
+        <input type="date" class="form-control" name="date_of_enrollment" id="date_of_enrollment" value="<?=htmlspecialchars($date_of_enrollment_input_value)?>">
       </div>
       <div class="form-group col-md-4">
         <label for="organizations">Organization(s)</label>
@@ -885,12 +1237,13 @@ $(function(){
                     </div>
                   </div>
                 </div>
-                <?php endif; ?>
                 <div class="form-group text-center mt-4">
                     <button type="submit" class="btn btn-success btn-lg px-5">
-                        <i class="fa fa-check-circle mr-2"></i> Complete Registration
+                        <i class="fa fa-check-circle mr-2"></i> <?= htmlspecialchars($submit_label) ?>
                     </button>
                 </div>
+                </form>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -915,6 +1268,12 @@ $(function(){
         letter-spacing: 0;
         font-weight: 600;
         font-size: 0.82rem;
+        background-image: none !important;
+        padding-right: 0.1rem;
+    }
+    .gps-char.is-invalid,
+    .gps-char.is-valid {
+        background-image: none !important;
     }
     .gps-separator {
         font-size: 0.85rem;

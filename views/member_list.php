@@ -39,7 +39,7 @@ $sort_field = isset($_GET['sort']) && in_array($_GET['sort'], $allowed_sort_fiel
 $sort_direction = isset($_GET['order']) && $_GET['order'] === 'desc' ? 'DESC' : 'ASC';
 
 // Build WHERE clause with filters - EXCLUDE adherents (moved before export)
-$where_conditions = ["m.status = 'active'", "m.membership_status != 'Adherent'"];
+$where_conditions = ["m.status = 'active'", "(m.membership_status IS NULL OR m.membership_status != 'Adherent')"];
 $params = [];
 $param_types = "";
 

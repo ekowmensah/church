@@ -1,5 +1,9 @@
 <?php
 require_once __DIR__.'/../includes/member_auth.php';
+require_once __DIR__.'/../helpers/spouse_link_helper.php';
+if (file_exists(__DIR__.'/../helpers/permissions_v2.php')) {
+    require_once __DIR__.'/../helpers/permissions_v2.php';
+}
 
 // Only members can edit their own profile
 if (!isset($_SESSION['member_id'])) {
@@ -11,7 +15,7 @@ if (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1) {
     header('Location: member_form.php?id=' . intval($_SESSION['member_id']));
     exit;
 }
-if (has_permission('manage_members')) {
+if (function_exists('has_permission') && has_permission('manage_members')) {
     header('Location: member_form.php?id=' . intval($_SESSION['member_id']));
     exit;
 }
@@ -34,6 +38,32 @@ $emergency_contacts = [];
 $res = $conn->query('SELECT * FROM member_emergency_contacts WHERE member_id = '.$member_id);
 while ($row = $res->fetch_assoc()) $emergency_contacts[] = $row;
 
+$spouse_name_value = trim((string) ($member['spouse_name'] ?? ''));
+$spouse_crn_value = trim((string) ($member['spouse_crn'] ?? ''));
+$marriage_type_value = trim((string) ($member['marriage_type'] ?? ''));
+$marital_status_value = trim((string) ($member['marital_status'] ?? ''));
+$is_married_selected = strtolower($marital_status_value) === 'married';
+$show_spouse_fields = $is_married_selected || $spouse_crn_value !== '' || $spouse_name_value !== '' || $marriage_type_value !== '';
+$spouse_initial_value = '';
+$spouse_initial_label = '';
+if ($spouse_crn_value !== '') {
+    $spouse_initial_value = $spouse_crn_value;
+    $spouse_initial_label = $spouse_name_value !== '' ? ($spouse_name_value . ' (' . $spouse_crn_value . ')') : $spouse_crn_value;
+} elseif ($spouse_name_value !== '') {
+    $spouse_initial_value = $spouse_name_value;
+    $spouse_initial_label = $spouse_name_value;
+}
+
+function bind_member_profile_edit_params(mysqli_stmt $stmt, string $types, array &$values): bool
+{
+    $refs = [];
+    $refs[] = $types;
+    foreach ($values as $idx => $_) {
+        $refs[] = &$values[$idx];
+    }
+    return (bool) call_user_func_array([$stmt, 'bind_param'], $refs);
+}
+
 $success = $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
@@ -55,6 +85,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $address = trim($_POST['address'] ?? '');
     $gps_address = trim($_POST['gps_address'] ?? '');
     $marital_status = $_POST['marital_status'] ?? '';
+    $marriage_type = trim((string) ($_POST['marriage_type'] ?? ''));
+    $spouse_crn = trim((string) ($_POST['spouse_crn'] ?? ''));
+    $spouse_name = trim((string) ($_POST['spouse_name'] ?? ''));
     $home_town = trim($_POST['home_town'] ?? '');
     $region = trim($_POST['region'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
@@ -88,30 +121,76 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $photo = $filename;
         }
     }
+    $allowed_marriage_types = ['Customary', 'Ordinance', 'Blessing', 'Court Registration'];
+    if ($marital_status !== 'Married') {
+        $marriage_type = '';
+        $spouse_crn = '';
+        $spouse_name = '';
+    } elseif (!in_array($marriage_type, $allowed_marriage_types, true)) {
+        $marriage_type = '';
+    }
+
+    $spouse_name_value = $spouse_name;
+    $spouse_crn_value = $spouse_crn;
+    $marriage_type_value = $marriage_type;
+    $marital_status_value = $marital_status;
+    if ($spouse_crn_value !== '') {
+        $spouse_initial_value = $spouse_crn_value;
+        $spouse_initial_label = $spouse_name_value !== '' ? ($spouse_name_value . ' (' . $spouse_crn_value . ')') : $spouse_crn_value;
+    } elseif ($spouse_name_value !== '') {
+        $spouse_initial_value = $spouse_name_value;
+        $spouse_initial_label = $spouse_name_value;
+    } else {
+        $spouse_initial_value = '';
+        $spouse_initial_label = '';
+    }
+
     // If no new photo is uploaded or captured, $photo remains as the DB value
     $valid_contacts = array_filter($emergency_contacts_post, function($c) {
         return !empty($c['name']) && !empty($c['mobile']) && !empty($c['relationship']);
     });
-    if (!$first_name || !$last_name || !$gender || !$dob || !$place_of_birth || !$home_town || !$region || !$phone || count($valid_contacts) === 0 || !$employment_status) {
+    if (!$first_name || !$last_name || !$gender || !$dob || !$place_of_birth || !$home_town || !$region || !$phone || count($valid_contacts) === 0 || !$employment_status || ($marital_status === 'Married' && $marriage_type === '')) {
         $error = 'Please fill in all required fields (at least one emergency contact).';
     } else {
+        $update_pairs = [
+            ['first_name', $first_name],
+            ['middle_name', $middle_name],
+            ['last_name', $last_name],
+            ['gender', $gender],
+            ['dob', $dob],
+            ['day_born', $day_born],
+            ['place_of_birth', $place_of_birth],
+            ['address', $address],
+            ['gps_address', $gps_address],
+            ['marital_status', $marital_status],
+            ['spouse_crn', $spouse_crn],
+            ['spouse_name', $spouse_name],
+            ['marriage_type', $marriage_type],
+            ['home_town', $home_town],
+            ['region', $region],
+            ['phone', $phone],
+            ['telephone', $telephone],
+            ['email', $email],
+            ['employment_status', $employment_status],
+            ['profession', $profession],
+            ['photo', $photo],
+        ];
         if ($update_password) {
-            $update_sql = 'UPDATE members SET first_name=?, middle_name=?, last_name=?, gender=?, dob=?, day_born=?, place_of_birth=?, address=?, gps_address=?, marital_status=?, home_town=?, region=?, phone=?, telephone=?, email=?, employment_status=?, profession=?, photo=?, password_hash=? WHERE id=?';
-            $stmt = $conn->prepare($update_sql);
-            $stmt->bind_param(
-                'sssssssssssssssssssi',
-                $first_name, $middle_name, $last_name, $gender, $dob, $day_born, $place_of_birth, $address, $gps_address, $marital_status, $home_town, $region, $phone, $telephone, $email,
-                $employment_status, $profession, $photo, $password_hash, $member_id
-            );
-        } else {
-            $update_sql = 'UPDATE members SET first_name=?, middle_name=?, last_name=?, gender=?, dob=?, day_born=?, place_of_birth=?, address=?, gps_address=?, marital_status=?, home_town=?, region=?, phone=?, telephone=?, email=?, employment_status=?, profession=?, photo=? WHERE id=?';
-            $stmt = $conn->prepare($update_sql);
-            $stmt->bind_param(
-                'ssssssssssssssssssi',
-                $first_name, $middle_name, $last_name, $gender, $dob, $day_born, $place_of_birth, $address, $gps_address, $marital_status, $home_town, $region, $phone, $telephone, $email,
-                $employment_status, $profession, $photo, $member_id
-            );
+            $update_pairs[] = ['password_hash', $password_hash];
         }
+
+        $set_sql = [];
+        $update_values = [];
+        foreach ($update_pairs as [$column, $value]) {
+            $set_sql[] = $column . ' = ?';
+            $update_values[] = $value;
+        }
+        $update_sql = 'UPDATE members SET ' . implode(', ', $set_sql) . ' WHERE id = ?';
+        $stmt = $conn->prepare($update_sql);
+        $types = str_repeat('s', count($update_values)) . 'i';
+        $update_values[] = $member_id;
+        bind_member_profile_edit_params($stmt, $types, $update_values);
+
         if ($stmt->execute()) {
             // Update SMS notifications opt-in/out
             $stmt_sms = $conn->prepare('UPDATE members SET sms_notifications_enabled = ? WHERE id = ?');
@@ -136,6 +215,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $org_stmt->execute();
                 }
                 $org_stmt->close();
+            }
+            if ($marital_status === 'Married' && $spouse_crn !== '') {
+                spouse_link_create_request_by_crn($conn, (int) $member_id, (string) $spouse_crn);
             }
             header('Location: ' . BASE_URL . '/views/member_profile.php');
             exit;
@@ -273,12 +355,35 @@ ob_start();
                             <label for="marital_status">Marital Status <span class="text-danger">*</span></label>
                             <select class="form-control" name="marital_status" id="marital_status" required>
                                 <option value="">Select</option>
-                                <option value="Single" <?=($member['marital_status']=='Single')?'selected':''?>>Single</option>
-                                <option value="Married" <?=($member['marital_status']=='Married')?'selected':''?>>Married</option>
-                                <option value="Divorced" <?=($member['marital_status']=='Divorced')?'selected':''?>>Divorced</option>
-                                <option value="Widowed" <?=($member['marital_status']=='Widowed')?'selected':''?>>Widowed</option>
+                                <option value="Single" <?=strtolower($marital_status_value)==='single'?'selected':''?>>Single</option>
+                                <option value="Married" <?=strtolower($marital_status_value)==='married'?'selected':''?>>Married</option>
+                                <option value="Divorced" <?=strtolower($marital_status_value)==='divorced'?'selected':''?>>Divorced</option>
+                                <option value="Widowed" <?=strtolower($marital_status_value)==='widowed'?'selected':''?>>Widowed</option>
                             </select>
                         </div>
+                        <div class="form-group col-md-4" id="spouse-group" style="<?= $show_spouse_fields ? '' : 'display:none;' ?>">
+                            <label for="spouse_crn">Spouse Name or CRN</label>
+                            <select class="form-control" name="spouse_crn" id="spouse_crn">
+                                <option value="">-- Search by CRN/name/phone or type name --</option>
+                                <?php if ($spouse_initial_value !== ''): ?>
+                                    <option value="<?= htmlspecialchars($spouse_initial_value) ?>" selected><?= htmlspecialchars($spouse_initial_label) ?></option>
+                                <?php endif; ?>
+                            </select>
+                            <input type="hidden" name="spouse_name" id="spouse_name" value="<?= htmlspecialchars($spouse_name_value) ?>">
+                            <small class="form-text text-muted">Selecting an existing member sends a spouse approval request.</small>
+                        </div>
+                        <div class="form-group col-md-4" id="marriage-type-group" style="<?= $show_spouse_fields ? '' : 'display:none;' ?>">
+                            <label for="marriage_type">Nature of Marriage <span class="text-danger">*</span></label>
+                            <select class="form-control" name="marriage_type" id="marriage_type">
+                                <option value="">-- Select --</option>
+                                <option value="Customary" <?=$marriage_type_value==='Customary'?'selected':''?>>Customary</option>
+                                <option value="Ordinance" <?=$marriage_type_value==='Ordinance'?'selected':''?>>Ordinance</option>
+                                <option value="Blessing" <?=$marriage_type_value==='Blessing'?'selected':''?>>Blessing</option>
+                                <option value="Court Registration" <?=$marriage_type_value==='Court Registration'?'selected':''?>>Court Registration</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
                         <div class="form-group col-md-4">
                             <label for="home_town">Home Town <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" name="home_town" id="home_town" value="<?=htmlspecialchars($member['home_town'])?>" required>
@@ -380,6 +485,8 @@ ob_start();
     </div>
 </div>
 <?php $page_content = ob_get_clean(); include '../includes/layout.php'; ?>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.full.min.js"></script>
 <!-- Camera Modal -->
 <div class="modal fade" id="cameraModal" tabindex="-1" role="dialog" aria-labelledby="cameraModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered" role="document">
@@ -404,6 +511,19 @@ ob_start();
 
 <script>
 $(function(){
+    function normalizeBaseUrl(base) {
+        if (typeof base !== 'string') return '';
+        base = base.trim();
+        if (base === '' || base === '/') return '';
+        return base.replace(/\/+$/, '');
+    }
+    function joinBasePath(base, path) {
+        var cleanBase = normalizeBaseUrl(base);
+        var cleanPath = (path || '').replace(/^\/+/, '');
+        return (cleanBase ? cleanBase + '/' : '/') + cleanPath;
+    }
+    var BASE = normalizeBaseUrl('<?= htmlspecialchars((string) BASE_URL, ENT_QUOTES, 'UTF-8') ?>');
+
     // Emergency contacts dynamic add/remove
     let ecIndex = $('#emergency-contacts-list .emergency-contact-row').length;
     $('#add-ec-btn').on('click', function(){
@@ -427,6 +547,63 @@ $(function(){
     $(document).on('click', '.remove-ec-btn', function(){
         $(this).closest('.emergency-contact-row').remove();
     });
+
+    // Spouse search + marriage fields
+    function toggleMarriageFields() {
+        if ($('#marital_status').val() === 'Married') {
+            $('#spouse-group').show();
+            $('#marriage-type-group').show();
+            $('#marriage_type').prop('required', true);
+        } else {
+            $('#spouse-group').hide();
+            $('#marriage-type-group').hide();
+            $('#marriage_type').prop('required', false).val('');
+            $('#spouse_name').val('');
+            if ($('#spouse_crn').data('select2')) {
+                $('#spouse_crn').val(null).trigger('change');
+            } else {
+                $('#spouse_crn').val('');
+            }
+        }
+    }
+
+    if ($('#spouse_crn').length) {
+        $('#spouse_crn').select2({
+            placeholder: 'Search by CRN, name, or phone',
+            allowClear: true,
+            width: '100%',
+            tags: true,
+            minimumInputLength: 2,
+            ajax: {
+                url: joinBasePath(BASE, '/api/search_member_registration.php'),
+                dataType: 'json',
+                delay: 250,
+                data: function (params) {
+                    return { q: params.term };
+                },
+                processResults: function (data) {
+                    return { results: data.results || [] };
+                }
+            }
+        });
+
+        $('#spouse_crn').on('select2:select', function (e) {
+            var data = e.params.data || {};
+            if (data.full_name) {
+                $('#spouse_name').val(data.full_name);
+            } else {
+                $('#spouse_name').val(data.text || data.id || '');
+            }
+        });
+
+        $('#spouse_crn').on('select2:clear', function () {
+            $('#spouse_name').val('');
+        });
+    }
+
+    $('#marital_status').on('change', toggleMarriageFields);
+    toggleMarriageFields();
+
     // Camera/photo preview logic (reuse from complete_registration.js if needed)
     $('#camera-btn').on('click', function(e){
         e.preventDefault();

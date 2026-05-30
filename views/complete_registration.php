@@ -2,6 +2,7 @@
 ob_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
+require_once __DIR__.'/../helpers/spouse_link_helper.php';
 
 function sync_member_user_account(mysqli $conn, int $member_id, string $full_name, string $email, string $phone, string $password_hash, string $photo, int $church_id): void
 {
@@ -273,6 +274,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
     }
 
     if ($affected_rows >= 0 && !$error) {
+            if ($marital_status === 'Married' && trim((string) $spouse_crn) !== '') {
+                $spouse_request_result = spouse_link_create_request_by_crn($conn, (int) $member_id, (string) $spouse_crn);
+                if (empty($spouse_request_result['ok'])) {
+                    error_log('Spouse request creation failed during self-registration: ' . ($spouse_request_result['message'] ?? 'Unknown error'));
+                }
+            }
+
             // Send SMS with CRN
             require_once __DIR__.'/../includes/sms.php';
             $login_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . $base_url . '/login.php';
@@ -919,6 +927,12 @@ $(function(){
         letter-spacing: 0;
         font-weight: 600;
         font-size: 0.82rem;
+        background-image: none !important;
+        padding-right: 0.1rem;
+    }
+    .gps-char.is-invalid,
+    .gps-char.is-valid {
+        background-image: none !important;
     }
     .gps-separator {
         font-size: 0.85rem;

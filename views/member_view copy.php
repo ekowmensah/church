@@ -70,42 +70,10 @@ $format_member_date = static function (?string $dateValue, string $format = 'M d
     return date($format, $timestamp);
 };
 
-$format_member_age = static function (?string $dobValue): string {
-    $dobValue = trim((string) $dobValue);
-    if ($dobValue === '' || $dobValue === '0000-00-00') {
-        return 'N/A';
-    }
-
-    $birthDate = DateTime::createFromFormat('Y-m-d', $dobValue);
-    if (!($birthDate instanceof DateTime) || $birthDate->format('Y-m-d') !== $dobValue) {
-        return 'N/A';
-    }
-
-    $today = new DateTime('today');
-    if ($birthDate > $today) {
-        return 'N/A';
-    }
-
-    $age = $birthDate->diff($today);
-    return sprintf(
-        '%d year%s, %d month%s, %d day%s',
-        $age->y,
-        $age->y === 1 ? '' : 's',
-        $age->m,
-        $age->m === 1 ? '' : 's',
-        $age->d,
-        $age->d === 1 ? '' : 's'
-    );
-};
-
-$dob_age_text = $format_member_age($member['dob'] ?? null);
-
 $spouse_display_name = trim((string) ($member['spouse_name'] ?? ''));
 $spouse_crn = trim((string) ($member['spouse_crn'] ?? ''));
-$spouse_member_id = 0;
-$spouse_photo_url = BASE_URL . '/assets/img/undraw_profile.svg';
 if ($spouse_display_name === '' && $spouse_crn !== '') {
-    $spouse_stmt = $conn->prepare('SELECT id, first_name, middle_name, last_name, photo FROM members WHERE crn = ? LIMIT 1');
+    $spouse_stmt = $conn->prepare('SELECT first_name, middle_name, last_name FROM members WHERE crn = ? LIMIT 1');
     if ($spouse_stmt) {
         $spouse_stmt->bind_param('s', $spouse_crn);
         $spouse_stmt->execute();
@@ -114,37 +82,14 @@ if ($spouse_display_name === '' && $spouse_crn !== '') {
         $spouse_stmt->close();
 
         if ($spouse_member) {
-            $spouse_member_id = (int) ($spouse_member['id'] ?? 0);
             $spouse_display_name = trim(implode(' ', array_filter([
                 (string) ($spouse_member['first_name'] ?? ''),
                 (string) ($spouse_member['middle_name'] ?? ''),
                 (string) ($spouse_member['last_name'] ?? ''),
             ])));
-            $spouse_photo = trim((string) ($spouse_member['photo'] ?? ''));
-            if ($spouse_photo !== '' && file_exists(__DIR__.'/../uploads/members/' . $spouse_photo)) {
-                $spouse_photo_url = BASE_URL . '/uploads/members/' . rawurlencode($spouse_photo) . '?v=' . time();
-            }
         }
     }
 }
-
-if ($spouse_member_id <= 0 && $spouse_crn !== '') {
-    $spouse_id_stmt = $conn->prepare('SELECT id, photo FROM members WHERE crn = ? LIMIT 1');
-    if ($spouse_id_stmt) {
-        $spouse_id_stmt->bind_param('s', $spouse_crn);
-        $spouse_id_stmt->execute();
-        $spouse_id_result = $spouse_id_stmt->get_result();
-        $spouse_id_row = $spouse_id_result ? $spouse_id_result->fetch_assoc() : null;
-        $spouse_member_id = (int) ($spouse_id_row['id'] ?? 0);
-        $spouse_photo = trim((string) ($spouse_id_row['photo'] ?? ''));
-        if ($spouse_photo !== '' && file_exists(__DIR__.'/../uploads/members/' . $spouse_photo)) {
-            $spouse_photo_url = BASE_URL . '/uploads/members/' . rawurlencode($spouse_photo) . '?v=' . time();
-        }
-        $spouse_id_stmt->close();
-    }
-}
-
-$has_spouse_reference = ($spouse_display_name !== '' || $spouse_crn !== '');
 
 $has_transfer_details = ((int) ($member['transfer_from_other_chapel'] ?? 0) === 1)
     || trim((string) ($member['transfer_diocese'] ?? '')) !== ''
@@ -152,18 +97,9 @@ $has_transfer_details = ((int) ($member['transfer_from_other_chapel'] ?? 0) === 
     || trim((string) ($member['transfer_society'] ?? '')) !== ''
     || trim((string) ($member['superintendent_name'] ?? '')) !== '';
 
-// Fetch emergency contacts (+ linked member if mobile belongs to a known member)
-$contacts_stmt = $conn->prepare("
-    SELECT mec.*,
-           m.id AS linked_member_id,
-           m.crn AS linked_member_crn,
-           CONCAT_WS(' ', m.first_name, m.middle_name, m.last_name) AS linked_member_name
-    FROM member_emergency_contacts mec
-    LEFT JOIN members m ON m.phone = mec.mobile AND m.id <> ?
-    WHERE mec.member_id = ?
-    ORDER BY mec.id
-");
-$contacts_stmt->bind_param('ii', $id, $id);
+// Fetch emergency contacts
+$contacts_stmt = $conn->prepare("SELECT * FROM member_emergency_contacts WHERE member_id = ? ORDER BY id");
+$contacts_stmt->bind_param('i', $id);
 $contacts_stmt->execute();
 $contacts = $contacts_stmt->get_result();
 
@@ -210,14 +146,6 @@ ob_start();
     border: 4px solid rgba(255,255,255,0.3);
     object-fit: cover;
     box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-}
-
-.spouse-avatar-thumb {
-    width: 56px;
-    height: 56px;
-    object-fit: cover;
-    border-radius: 50%;
-    border: 2px solid #dee2e6;
 }
 
 .member-avatar-placeholder {
@@ -537,12 +465,7 @@ ob_start();
                     </div>
                     <div class="info-item">
                         <div class="info-label"><i class="fas fa-birthday-cake mr-2"></i>Date of Birth:</div>
-                        <div class="info-value">
-                            <?= htmlspecialchars($format_member_date($member['dob'] ?? null)) ?>
-                            <?php if ($dob_age_text !== 'N/A'): ?>
-                                <small class="text-muted ml-1">(Age: <?= htmlspecialchars($dob_age_text) ?>)</small>
-                            <?php endif; ?>
-                        </div>
+                        <div class="info-value"><?= htmlspecialchars($format_member_date($member['dob'] ?? null)) ?></div>
                     </div>
                     <div class="info-item">
                         <div class="info-label"><i class="fas fa-calendar-day mr-2"></i>Day Born:</div>
@@ -567,29 +490,10 @@ ob_start();
                     <div class="info-item">
                         <div class="info-label"><i class="fas fa-user-friends mr-2"></i>Spouse:</div>
                         <div class="info-value">
-                            <div class="d-flex align-items-center">
-                                <?php if ($has_spouse_reference): ?>
-                                    <button type="button" class="btn p-0 border-0 bg-transparent mr-3" data-toggle="modal" data-target="#spousePhotoModal" title="Expand spouse photo">
-                                        <img src="<?= htmlspecialchars($spouse_photo_url) ?>" alt="Spouse photo" class="spouse-avatar-thumb">
-                                    </button>
-                                <?php endif; ?>
-                                <div>
-                                    <?= htmlspecialchars($spouse_display_name !== '' ? $spouse_display_name : 'N/A') ?>
-                                    <?php if ($spouse_crn !== ''): ?>
-                                        <small class="text-muted d-block">CRN: <?= htmlspecialchars($spouse_crn) ?></small>
-                                    <?php endif; ?>
-                                    <?php if ($has_spouse_reference): ?>
-                                        <button type="button" class="btn btn-link btn-sm p-0 mt-1" data-toggle="modal" data-target="#spousePhotoModal">
-                                            <i class="fas fa-search-plus mr-1"></i>Expand Photo
-                                        </button>
-                                    <?php endif; ?>
-                                    <?php if ($spouse_member_id > 0): ?>
-                                        <a href="<?= BASE_URL ?>/views/member_view.php?id=<?= (int) $spouse_member_id ?>" class="d-inline-block mt-1">
-                                            <i class="fas fa-external-link-alt mr-1"></i>View Member
-                                        </a>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
+                            <?= htmlspecialchars($spouse_display_name !== '' ? $spouse_display_name : 'N/A') ?>
+                            <?php if ($spouse_crn !== ''): ?>
+                                <small class="text-muted d-block">CRN: <?= htmlspecialchars($spouse_crn) ?></small>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -769,16 +673,6 @@ ob_start();
                                         <i class="fas fa-phone mr-1"></i><?= htmlspecialchars($contact['mobile']) ?><br>
                                         <i class="fas fa-heart mr-1"></i><?= htmlspecialchars($contact['relationship']) ?>
                                     </small>
-                                    <?php if (!empty($contact['linked_member_id'])): ?>
-                                        <div class="mt-1">
-                                            <a href="<?= BASE_URL ?>/views/member_view.php?id=<?= (int) $contact['linked_member_id'] ?>">
-                                                <i class="fas fa-external-link-alt mr-1"></i>View Member
-                                                <?php if (!empty($contact['linked_member_crn'])): ?>
-                                                    (<?= htmlspecialchars($contact['linked_member_crn']) ?>)
-                                                <?php endif; ?>
-                                            </a>
-                                        </div>
-                                    <?php endif; ?>
                                 </div>
                             </div>
                             <?php $contact_num++; ?>
@@ -912,29 +806,6 @@ ob_start();
 </div>
 </div>
 
-<?php if ($has_spouse_reference): ?>
-<div class="modal fade" id="spousePhotoModal" tabindex="-1" role="dialog" aria-labelledby="spousePhotoModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="spousePhotoModalLabel">
-          <?= htmlspecialchars($spouse_display_name !== '' ? $spouse_display_name : 'Spouse') ?>
-          <?php if ($spouse_crn !== ''): ?>
-            <small class="text-muted">(<?= htmlspecialchars($spouse_crn) ?>)</small>
-          <?php endif; ?>
-        </h5>
-        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-          <span aria-hidden="true">&times;</span>
-        </button>
-      </div>
-      <div class="modal-body text-center">
-        <img src="<?= htmlspecialchars($spouse_photo_url) ?>" alt="Spouse image" class="img-fluid rounded shadow-sm" style="max-height:70vh;object-fit:contain;">
-      </div>
-    </div>
-  </div>
-</div>
-<?php endif; ?>
-
 <!-- Health Records Modal -->
 <div class="modal fade" id="healthModal" tabindex="-1" role="dialog" aria-labelledby="healthModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
@@ -1012,3 +883,4 @@ $(document).ready(function() {
     }, 'json');
 });
 </script>
+

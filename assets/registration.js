@@ -237,9 +237,13 @@ $(document).ready(function () {
 
         fields.each(function (index, fieldEl) {
             var field = $(fieldEl);
+            field.on('focus', function () {
+                field.removeClass('is-invalid');
+            });
             field.on('input', function () {
                 var cleaned = sanitize(index, field.val());
                 field.val(cleaned);
+                field.removeClass('is-invalid');
                 syncHiddenFromParts();
                 if (cleaned.length === 1 && index < fields.length - 1) {
                     $(fields[index + 1]).focus().select();
@@ -281,6 +285,7 @@ $(document).ready(function () {
                 var chars = parseInitialValue(combined);
                 fields.each(function (i, el) {
                     $(el).val(chars[i] || '');
+                    $(el).removeClass('is-invalid');
                 });
                 syncHiddenFromParts();
                 $(fields[Math.min(expectedLength - 1, fields.length - 1)]).focus().select();

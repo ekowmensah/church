@@ -388,7 +388,7 @@ ob_start();
                                 $types = [];
                                 try {
                                     if ($filter_by_user) {
-                                        // Non-admin/cashier: show all payment types, scoped to own records
+                                        // Non-admin/cashier: show only payment types with transactions, scoped to own records
                                         $sql = "SELECT pt.name AS payment_type, COALESCE(SUM(p.amount),0) AS total_amount, COALESCE(COUNT(p.id),0) AS count
                                                 FROM payment_types pt
                                                 LEFT JOIN payments p
@@ -396,17 +396,19 @@ ob_start();
                                                  AND DATE(p.payment_date) = ?
                                                  AND p.recorded_by = ?
                                                 GROUP BY pt.id, pt.name
+                                                HAVING COUNT(p.id) > 0
                                                 ORDER BY total_amount DESC, pt.name ASC";
                                         $stmt = $conn->prepare($sql);
                                         $stmt->bind_param('si', $date, $current_user_id);
                                     } else {
-                                        // Admin: show all payment types with overall totals
+                                        // Admin: show only payment types with transactions
                                         $sql = "SELECT pt.name AS payment_type, COALESCE(SUM(p.amount),0) AS total_amount, COALESCE(COUNT(p.id),0) AS count
                                                 FROM payment_types pt
                                                 LEFT JOIN payments p
                                                   ON p.payment_type_id = pt.id
                                                  AND DATE(p.payment_date) = ?
                                                 GROUP BY pt.id, pt.name
+                                                HAVING COUNT(p.id) > 0
                                                 ORDER BY total_amount DESC, pt.name ASC";
                                         $stmt = $conn->prepare($sql);
                                         $stmt->bind_param('s', $date);
