@@ -122,6 +122,206 @@ $(document).ready(function () {
         }
     });
 
+    // 3b. GPS Address segmented input sync
+    function initializeGpsAddressFields() {
+        var hiddenField = $('#gps_address');
+        var fields = $('.gps-char');
+        if (!hiddenField.length || !fields.length) {
+            return;
+        }
+
+        fields = fields.sort(function (a, b) {
+            return Number($(a).data('index')) - Number($(b).data('index'));
+        });
+
+        var expectedLength = 10;
+        var letterCount = 2;
+        var middleStart = 2;
+        var middleEnd = 6; // exclusive
+        var lastStart = 6;
+
+        function isLetterIndex(index) {
+            return index < letterCount;
+        }
+
+        function sanitize(index, value) {
+            var raw = (value || '').toUpperCase();
+            var cleaned = isLetterIndex(index)
+                ? raw.replace(/[^A-Z]/g, '')
+                : raw.replace(/\D/g, '');
+            return cleaned.substring(0, 1);
+        }
+
+        function parseInitialValue(value) {
+            var source = (value || '').trim().toUpperCase();
+            if (source === '') {
+                return new Array(expectedLength).fill('');
+            }
+
+            var hyphenMatch = source.match(/^([A-Z]{2})-(\d{3,4})-(\d{4})$/);
+            if (hyphenMatch) {
+                var formattedChars = new Array(expectedLength).fill('');
+                formattedChars[0] = hyphenMatch[1].charAt(0);
+                formattedChars[1] = hyphenMatch[1].charAt(1);
+                for (var m = 0; m < hyphenMatch[2].length; m++) {
+                    formattedChars[middleStart + m] = hyphenMatch[2].charAt(m);
+                }
+                for (var l = 0; l < 4; l++) {
+                    formattedChars[lastStart + l] = hyphenMatch[3].charAt(l);
+                }
+                return formattedChars;
+            }
+
+            var lettersOnly = source.replace(/[^A-Z]/g, '').substring(0, 2);
+            var digitsOnly = source.replace(/\D/g, '');
+            var middleDigits = '';
+            var lastDigits = '';
+            if (digitsOnly.length >= 8) {
+                middleDigits = digitsOnly.substring(0, 4);
+                lastDigits = digitsOnly.substring(4, 8);
+            } else if (digitsOnly.length >= 7) {
+                middleDigits = digitsOnly.substring(0, 3);
+                lastDigits = digitsOnly.substring(3, 7);
+            } else {
+                middleDigits = digitsOnly.substring(0, 4);
+                lastDigits = digitsOnly.substring(4, 8);
+            }
+
+            var compact = (lettersOnly + middleDigits + lastDigits).replace(/[^A-Z0-9]/g, '');
+            var chars = new Array(expectedLength).fill('');
+            var cursor = 0;
+            for (var i = 0; i < compact.length && cursor < expectedLength; i++) {
+                var candidate = sanitize(cursor, compact.charAt(i));
+                if (!candidate) {
+                    continue;
+                }
+                chars[cursor] = candidate;
+                cursor++;
+            }
+            return chars;
+        }
+
+        function syncHiddenFromParts() {
+            var values = [];
+            fields.each(function (index, fieldEl) {
+                var field = $(fieldEl);
+                var clean = sanitize(index, field.val());
+                if (field.val() !== clean) {
+                    field.val(clean);
+                }
+                values.push(clean);
+            });
+
+            var merged = values.join('').trim();
+            if (merged.length === 0) {
+                hiddenField.val('');
+                return;
+            }
+
+            var letters = values.slice(0, 2).join('');
+            var middle = values.slice(middleStart, middleEnd).join('');
+            var last = values.slice(lastStart, lastStart + 4).join('');
+            var middleCompact = middle.replace(/\s/g, '');
+            if (letters.length === 2 && /^\d{3,4}$/.test(middleCompact) && /^\d{4}$/.test(last)) {
+                hiddenField.val(letters + '-' + middleCompact + '-' + last);
+                return;
+            }
+            hiddenField.val(letters + middle + last);
+        }
+
+        var initial = parseInitialValue(hiddenField.val());
+        fields.each(function (index, fieldEl) {
+            $(fieldEl).val(initial[index] || '');
+        });
+        syncHiddenFromParts();
+
+        fields.each(function (index, fieldEl) {
+            var field = $(fieldEl);
+            field.on('input', function () {
+                var cleaned = sanitize(index, field.val());
+                field.val(cleaned);
+                syncHiddenFromParts();
+                if (cleaned.length === 1 && index < fields.length - 1) {
+                    $(fields[index + 1]).focus().select();
+                }
+            });
+            field.on('keydown', function (event) {
+                if (event.key === 'Backspace' && !field.val() && index > 0) {
+                    $(fields[index - 1]).focus();
+                }
+                if (event.key === '-' && (index === 4 || index === 5)) {
+                    event.preventDefault();
+                    $(fields[lastStart]).focus();
+                }
+                if (event.key === 'ArrowLeft' && index > 0) {
+                    $(fields[index - 1]).focus();
+                }
+                if (event.key === 'ArrowRight' && index < fields.length - 1) {
+                    $(fields[index + 1]).focus();
+                }
+            });
+            field.on('paste', function (event) {
+                var pasted = (event.originalEvent || event).clipboardData;
+                var raw = pasted ? pasted.getData('text') : '';
+                if (!raw) return;
+                event.preventDefault();
+
+                var letters = raw.toUpperCase().replace(/[^A-Z]/g, '').substring(0, letterCount);
+                var digits = raw.replace(/\D/g, '');
+                var middleDigits = '';
+                var lastDigits = '';
+                if (digits.length >= 8) {
+                    middleDigits = digits.substring(0, 4);
+                    lastDigits = digits.substring(4, 8);
+                } else {
+                    middleDigits = digits.substring(0, 3);
+                    lastDigits = digits.substring(3, 7);
+                }
+                var combined = (letters + middleDigits + lastDigits).substring(0, expectedLength);
+                var chars = parseInitialValue(combined);
+                fields.each(function (i, el) {
+                    $(el).val(chars[i] || '');
+                });
+                syncHiddenFromParts();
+                $(fields[Math.min(expectedLength - 1, fields.length - 1)]).focus().select();
+            });
+        });
+
+        var form = hiddenField.closest('form');
+        if (form.length) {
+            form.on('submit', function (event) {
+                syncHiddenFromParts();
+                var values = [];
+                fields.each(function (_, el) { values.push($(el).val()); });
+                var merged = values.join('');
+                var allEmpty = merged.length === 0;
+                var letters = values.slice(0, 2).join('');
+                var middleVals = values.slice(middleStart, middleEnd);
+                var last = values.slice(lastStart, lastStart + 4).join('');
+                var middleFirstThree = middleVals[0] + middleVals[1] + middleVals[2];
+                var middleFourth = middleVals[3];
+                var middleValid = /^\d{3}$/.test(middleFirstThree) && (middleFourth === '' || /^\d$/.test(middleFourth));
+                var lastValid = /^\d{4}$/.test(last);
+                var allComplete = /^[A-Z]{2}$/.test(letters) && middleValid && lastValid;
+                if (!allEmpty && !allComplete) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    fields.each(function (_, el) {
+                        $(el).addClass('is-invalid');
+                    });
+                    $(fields[0]).focus();
+                    return;
+                }
+                fields.each(function (_, el) {
+                    $(el).removeClass('is-invalid');
+                });
+                var middleValue = middleFirstThree + (middleFourth ? middleFourth : '');
+                hiddenField.val(letters + '-' + middleValue + '-' + last);
+            });
+        }
+    }
+    initializeGpsAddressFields();
+
     // 4. Dynamic Emergency Contacts
     function getRelationshipFieldHtml(idx) {
         var relationshipOptionsHtml = (window.RELATIONSHIP_OPTIONS_HTML || '').trim();

@@ -437,8 +437,25 @@ ob_start();
         <input type="text" class="form-control" name="address" id="address" value="<?=htmlspecialchars($member['address'])?>">
       </div>
       <div class="form-group col-md-6">
-        <label for="gps_address">GPS Address</label>
-        <input type="text" class="form-control" name="gps_address" id="gps_address" value="<?=htmlspecialchars($member['gps_address'])?>">
+        <label for="gps_char_0">GPS Number</label>
+        <div class="gps-address-boxes gps-char-wrap">
+          <?php for ($gps_index = 0; $gps_index < 10; $gps_index++): ?>
+            <?php if ($gps_index === 2 || $gps_index === 6): ?>
+              <span class="gps-separator">-</span>
+            <?php endif; ?>
+            <input
+              type="text"
+              class="form-control gps-char"
+              id="gps_char_<?= $gps_index ?>"
+              data-index="<?= $gps_index ?>"
+              maxlength="1"
+              inputmode="<?= $gps_index < 2 ? 'text' : 'numeric' ?>"
+              autocomplete="off"
+              aria-label="GPS character <?= $gps_index + 1 ?>">
+          <?php endfor; ?>
+        </div>
+        <small class="form-text text-muted">Format: 2 letters - 3 or 4 digits - 4 digits (example: GA-123-4567 or GA-1234-4567)</small>
+        <input type="hidden" name="gps_address" id="gps_address" value="<?=htmlspecialchars($member['gps_address'])?>">
       </div>
     </div>
     <div class="form-row">
@@ -887,6 +904,40 @@ $(function(){
         border-radius: 0.35rem; min-height: 38px; border: 1px solid #d1d3e2;
     }
     .emergency-contact-row+.emergency-contact-row { margin-top: 10px; }
+    .gps-address-boxes {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        flex-wrap: nowrap;
+    }
+    .gps-char {
+        width: 24px;
+        height: 30px;
+        padding: 0.1rem 0.05rem;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 0;
+        font-weight: 600;
+        font-size: 0.82rem;
+    }
+    .gps-separator {
+        font-size: 0.85rem;
+        line-height: 1;
+        font-weight: 700;
+        color: #111827;
+    }
+    @media (max-width: 575.98px) {
+        .gps-address-boxes {
+            gap: 2px;
+        }
+        .gps-char {
+            width: 20px;
+            height: 26px;
+            padding-left: 0;
+            padding-right: 0;
+            font-size: 0.75rem;
+        }
+    }
 </style>
 <?php
 $page_content = ob_get_clean();
