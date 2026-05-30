@@ -21,6 +21,9 @@ $canDelete = $isSuper || has_permission('delete_asset');
 $canTransfer = $isSuper || has_permission('transfer_asset');
 $canExport = $isSuper || has_permission('export_asset_register');
 $canViewAudit = $isSuper || has_permission('view_asset_audit');
+$canViewDetail = $isSuper || has_permission('view_asset_detail') || has_permission('view_asset_register');
+$canViewReports = $isSuper || has_permission('view_asset_reports');
+$canViewApprovals = $isSuper || has_permission('approve_asset_request') || has_permission('request_asset_approval');
 
 $departments = asset_fetch_departments($conn, $churchId, true);
 $churches = [];
@@ -156,6 +159,12 @@ ob_start();
                 <?php if ($canViewAudit): ?>
                     <a class="btn btn-light mr-2" href="asset_audit_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>"><i class="fas fa-user-shield mr-1"></i> Audit Log</a>
                 <?php endif; ?>
+                <?php if ($canViewApprovals): ?>
+                    <a class="btn btn-outline-light mr-2" href="asset_approval_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>"><i class="fas fa-user-check mr-1"></i> Approvals</a>
+                <?php endif; ?>
+                <?php if ($canViewReports): ?>
+                    <a class="btn btn-outline-light mr-2" href="asset_reports.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>"><i class="fas fa-chart-line mr-1"></i> Reports</a>
+                <?php endif; ?>
                 <?php if ($canExport): ?>
                     <a class="btn btn-outline-light mr-2" href="asset_export.php?<?= htmlspecialchars(http_build_query($_GET)) ?>"><i class="fas fa-file-csv mr-1"></i> Export</a>
                 <?php endif; ?>
@@ -169,6 +178,7 @@ ob_start();
     <?php if (isset($_GET['saved'])): ?><div class="alert alert-success">Asset saved successfully.</div><?php endif; ?>
     <?php if (isset($_GET['deleted'])): ?><div class="alert alert-success">Asset deleted successfully.</div><?php endif; ?>
     <?php if (isset($_GET['transferred'])): ?><div class="alert alert-success">Asset transferred successfully.</div><?php endif; ?>
+    <?php if (isset($_GET['requested'])): ?><div class="alert alert-info">Approval request submitted successfully.</div><?php endif; ?>
 
     <div class="row mb-3">
         <div class="col-md-3 mb-2">
@@ -302,6 +312,9 @@ ob_start();
                             <?php endif; ?>
                             <td><span class="badge badge-<?= $assetStatus === 'active' ? 'success' : 'secondary' ?>"><?= htmlspecialchars($assetStatus) ?></span></td>
                             <td class="text-nowrap">
+                                <?php if ($canViewDetail): ?>
+                                    <a href="asset_view.php?id=<?= (int) $asset['id'] ?>" class="btn btn-sm btn-outline-dark"><i class="fas fa-eye"></i></a>
+                                <?php endif; ?>
                                 <?php if ($canEdit): ?>
                                     <a href="asset_form.php?id=<?= (int) $asset['id'] ?>" class="btn btn-sm btn-warning"><i class="fas fa-edit"></i></a>
                                 <?php endif; ?>

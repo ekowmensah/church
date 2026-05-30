@@ -287,6 +287,86 @@ if (!function_exists('asset_can_use_lifecycle')) {
     }
 }
 
+if (!function_exists('asset_can_use_maintenance_fields')) {
+    function asset_can_use_maintenance_fields(mysqli $conn): bool {
+        return asset_column_exists($conn, 'assets', 'next_maintenance_date')
+            && asset_column_exists($conn, 'assets', 'last_maintenance_date')
+            && asset_column_exists($conn, 'assets', 'warranty_expiry_date');
+    }
+}
+
+if (!function_exists('asset_document_categories')) {
+    function asset_document_categories(): array {
+        return [
+            'invoice' => 'Invoice',
+            'warranty' => 'Warranty',
+            'service' => 'Service',
+            'manual' => 'Manual',
+            'photo' => 'Photo',
+            'other' => 'Other',
+        ];
+    }
+}
+
+if (!function_exists('asset_document_allowed_mimes')) {
+    function asset_document_allowed_mimes(): array {
+        return [
+            'application/pdf',
+            'image/jpeg',
+            'image/png',
+            'image/webp',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'text/plain',
+        ];
+    }
+}
+
+if (!function_exists('asset_documents_upload_dir')) {
+    function asset_documents_upload_dir(): string {
+        return dirname(__DIR__) . '/uploads/assets_documents';
+    }
+}
+
+if (!function_exists('asset_ensure_documents_dir')) {
+    function asset_ensure_documents_dir(): bool {
+        $dir = asset_documents_upload_dir();
+        if (!is_dir($dir)) {
+            return mkdir($dir, 0775, true);
+        }
+        return true;
+    }
+}
+
+if (!function_exists('asset_user_can_approve_requests')) {
+    function asset_user_can_approve_requests(): bool {
+        return asset_is_super_admin() || has_permission('approve_asset_request');
+    }
+}
+
+if (!function_exists('asset_create_approval_request')) {
+    function asset_create_approval_request(
+        mysqli $conn,
+        int $churchId,
+        int $assetId,
+        string $requestType,
+        array $payload
+    ): int {
+        $payloadJson = json_encode($payload);
+        $requestedBy = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
+        $stmt = $conn->prepare(
+            'INSERT INTO asset_approval_requests (church_id, asset_id, request_type, payload_json, requested_by, status) VALUES (?, ?, ?, ?, ?, "pending")'
+        );
+        $stmt->bind_param('iissi', $churchId, $assetId, $requestType, $payloadJson, $requestedBy);
+        $stmt->execute();
+        $id = (int) $conn->insert_id;
+        $stmt->close();
+        return $id;
+    }
+}
+
 if (!function_exists('asset_log_action')) {
     function asset_log_action(
         string $action,

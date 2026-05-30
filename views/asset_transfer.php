@@ -12,6 +12,7 @@ if ($id <= 0) {
 
 $isSuper = asset_is_super_admin();
 $churchId = $isSuper ? null : asset_current_church_id($conn);
+$canApprove = asset_user_can_approve_requests();
 $error = '';
 
 $sql = 'SELECT a.*, d.name AS department_name FROM assets a LEFT JOIN asset_departments d ON d.id = a.department_id WHERE a.id = ?';
@@ -48,53 +49,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($toDepartmentId === $currentDepartmentId) {
         $error = 'Destination department must be different from current department.';
     } else {
-        $conn->begin_transaction();
-        try {
-            $before = [
-                'department_id' => $currentDepartmentId,
-                'department_name' => $asset['department_name'] ?? null,
-            ];
-
-            $stmt = $conn->prepare('UPDATE assets SET department_id = ? WHERE id = ?');
-            $stmt->bind_param('ii', $toDepartmentId, $id);
-            $stmt->execute();
-            $stmt->close();
-
-            $movedBy = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
-            $stmt = $conn->prepare('INSERT INTO asset_movements (asset_id, from_department_id, to_department_id, moved_by, notes) VALUES (?, ?, ?, ?, ?)');
-            $stmt->bind_param('iiiis', $id, $currentDepartmentId, $toDepartmentId, $movedBy, $notes);
-            $stmt->execute();
-            $movementId = (int) $conn->insert_id;
-            $stmt->close();
-
-            $conn->commit();
-
-            $toDepartmentName = '';
-            foreach ($departments as $dept) {
-                if ((int) $dept['id'] === $toDepartmentId) {
-                    $toDepartmentName = (string) $dept['name'];
-                    break;
-                }
-            }
-
-            $after = [
-                'department_id' => $toDepartmentId,
-                'department_name' => $toDepartmentName,
-            ];
-
-            asset_log_action('asset_transfer', 'asset_movement', $movementId, [
-                'asset_id' => $id,
-                'asset_code' => $asset['asset_code'],
-                'church_id' => $churchId,
+        if (!$canApprove && asset_table_exists($conn, 'asset_approval_requests')) {
+            $requestId = asset_create_approval_request($conn, $churchId, $id, 'transfer', [
                 'from_department_id' => $currentDepartmentId,
                 'to_department_id' => $toDepartmentId,
-            ], $before, $after);
-
-            header('Location: asset_list.php?transferred=1' . ($churchId ? '&church_id=' . $churchId : ''));
+                'note' => $notes,
+            ]);
+            asset_log_action('asset_approval_requested', 'asset_approval_request', $requestId, [
+                'asset_id' => $id,
+                'asset_code' => (string) $asset['asset_code'],
+                'church_id' => $churchId,
+                'request_type' => 'transfer',
+            ], [], [
+                'from_department_id' => $currentDepartmentId,
+                'to_department_id' => $toDepartmentId,
+                'note' => $notes,
+            ]);
+            header('Location: asset_list.php?requested=1' . ($churchId ? '&church_id=' . $churchId : ''));
             exit;
-        } catch (Throwable $e) {
-            $conn->rollback();
-            $error = 'Transfer failed. Please retry.';
+        } else {
+            $conn->begin_transaction();
+            try {
+                $before = [
+                    'department_id' => $currentDepartmentId,
+                    'department_name' => $asset['department_name'] ?? null,
+                ];
+
+                $stmt = $conn->prepare('UPDATE assets SET department_id = ? WHERE id = ?');
+                $stmt->bind_param('ii', $toDepartmentId, $id);
+                $stmt->execute();
+                $stmt->close();
+
+                $movedBy = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
+                $stmt = $conn->prepare('INSERT INTO asset_movements (asset_id, from_department_id, to_department_id, moved_by, notes) VALUES (?, ?, ?, ?, ?)');
+                $stmt->bind_param('iiiis', $id, $currentDepartmentId, $toDepartmentId, $movedBy, $notes);
+                $stmt->execute();
+                $movementId = (int) $conn->insert_id;
+                $stmt->close();
+
+                $conn->commit();
+
+                $toDepartmentName = '';
+                foreach ($departments as $dept) {
+                    if ((int) $dept['id'] === $toDepartmentId) {
+                        $toDepartmentName = (string) $dept['name'];
+                        break;
+                    }
+                }
+
+                $after = [
+                    'department_id' => $toDepartmentId,
+                    'department_name' => $toDepartmentName,
+                ];
+
+                asset_log_action('asset_transfer', 'asset_movement', $movementId, [
+                    'asset_id' => $id,
+                    'asset_code' => $asset['asset_code'],
+                    'church_id' => $churchId,
+                    'from_department_id' => $currentDepartmentId,
+                    'to_department_id' => $toDepartmentId,
+                ], $before, $after);
+
+                header('Location: asset_list.php?transferred=1' . ($churchId ? '&church_id=' . $churchId : ''));
+                exit;
+            } catch (Throwable $e) {
+                $conn->rollback();
+                $error = 'Transfer failed. Please retry.';
+            }
         }
     }
 }
@@ -136,7 +157,12 @@ ob_start();
                     <textarea class="form-control" id="notes" name="notes" rows="3" maxlength="255" placeholder="Reason or notes for this movement"></textarea>
                 </div>
 
-                <button type="submit" class="btn btn-primary"><i class="fas fa-check mr-1"></i> Confirm Transfer</button>
+                <?php if (!$canApprove && asset_table_exists($conn, 'asset_approval_requests')): ?>
+                    <div class="alert alert-info py-2">This transfer will be submitted for approval before execution.</div>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane mr-1"></i> Submit Transfer Request</button>
+                <?php else: ?>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-check mr-1"></i> Confirm Transfer</button>
+                <?php endif; ?>
             </form>
         </div>
     </div>

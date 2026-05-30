@@ -119,7 +119,7 @@ ob_start();
                         <td><?= htmlspecialchars((string) ($row['from_department_name'] ?? '-')) ?></td>
                         <td><?= htmlspecialchars((string) ($row['to_department_name'] ?? '-')) ?></td>
                         <td><?= htmlspecialchars((string) ($row['moved_by_name'] ?? '-')) ?></td>
-                        <td><?= htmlspecialchars((string) ($row['notes'] ?? '')) ?></td>
+                        <td><?= htmlspecialchars((string) ($row['notes'] ?? '')) ?> <?php if (has_permission('view_asset_detail') || asset_is_super_admin()): ?><a href="asset_view.php?id=<?= (int) $row['asset_id'] ?>" class="btn btn-sm btn-outline-dark ml-1"><i class="fas fa-eye"></i></a><?php endif; ?></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($rows)): ?>

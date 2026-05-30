@@ -13,10 +13,12 @@ $q = trim((string) ($_GET['q'] ?? ''));
 
 $conditions = asset_condition_options();
 $hasLifecycle = asset_can_use_lifecycle($conn);
+$hasMaintenanceFields = asset_can_use_maintenance_fields($conn);
 
 $sql = "
     SELECT a.asset_code, a.item_group, a.item_name, d.name AS department_name, c.name AS church_name,
-           a.purchase_date, a.quantity, a.receipt_or_serial_number, a.amount, a.condition_status,
+           a.purchase_date" . ($hasMaintenanceFields ? ", a.warranty_expiry_date, a.last_maintenance_date, a.next_maintenance_date" : "") . ",
+           a.quantity, a.receipt_or_serial_number, a.amount, a.condition_status,
            a.status" . ($hasLifecycle ? ", a.lifecycle_status" : "") . ", a.allocation_note, a.created_at, a.updated_at
     FROM assets a
     LEFT JOIN asset_departments d ON d.id = a.department_id
@@ -72,9 +74,17 @@ $out = fopen('php://output', 'w');
 
 $header = [
     'Asset Code', 'Item Group', 'Item Name', 'Department', 'Church',
-    'Purchase Date', 'Quantity', 'Receipt/Serial Number', 'Amount', 'Condition Status',
-    'Status'
+    'Purchase Date'
 ];
+if ($hasMaintenanceFields) {
+    $header[] = 'Warranty Expiry';
+    $header[] = 'Last Maintenance';
+    $header[] = 'Next Maintenance';
+}
+$header = array_merge($header, [
+    'Quantity', 'Receipt/Serial Number', 'Amount', 'Condition Status',
+    'Status'
+]);
 if ($hasLifecycle) {
     $header[] = 'Lifecycle Status';
 }
@@ -91,12 +101,21 @@ while ($row = $res->fetch_assoc()) {
         $row['department_name'],
         $row['church_name'],
         $row['purchase_date'],
+    ];
+
+    if ($hasMaintenanceFields) {
+        $line[] = $row['warranty_expiry_date'];
+        $line[] = $row['last_maintenance_date'];
+        $line[] = $row['next_maintenance_date'];
+    }
+
+    $line = array_merge($line, [
         $row['quantity'],
         $row['receipt_or_serial_number'],
         $row['amount'],
         $row['condition_status'],
         $row['status'],
-    ];
+    ]);
 
     if ($hasLifecycle) {
         $line[] = (string) ($row['lifecycle_status'] ?? asset_default_lifecycle((string) ($row['status'] ?? 'active'), (string) ($row['condition_status'] ?? '')));

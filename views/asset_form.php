@@ -9,6 +9,7 @@ $isSuper = asset_is_super_admin();
 $conditions = asset_condition_options();
 $lifecycleOptions = asset_lifecycle_options();
 $hasLifecycle = asset_can_use_lifecycle($conn);
+$hasMaintenanceFields = asset_can_use_maintenance_fields($conn);
 $assetId = $isEdit ? (int) $_GET['id'] : 0;
 $error = '';
 
@@ -26,6 +27,10 @@ $status = 'active';
 $assetCode = '';
 $lifecycleStatus = 'in_use';
 $existingLifecycleStatus = '';
+$warrantyExpiryDate = '';
+$lastMaintenanceDate = '';
+$nextMaintenanceDate = '';
+$originalUpdatedAt = '';
 
 if ($isEdit) {
     $sql = 'SELECT * FROM assets WHERE id = ?';
@@ -61,6 +66,12 @@ if ($isEdit) {
     $allocationNote = (string) ($asset['allocation_note'] ?? '');
     $status = (string) ($asset['status'] ?? 'active');
     $assetCode = (string) ($asset['asset_code'] ?? '');
+    $originalUpdatedAt = (string) ($asset['updated_at'] ?? '');
+    if ($hasMaintenanceFields) {
+        $warrantyExpiryDate = (string) ($asset['warranty_expiry_date'] ?? '');
+        $lastMaintenanceDate = (string) ($asset['last_maintenance_date'] ?? '');
+        $nextMaintenanceDate = (string) ($asset['next_maintenance_date'] ?? '');
+    }
 
     if ($hasLifecycle) {
         $existingLifecycleStatus = (string) ($asset['lifecycle_status'] ?? '');
@@ -92,6 +103,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $conditionStatus = trim((string) ($_POST['condition_status'] ?? ''));
     $allocationNote = trim((string) ($_POST['allocation_note'] ?? ''));
     $status = trim((string) ($_POST['status'] ?? 'active'));
+    $warrantyExpiryDate = trim((string) ($_POST['warranty_expiry_date'] ?? ''));
+    $lastMaintenanceDate = trim((string) ($_POST['last_maintenance_date'] ?? ''));
+    $nextMaintenanceDate = trim((string) ($_POST['next_maintenance_date'] ?? ''));
+    $postedOriginalUpdatedAt = trim((string) ($_POST['original_updated_at'] ?? ''));
     $lifecycleStatus = $hasLifecycle
         ? trim((string) ($_POST['lifecycle_status'] ?? ''))
         : asset_default_lifecycle($status, $conditionStatus);
@@ -120,11 +135,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Invalid lifecycle status.';
     } elseif ($hasLifecycle && $isEdit && !asset_validate_lifecycle_transition($existingLifecycleStatus, $lifecycleStatus)) {
         $error = 'Invalid lifecycle transition from ' . asset_lifecycle_label($existingLifecycleStatus) . ' to ' . asset_lifecycle_label($lifecycleStatus) . '.';
+    } elseif ($isEdit && $postedOriginalUpdatedAt !== '' && $postedOriginalUpdatedAt !== $originalUpdatedAt) {
+        $error = 'This asset was updated by another user. Reload and try again.';
     }
 
     if (!$error) {
         $purchaseDateDb = $purchaseDate !== '' ? $purchaseDate : null;
         $amountDb = $amount !== '' ? (float) $amount : null;
+        $warrantyExpiryDb = $warrantyExpiryDate !== '' ? $warrantyExpiryDate : null;
+        $lastMaintenanceDb = $lastMaintenanceDate !== '' ? $lastMaintenanceDate : null;
+        $nextMaintenanceDb = $nextMaintenanceDate !== '' ? $nextMaintenanceDate : null;
 
         if ($isEdit) {
             $before = [
@@ -140,9 +160,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'allocation_note' => $asset['allocation_note'] ?? null,
                 'status' => $asset['status'] ?? null,
                 'lifecycle_status' => $hasLifecycle ? ($asset['lifecycle_status'] ?? null) : null,
+                'warranty_expiry_date' => $hasMaintenanceFields ? ($asset['warranty_expiry_date'] ?? null) : null,
+                'last_maintenance_date' => $hasMaintenanceFields ? ($asset['last_maintenance_date'] ?? null) : null,
+                'next_maintenance_date' => $hasMaintenanceFields ? ($asset['next_maintenance_date'] ?? null) : null,
             ];
 
-            if ($hasLifecycle) {
+            if ($hasLifecycle && $hasMaintenanceFields) {
+                $stmt = $conn->prepare('UPDATE assets SET church_id=?, department_id=?, item_group=?, item_name=?, purchase_date=?, warranty_expiry_date=?, last_maintenance_date=?, next_maintenance_date=?, quantity=?, receipt_or_serial_number=?, amount=?, condition_status=?, allocation_note=?, status=?, lifecycle_status=? WHERE id=?');
+                $stmt->bind_param(
+                    'iissssssisdssssi',
+                    $churchId,
+                    $departmentId,
+                    $itemGroup,
+                    $itemName,
+                    $purchaseDateDb,
+                    $warrantyExpiryDb,
+                    $lastMaintenanceDb,
+                    $nextMaintenanceDb,
+                    $quantity,
+                    $receiptOrSerial,
+                    $amountDb,
+                    $conditionStatus,
+                    $allocationNote,
+                    $status,
+                    $lifecycleStatus,
+                    $assetId
+                );
+            } elseif ($hasLifecycle) {
                 $stmt = $conn->prepare('UPDATE assets SET church_id=?, department_id=?, item_group=?, item_name=?, purchase_date=?, quantity=?, receipt_or_serial_number=?, amount=?, condition_status=?, allocation_note=?, status=?, lifecycle_status=? WHERE id=?');
                 $stmt->bind_param(
                     'iisssisdssssi',
@@ -158,6 +202,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $allocationNote,
                     $status,
                     $lifecycleStatus,
+                    $assetId
+                );
+            } elseif ($hasMaintenanceFields) {
+                $stmt = $conn->prepare('UPDATE assets SET church_id=?, department_id=?, item_group=?, item_name=?, purchase_date=?, warranty_expiry_date=?, last_maintenance_date=?, next_maintenance_date=?, quantity=?, receipt_or_serial_number=?, amount=?, condition_status=?, allocation_note=?, status=? WHERE id=?');
+                $stmt->bind_param(
+                    'iissssssisdsssi',
+                    $churchId,
+                    $departmentId,
+                    $itemGroup,
+                    $itemName,
+                    $purchaseDateDb,
+                    $warrantyExpiryDb,
+                    $lastMaintenanceDb,
+                    $nextMaintenanceDb,
+                    $quantity,
+                    $receiptOrSerial,
+                    $amountDb,
+                    $conditionStatus,
+                    $allocationNote,
+                    $status,
                     $assetId
                 );
             } else {
@@ -195,6 +259,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'allocation_note' => $allocationNote,
                     'status' => $status,
                     'lifecycle_status' => $hasLifecycle ? $lifecycleStatus : null,
+                    'warranty_expiry_date' => $hasMaintenanceFields ? $warrantyExpiryDb : null,
+                    'last_maintenance_date' => $hasMaintenanceFields ? $lastMaintenanceDb : null,
+                    'next_maintenance_date' => $hasMaintenanceFields ? $nextMaintenanceDb : null,
                 ];
 
                 asset_log_action('asset_update', 'asset', $assetId, [
@@ -211,7 +278,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $assetCode = asset_generate_code($conn, $churchId, $departmentId, $itemGroup);
             $createdBy = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
 
-            if ($hasLifecycle) {
+            if ($hasLifecycle && $hasMaintenanceFields) {
+                $stmt = $conn->prepare('INSERT INTO assets (church_id, asset_code, department_id, item_group, item_name, purchase_date, warranty_expiry_date, last_maintenance_date, next_maintenance_date, quantity, receipt_or_serial_number, amount, condition_status, allocation_note, status, lifecycle_status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $stmt->bind_param(
+                    'isissssssisdssssi',
+                    $churchId,
+                    $assetCode,
+                    $departmentId,
+                    $itemGroup,
+                    $itemName,
+                    $purchaseDateDb,
+                    $warrantyExpiryDb,
+                    $lastMaintenanceDb,
+                    $nextMaintenanceDb,
+                    $quantity,
+                    $receiptOrSerial,
+                    $amountDb,
+                    $conditionStatus,
+                    $allocationNote,
+                    $status,
+                    $lifecycleStatus,
+                    $createdBy
+                );
+            } elseif ($hasLifecycle) {
                 $stmt = $conn->prepare('INSERT INTO assets (church_id, asset_code, department_id, item_group, item_name, purchase_date, quantity, receipt_or_serial_number, amount, condition_status, allocation_note, status, lifecycle_status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 $stmt->bind_param(
                     'isisssisdssssi',
@@ -228,6 +317,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $allocationNote,
                     $status,
                     $lifecycleStatus,
+                    $createdBy
+                );
+            } elseif ($hasMaintenanceFields) {
+                $stmt = $conn->prepare('INSERT INTO assets (church_id, asset_code, department_id, item_group, item_name, purchase_date, warranty_expiry_date, last_maintenance_date, next_maintenance_date, quantity, receipt_or_serial_number, amount, condition_status, allocation_note, status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $stmt->bind_param(
+                    'isissssssisdsssi',
+                    $churchId,
+                    $assetCode,
+                    $departmentId,
+                    $itemGroup,
+                    $itemName,
+                    $purchaseDateDb,
+                    $warrantyExpiryDb,
+                    $lastMaintenanceDb,
+                    $nextMaintenanceDb,
+                    $quantity,
+                    $receiptOrSerial,
+                    $amountDb,
+                    $conditionStatus,
+                    $allocationNote,
+                    $status,
                     $createdBy
                 );
             } else {
@@ -266,6 +376,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'condition_status' => $conditionStatus,
                     'status' => $status,
                     'lifecycle_status' => $hasLifecycle ? $lifecycleStatus : null,
+                    'warranty_expiry_date' => $hasMaintenanceFields ? $warrantyExpiryDb : null,
+                    'last_maintenance_date' => $hasMaintenanceFields ? $lastMaintenanceDb : null,
+                    'next_maintenance_date' => $hasMaintenanceFields ? $nextMaintenanceDb : null,
                 ]);
                 header('Location: asset_list.php?saved=1' . ($churchId ? '&church_id=' . $churchId : ''));
                 exit;
@@ -308,6 +421,9 @@ ob_start();
             <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 
             <form method="post" autocomplete="off">
+                <?php if ($isEdit): ?>
+                    <input type="hidden" name="original_updated_at" value="<?= htmlspecialchars($originalUpdatedAt) ?>">
+                <?php endif; ?>
                 <?php if ($isSuper): ?>
                     <div class="form-row">
                         <div class="form-group col-md-6">
@@ -356,6 +472,23 @@ ob_start();
                         <label>Purchase Date</label>
                         <input type="date" name="purchase_date" class="form-control" value="<?= htmlspecialchars($purchaseDate) ?>">
                     </div>
+                    <?php if ($hasMaintenanceFields): ?>
+                    <div class="form-group col-md-3">
+                        <label>Warranty Expiry</label>
+                        <input type="date" name="warranty_expiry_date" class="form-control" value="<?= htmlspecialchars($warrantyExpiryDate) ?>">
+                    </div>
+                    <div class="form-group col-md-3">
+                        <label>Last Maintenance</label>
+                        <input type="date" name="last_maintenance_date" class="form-control" value="<?= htmlspecialchars($lastMaintenanceDate) ?>">
+                    </div>
+                    <div class="form-group col-md-3">
+                        <label>Next Maintenance</label>
+                        <input type="date" name="next_maintenance_date" class="form-control" value="<?= htmlspecialchars($nextMaintenanceDate) ?>">
+                    </div>
+                    <?php endif; ?>
+                </div>
+
+                <div class="form-row">
                     <div class="form-group col-md-2">
                         <label>Quantity <span class="text-danger">*</span></label>
                         <input type="number" name="quantity" class="form-control" value="<?= (int) $quantity ?>" min="1" required>
