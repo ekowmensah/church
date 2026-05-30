@@ -76,27 +76,42 @@ $(document).ready(function () {
     });
 
     // --- BASE URL DETECTION ---
+    function normalizeBaseUrl(base) {
+        if (typeof base !== 'string') return '';
+        base = base.trim();
+        if (base === '' || base === '/') return '';
+        return base.replace(/\/+$/, '');
+    }
+
+    function joinBasePath(base, path) {
+        var cleanBase = normalizeBaseUrl(base);
+        var cleanPath = (path || '').replace(/^\/+/, '');
+        return (cleanBase ? cleanBase + '/' : '/') + cleanPath;
+    }
+
     function getBaseUrl() {
-        if (window.BASE_URL) return window.BASE_URL;
+        if (typeof window.BASE_URL !== 'undefined') {
+            return normalizeBaseUrl(window.BASE_URL);
+        }
         // Try to infer from script src
         var scripts = document.getElementsByTagName('script');
         for (var i = 0; i < scripts.length; i++) {
             var src = scripts[i].getAttribute('src');
             if (src && src.match(/\/assets\/registration\.js($|\?)/)) {
                 var parts = src.split('/assets/registration.js');
-                return parts[0] || '/';
+                return normalizeBaseUrl(parts[0] || '');
             }
         }
         // Fallback: use path up to /assets/
         var path = window.location.pathname;
         var idx = path.indexOf('/assets/');
-        if (idx !== -1) return path.substring(0, idx);
-        return '/';
+        if (idx !== -1) return normalizeBaseUrl(path.substring(0, idx));
+        return '';
     }
     var BASE = getBaseUrl();
 
     // 3. Populate Regions (Ghana)
-    $.getJSON(BASE + '/assets/regions_ghana.json', function (regions) {
+    $.getJSON(joinBasePath(BASE, '/assets/regions_ghana.json'), function (regions) {
         let regionSel = $('#region');
         if (regionSel.length && regionSel.prop('tagName') === 'SELECT') {
             regionSel.empty().append('<option value="">-- Select Region --</option>');
@@ -180,7 +195,7 @@ $(document).ready(function () {
             tags: true,  // Allow free text entry
             minimumInputLength: 0,
             ajax: {
-                url: BASE + '/api/search_member_registration.php',
+                url: joinBasePath(BASE, '/api/search_member_registration.php'),
                 dataType: 'json',
                 delay: 300,
                 data: function (params) {
@@ -245,7 +260,7 @@ $(document).ready(function () {
             tags: true,  // Allow free text entry
             minimumInputLength: 0,
             ajax: {
-                url: BASE + '/api/search_member_registration.php',
+                url: joinBasePath(BASE, '/api/search_member_registration.php'),
                 dataType: 'json',
                 delay: 300,
                 data: function (params) {
