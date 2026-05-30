@@ -171,7 +171,31 @@ if ($is_print_request) {
 
 // Handle CSV export after data is available
 if ($is_export_request) {
-    include __DIR__ . '/partials/health_export.php';
+    $health_export_partial = __DIR__ . '/partials/health_export.php';
+    if (file_exists($health_export_partial)) {
+        include $health_export_partial;
+    } else {
+        header('Content-Type: text/csv');
+        header('Content-Disposition: attachment;filename=health_record_' . intval($id) . '.csv');
+        $fields = ['Date/Time', 'Weight (Kg)', 'Temperature (C)', 'BP (MMHG)', 'BP Status', 'Sugar (mmol/L)', 'Sugar Status', 'Hep B', 'Malaria', 'Notes', 'Recorded By'];
+        $out = fopen('php://output', 'w');
+        fputcsv($out, $fields);
+        $csv_row = [
+            $recorded_at,
+            $vitals['weight'] ?? '',
+            $vitals['temperature'] ?? '',
+            $vitals['bp'] ?? '',
+            $vitals['bp_status'] ?? '',
+            $vitals['sugar'] ?? '',
+            $vitals['sugar_status'] ?? '',
+            $vitals['hepatitis_b'] ?? '',
+            $vitals['malaria'] ?? '',
+            $notes,
+            $recorded_by
+        ];
+        fputcsv($out, $csv_row);
+        fclose($out);
+    }
     exit;
 }
 
@@ -579,9 +603,9 @@ ob_start();
                 <?php endif; ?>
             </div>
             <div class="action-buttons mt-2">
-                <button onclick="window.print()" class="btn btn-info btn-modern">
+                <a href="<?= BASE_URL ?>/views/health_records.php?id=<?= (int) $id ?>&print=1" target="_blank" rel="noopener" class="btn btn-info btn-modern">
                     <i class="fas fa-print mr-1"></i> Print
-                </button>
+                </a>
                 <?php if ($can_export): ?>
                 <a href="?id=<?= $id ?>&export=single" class="btn btn-success btn-modern">
                     <i class="fas fa-download mr-1"></i> Export
@@ -814,8 +838,8 @@ ob_start();
                             <i class="fas fa-edit"></i>
                         </a>
                         <?php endif; ?>
-                        <a href="?id=<?= $rec['id'] ?>&print=1" 
-                           class="btn btn-sm btn-outline-secondary" title="Print Record" target="_blank">
+                        <a href="<?= BASE_URL ?>/views/health_records.php?id=<?= (int) $rec['id'] ?>&print=1" 
+                           class="btn btn-sm btn-outline-secondary" title="Print Record" target="_blank" rel="noopener">
                             <i class="fas fa-print"></i>
                         </a>
                     </div>
@@ -958,7 +982,7 @@ ob_start();
 <script>
 // Print functionality
 function printHealthRecord(recordId) {
-    window.open('?id=' + recordId + '&print=1', '_blank');
+    window.open(BASE_URL + '/views/health_records.php?id=' + recordId + '&print=1', '_blank', 'noopener');
 }
 
 // Export functionality
@@ -1046,66 +1070,5 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 <?php
-// Export single record as CSV if requested
-if (isset($_GET['print']) && $_GET['print'] == 1) {
-    // Enhanced print-friendly single record view
-    echo '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Health Record Print</title>';
-    echo '<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">';
-    echo '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">';
-    echo '<style>';
-    echo 'body { background: #f8f9fa; }';
-    echo '.print-header { text-align:center; margin-bottom:32px; }';
-    echo '.print-header .logo { font-size:40px; color:#007bff; margin-bottom:8px; }';
-    echo '.print-header .church-name { font-size:1.7rem; font-weight:700; letter-spacing:2px; color:#333; }';
-    echo '.print-header .subtitle { font-size:1.1rem; color:#888; margin-bottom:0; }';
-    echo '.print-card { max-width:600px; margin:0 auto; background:#fff; border-radius:12px; box-shadow:0 4px 24px rgba(0,0,0,0.07); padding:40px 32px 32px 32px; }';
-    echo '.print-card h2 { font-size:2rem; font-weight:700; color:#007bff; margin-bottom:10px; }';
-    echo '.print-card .record-date { font-size:1.1rem; color:#555; font-weight:500; margin-bottom:24px; }';
-    echo '.print-section-title { font-size:1.15rem; font-weight:600; color:#444; margin:30px 0 15px 0; letter-spacing:1px; }';
-    echo '.print-table { width:100%; margin-bottom:0; }';
-    echo '.print-table th { width:40%; background:#f2f5fa; font-weight:600; color:#333; border-top:1px solid #e3e6f0; border-bottom:1px solid #e3e6f0; }';
-    echo '.print-table td { background:#fff; color:#222; border-top:1px solid #e3e6f0; border-bottom:1px solid #e3e6f0; }';
-    echo '.noprint { display:block; margin-top:24px; }';
-    echo '@media print { body { background:#fff; } .noprint { display:none !important; } .print-card { box-shadow:none; border:0; } }';
-    echo '</style>';
-    echo '</head><body onload="window.print()">';
-    echo '<div class="print-header">';
-    echo '<div class="logo"><i class="fas fa-clinic-medical"></i></div>';
-    echo '<div class="church-name">CHURCH NAME HERE</div>';
-    echo '<div class="subtitle">Health Records Management</div>';
-    echo '</div>';
-    echo '<div class="print-card">';
-    echo '<h2>'.htmlspecialchars($member_name).'</h2>';
-    echo '<div class="record-date">'.date('l, F j, Y \a\t g:ia', strtotime($recorded_at)).'</div>';
-    echo '<div class="print-section-title">Health Record Summary</div>';
-    echo '<table class="print-table">';
-    echo '<tr><th>Weight (Kg)</th><td>'.htmlspecialchars($vitals['weight'] ?? '').'</td></tr>';
-    echo '<tr><th>Temperature (°C)</th><td>'.htmlspecialchars($vitals['temperature'] ?? '').'</td></tr>';
-    echo '<tr><th>Blood Pressure (MMHG)</th><td>'.htmlspecialchars($vitals['bp'] ?? '').'</td></tr>';
-    echo '<tr><th>BP Status</th><td>'.htmlspecialchars($vitals['bp_status'] ?? '').'</td></tr>';
-    echo '<tr><th>Blood Sugar (mmol/L)</th><td>'.htmlspecialchars($vitals['sugar'] ?? '').'</td></tr>';
-    echo '<tr><th>Sugar Status</th><td>'.htmlspecialchars($vitals['sugar_status'] ?? '').'</td></tr>';
-    echo '<tr><th>Hepatitis B Test</th><td>'.htmlspecialchars($vitals['hepatitis_b'] ?? '').'</td></tr>';
-    echo '<tr><th>Malaria Test</th><td>'.htmlspecialchars($vitals['malaria'] ?? '').'</td></tr>';
-    echo '<tr><th>Notes</th><td>'.htmlspecialchars($notes).'</td></tr>';
-    echo '<tr><th>Recorded By</th><td>'.htmlspecialchars($recorded_by).'</td></tr>';
-    echo '</table>';
-    echo '<div class="text-center noprint"><a href="javascript:window.close();" class="btn btn-secondary mt-3">Close</a></div>';
-    echo '</div>';
-    echo '</body></html>';
-    exit;
-}
-if (isset($_GET['export']) && $_GET['export'] === 'single') {
-    header('Content-Type: text/csv');
-    header('Content-Disposition: attachment;filename=health_record_'.intval($id).'.csv');
-    $fields = ['Date/Time','Weight (Kg)','Temperature (°C)','BP (MMHG)','BP Status','Sugar (mmol/L)','Sugar Status','Hep B','Malaria','Notes','Recorded By'];
-    $out = fopen('php://output', 'w');
-    fputcsv($out, $fields);
-    // Output the single record row
-    $row = [$recorded_at, $vitals['weight'] ?? '', $vitals['temperature'] ?? '', $vitals['bp'] ?? '', $vitals['bp_status'] ?? '', $vitals['sugar'] ?? '', $vitals['sugar_status'] ?? '', $vitals['hepatitis_b'] ?? '', $vitals['malaria'] ?? '', $notes, $recorded_by];
-    fputcsv($out, $row);
-    fclose($out);
-    exit;
-}
 $page_content = ob_get_clean();
 require_once __DIR__.'/../includes/layout.php';

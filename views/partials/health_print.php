@@ -248,10 +248,12 @@ header('Content-Type: text/html; charset=utf-8');
     </div>
     
     <script>
-        // Auto-print when page loads
-        window.onload = function() {
-            window.print();
-        };
+        // Delay a bit so the document fully renders before print preview opens.
+        window.addEventListener('load', function () {
+            setTimeout(function () {
+                window.print();
+            }, 250);
+        });
     </script>
 </body>
 </html>

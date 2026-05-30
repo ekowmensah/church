@@ -80,8 +80,38 @@ const diaGradient = ctx.createLinearGradient(0, 0, 0, 300);
 diaGradient.addColorStop(0, 'rgba(52, 152, 219, 0.8)');
 diaGradient.addColorStop(1, 'rgba(52, 152, 219, 0.1)');
 
+// Reference lines for normal BP ranges
+const normalSysLine = {
+    id: 'normalSysLine',
+    afterDatasetsDraw: function(chart) {
+        const ctx = chart.ctx;
+        const yAxis = chart.scales.y;
+        const xAxis = chart.scales.x;
+        
+        // Normal systolic line (120)
+        ctx.save();
+        ctx.strokeStyle = 'rgba(46, 204, 113, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(xAxis.left, yAxis.getPixelForValue(120));
+        ctx.lineTo(xAxis.right, yAxis.getPixelForValue(120));
+        ctx.stroke();
+        
+        // Normal diastolic line (80)
+        ctx.strokeStyle = 'rgba(52, 152, 219, 0.6)';
+        ctx.beginPath();
+        ctx.moveTo(xAxis.left, yAxis.getPixelForValue(80));
+        ctx.lineTo(xAxis.right, yAxis.getPixelForValue(80));
+        ctx.stroke();
+        
+        ctx.restore();
+    }
+};
+
 const bpChart = new Chart(ctx, {
     type: 'line',
+    plugins: [normalSysLine],
     data: {
         labels: bpLabels,
         datasets: [
@@ -211,36 +241,5 @@ const bpChart = new Chart(ctx, {
         }
     }
 });
-
-// Add reference lines for normal BP ranges
-const normalSysLine = {
-    id: 'normalSysLine',
-    afterDatasetsDraw: function(chart) {
-        const ctx = chart.ctx;
-        const yAxis = chart.scales.y;
-        const xAxis = chart.scales.x;
-        
-        // Normal systolic line (120)
-        ctx.save();
-        ctx.strokeStyle = 'rgba(46, 204, 113, 0.6)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
-        ctx.beginPath();
-        ctx.moveTo(xAxis.left, yAxis.getPixelForValue(120));
-        ctx.lineTo(xAxis.right, yAxis.getPixelForValue(120));
-        ctx.stroke();
-        
-        // Normal diastolic line (80)
-        ctx.strokeStyle = 'rgba(52, 152, 219, 0.6)';
-        ctx.beginPath();
-        ctx.moveTo(xAxis.left, yAxis.getPixelForValue(80));
-        ctx.lineTo(xAxis.right, yAxis.getPixelForValue(80));
-        ctx.stroke();
-        
-        ctx.restore();
-    }
-};
-
-bpChart.register(normalSysLine);
 </script>
 <?php endif; ?>
