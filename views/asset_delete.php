@@ -11,7 +11,7 @@ if ($id <= 0) {
 }
 
 $churchId = asset_is_super_admin() ? null : asset_current_church_id($conn);
-$sql = 'SELECT id, church_id, asset_code FROM assets WHERE id = ?';
+$sql = 'SELECT id, church_id, asset_code, item_name, department_id, status, condition_status FROM assets WHERE id = ?';
 if (!asset_is_super_admin()) {
     $sql .= ' AND church_id = ?';
 }
@@ -41,7 +41,14 @@ $stmt->execute();
 $stmt->close();
 
 asset_log_action('asset_delete', 'asset', $id, [
+    'asset_id' => $id,
+    'church_id' => $churchId,
     'asset_code' => $assetCode,
+], [
+    'item_name' => $asset['item_name'] ?? null,
+    'department_id' => $asset['department_id'] ?? null,
+    'status' => $asset['status'] ?? null,
+    'condition_status' => $asset['condition_status'] ?? null,
 ]);
 
 header('Location: asset_list.php?deleted=1' . ($churchId ? '&church_id=' . $churchId : ''));

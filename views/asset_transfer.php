@@ -50,6 +50,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $conn->begin_transaction();
         try {
+            $before = [
+                'department_id' => $currentDepartmentId,
+                'department_name' => $asset['department_name'] ?? null,
+            ];
+
             $stmt = $conn->prepare('UPDATE assets SET department_id = ? WHERE id = ?');
             $stmt->bind_param('ii', $toDepartmentId, $id);
             $stmt->execute();
@@ -64,12 +69,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $conn->commit();
 
+            $toDepartmentName = '';
+            foreach ($departments as $dept) {
+                if ((int) $dept['id'] === $toDepartmentId) {
+                    $toDepartmentName = (string) $dept['name'];
+                    break;
+                }
+            }
+
+            $after = [
+                'department_id' => $toDepartmentId,
+                'department_name' => $toDepartmentName,
+            ];
+
             asset_log_action('asset_transfer', 'asset_movement', $movementId, [
                 'asset_id' => $id,
                 'asset_code' => $asset['asset_code'],
+                'church_id' => $churchId,
                 'from_department_id' => $currentDepartmentId,
                 'to_department_id' => $toDepartmentId,
-            ]);
+            ], $before, $after);
 
             header('Location: asset_list.php?transferred=1' . ($churchId ? '&church_id=' . $churchId : ''));
             exit;

@@ -1,6 +1,6 @@
 logs/sms_debug_2025-07-25.log
 sms_debug.log
-#views/bulk_payment_debug.log
+views/bulk_payment_debug.log
 views/error_log
 CURRENT_myfreemangit.sql
 
@@ -65,3 +65,21 @@ migrations/2026_upgrade/2026_03_21_0900_indexes_fk_hardening.sql
 migrations/2026_upgrade/2026_03_21_0102_standardize_emergency_contact_relationships.sql
 MyFreeman Major Update.docx
 migrations/2026_upgrade/2026_03_21_0102_standardize_emergency_contact_relationships.sql
+fmckgmib_portal (1).sql
+MyFreeman Major Update.docx
+migrations/2026_upgrade/2026_03_21_0102_standardize_emergency_contact_relationships.sql
+migrations/2026_upgrade/2026_03_21_0900_indexes_fk_hardening.sql
+migrations/2026_upgrade/2026_06_01_1200_assets_module_scoping_permissions_menu.sql
+migrations/2026_upgrade/CPANEL_ASSETS_MODULE_PATCH.sql
+migrations/2026_upgrade/CPANEL_ASSETS_MODULE_RUNBOOK.md
+~WRL0629.tmp
+MyFreeman Major Update.docx
+migrations/2026_upgrade/2026_03_21_0102_standardize_emergency_contact_relationships.sql
+migrations/2026_upgrade/2026_03_21_0900_indexes_fk_hardening.sql
+migrations/2026_upgrade/CPANEL_MISSING_CORE_OBJECTS_PATCH.sql
+migrations/2026_upgrade/README.md
+migrations/2026_upgrade/run_migrations.php
+migrations/2026_upgrade/rollbacks/2026_06_01_1200_assets_module_scoping_permissions_menu.rollback.sql
+migrations/2026_upgrade/run_migrations.php
+migrations/2026_upgrade/2026_03_21_0102_standardize_emergency_contact_relationships.sql
+migrations/2026_upgrade/2026_03_21_0900_indexes_fk_hardening.sql

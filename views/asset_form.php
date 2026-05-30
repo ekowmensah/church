@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
 
@@ -7,6 +7,8 @@ asset_require_permission($isEdit ? 'edit_asset' : 'create_asset');
 
 $isSuper = asset_is_super_admin();
 $conditions = asset_condition_options();
+$lifecycleOptions = asset_lifecycle_options();
+$hasLifecycle = asset_can_use_lifecycle($conn);
 $assetId = $isEdit ? (int) $_GET['id'] : 0;
 $error = '';
 
@@ -22,6 +24,8 @@ $conditionStatus = 'New';
 $allocationNote = '';
 $status = 'active';
 $assetCode = '';
+$lifecycleStatus = 'in_use';
+$existingLifecycleStatus = '';
 
 if ($isEdit) {
     $sql = 'SELECT * FROM assets WHERE id = ?';
@@ -57,6 +61,13 @@ if ($isEdit) {
     $allocationNote = (string) ($asset['allocation_note'] ?? '');
     $status = (string) ($asset['status'] ?? 'active');
     $assetCode = (string) ($asset['asset_code'] ?? '');
+
+    if ($hasLifecycle) {
+        $existingLifecycleStatus = (string) ($asset['lifecycle_status'] ?? '');
+        $lifecycleStatus = $existingLifecycleStatus !== '' ? $existingLifecycleStatus : asset_default_lifecycle($status, $conditionStatus);
+    } else {
+        $lifecycleStatus = asset_default_lifecycle($status, $conditionStatus);
+    }
 }
 
 $churches = [];
@@ -81,6 +92,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $conditionStatus = trim((string) ($_POST['condition_status'] ?? ''));
     $allocationNote = trim((string) ($_POST['allocation_note'] ?? ''));
     $status = trim((string) ($_POST['status'] ?? 'active'));
+    $lifecycleStatus = $hasLifecycle
+        ? trim((string) ($_POST['lifecycle_status'] ?? ''))
+        : asset_default_lifecycle($status, $conditionStatus);
+
+    if ($status === 'disposed') {
+        $lifecycleStatus = 'disposed';
+    }
+    if ($conditionStatus === 'Disposed') {
+        $status = 'disposed';
+        $lifecycleStatus = 'disposed';
+    }
 
     if ($churchId <= 0) {
         $error = 'Church is required.';
@@ -94,6 +116,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Invalid condition status.';
     } elseif (!in_array($status, ['active', 'disposed'], true)) {
         $error = 'Invalid asset status.';
+    } elseif ($hasLifecycle && !in_array($lifecycleStatus, $lifecycleOptions, true)) {
+        $error = 'Invalid lifecycle status.';
+    } elseif ($hasLifecycle && $isEdit && !asset_validate_lifecycle_transition($existingLifecycleStatus, $lifecycleStatus)) {
+        $error = 'Invalid lifecycle transition from ' . asset_lifecycle_label($existingLifecycleStatus) . ' to ' . asset_lifecycle_label($lifecycleStatus) . '.';
     }
 
     if (!$error) {
@@ -101,33 +127,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $amountDb = $amount !== '' ? (float) $amount : null;
 
         if ($isEdit) {
-            $stmt = $conn->prepare('UPDATE assets SET church_id=?, department_id=?, item_group=?, item_name=?, purchase_date=?, quantity=?, receipt_or_serial_number=?, amount=?, condition_status=?, allocation_note=?, status=? WHERE id=?');
-            $stmt->bind_param(
-                'iisssisdsssi',
-                $churchId,
-                $departmentId,
-                $itemGroup,
-                $itemName,
-                $purchaseDateDb,
-                $quantity,
-                $receiptOrSerial,
-                $amountDb,
-                $conditionStatus,
-                $allocationNote,
-                $status,
-                $assetId
-            );
+            $before = [
+                'church_id' => $asset['church_id'] ?? null,
+                'department_id' => $asset['department_id'] ?? null,
+                'item_group' => $asset['item_group'] ?? null,
+                'item_name' => $asset['item_name'] ?? null,
+                'purchase_date' => $asset['purchase_date'] ?? null,
+                'quantity' => $asset['quantity'] ?? null,
+                'receipt_or_serial_number' => $asset['receipt_or_serial_number'] ?? null,
+                'amount' => $asset['amount'] ?? null,
+                'condition_status' => $asset['condition_status'] ?? null,
+                'allocation_note' => $asset['allocation_note'] ?? null,
+                'status' => $asset['status'] ?? null,
+                'lifecycle_status' => $hasLifecycle ? ($asset['lifecycle_status'] ?? null) : null,
+            ];
+
+            if ($hasLifecycle) {
+                $stmt = $conn->prepare('UPDATE assets SET church_id=?, department_id=?, item_group=?, item_name=?, purchase_date=?, quantity=?, receipt_or_serial_number=?, amount=?, condition_status=?, allocation_note=?, status=?, lifecycle_status=? WHERE id=?');
+                $stmt->bind_param(
+                    'iisssisdssssi',
+                    $churchId,
+                    $departmentId,
+                    $itemGroup,
+                    $itemName,
+                    $purchaseDateDb,
+                    $quantity,
+                    $receiptOrSerial,
+                    $amountDb,
+                    $conditionStatus,
+                    $allocationNote,
+                    $status,
+                    $lifecycleStatus,
+                    $assetId
+                );
+            } else {
+                $stmt = $conn->prepare('UPDATE assets SET church_id=?, department_id=?, item_group=?, item_name=?, purchase_date=?, quantity=?, receipt_or_serial_number=?, amount=?, condition_status=?, allocation_note=?, status=? WHERE id=?');
+                $stmt->bind_param(
+                    'iisssisdsssi',
+                    $churchId,
+                    $departmentId,
+                    $itemGroup,
+                    $itemName,
+                    $purchaseDateDb,
+                    $quantity,
+                    $receiptOrSerial,
+                    $amountDb,
+                    $conditionStatus,
+                    $allocationNote,
+                    $status,
+                    $assetId
+                );
+            }
             $ok = $stmt->execute();
             $stmt->close();
 
             if ($ok) {
-                asset_log_action('asset_update', 'asset', $assetId, [
-                    'asset_code' => $assetCode,
+                $after = [
                     'church_id' => $churchId,
                     'department_id' => $departmentId,
+                    'item_group' => $itemGroup,
+                    'item_name' => $itemName,
+                    'purchase_date' => $purchaseDateDb,
+                    'quantity' => $quantity,
+                    'receipt_or_serial_number' => $receiptOrSerial,
+                    'amount' => $amountDb,
                     'condition_status' => $conditionStatus,
+                    'allocation_note' => $allocationNote,
                     'status' => $status,
-                ]);
+                    'lifecycle_status' => $hasLifecycle ? $lifecycleStatus : null,
+                ];
+
+                asset_log_action('asset_update', 'asset', $assetId, [
+                    'asset_id' => $assetId,
+                    'asset_code' => $assetCode,
+                    'church_id' => $churchId,
+                ], $before, $after);
+
                 header('Location: asset_list.php?saved=1' . ($churchId ? '&church_id=' . $churchId : ''));
                 exit;
             }
@@ -136,34 +211,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $assetCode = asset_generate_code($conn, $churchId, $departmentId, $itemGroup);
             $createdBy = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
 
-            $stmt = $conn->prepare('INSERT INTO assets (church_id, asset_code, department_id, item_group, item_name, purchase_date, quantity, receipt_or_serial_number, amount, condition_status, allocation_note, status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-            $stmt->bind_param(
-                'isisssisdsssi',
-                $churchId,
-                $assetCode,
-                $departmentId,
-                $itemGroup,
-                $itemName,
-                $purchaseDateDb,
-                $quantity,
-                $receiptOrSerial,
-                $amountDb,
-                $conditionStatus,
-                $allocationNote,
-                $status,
-                $createdBy
-            );
+            if ($hasLifecycle) {
+                $stmt = $conn->prepare('INSERT INTO assets (church_id, asset_code, department_id, item_group, item_name, purchase_date, quantity, receipt_or_serial_number, amount, condition_status, allocation_note, status, lifecycle_status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $stmt->bind_param(
+                    'isisssisdssssi',
+                    $churchId,
+                    $assetCode,
+                    $departmentId,
+                    $itemGroup,
+                    $itemName,
+                    $purchaseDateDb,
+                    $quantity,
+                    $receiptOrSerial,
+                    $amountDb,
+                    $conditionStatus,
+                    $allocationNote,
+                    $status,
+                    $lifecycleStatus,
+                    $createdBy
+                );
+            } else {
+                $stmt = $conn->prepare('INSERT INTO assets (church_id, asset_code, department_id, item_group, item_name, purchase_date, quantity, receipt_or_serial_number, amount, condition_status, allocation_note, status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $stmt->bind_param(
+                    'isisssisdsssi',
+                    $churchId,
+                    $assetCode,
+                    $departmentId,
+                    $itemGroup,
+                    $itemName,
+                    $purchaseDateDb,
+                    $quantity,
+                    $receiptOrSerial,
+                    $amountDb,
+                    $conditionStatus,
+                    $allocationNote,
+                    $status,
+                    $createdBy
+                );
+            }
             $ok = $stmt->execute();
             $newId = (int) $conn->insert_id;
             $stmt->close();
 
             if ($ok) {
                 asset_log_action('asset_create', 'asset', $newId, [
+                    'asset_id' => $newId,
                     'asset_code' => $assetCode,
                     'church_id' => $churchId,
+                ], [], [
                     'department_id' => $departmentId,
+                    'item_group' => $itemGroup,
+                    'item_name' => $itemName,
+                    'quantity' => $quantity,
                     'condition_status' => $conditionStatus,
                     'status' => $status,
+                    'lifecycle_status' => $hasLifecycle ? $lifecycleStatus : null,
                 ]);
                 header('Location: asset_list.php?saved=1' . ($churchId ? '&church_id=' . $churchId : ''));
                 exit;
@@ -177,13 +279,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 ob_start();
 ?>
+<style>
+.asset-form-shell {
+    background: linear-gradient(145deg, #f7f9fc, #eef3f8);
+    border: 1px solid #dde5ee;
+    border-radius: 14px;
+}
+.asset-form-shell .card-header {
+    background: #0f3557;
+    color: #fff;
+    border-radius: 14px 14px 0 0;
+}
+</style>
 <div class="container-fluid mt-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2 class="mb-0"><i class="fas fa-box mr-2"></i><?= $isEdit ? 'Edit Asset' : 'Add Asset' ?></h2>
-        <a href="asset_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>" class="btn btn-secondary"><i class="fas fa-arrow-left mr-1"></i> Back</a>
+        <div>
+            <h2 class="mb-1"><i class="fas fa-box mr-2"></i><?= $isEdit ? 'Edit Asset' : 'Add Asset' ?></h2>
+            <small class="text-muted">Capture asset profile, condition, and lifecycle details.</small>
+        </div>
+        <a href="asset_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>" class="btn btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i> Back</a>
     </div>
 
-    <div class="card shadow-sm">
+    <div class="card asset-form-shell shadow-sm">
+        <div class="card-header py-3">
+            <strong><?= $isEdit ? 'Asset Update' : 'Asset Onboarding' ?></strong>
+        </div>
         <div class="card-body">
             <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 
@@ -223,7 +343,7 @@ ob_start();
                     </div>
                     <div class="form-group col-md-4">
                         <label>Item Group</label>
-                        <input type="text" name="item_group" class="form-control" value="<?= htmlspecialchars($itemGroup) ?>" maxlength="120" placeholder="e.g. Musical Equipment">
+                        <input type="text" name="item_group" class="form-control" value="<?= htmlspecialchars($itemGroup) ?>" maxlength="120" placeholder="e.g. Sound Equipment">
                     </div>
                     <div class="form-group col-md-4">
                         <label>Item Name <span class="text-danger">*</span></label>
@@ -260,16 +380,27 @@ ob_start();
                         </select>
                     </div>
                     <div class="form-group col-md-4">
-                        <label>Status</label>
+                        <label>Asset Status</label>
                         <select name="status" class="form-control">
                             <option value="active" <?= $status === 'active' ? 'selected' : '' ?>>Active</option>
                             <option value="disposed" <?= $status === 'disposed' ? 'selected' : '' ?>>Disposed</option>
                         </select>
                     </div>
+                    <?php if ($hasLifecycle): ?>
                     <div class="form-group col-md-4">
-                        <label>Allocation Note</label>
-                        <input type="text" name="allocation_note" class="form-control" value="<?= htmlspecialchars($allocationNote) ?>" maxlength="180">
+                        <label>Lifecycle Stage <span class="text-danger">*</span></label>
+                        <select name="lifecycle_status" class="form-control" required>
+                            <?php foreach ($lifecycleOptions as $opt): ?>
+                                <option value="<?= htmlspecialchars($opt) ?>" <?= $lifecycleStatus === $opt ? 'selected' : '' ?>><?= htmlspecialchars(asset_lifecycle_label($opt)) ?></option>
+                            <?php endforeach; ?>
+                        </select>
                     </div>
+                    <?php endif; ?>
+                </div>
+
+                <div class="form-group">
+                    <label>Allocation Note</label>
+                    <input type="text" name="allocation_note" class="form-control" value="<?= htmlspecialchars($allocationNote) ?>" maxlength="180" placeholder="Department/location note">
                 </div>
 
                 <button type="submit" class="btn btn-primary"><i class="fas fa-save mr-1"></i> Save Asset</button>

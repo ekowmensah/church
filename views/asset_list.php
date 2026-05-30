@@ -1,22 +1,26 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
 
 asset_require_permission('view_asset_register');
 
 $isSuper = asset_is_super_admin();
+$hasLifecycle = asset_can_use_lifecycle($conn);
 $churchId = $isSuper ? (isset($_GET['church_id']) && (int) $_GET['church_id'] > 0 ? (int) $_GET['church_id'] : null) : asset_current_church_id($conn);
 $departmentId = isset($_GET['department_id']) && (int) $_GET['department_id'] > 0 ? (int) $_GET['department_id'] : null;
 $condition = trim((string) ($_GET['condition_status'] ?? ''));
 $status = trim((string) ($_GET['status'] ?? ''));
+$lifecycle = trim((string) ($_GET['lifecycle_status'] ?? ''));
 $q = trim((string) ($_GET['q'] ?? ''));
 
 $conditions = asset_condition_options();
+$lifecycleOptions = asset_lifecycle_options();
 $canCreate = $isSuper || has_permission('create_asset');
 $canEdit = $isSuper || has_permission('edit_asset');
 $canDelete = $isSuper || has_permission('delete_asset');
 $canTransfer = $isSuper || has_permission('transfer_asset');
 $canExport = $isSuper || has_permission('export_asset_register');
+$canViewAudit = $isSuper || has_permission('view_asset_audit');
 
 $departments = asset_fetch_departments($conn, $churchId, true);
 $churches = [];
@@ -57,6 +61,11 @@ if ($status !== '' && in_array($status, ['active', 'disposed'], true)) {
     $types .= 's';
     $params[] = $status;
 }
+if ($hasLifecycle && $lifecycle !== '' && in_array($lifecycle, $lifecycleOptions, true)) {
+    $sql .= ' AND a.lifecycle_status = ?';
+    $types .= 's';
+    $params[] = $lifecycle;
+}
 if ($q !== '') {
     $sql .= ' AND (a.asset_code LIKE ? OR a.item_name LIKE ? OR a.item_group LIKE ? OR a.receipt_or_serial_number LIKE ?)';
     $types .= 'ssss';
@@ -81,21 +90,79 @@ while ($row = $res->fetch_assoc()) {
 }
 $stmt->close();
 
+$totalAssets = count($assets);
+$activeAssets = 0;
+$disposedAssets = 0;
+$underMaintenanceAssets = 0;
+$totalAmount = 0.0;
+
+foreach ($assets as $asset) {
+    $assetStatus = (string) ($asset['status'] ?? 'active');
+    $assetCondition = (string) ($asset['condition_status'] ?? '');
+    $effectiveLifecycle = $hasLifecycle
+        ? (string) ($asset['lifecycle_status'] ?? asset_default_lifecycle($assetStatus, $assetCondition))
+        : asset_default_lifecycle($assetStatus, $assetCondition);
+
+    if ($assetStatus === 'disposed') {
+        $disposedAssets++;
+    } else {
+        $activeAssets++;
+    }
+    if ($effectiveLifecycle === 'under_maintenance' || $assetCondition === 'Under Maintenance') {
+        $underMaintenanceAssets++;
+    }
+    if ($asset['amount'] !== null) {
+        $totalAmount += (float) $asset['amount'];
+    }
+}
+
 ob_start();
 ?>
+<style>
+.asset-kpi {
+    border-radius: 14px;
+    border: 1px solid #dbe3ec;
+    background: linear-gradient(145deg, #ffffff, #f4f7fb);
+}
+.asset-kpi .label {
+    font-size: 11px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #5f6d7a;
+    font-weight: 700;
+}
+.asset-kpi .value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #18324a;
+}
+.asset-hero {
+    border-radius: 16px;
+    background: linear-gradient(120deg, #0f3557, #18527f);
+    color: #fff;
+}
+.asset-hero small {
+    color: rgba(255, 255, 255, .84);
+}
+</style>
 <div class="container-fluid mt-4">
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
-        <div>
-            <h2 class="mb-0"><i class="fas fa-boxes mr-2"></i>Asset Register</h2>
-            <small class="text-muted">Track church assets by department, condition, and movement history.</small>
-        </div>
-        <div class="mt-2 mt-md-0">
-            <?php if ($canExport): ?>
-                <a class="btn btn-outline-success mr-2" href="asset_export.php?<?= htmlspecialchars(http_build_query($_GET)) ?>"><i class="fas fa-file-csv mr-1"></i> Export</a>
-            <?php endif; ?>
-            <?php if ($canCreate): ?>
-                <a class="btn btn-primary" href="asset_form.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>"><i class="fas fa-plus mr-1"></i> Add Asset</a>
-            <?php endif; ?>
+    <div class="asset-hero p-3 p-md-4 mb-3 shadow-sm">
+        <div class="d-flex flex-wrap justify-content-between align-items-center">
+            <div>
+                <h2 class="mb-1"><i class="fas fa-boxes mr-2"></i>Asset Register</h2>
+                <small>Enterprise tracking for assets, condition, lifecycle, and department accountability.</small>
+            </div>
+            <div class="mt-2 mt-md-0">
+                <?php if ($canViewAudit): ?>
+                    <a class="btn btn-light mr-2" href="asset_audit_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>"><i class="fas fa-user-shield mr-1"></i> Audit Log</a>
+                <?php endif; ?>
+                <?php if ($canExport): ?>
+                    <a class="btn btn-outline-light mr-2" href="asset_export.php?<?= htmlspecialchars(http_build_query($_GET)) ?>"><i class="fas fa-file-csv mr-1"></i> Export</a>
+                <?php endif; ?>
+                <?php if ($canCreate): ?>
+                    <a class="btn btn-warning" href="asset_form.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>"><i class="fas fa-plus mr-1"></i> Add Asset</a>
+                <?php endif; ?>
+            </div>
         </div>
     </div>
 
@@ -103,11 +170,38 @@ ob_start();
     <?php if (isset($_GET['deleted'])): ?><div class="alert alert-success">Asset deleted successfully.</div><?php endif; ?>
     <?php if (isset($_GET['transferred'])): ?><div class="alert alert-success">Asset transferred successfully.</div><?php endif; ?>
 
+    <div class="row mb-3">
+        <div class="col-md-3 mb-2">
+            <div class="asset-kpi p-3 h-100">
+                <div class="label">Total Assets</div>
+                <div class="value"><?= number_format($totalAssets) ?></div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-2">
+            <div class="asset-kpi p-3 h-100">
+                <div class="label">Active Assets</div>
+                <div class="value"><?= number_format($activeAssets) ?></div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-2">
+            <div class="asset-kpi p-3 h-100">
+                <div class="label">Under Maintenance</div>
+                <div class="value"><?= number_format($underMaintenanceAssets) ?></div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-2">
+            <div class="asset-kpi p-3 h-100">
+                <div class="label">Total Recorded Value</div>
+                <div class="value"><?= number_format($totalAmount, 2) ?></div>
+            </div>
+        </div>
+    </div>
+
     <div class="card shadow-sm mb-3">
         <div class="card-body">
             <form method="get" class="form-row align-items-end">
                 <?php if ($isSuper): ?>
-                <div class="form-group col-md-3">
+                <div class="form-group col-md-2">
                     <label>Church</label>
                     <select class="form-control" name="church_id">
                         <option value="">All Churches</option>
@@ -143,7 +237,18 @@ ob_start();
                         <option value="disposed" <?= $status === 'disposed' ? 'selected' : '' ?>>Disposed</option>
                     </select>
                 </div>
+                <?php if ($hasLifecycle): ?>
                 <div class="form-group col-md-2">
+                    <label>Lifecycle</label>
+                    <select class="form-control" name="lifecycle_status">
+                        <option value="">All</option>
+                        <?php foreach ($lifecycleOptions as $opt): ?>
+                            <option value="<?= htmlspecialchars($opt) ?>" <?= $lifecycle === $opt ? 'selected' : '' ?>><?= htmlspecialchars(asset_lifecycle_label($opt)) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <?php endif; ?>
+                <div class="form-group <?= $hasLifecycle ? 'col-md-2' : 'col-md-3' ?>">
                     <label>Search</label>
                     <input type="text" class="form-control" name="q" value="<?= htmlspecialchars($q) ?>" placeholder="Code, item, serial...">
                 </div>
@@ -166,27 +271,36 @@ ob_start();
                         <?php if ($isSuper): ?><th>Church</th><?php endif; ?>
                         <th>Purchase Date</th>
                         <th>Qty</th>
-                        <th>Receipt/Serial</th>
                         <th>Amount</th>
                         <th>Condition</th>
+                        <?php if ($hasLifecycle): ?><th>Lifecycle</th><?php endif; ?>
                         <th>Status</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($assets as $asset): ?>
+                        <?php
+                        $assetStatus = (string) ($asset['status'] ?? 'active');
+                        $assetCondition = (string) ($asset['condition_status'] ?? '');
+                        $effectiveLifecycle = $hasLifecycle
+                            ? (string) ($asset['lifecycle_status'] ?? asset_default_lifecycle($assetStatus, $assetCondition))
+                            : asset_default_lifecycle($assetStatus, $assetCondition);
+                        ?>
                         <tr>
-                            <td><?= htmlspecialchars($asset['asset_code']) ?></td>
+                            <td><?= htmlspecialchars((string) $asset['asset_code']) ?></td>
                             <td><?= htmlspecialchars((string) ($asset['item_group'] ?? '')) ?></td>
-                            <td><?= htmlspecialchars($asset['item_name']) ?></td>
+                            <td><?= htmlspecialchars((string) $asset['item_name']) ?></td>
                             <td><?= htmlspecialchars((string) ($asset['department_name'] ?? '-')) ?></td>
                             <?php if ($isSuper): ?><td><?= htmlspecialchars((string) ($asset['church_name'] ?? '-')) ?></td><?php endif; ?>
                             <td><?= htmlspecialchars((string) ($asset['purchase_date'] ?? '')) ?></td>
                             <td><?= (int) $asset['quantity'] ?></td>
-                            <td><?= htmlspecialchars((string) ($asset['receipt_or_serial_number'] ?? '')) ?></td>
                             <td><?= $asset['amount'] !== null ? number_format((float) $asset['amount'], 2) : '' ?></td>
-                            <td><span class="badge badge-info"><?= htmlspecialchars($asset['condition_status']) ?></span></td>
-                            <td><span class="badge badge-<?= $asset['status'] === 'active' ? 'success' : 'secondary' ?>"><?= htmlspecialchars($asset['status']) ?></span></td>
+                            <td><span class="badge badge-<?= asset_condition_badge_class($assetCondition) ?>"><?= htmlspecialchars($assetCondition) ?></span></td>
+                            <?php if ($hasLifecycle): ?>
+                                <td><span class="badge badge-<?= asset_lifecycle_badge_class($effectiveLifecycle) ?>"><?= htmlspecialchars(asset_lifecycle_label($effectiveLifecycle)) ?></span></td>
+                            <?php endif; ?>
+                            <td><span class="badge badge-<?= $assetStatus === 'active' ? 'success' : 'secondary' ?>"><?= htmlspecialchars($assetStatus) ?></span></td>
                             <td class="text-nowrap">
                                 <?php if ($canEdit): ?>
                                     <a href="asset_form.php?id=<?= (int) $asset['id'] ?>" class="btn btn-sm btn-warning"><i class="fas fa-edit"></i></a>
@@ -201,7 +315,7 @@ ob_start();
                         </tr>
                     <?php endforeach; ?>
                     <?php if (empty($assets)): ?>
-                        <tr><td colspan="<?= $isSuper ? 12 : 11 ?>" class="text-center">No assets found.</td></tr>
+                        <tr><td colspan="<?= $isSuper ? ($hasLifecycle ? 12 : 11) : ($hasLifecycle ? 11 : 10) ?>" class="text-center">No assets found.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>

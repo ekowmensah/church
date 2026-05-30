@@ -12,11 +12,12 @@ $status = trim((string) ($_GET['status'] ?? ''));
 $q = trim((string) ($_GET['q'] ?? ''));
 
 $conditions = asset_condition_options();
+$hasLifecycle = asset_can_use_lifecycle($conn);
 
 $sql = "
     SELECT a.asset_code, a.item_group, a.item_name, d.name AS department_name, c.name AS church_name,
            a.purchase_date, a.quantity, a.receipt_or_serial_number, a.amount, a.condition_status,
-           a.status, a.allocation_note, a.created_at, a.updated_at
+           a.status" . ($hasLifecycle ? ", a.lifecycle_status" : "") . ", a.allocation_note, a.created_at, a.updated_at
     FROM assets a
     LEFT JOIN asset_departments d ON d.id = a.department_id
     LEFT JOIN churches c ON c.id = a.church_id
@@ -68,14 +69,22 @@ header('Content-Type: text/csv; charset=utf-8');
 header('Content-Disposition: attachment; filename="asset_register_' . date('Ymd_His') . '.csv"');
 
 $out = fopen('php://output', 'w');
-fputcsv($out, [
+
+$header = [
     'Asset Code', 'Item Group', 'Item Name', 'Department', 'Church',
     'Purchase Date', 'Quantity', 'Receipt/Serial Number', 'Amount', 'Condition Status',
-    'Status', 'Allocation Note', 'Created At', 'Updated At'
-]);
+    'Status'
+];
+if ($hasLifecycle) {
+    $header[] = 'Lifecycle Status';
+}
+$header[] = 'Allocation Note';
+$header[] = 'Created At';
+$header[] = 'Updated At';
+fputcsv($out, $header);
 
 while ($row = $res->fetch_assoc()) {
-    fputcsv($out, [
+    $line = [
         $row['asset_code'],
         $row['item_group'],
         $row['item_name'],
@@ -87,10 +96,16 @@ while ($row = $res->fetch_assoc()) {
         $row['amount'],
         $row['condition_status'],
         $row['status'],
-        $row['allocation_note'],
-        $row['created_at'],
-        $row['updated_at'],
-    ]);
+    ];
+
+    if ($hasLifecycle) {
+        $line[] = (string) ($row['lifecycle_status'] ?? asset_default_lifecycle((string) ($row['status'] ?? 'active'), (string) ($row['condition_status'] ?? '')));
+    }
+
+    $line[] = $row['allocation_note'];
+    $line[] = $row['created_at'];
+    $line[] = $row['updated_at'];
+    fputcsv($out, $line);
 }
 
 fclose($out);
