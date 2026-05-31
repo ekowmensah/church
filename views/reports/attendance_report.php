@@ -37,9 +37,11 @@ $churches = $conn->query("SELECT id, name FROM churches ORDER BY name");
 $classes = $conn->query("SELECT id, name FROM bible_classes ORDER BY name");
 
 // Handle filters
-$where = "WHERE 1=1";
+$where = "WHERE (s.service_date IS NULL OR s.service_date <> '0000-00-00')";
 $params = [];
 $types = '';
+
+$allowed_statuses = ['present', 'absent', 'sick', 'permission', 'distance', 'invalid'];
 if (!empty($_GET['church_id'])) {
     $where .= " AND s.church_id = ?";
     $params[] = intval($_GET['church_id']);
@@ -50,7 +52,7 @@ if (!empty($_GET['class_id'])) {
     $params[] = intval($_GET['class_id']);
     $types .= 'i';
 }
-if (!empty($_GET['status'])) {
+if (!empty($_GET['status']) && in_array($_GET['status'], $allowed_statuses, true)) {
     $where .= " AND r.status = ?";
     $params[] = $_GET['status'];
     $types .= 's';
@@ -115,6 +117,10 @@ while ($row = $trend_res->fetch_assoc()) {
         <option value="">All</option>
         <option value="present"<?= isset($_GET['status']) && $_GET['status']=='present' ? ' selected' : '' ?>>Present</option>
         <option value="absent"<?= isset($_GET['status']) && $_GET['status']=='absent' ? ' selected' : '' ?>>Absent</option>
+        <option value="sick"<?= isset($_GET['status']) && $_GET['status']=='sick' ? ' selected' : '' ?>>Sick</option>
+        <option value="permission"<?= isset($_GET['status']) && $_GET['status']=='permission' ? ' selected' : '' ?>>Permission</option>
+        <option value="distance"<?= isset($_GET['status']) && $_GET['status']=='distance' ? ' selected' : '' ?>>Distance</option>
+        <option value="invalid"<?= isset($_GET['status']) && $_GET['status']=='invalid' ? ' selected' : '' ?>>Invalid</option>
       </select>
     </div>
     <div class="form-group col-md-2">

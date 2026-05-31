@@ -153,6 +153,9 @@ ob_start();
                 <a href="my_bible_class_attendance.php" class="btn btn-light btn-lg">
                     <i class="fas fa-clipboard-check"></i> Mark Attendance
                 </a>
+                <a href="bible_class_book.php?class_id=<?= (int) $class_id ?>&year=<?= date('Y') ?>&quarter=<?= ceil(date('n') / 3) ?>" class="btn btn-outline-light btn-lg">
+                    <i class="fas fa-book-open"></i> Bible Class Book
+                </a>
                 <button type="button" class="btn btn-light btn-lg dropdown-toggle dropdown-toggle-split" data-toggle="dropdown">
                     <span class="sr-only">Toggle Dropdown</span>
                 </button>

@@ -20,6 +20,34 @@ if (!$session_id) {
     exit;
 }
 
+function attendance_scope_columns_available($conn) {
+    static $available = null;
+    if ($available !== null) {
+        return $available;
+    }
+
+    $sql = "SELECT COUNT(*) AS cnt
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'attendance_sessions'
+              AND COLUMN_NAME IN ('attendance_scope', 'scope_id')";
+    $res = $conn->query($sql);
+    $row = $res ? $res->fetch_assoc() : null;
+    $available = ($row && intval($row['cnt']) === 2);
+    return $available;
+}
+
+function safe_display_date($rawDate) {
+    if (!$rawDate || $rawDate === '0000-00-00') {
+        return 'No date set';
+    }
+    $ts = strtotime($rawDate);
+    if ($ts === false) {
+        return 'Invalid date';
+    }
+    return date('l, F j, Y', $ts);
+}
+
 // Fetch session details
 $stmt = $conn->prepare("SELECT s.*, c.name AS church_name FROM attendance_sessions s LEFT JOIN churches c ON s.church_id = c.id WHERE s.id = ? LIMIT 1");
 $stmt->bind_param('i', $session_id);
@@ -29,6 +57,10 @@ if (!$session) {
     header('Location: attendance_list.php');
     exit;
 }
+$scope_columns_available = attendance_scope_columns_available($conn);
+$session_scope = $scope_columns_available ? strtolower(trim((string)($session['attendance_scope'] ?? ''))) : '';
+$session_scope_id = $scope_columns_available ? intval($session['scope_id'] ?? 0) : 0;
+$session_display_date = safe_display_date($session['service_date'] ?? '');
 
 // Get filter options
 $bible_classes = $conn->query("SELECT id, name FROM bible_classes ORDER BY name ASC");
@@ -44,19 +76,28 @@ $sql = "SELECT m.id, m.first_name, m.last_name, m.middle_name, m.crn,
         m.class_id, bc.name AS class_name, m.gender
         FROM members m 
         LEFT JOIN bible_classes bc ON m.class_id = bc.id ";
-if ($filter_org) {
+if ($filter_org || ($session_scope === 'organization' && $session_scope_id > 0)) {
     $sql .= "LEFT JOIN member_organizations mo ON mo.member_id = m.id ";
 }
-$sql .= "WHERE m.church_id = ? ";
+$sql .= "WHERE m.church_id = ? AND m.status = 'active' ";
 $params = [$session['church_id']];
 $types = 'i';
 
-if ($filter_class) {
+if ($session_scope === 'bible_class' && $session_scope_id > 0) {
+    $sql .= "AND m.class_id = ? ";
+    $params[] = $session_scope_id;
+    $types .= 'i';
+} elseif ($filter_class) {
     $sql .= "AND m.class_id = ? ";
     $params[] = $filter_class;
     $types .= 'i';
 }
-if ($filter_org) {
+
+if ($session_scope === 'organization' && $session_scope_id > 0) {
+    $sql .= "AND mo.organization_id = ? ";
+    $params[] = $session_scope_id;
+    $types .= 'i';
+} elseif ($filter_org) {
     $sql .= "AND mo.organization_id = ? ";
     $params[] = $filter_org;
     $types .= 'i';
@@ -184,6 +225,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_POST['action']) || $_POST['action'] === 'finalize')) {
     $marked = $_POST['attendance'] ?? [];
     $valid_statuses = ['present', 'absent', 'sick', 'permission', 'distance', 'invalid'];
+
+    if ($scope_columns_available && ($session_scope === '' || ($session_scope === 'church' && $session_scope_id === 0))) {
+        $newScope = null;
+        $newScopeId = 0;
+        if (!empty($filter_class) && ctype_digit((string)$filter_class)) {
+            $newScope = 'bible_class';
+            $newScopeId = intval($filter_class);
+        } elseif (!empty($filter_org) && ctype_digit((string)$filter_org)) {
+            $newScope = 'organization';
+            $newScopeId = intval($filter_org);
+        }
+
+        if ($newScope !== null && $newScopeId > 0) {
+            $scopeStmt = $conn->prepare("UPDATE attendance_sessions SET attendance_scope = ?, scope_id = ? WHERE id = ?");
+            $scopeStmt->bind_param('sii', $newScope, $newScopeId, $session_id);
+            $scopeStmt->execute();
+            $scopeStmt->close();
+        }
+    }
     
     // Process all members for this session's church
     foreach ($members as $m) {
@@ -719,7 +779,7 @@ ob_start();
                     </div>
                     <div class="session-meta-item">
                         <i class="fas fa-calendar"></i>
-                        <span><?= date('l, F j, Y', strtotime($session['service_date'])) ?></span>
+                        <span><?= htmlspecialchars($session_display_date) ?></span>
                     </div>
                 </div>
             </div>

@@ -15,6 +15,37 @@ if (!has_permission('edit_attendance')) {
     exit;
 }
 
+function attendance_scope_columns_available($conn) {
+    static $available = null;
+    if ($available !== null) {
+        return $available;
+    }
+
+    $sql = "SELECT COUNT(*) AS cnt
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'attendance_sessions'
+              AND COLUMN_NAME IN ('attendance_scope', 'scope_id')";
+    $res = $conn->query($sql);
+    $row = $res ? $res->fetch_assoc() : null;
+    $available = ($row && intval($row['cnt']) === 2);
+    return $available;
+}
+
+function normalize_date_input($rawDate) {
+    $rawDate = trim((string)$rawDate);
+    if ($rawDate === '' || $rawDate === '0000-00-00') {
+        return null;
+    }
+    $ts = strtotime($rawDate);
+    if ($ts === false) {
+        return null;
+    }
+    return date('Y-m-d', $ts);
+}
+
+$scope_columns_available = attendance_scope_columns_available($conn);
+
 $error = '';
 $title = '';
 $service_date = '';
@@ -35,7 +66,7 @@ if ($edit_id && $_SERVER['REQUEST_METHOD'] !== 'POST') {
     $result = $stmt->get_result();
     if ($row = $result->fetch_assoc()) {
         $title = $row['title'];
-        $service_date = $row['service_date'];
+        $service_date = normalize_date_input($row['service_date'] ?? '') ?? '';
         $is_recurring = $row['is_recurring'];
         $recurrence_type = $row['recurrence_type'];
         $recurrence_day = $row['recurrence_day'];
@@ -48,7 +79,7 @@ if ($edit_id && $_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $title = trim($_POST['title'] ?? '');
-    $service_date = trim($_POST['service_date'] ?? '');
+    $service_date = normalize_date_input($_POST['service_date'] ?? '');
     $is_recurring = intval($_POST['is_recurring'] ?? 0);
     $recurrence_type = trim($_POST['recurrence_type'] ?? '');
     $recurrence_day = $_POST['recurrence_day'] ?? '';
@@ -59,16 +90,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($is_recurring && (!$recurrence_type || strlen($recurrence_day) == 0)) {
         $error = 'Please select recurrence type and day.';
     } else {
+        if ($is_recurring) {
+            $service_date = null;
+        }
+
         if ($edit_id) {
             $stmt = $conn->prepare("UPDATE attendance_sessions SET title=?, service_date=?, is_recurring=?, recurrence_type=?, recurrence_day=?, church_id=? WHERE id=?");
             $stmt->bind_param('ssissii', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id, $edit_id);
             $stmt->execute();
+
+            if ($scope_columns_available) {
+                $scopeStmt = $conn->prepare("UPDATE attendance_sessions SET attendance_scope = 'church', scope_id = NULL WHERE id = ?");
+                $scopeStmt->bind_param('i', $edit_id);
+                $scopeStmt->execute();
+                $scopeStmt->close();
+            }
+
             header('Location: attendance_list.php?updated=1');
             exit;
         } else {
             $stmt = $conn->prepare("INSERT INTO attendance_sessions (title, service_date, is_recurring, recurrence_type, recurrence_day, church_id) VALUES (?, ?, ?, ?, ?, ?)");
             $stmt->bind_param('ssissi', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id);
             if ($stmt->execute()) {
+                $newSessionId = intval($conn->insert_id);
+
+                if ($scope_columns_available && $newSessionId > 0) {
+                    $scopeStmt = $conn->prepare("UPDATE attendance_sessions SET attendance_scope = 'church', scope_id = NULL WHERE id = ?");
+                    $scopeStmt->bind_param('i', $newSessionId);
+                    $scopeStmt->execute();
+                    $scopeStmt->close();
+                }
+
                 header('Location: attendance_list.php?added=1');
                 exit;
             } else {

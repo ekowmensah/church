@@ -355,6 +355,7 @@ function get_bible_class_attendance_stats($conn, $class_id, $start_date = null, 
         INNER JOIN members m ON ar.member_id = m.id
         INNER JOIN attendance_sessions ats ON ar.session_id = ats.id
         WHERE m.class_id = ?
+          AND (ats.service_date IS NULL OR ats.service_date <> '0000-00-00')
     ";
     
     $params = [$class_id];
@@ -408,6 +409,7 @@ function get_organization_attendance_stats($conn, $org_id, $start_date = null, $
         INNER JOIN member_organizations mo ON ar.member_id = mo.member_id
         INNER JOIN attendance_sessions ats ON ar.session_id = ats.id
         WHERE mo.organization_id = ?
+          AND (ats.service_date IS NULL OR ats.service_date <> '0000-00-00')
     ";
     
     $params = [$org_id];

@@ -23,20 +23,69 @@ if (!$leader_info) {
 $class_id = $leader_info['class_id'];
 $class_name = $leader_info['class_name'];
 
+function attendance_scope_columns_available($conn) {
+    static $available = null;
+    if ($available !== null) {
+        return $available;
+    }
+
+    $sql = "SELECT COUNT(*) AS cnt
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'attendance_sessions'
+              AND COLUMN_NAME IN ('attendance_scope', 'scope_id')";
+    $res = $conn->query($sql);
+    $row = $res ? $res->fetch_assoc() : null;
+    $available = ($row && intval($row['cnt']) === 2);
+    return $available;
+}
+
+function safe_display_date($rawDate) {
+    if (!$rawDate || $rawDate === '0000-00-00') {
+        return 'No date set';
+    }
+    $ts = strtotime($rawDate);
+    if ($ts === false) {
+        return 'Invalid date';
+    }
+    return date('l, F j, Y', $ts);
+}
+
+$scope_columns_available = attendance_scope_columns_available($conn);
+
 // Get session_id from URL or show session selection
 $session_id = isset($_GET['session_id']) ? intval($_GET['session_id']) : 0;
 
 if (!$session_id) {
     // Show session selection
-    $stmt = $conn->prepare("
-        SELECT ats.*, c.name as church_name
-        FROM attendance_sessions ats
-        LEFT JOIN churches c ON ats.church_id = c.id
-        WHERE ats.church_id = ?
-        ORDER BY ats.service_date DESC
-        LIMIT 20
-    ");
-    $stmt->bind_param('i', $leader_info['church_id']);
+    if ($scope_columns_available) {
+        $stmt = $conn->prepare("
+            SELECT ats.*, c.name as church_name
+            FROM attendance_sessions ats
+            LEFT JOIN churches c ON ats.church_id = c.id
+            WHERE ats.church_id = ?
+              AND (ats.service_date IS NULL OR ats.service_date <> '0000-00-00')
+              AND (
+                    (ats.attendance_scope = 'bible_class' AND ats.scope_id = ?)
+                    OR ats.attendance_scope = 'church'
+                    OR ats.attendance_scope IS NULL
+                  )
+            ORDER BY ats.service_date DESC, ats.id DESC
+            LIMIT 20
+        ");
+        $stmt->bind_param('ii', $leader_info['church_id'], $class_id);
+    } else {
+        $stmt = $conn->prepare("
+            SELECT ats.*, c.name as church_name
+            FROM attendance_sessions ats
+            LEFT JOIN churches c ON ats.church_id = c.id
+            WHERE ats.church_id = ?
+              AND (ats.service_date IS NULL OR ats.service_date <> '0000-00-00')
+            ORDER BY ats.service_date DESC, ats.id DESC
+            LIMIT 20
+        ");
+        $stmt->bind_param('i', $leader_info['church_id']);
+    }
     $stmt->execute();
     $sessions = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
@@ -57,7 +106,7 @@ if (!$session_id) {
                             <div>
                                 <h5 class="mb-1"><?= htmlspecialchars($session['title']) ?></h5>
                                 <p class="mb-1">
-                                    <i class="fas fa-calendar"></i> <?= date('l, F j, Y', strtotime($session['service_date'])) ?>
+                                    <i class="fas fa-calendar"></i> <?= htmlspecialchars(safe_display_date($session['service_date'] ?? '')) ?>
                                     <span class="badge badge-info ml-2"><?= htmlspecialchars($session['church_name']) ?></span>
                                 </p>
                             </div>
@@ -97,6 +146,18 @@ if (!$session) {
     header('Location: my_bible_class_attendance.php');
     exit;
 }
+$session_display_date = safe_display_date($session['service_date'] ?? '');
+
+if ($scope_columns_available) {
+    $session_scope = strtolower(trim((string)($session['attendance_scope'] ?? '')));
+    $session_scope_id = intval($session['scope_id'] ?? 0);
+
+    if ($session_scope === 'bible_class' && $session_scope_id > 0 && $session_scope_id !== intval($class_id)) {
+        http_response_code(403);
+        echo '<div class="alert alert-danger">This attendance session is scoped to another Bible class.</div>';
+        exit;
+    }
+}
 
 // Get class members
 $members = get_bible_class_members($conn, $class_id);
@@ -124,6 +185,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $marked = $_POST['attendance'] ?? [];
     $marked_by = $_SESSION['user_id'] ?? $_SESSION['member_id'] ?? null;
     $valid_statuses = ['present', 'absent', 'sick', 'permission', 'distance', 'invalid'];
+
+    if ($scope_columns_available) {
+        $session_scope_now = strtolower(trim((string)($session['attendance_scope'] ?? '')));
+        $session_scope_id_now = intval($session['scope_id'] ?? 0);
+        if ($session_scope_now === '' || ($session_scope_now === 'church' && $session_scope_id_now === 0)) {
+            $scopeStmt = $conn->prepare("UPDATE attendance_sessions SET attendance_scope = 'bible_class', scope_id = ? WHERE id = ?");
+            $scopeStmt->bind_param('ii', $class_id, $session_id);
+            $scopeStmt->execute();
+            $scopeStmt->close();
+        }
+    }
     
     foreach ($members as $m) {
         $member_id = $m['id'];
@@ -471,7 +543,7 @@ ob_start();
             <h2><i class="fas fa-clipboard-check"></i> Mark Attendance</h2>
             <h4><?= htmlspecialchars($session['title']) ?></h4>
             <p class="mb-0">
-                <i class="fas fa-calendar"></i> <?= date('l, F j, Y', strtotime($session['service_date'])) ?>
+                <i class="fas fa-calendar"></i> <?= htmlspecialchars($session_display_date) ?>
                 | <i class="fas fa-chalkboard-teacher"></i> <?= htmlspecialchars($class_name) ?>
             </p>
         </div>

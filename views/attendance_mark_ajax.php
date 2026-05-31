@@ -21,6 +21,16 @@ if (!$session_id) {
     exit('No session ID');
 }
 
+$session_stmt = $conn->prepare("SELECT church_id FROM attendance_sessions WHERE id = ? LIMIT 1");
+$session_stmt->bind_param('i', $session_id);
+$session_stmt->execute();
+$session = $session_stmt->get_result()->fetch_assoc();
+$session_stmt->close();
+if (!$session) {
+    http_response_code(404);
+    exit('Session not found');
+}
+
 $filter_class = $_GET['class_id'] ?? '';
 $filter_org = $_GET['organization_id'] ?? '';
 $search = trim($_GET['search'] ?? '');
@@ -30,9 +40,9 @@ $sql = "SELECT m.id, m.first_name, m.last_name, m.middle_name, m.crn FROM member
 if ($filter_org) {
     $sql .= "LEFT JOIN member_organizations mo ON mo.member_id = m.id ";
 }
-$sql .= "WHERE 1 ";
-$params = [];
-$types = '';
+$sql .= "WHERE m.church_id = ? AND m.status = 'active' ";
+$params = [intval($session['church_id'])];
+$types = 'i';
 if ($filter_class) {
     $sql .= "AND m.class_id = ? ";
     $params[] = $filter_class;
@@ -54,14 +64,10 @@ if ($search !== '') {
 }
 $sql .= "ORDER BY m.last_name, m.first_name";
 
-if (!empty($params)) {
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param($types, ...$params);
-    $stmt->execute();
-    $members_result = $stmt->get_result();
-} else {
-    $members_result = $conn->query("SELECT id, first_name, last_name, middle_name, crn FROM members ORDER BY last_name, first_name");
-}
+$stmt = $conn->prepare($sql);
+$stmt->bind_param($types, ...$params);
+$stmt->execute();
+$members_result = $stmt->get_result();
 $members = $members_result ? $members_result->fetch_all(MYSQLI_ASSOC) : [];
 
 // Fetch previous attendance for this session and filtered members
