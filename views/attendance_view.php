@@ -20,6 +20,31 @@ if (!$session_id) {
     exit;
 }
 
+function attendance_scope_columns_available($conn) {
+    static $available = null;
+    if ($available !== null) {
+        return $available;
+    }
+    $sql = "SELECT COUNT(*) AS cnt
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'attendance_sessions'
+              AND COLUMN_NAME IN ('attendance_scope', 'scope_id')";
+    $res = $conn->query($sql);
+    $row = $res ? $res->fetch_assoc() : null;
+    $available = ($row && intval($row['cnt']) === 2);
+    return $available;
+}
+
+function table_exists($conn, $tableName) {
+    $stmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?");
+    $stmt->bind_param('s', $tableName);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $row && intval($row['cnt']) > 0;
+}
+
 // Fetch session details with church info
 $stmt = $conn->prepare("SELECT s.*, c.name AS church_name FROM attendance_sessions s LEFT JOIN churches c ON s.church_id = c.id WHERE s.id = ? LIMIT 1");
 $stmt->bind_param('i', $session_id);
@@ -28,6 +53,30 @@ $session = $stmt->get_result()->fetch_assoc();
 if (!$session) {
     header('Location: attendance_list.php');
     exit;
+}
+
+$scope_columns_available = attendance_scope_columns_available($conn);
+$organizations_table_available = table_exists($conn, 'organizations');
+$scope_name = $scope_columns_available
+    ? strtolower(trim((string)($session['attendance_scope'] ?? '')))
+    : 'church';
+if ($scope_name === '') {
+    $scope_name = 'church';
+}
+$scope_id = $scope_columns_available ? intval($session['scope_id'] ?? 0) : 0;
+$scope_target_name = null;
+if ($scope_id > 0 && $scope_name === 'bible_class') {
+    $scopeStmt = $conn->prepare("SELECT CONCAT_WS(' ', name, CONCAT('(', code, ')')) AS target_name FROM bible_classes WHERE id = ? LIMIT 1");
+    $scopeStmt->bind_param('i', $scope_id);
+    $scopeStmt->execute();
+    $scope_target_name = $scopeStmt->get_result()->fetch_assoc()['target_name'] ?? null;
+    $scopeStmt->close();
+} elseif ($scope_id > 0 && $scope_name === 'organization' && $organizations_table_available) {
+    $scopeStmt = $conn->prepare("SELECT name AS target_name FROM organizations WHERE id = ? LIMIT 1");
+    $scopeStmt->bind_param('i', $scope_id);
+    $scopeStmt->execute();
+    $scope_target_name = $scopeStmt->get_result()->fetch_assoc()['target_name'] ?? null;
+    $scopeStmt->close();
 }
 
 // Get filters
@@ -169,6 +218,21 @@ ob_start();
             font-size: 1.2rem;
             opacity: 0.9;
         }
+
+        .scope-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+        }
+        .scope-badge.scope-church { background: #1f4e79; color: #fff; }
+        .scope-badge.scope-bible_class { background: #4b2e83; color: #fff; }
+        .scope-badge.scope-organization { background: #8a3b12; color: #fff; }
+        .scope-badge.scope-event,
+        .scope-badge.scope-other { background: #6c757d; color: #fff; }
         
         .stats-dashboard {
             display: grid;
@@ -379,6 +443,13 @@ ob_start();
                     <div class="info-item">
                         <i class="fas fa-calendar"></i>
                         <span><?= date('l, F j, Y', strtotime($session['service_date'])) ?></span>
+                    </div>
+                    <div class="info-item">
+                        <i class="fas fa-layer-group"></i>
+                        <span class="scope-badge scope-<?= htmlspecialchars($scope_name) ?>"><?= htmlspecialchars(strtoupper(str_replace('_', ' ', $scope_name))) ?></span>
+                        <?php if (!empty($scope_target_name)): ?>
+                            <small class="text-white-50"><?= htmlspecialchars((string)$scope_target_name) ?></small>
+                        <?php endif; ?>
                     </div>
                     <?php if ($session['is_recurring']): ?>
                     <div class="info-item">

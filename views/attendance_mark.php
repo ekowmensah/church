@@ -37,6 +37,15 @@ function attendance_scope_columns_available($conn) {
     return $available;
 }
 
+function table_exists($conn, $tableName) {
+    $stmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?");
+    $stmt->bind_param('s', $tableName);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $row && intval($row['cnt']) > 0;
+}
+
 function safe_display_date($rawDate) {
     if (!$rawDate || $rawDate === '0000-00-00') {
         return 'No date set';
@@ -60,23 +69,49 @@ if (!$session) {
 $scope_columns_available = attendance_scope_columns_available($conn);
 $session_scope = $scope_columns_available ? strtolower(trim((string)($session['attendance_scope'] ?? ''))) : '';
 $session_scope_id = $scope_columns_available ? intval($session['scope_id'] ?? 0) : 0;
+$organizations_table_available = table_exists($conn, 'organizations');
 $session_display_date = safe_display_date($session['service_date'] ?? '');
+$scope_badge_name = $session_scope !== '' ? $session_scope : 'church';
+$scope_target_name = null;
+if ($session_scope_id > 0 && $scope_badge_name === 'bible_class') {
+    $scopeStmt = $conn->prepare("SELECT CONCAT_WS(' ', name, CONCAT('(', code, ')')) AS target_name FROM bible_classes WHERE id = ? LIMIT 1");
+    $scopeStmt->bind_param('i', $session_scope_id);
+    $scopeStmt->execute();
+    $scope_target_name = $scopeStmt->get_result()->fetch_assoc()['target_name'] ?? null;
+    $scopeStmt->close();
+} elseif ($session_scope_id > 0 && $scope_badge_name === 'organization' && $organizations_table_available) {
+    $scopeStmt = $conn->prepare("SELECT name AS target_name FROM organizations WHERE id = ? LIMIT 1");
+    $scopeStmt->bind_param('i', $session_scope_id);
+    $scopeStmt->execute();
+    $scope_target_name = $scopeStmt->get_result()->fetch_assoc()['target_name'] ?? null;
+    $scopeStmt->close();
+}
 
 // Get filter options
 $bible_classes = $conn->query("SELECT id, name FROM bible_classes ORDER BY name ASC");
-$organizations = $conn->query("SELECT id, name FROM organizations ORDER BY name ASC");
+$organizations = $organizations_table_available ? $conn->query("SELECT id, name FROM organizations ORDER BY name ASC") : false;
 
 // Get filter values
 $filter_class = $_GET['class_id'] ?? '';
 $filter_org = $_GET['organization_id'] ?? '';
 $search = trim($_GET['search'] ?? '');
 
+if ($scope_columns_available && $session_scope === 'bible_class' && $session_scope_id > 0) {
+    $filter_class = (string)$session_scope_id;
+    $filter_org = '';
+} elseif ($scope_columns_available && $session_scope === 'organization' && $session_scope_id > 0) {
+    $filter_org = (string)$session_scope_id;
+    $filter_class = '';
+}
+$class_filter_locked = $scope_columns_available && $session_scope === 'bible_class' && $session_scope_id > 0;
+$org_filter_locked = $scope_columns_available && $session_scope === 'organization' && $session_scope_id > 0;
+
 // Build member query with filters
 $sql = "SELECT m.id, m.first_name, m.last_name, m.middle_name, m.crn, 
         m.class_id, bc.name AS class_name, m.gender
         FROM members m 
         LEFT JOIN bible_classes bc ON m.class_id = bc.id ";
-if ($filter_org || ($session_scope === 'organization' && $session_scope_id > 0)) {
+if ($organizations_table_available && ($filter_org || ($session_scope === 'organization' && $session_scope_id > 0))) {
     $sql .= "LEFT JOIN member_organizations mo ON mo.member_id = m.id ";
 }
 $sql .= "WHERE m.church_id = ? AND m.status = 'active' ";
@@ -94,10 +129,14 @@ if ($session_scope === 'bible_class' && $session_scope_id > 0) {
 }
 
 if ($session_scope === 'organization' && $session_scope_id > 0) {
-    $sql .= "AND mo.organization_id = ? ";
-    $params[] = $session_scope_id;
-    $types .= 'i';
-} elseif ($filter_org) {
+    if ($organizations_table_available) {
+        $sql .= "AND mo.organization_id = ? ";
+        $params[] = $session_scope_id;
+        $types .= 'i';
+    } else {
+        $sql .= "AND 1 = 0 ";
+    }
+} elseif ($filter_org && $organizations_table_available) {
     $sql .= "AND mo.organization_id = ? ";
     $params[] = $filter_org;
     $types .= 'i';
@@ -307,6 +346,32 @@ ob_start();
             display: flex;
             align-items: center;
             gap: 8px;
+        }
+
+        .scope-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+        }
+        .scope-badge.scope-church { background: #1f4e79; color: #fff; }
+        .scope-badge.scope-bible_class { background: #4b2e83; color: #fff; }
+        .scope-badge.scope-organization { background: #8a3b12; color: #fff; }
+        .scope-badge.scope-event,
+        .scope-badge.scope-other { background: #6c757d; color: #fff; }
+
+        .scope-target {
+            color: rgba(255, 255, 255, 0.82);
+            font-size: 0.85rem;
+        }
+
+        .filter-lock-hint {
+            color: #6c757d;
+            font-size: 0.78rem;
+            margin-top: 6px;
         }
         
         .stats-row {
@@ -781,6 +846,15 @@ ob_start();
                         <i class="fas fa-calendar"></i>
                         <span><?= htmlspecialchars($session_display_date) ?></span>
                     </div>
+                    <div class="session-meta-item">
+                        <i class="fas fa-layer-group"></i>
+                        <span class="scope-badge scope-<?= htmlspecialchars($scope_badge_name) ?>">
+                            <?= htmlspecialchars(strtoupper(str_replace('_', ' ', $scope_badge_name))) ?>
+                        </span>
+                        <?php if (!empty($scope_target_name)): ?>
+                            <span class="scope-target"><?= htmlspecialchars((string)$scope_target_name) ?></span>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
             <div>
@@ -833,7 +907,7 @@ ob_start();
             <div class="row">
                 <div class="col-md-4 mb-3">
                     <label class="form-label fw-bold">Bible Class</label>
-                    <select class="form-select" name="class_id">
+                    <select class="form-select" name="class_id" <?= $class_filter_locked ? 'disabled' : '' ?>>
                         <option value="">All Classes</option>
                         <?php if ($bible_classes && $bible_classes->num_rows > 0): 
                             while($cl = $bible_classes->fetch_assoc()): ?>
@@ -842,20 +916,34 @@ ob_start();
                             </option>
                         <?php endwhile; endif; ?>
                     </select>
-                 <!--   <small class="text-muted">Select to filter instantly</small> -->
+                    <?php if ($class_filter_locked): ?>
+                        <div class="filter-lock-hint">
+                            <i class="fas fa-lock"></i> Locked by Bible Class scoped session.
+                        </div>
+                    <?php endif; ?>
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label fw-bold">Organization</label>
-                    <select class="form-select" name="organization_id">
+                    <select class="form-select" name="organization_id" <?= (!$organizations_table_available || $org_filter_locked) ? 'disabled' : '' ?>>
                         <option value="">All Organizations</option>
-                        <?php if ($organizations && $organizations->num_rows > 0): 
+                        <?php if (!$organizations_table_available): ?>
+                            <option value="">Organization module unavailable</option>
+                        <?php elseif ($organizations && $organizations->num_rows > 0): 
                             while($org = $organizations->fetch_assoc()): ?>
                             <option value="<?= $org['id'] ?>" <?= $filter_org == $org['id'] ? 'selected' : '' ?>>
                                 <?= htmlspecialchars($org['name']) ?>
                             </option>
                         <?php endwhile; endif; ?>
                     </select>
-                <!--    <small class="text-muted">Select to filter instantly</small> -->
+                    <?php if ($org_filter_locked): ?>
+                        <div class="filter-lock-hint">
+                            <i class="fas fa-lock"></i> Locked by Organization scoped session.
+                        </div>
+                    <?php elseif (!$organizations_table_available): ?>
+                        <div class="filter-lock-hint">
+                            <i class="fas fa-info-circle"></i> Organizations table not available in this database.
+                        </div>
+                    <?php endif; ?>
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label fw-bold">Search</label>

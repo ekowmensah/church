@@ -18,48 +18,15 @@ if (!$is_super_admin && !has_permission('view_attendance_list')) {
     exit;
 }
 
-function attendance_scope_columns_available($conn) {
-    static $available = null;
-    if ($available !== null) {
-        return $available;
-    }
-    $sql = "SELECT COUNT(*) AS cnt
-            FROM information_schema.COLUMNS
-            WHERE TABLE_SCHEMA = DATABASE()
-              AND TABLE_NAME = 'attendance_sessions'
-              AND COLUMN_NAME IN ('attendance_scope', 'scope_id')";
-    $res = $conn->query($sql);
-    $row = $res ? $res->fetch_assoc() : null;
-    $available = ($row && intval($row['cnt']) === 2);
-    return $available;
-}
-
-function table_exists($conn, $tableName) {
-    static $cache = [];
-    if (isset($cache[$tableName])) {
-        return $cache[$tableName];
-    }
-    $stmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?");
-    $stmt->bind_param('s', $tableName);
-    $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    $cache[$tableName] = ($row && intval($row['cnt']) > 0);
-    return $cache[$tableName];
-}
-
 $can_add = $is_super_admin || has_permission('create_attendance');
 $can_edit = $is_super_admin || has_permission('edit_attendance');
 $can_delete = $is_super_admin || has_permission('delete_attendance');
 $can_view = true;
-$scope_columns_available = attendance_scope_columns_available($conn);
-$organizations_table_available = table_exists($conn, 'organizations');
 
 // Filters
 $filter_church = $_GET['church_id'] ?? '';
 $filter_type = $_GET['session_type'] ?? ''; // all, recurring, one-time
 $filter_status = $_GET['status'] ?? ''; // all, marked, unmarked
-$filter_scope = $_GET['scope'] ?? ''; // church, bible_class, organization, event, other
 $date_from = $_GET['date_from'] ?? '';
 $date_to = $_GET['date_to'] ?? '';
 $search_term = trim($_GET['search'] ?? '');
@@ -75,7 +42,7 @@ $success_msg = '';
 $error_msg = '';
 
 // Auto-create recurring sessions for today if they don't exist
-function auto_create_recurring_sessions($conn, $scope_columns_available) {
+function auto_create_recurring_sessions($conn) {
     $today = date('Y-m-d');
     $day_of_week = date('w'); // 0 (Sunday) to 6 (Saturday)
     $month = date('n'); // 1 to 12
@@ -102,18 +69,8 @@ function auto_create_recurring_sessions($conn, $scope_columns_available) {
             
             if ($result['cnt'] == 0) {
                 // Create session for today
-                if ($scope_columns_available) {
-                    $template_scope = trim((string)($template['attendance_scope'] ?? ''));
-                    if ($template_scope === '') {
-                        $template_scope = 'church';
-                    }
-                    $template_scope_id = isset($template['scope_id']) ? intval($template['scope_id']) : null;
-                    $insert = $conn->prepare("INSERT INTO attendance_sessions (title, church_id, is_recurring, recurrence_type, recurrence_day, service_date, attendance_scope, scope_id) VALUES (?, ?, 1, ?, ?, ?, ?, ?)");
-                    $insert->bind_param('sisissi', $template['title'], $template['church_id'], $template['recurrence_type'], $template['recurrence_day'], $today, $template_scope, $template_scope_id);
-                } else {
-                    $insert = $conn->prepare("INSERT INTO attendance_sessions (title, church_id, is_recurring, recurrence_type, recurrence_day, service_date) VALUES (?, ?, 1, ?, ?, ?)");
-                    $insert->bind_param('sisis', $template['title'], $template['church_id'], $template['recurrence_type'], $template['recurrence_day'], $today);
-                }
+                $insert = $conn->prepare("INSERT INTO attendance_sessions (title, church_id, is_recurring, recurrence_type, recurrence_day, service_date) VALUES (?, ?, 1, ?, ?, ?)");
+                $insert->bind_param('sisis', $template['title'], $template['church_id'], $template['recurrence_type'], $template['recurrence_day'], $today);
                 if ($insert->execute()) {
                     $created_count++;
                 }
@@ -127,17 +84,13 @@ function auto_create_recurring_sessions($conn, $scope_columns_available) {
 }
 
 // Run auto-creation on page load
-$auto_created = auto_create_recurring_sessions($conn, $scope_columns_available);
+$auto_created = auto_create_recurring_sessions($conn);
 if ($auto_created > 0) {
     $success_msg = "Auto-created $auto_created recurring session(s) for today.";
 }
 
 // Handle create next recurring session
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_next_recurring']) && isset($_POST['recurring_template_id'])) {
-    if (!$can_add) {
-        http_response_code(403);
-        $error_msg = 'You do not have permission to create recurring sessions.';
-    } else {
     $template_id = intval($_POST['recurring_template_id']);
     $tpl_q = $conn->prepare("SELECT * FROM attendance_sessions WHERE id = ? LIMIT 1");
     $tpl_q->bind_param('i', $template_id);
@@ -171,18 +124,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_next_recurring
             $stmt->close();
             if ($count == 0 && $next_date) {
                 // Copy all fields except id, service_date
-                if ($scope_columns_available) {
-                    $template_scope = trim((string)($row['attendance_scope'] ?? ''));
-                    if ($template_scope === '') {
-                        $template_scope = 'church';
-                    }
-                    $template_scope_id = isset($row['scope_id']) ? intval($row['scope_id']) : null;
-                    $stmt = $conn->prepare("INSERT INTO attendance_sessions (title, church_id, is_recurring, recurrence_type, recurrence_day, service_date, attendance_scope, scope_id) VALUES (?, ?, 1, ?, ?, ?, ?, ?)");
-                    $stmt->bind_param('sisissi', $row['title'], $row['church_id'], $rec_type, $rec_day, $next_date, $template_scope, $template_scope_id);
-                } else {
-                    $stmt = $conn->prepare("INSERT INTO attendance_sessions (title, church_id, is_recurring, recurrence_type, recurrence_day, service_date) VALUES (?, ?, 1, ?, ?, ?)");
-                    $stmt->bind_param('sisis', $row['title'], $row['church_id'], $rec_type, $rec_day, $next_date);
-                }
+                $stmt = $conn->prepare("INSERT INTO attendance_sessions (title, church_id, is_recurring, recurrence_type, recurrence_day, service_date) VALUES (?, ?, 1, ?, ?, ?)");
+                $stmt->bind_param('sisis', $row['title'], $row['church_id'], $rec_type, $rec_day, $next_date);
                 if ($stmt->execute()) {
                     $success_msg = 'Next recurring session created for ' . htmlspecialchars($next_date);
                 } else {
@@ -200,64 +143,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_next_recurring
         $error_msg = 'Template not found.';
     }
     $tpl_q->close();
-    }
 }
 // Handle delete
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
-    if (!$can_delete) {
-        http_response_code(403);
-        $error_msg = 'You do not have permission to delete attendance sessions.';
-    } else {
-        $delete_id = intval($_POST['delete_id']);
-        $cntStmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM attendance_records WHERE session_id = ?");
-        $cntStmt->bind_param('i', $delete_id);
-        $cntStmt->execute();
-        $cntRow = $cntStmt->get_result()->fetch_assoc();
-        $cntStmt->close();
-        $record_count = intval($cntRow['cnt'] ?? 0);
-
-        if ($record_count > 0) {
-            $error_msg = 'Marked sessions cannot be deleted. Clear attendance records first.';
-        } else {
-            $stmt = $conn->prepare("DELETE FROM attendance_sessions WHERE id = ?");
-            $stmt->bind_param('i', $delete_id);
-            $stmt->execute();
-            $stmt->close();
-            header('Location: attendance_list.php?deleted=1');
-            exit;
-        }
-    }
+    $delete_id = intval($_POST['delete_id']);
+    $stmt = $conn->prepare("DELETE FROM attendance_sessions WHERE id = ?");
+    $stmt->bind_param('i', $delete_id);
+    $stmt->execute();
+    // Optionally: delete related attendance_records
+    $stmt2 = $conn->prepare("DELETE FROM attendance_records WHERE session_id = ?");
+    $stmt2->bind_param('i', $delete_id);
+    $stmt2->execute();
+    header('Location: attendance_list.php?deleted=1');
+    exit;
 }
 
 // Build SQL query with filters
-$scope_select = ", 'church' AS scope_name, NULL AS scope_id, NULL AS scope_target_name";
-$scope_joins = '';
-if ($scope_columns_available) {
-    $scope_select = ",
-        COALESCE(NULLIF(TRIM(s.attendance_scope), ''), 'church') AS scope_name,
-        s.scope_id,
-        CASE
-            WHEN COALESCE(NULLIF(TRIM(s.attendance_scope), ''), 'church') = 'bible_class' THEN CONCAT_WS(' ', bc_scope.name, CONCAT('(', bc_scope.code, ')'))
-            WHEN COALESCE(NULLIF(TRIM(s.attendance_scope), ''), 'church') = 'organization' THEN " . ($organizations_table_available ? "org_scope.name" : "NULL") . "
-            ELSE NULL
-        END AS scope_target_name";
-    $scope_joins = " LEFT JOIN bible_classes bc_scope
-                        ON bc_scope.id = s.scope_id
-                       AND COALESCE(NULLIF(TRIM(s.attendance_scope), ''), 'church') = 'bible_class' ";
-    if ($organizations_table_available) {
-        $scope_joins .= " LEFT JOIN organizations org_scope
-                            ON org_scope.id = s.scope_id
-                           AND COALESCE(NULLIF(TRIM(s.attendance_scope), ''), 'church') = 'organization' ";
-    }
-}
-
-$session_sql = "SELECT s.*, c.name AS church_name
-    $scope_select,
+$session_sql = "SELECT s.*, c.name AS church_name,
     (SELECT COUNT(*) FROM attendance_records ar WHERE ar.session_id = s.id) as attendance_count,
     (SELECT COUNT(*) FROM attendance_records ar WHERE ar.session_id = s.id AND ar.status = 'present') as present_count
-FROM attendance_sessions s
-LEFT JOIN churches c ON s.church_id = c.id
-$scope_joins
+FROM attendance_sessions s 
+LEFT JOIN churches c ON s.church_id = c.id 
 WHERE 1=1";
 
 $session_params = [];
@@ -294,12 +200,6 @@ if ($filter_type === 'recurring') {
     $session_sql .= " AND s.is_recurring = 0";
 }
 
-if ($scope_columns_available && in_array($filter_scope, ['church', 'bible_class', 'organization', 'event', 'other'], true)) {
-    $session_sql .= " AND COALESCE(NULLIF(TRIM(s.attendance_scope), ''), 'church') = ?";
-    $session_params[] = $filter_scope;
-    $session_types .= 's';
-}
-
 if ($date_from) {
     $session_sql .= " AND s.service_date >= ?";
     $session_params[] = $date_from;
@@ -312,38 +212,18 @@ if ($date_to) {
     $session_types .= 's';
 }
 
-if ($filter_status === 'marked') {
-    $session_sql .= " AND EXISTS (SELECT 1 FROM attendance_records ar2 WHERE ar2.session_id = s.id)";
-} elseif ($filter_status === 'unmarked') {
-    $session_sql .= " AND NOT EXISTS (SELECT 1 FROM attendance_records ar2 WHERE ar2.session_id = s.id)";
-}
-
 if ($search_term) {
-    if ($scope_columns_available) {
-        $session_sql .= " AND (s.title LIKE ? OR c.name LIKE ? OR bc_scope.name LIKE ?" . ($organizations_table_available ? " OR org_scope.name LIKE ?" : "") . ")";
-    } else {
-        $session_sql .= " AND (s.title LIKE ? OR c.name LIKE ?)";
-    }
+    $session_sql .= " AND (s.title LIKE ? OR c.name LIKE ?)";
     $search_like = "%$search_term%";
     $session_params[] = $search_like;
     $session_params[] = $search_like;
-    if ($scope_columns_available) {
-        $session_params[] = $search_like;
-        $session_types .= 'sss';
-        if ($organizations_table_available) {
-            $session_params[] = $search_like;
-            $session_types .= 's';
-        }
-    } else {
-        $session_types .= 'ss';
-    }
+    $session_types .= 'ss';
 }
 
 // Get total count - build separate count query
-$count_sql = "SELECT COUNT(DISTINCT s.id) as total
-FROM attendance_sessions s
-LEFT JOIN churches c ON s.church_id = c.id
-$scope_joins
+$count_sql = "SELECT COUNT(DISTINCT s.id) as total 
+FROM attendance_sessions s 
+LEFT JOIN churches c ON s.church_id = c.id 
 WHERE 1=1";
 
 // Apply same filters to count query
@@ -380,12 +260,6 @@ if ($filter_type === 'recurring') {
     $count_sql .= " AND s.is_recurring = 0";
 }
 
-if ($scope_columns_available && in_array($filter_scope, ['church', 'bible_class', 'organization', 'event', 'other'], true)) {
-    $count_sql .= " AND COALESCE(NULLIF(TRIM(s.attendance_scope), ''), 'church') = ?";
-    $count_params[] = $filter_scope;
-    $count_types .= 's';
-}
-
 if ($date_from) {
     $count_sql .= " AND s.service_date >= ?";
     $count_params[] = $date_from;
@@ -398,31 +272,12 @@ if ($date_to) {
     $count_types .= 's';
 }
 
-if ($filter_status === 'marked') {
-    $count_sql .= " AND EXISTS (SELECT 1 FROM attendance_records ar2 WHERE ar2.session_id = s.id)";
-} elseif ($filter_status === 'unmarked') {
-    $count_sql .= " AND NOT EXISTS (SELECT 1 FROM attendance_records ar2 WHERE ar2.session_id = s.id)";
-}
-
 if ($search_term) {
-    if ($scope_columns_available) {
-        $count_sql .= " AND (s.title LIKE ? OR c.name LIKE ? OR bc_scope.name LIKE ?" . ($organizations_table_available ? " OR org_scope.name LIKE ?" : "") . ")";
-    } else {
-        $count_sql .= " AND (s.title LIKE ? OR c.name LIKE ?)";
-    }
+    $count_sql .= " AND (s.title LIKE ? OR c.name LIKE ?)";
     $search_like = "%$search_term%";
     $count_params[] = $search_like;
     $count_params[] = $search_like;
-    if ($scope_columns_available) {
-        $count_params[] = $search_like;
-        $count_types .= 'sss';
-        if ($organizations_table_available) {
-            $count_params[] = $search_like;
-            $count_types .= 's';
-        }
-    } else {
-        $count_types .= 'ss';
-    }
+    $count_types .= 'ss';
 }
 
 if ($count_types) {
@@ -439,7 +294,6 @@ if ($count_types) {
 
 $total_pages = ceil($total_records / $records_per_page);
 $current_page = min($current_page, max(1, $total_pages));
-$offset = ($current_page - 1) * $records_per_page;
 
 // Add ORDER BY and LIMIT
 $session_sql .= " ORDER BY s.service_date DESC, s.id DESC LIMIT ? OFFSET ?";
@@ -461,42 +315,14 @@ $stats_total = $conn->query("SELECT COUNT(*) as cnt FROM attendance_sessions")->
 $stats_recurring = $conn->query("SELECT COUNT(*) as cnt FROM attendance_sessions WHERE is_recurring = 1")->fetch_assoc()['cnt'];
 $stats_onetime = $conn->query("SELECT COUNT(*) as cnt FROM attendance_sessions WHERE is_recurring = 0")->fetch_assoc()['cnt'];
 $stats_marked = $conn->query("SELECT COUNT(DISTINCT session_id) as cnt FROM attendance_records")->fetch_assoc()['cnt'];
-$stats_scope_class = 0;
-$stats_scope_org = 0;
-if ($scope_columns_available) {
-    $stats_scope_class = $conn->query("SELECT COUNT(*) as cnt FROM attendance_sessions WHERE COALESCE(NULLIF(TRIM(attendance_scope), ''), 'church') = 'bible_class'")->fetch_assoc()['cnt'];
-    $stats_scope_org = $conn->query("SELECT COUNT(*) as cnt FROM attendance_sessions WHERE COALESCE(NULLIF(TRIM(attendance_scope), ''), 'church') = 'organization'")->fetch_assoc()['cnt'];
-}
 
 // Get sessions for selected date
-$today_scope_select = ", 'church' AS scope_name, NULL AS scope_target_name";
-$today_scope_joins = '';
-if ($scope_columns_available) {
-    $today_scope_select = ",
-        COALESCE(NULLIF(TRIM(s.attendance_scope), ''), 'church') AS scope_name,
-        CASE
-            WHEN COALESCE(NULLIF(TRIM(s.attendance_scope), ''), 'church') = 'bible_class' THEN CONCAT_WS(' ', bc_scope.name, CONCAT('(', bc_scope.code, ')'))
-            WHEN COALESCE(NULLIF(TRIM(s.attendance_scope), ''), 'church') = 'organization' THEN " . ($organizations_table_available ? "org_scope.name" : "NULL") . "
-            ELSE NULL
-        END AS scope_target_name";
-    $today_scope_joins = " LEFT JOIN bible_classes bc_scope
-                             ON bc_scope.id = s.scope_id
-                            AND COALESCE(NULLIF(TRIM(s.attendance_scope), ''), 'church') = 'bible_class' ";
-    if ($organizations_table_available) {
-        $today_scope_joins .= " LEFT JOIN organizations org_scope
-                                  ON org_scope.id = s.scope_id
-                                 AND COALESCE(NULLIF(TRIM(s.attendance_scope), ''), 'church') = 'organization' ";
-    }
-}
-
-$today_sessions_sql = "SELECT s.*, c.name AS church_name
-    $today_scope_select,
+$today_sessions_sql = "SELECT s.*, c.name AS church_name,
     (SELECT COUNT(*) FROM attendance_records ar WHERE ar.session_id = s.id) as attendance_count,
     (SELECT COUNT(*) FROM attendance_records ar WHERE ar.session_id = s.id AND ar.status = 'present') as present_count
-FROM attendance_sessions s
-LEFT JOIN churches c ON s.church_id = c.id
-$today_scope_joins
-WHERE s.service_date = ?
+FROM attendance_sessions s 
+LEFT JOIN churches c ON s.church_id = c.id 
+WHERE s.service_date = ? 
 ORDER BY s.title";
 $today_stmt = $conn->prepare($today_sessions_sql);
 $today_stmt->bind_param('s', $view_date);
@@ -617,10 +443,6 @@ ob_start();
         .badge-onetime { background: #17a2b8; color: #fff; }
         .badge-marked { background: #28a745; color: #fff; }
         .badge-unmarked { background: #ffc107; color: #000; }
-        .badge-scope-church { background: #1f4e79; color: #fff; }
-        .badge-scope-bible_class { background: #4b2e83; color: #fff; }
-        .badge-scope-organization { background: #8a3b12; color: #fff; }
-        .badge-scope-event, .badge-scope-other { background: #6c757d; color: #fff; }
         
         .pagination-banking {
             display: flex;
@@ -725,16 +547,6 @@ ob_start();
                                         <i class="fas fa-church"></i> 
                                         <?= htmlspecialchars($session['church_name'] ?? 'N/A') ?>
                                     </p>
-                                    <p class="mb-2">
-                                        <span class="badge badge-scope-<?= htmlspecialchars((string)($session['scope_name'] ?? 'church')) ?>">
-                                            <?= strtoupper(str_replace('_', ' ', (string)($session['scope_name'] ?? 'church'))) ?>
-                                        </span>
-                                        <?php if (!empty($session['scope_target_name'])): ?>
-                                            <small class="text-muted d-block mt-1">
-                                                <i class="fas fa-link"></i> <?= htmlspecialchars((string)$session['scope_target_name']) ?>
-                                            </small>
-                                        <?php endif; ?>
-                                    </p>
                                     <?php if ($session['is_recurring']): ?>
                                         <span class="badge badge-recurring mb-2">
                                             <i class="fas fa-sync-alt"></i> Recurring
@@ -808,18 +620,6 @@ ob_start();
             <div class="label">Marked Sessions</div>
             <div class="value"><?= number_format($stats_marked) ?></div>
         </div>
-        <?php if ($scope_columns_available): ?>
-        <div class="stat-card purple">
-            <div class="icon"><i class="fas fa-chalkboard"></i></div>
-            <div class="label">Bible Class Scoped</div>
-            <div class="value"><?= number_format($stats_scope_class) ?></div>
-        </div>
-        <div class="stat-card info">
-            <div class="icon"><i class="fas fa-users"></i></div>
-            <div class="label">Organization Scoped</div>
-            <div class="value"><?= number_format($stats_scope_org) ?></div>
-        </div>
-        <?php endif; ?>
     </div>
 
     <div class="filter-section">
@@ -845,27 +645,6 @@ ob_start();
                         <option value="one-time" <?= $filter_type == 'one-time' ? 'selected' : '' ?>>One-Time</option>
                     </select>
                 </div>
-                <?php if ($scope_columns_available): ?>
-                <div class="col-md-2 mb-3">
-                    <label class="form-label fw-bold">Scope</label>
-                    <select class="form-select" name="scope">
-                        <option value="">All Scopes</option>
-                        <option value="church" <?= $filter_scope == 'church' ? 'selected' : '' ?>>Church</option>
-                        <option value="bible_class" <?= $filter_scope == 'bible_class' ? 'selected' : '' ?>>Bible Class</option>
-                        <option value="organization" <?= $filter_scope == 'organization' ? 'selected' : '' ?>>Organization</option>
-                        <option value="event" <?= $filter_scope == 'event' ? 'selected' : '' ?>>Event</option>
-                        <option value="other" <?= $filter_scope == 'other' ? 'selected' : '' ?>>Other</option>
-                    </select>
-                </div>
-                <?php endif; ?>
-                <div class="col-md-2 mb-3">
-                    <label class="form-label fw-bold">Marking Status</label>
-                    <select class="form-select" name="status">
-                        <option value="">All</option>
-                        <option value="marked" <?= $filter_status == 'marked' ? 'selected' : '' ?>>Marked</option>
-                        <option value="unmarked" <?= $filter_status == 'unmarked' ? 'selected' : '' ?>>Unmarked</option>
-                    </select>
-                </div>
                 <div class="col-md-2 mb-3">
                     <label class="form-label fw-bold">Date From</label>
                     <input type="date" class="form-control" name="date_from" value="<?= $date_from ?>">
@@ -887,7 +666,7 @@ ob_start();
                 <div class="col-md-6 mb-3">
                     <label class="form-label fw-bold">Search</label>
                     <input type="text" class="form-control" name="search" 
-                           placeholder="Search by session title, church, class, or organization..." 
+                           placeholder="Search by session title or church name..." 
                            value="<?= htmlspecialchars($search_term) ?>">
                 </div>
                 <div class="col-md-6 mb-3 d-flex align-items-end gap-2">
@@ -916,11 +695,9 @@ ob_start();
                     <tr>
                         <th>Session Details</th>
                         <th>Church</th>
-                        <th>Scope Context</th>
                         <th>Type</th>
                         <th>Service Date</th>
                         <th>Attendance</th>
-                        <th>Updated</th>
                         <th class="text-center">Actions</th>
                     </tr>
                 </thead>
@@ -951,22 +728,7 @@ ob_start();
                                 <?php endif; ?>
                             </div>
                         </td>
-                        <td><?= $row['church_name'] ? htmlspecialchars($row['church_name']) : '<span class="text-muted">-</span>' ?></td>
-                        <td>
-                            <span class="badge badge-scope-<?= htmlspecialchars((string)($row['scope_name'] ?? 'church')) ?>">
-                                <?= strtoupper(str_replace('_', ' ', (string)($row['scope_name'] ?? 'church'))) ?>
-                            </span>
-                            <br>
-                            <?php if (!empty($row['scope_target_name'])): ?>
-                                <small class="text-muted">
-                                    <i class="fas fa-link"></i> <?= htmlspecialchars((string)$row['scope_target_name']) ?>
-                                </small>
-                            <?php elseif (($row['scope_name'] ?? 'church') === 'church'): ?>
-                                <small class="text-muted">All church members</small>
-                            <?php else: ?>
-                                <small class="text-muted">-</small>
-                            <?php endif; ?>
-                        </td>
+                        <td><?= $row['church_name'] ? htmlspecialchars($row['church_name']) : '<span class="text-muted">—</span>' ?></td>
                         <td>
                             <span class="badge <?= $row['is_recurring'] ? 'badge-recurring' : 'badge-onetime' ?>">
                                 <?= $row['is_recurring'] ? 'Recurring' : 'One-Time' ?>
@@ -993,13 +755,6 @@ ob_start();
                                 </div>
                             <?php else: ?>
                                 <span class="text-muted">Not marked</span>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <?php if (!empty($row['updated_at'])): ?>
-                                <small><?= htmlspecialchars(date('Y-m-d H:i', strtotime((string)$row['updated_at']))) ?></small>
-                            <?php else: ?>
-                                <span class="text-muted">-</span>
                             <?php endif; ?>
                         </td>
                         <td class="text-center">
@@ -1034,8 +789,7 @@ ob_start();
                                 
                                 <?php if ($can_delete && !$is_marked): ?>
                                     <form method="post" action="attendance_list.php" style="display:inline;" 
-                                          onsubmit="return confirm('Delete this session? This will remove all attendance records.');">
-                                        <input type="hidden" name="delete_id" value="<?= $row['id'] ?>">
+                                          onsubmit="return confirm('Delete this session? This will remove all attendance records.');">                                        <input type="hidden" name="delete_id" value="<?= $row['id'] ?>">
                                         <button type="submit" class="btn btn-danger" title="Delete Session">
                                             <i class="fas fa-trash"></i>
                                         </button>

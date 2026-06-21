@@ -26,16 +26,63 @@ if (!$is_super_admin && !has_permission('edit_member')) {
     exit;
 }
 
+function normalize_user_sync_email(string $email): ?string
+{
+    $email = trim($email);
+    return $email === '' ? null : $email;
+}
+
+function member_organizations_requires_explicit_id(mysqli $conn): bool
+{
+    static $requiresExplicitId = null;
+    if ($requiresExplicitId !== null) {
+        return $requiresExplicitId;
+    }
+
+    $requiresExplicitId = false;
+    $result = $conn->query("SHOW COLUMNS FROM member_organizations LIKE 'id'");
+    if ($result && ($row = $result->fetch_assoc())) {
+        $extra = strtolower((string) ($row['Extra'] ?? ''));
+        $nullAllowed = strtoupper((string) ($row['Null'] ?? 'YES')) === 'YES';
+        $defaultValue = $row['Default'] ?? null;
+        $requiresExplicitId = strpos($extra, 'auto_increment') === false && !$nullAllowed && $defaultValue === null;
+    }
+    if ($result) {
+        $result->free();
+    }
+
+    return $requiresExplicitId;
+}
+
+function get_next_member_organization_id(mysqli $conn): int
+{
+    $result = $conn->query('SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM member_organizations');
+    if (!$result) {
+        throw new Exception($conn->error ?: 'Failed to determine the next member organization id.');
+    }
+
+    $row = $result->fetch_assoc();
+    $result->free();
+
+    return max(1, (int) ($row['next_id'] ?? 1));
+}
+
 function sync_member_user_account(mysqli $conn, int $member_id, string $full_name, string $email, string $phone, string $password_hash, string $photo, int $church_id): void
 {
     $user_id = 0;
+    $email = normalize_user_sync_email($email);
 
     // Prefer exact phone match first to avoid hitting unique-phone conflicts when
     // a member has multiple legacy user rows.
     if ($phone !== '') {
         $stmt = $conn->prepare('SELECT id, member_id FROM users WHERE phone = ? LIMIT 1');
+        if (!$stmt) {
+            throw new Exception($conn->error ?: 'Failed to prepare phone lookup for user sync.');
+        }
         $stmt->bind_param('s', $phone);
-        $stmt->execute();
+        if (!$stmt->execute()) {
+            throw new Exception($stmt->error ?: 'Failed to look up existing user by phone.');
+        }
         $result = $stmt->get_result();
         if ($row = $result->fetch_assoc()) {
             $matched_member_id = isset($row['member_id']) ? (int) $row['member_id'] : 0;
@@ -49,8 +96,13 @@ function sync_member_user_account(mysqli $conn, int $member_id, string $full_nam
 
     if ($user_id <= 0) {
         $stmt = $conn->prepare('SELECT id FROM users WHERE member_id = ? ORDER BY id ASC LIMIT 1');
+        if (!$stmt) {
+            throw new Exception($conn->error ?: 'Failed to prepare member lookup for user sync.');
+        }
         $stmt->bind_param('i', $member_id);
-        $stmt->execute();
+        if (!$stmt->execute()) {
+            throw new Exception($stmt->error ?: 'Failed to look up existing user by member id.');
+        }
         $result = $stmt->get_result();
         if ($row = $result->fetch_assoc()) {
             $user_id = (int) $row['id'];
@@ -58,10 +110,15 @@ function sync_member_user_account(mysqli $conn, int $member_id, string $full_nam
         $stmt->close();
     }
 
-    if ($user_id <= 0 && $email !== '') {
+    if ($user_id <= 0 && $email !== null) {
         $stmt = $conn->prepare('SELECT id, member_id FROM users WHERE email = ? LIMIT 1');
+        if (!$stmt) {
+            throw new Exception($conn->error ?: 'Failed to prepare email lookup for user sync.');
+        }
         $stmt->bind_param('s', $email);
-        $stmt->execute();
+        if (!$stmt->execute()) {
+            throw new Exception($stmt->error ?: 'Failed to look up existing user by email.');
+        }
         $result = $stmt->get_result();
         if ($row = $result->fetch_assoc()) {
             $matched_member_id = isset($row['member_id']) ? (int) $row['member_id'] : 0;
@@ -75,16 +132,26 @@ function sync_member_user_account(mysqli $conn, int $member_id, string $full_nam
 
     if ($user_id > 0) {
         $stmt = $conn->prepare('UPDATE users SET member_id = ?, church_id = ?, name = ?, email = ?, phone = ?, password_hash = ?, status = \'active\', photo = ? WHERE id = ?');
+        if (!$stmt) {
+            throw new Exception($conn->error ?: 'Failed to prepare user update during member sync.');
+        }
         $stmt->bind_param('iisssssi', $member_id, $church_id, $full_name, $email, $phone, $password_hash, $photo, $user_id);
-        $stmt->execute();
+        if (!$stmt->execute()) {
+            throw new Exception($stmt->error ?: 'Failed to update linked user account.');
+        }
         $stmt->close();
         return;
     }
 
     $user_status = 'active';
     $stmt = $conn->prepare('INSERT INTO users (member_id, church_id, name, email, phone, password_hash, status, photo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    if (!$stmt) {
+        throw new Exception($conn->error ?: 'Failed to prepare user insert during member sync.');
+    }
     $stmt->bind_param('iissssss', $member_id, $church_id, $full_name, $email, $phone, $password_hash, $user_status, $photo);
-    $stmt->execute();
+    if (!$stmt->execute()) {
+        throw new Exception($stmt->error ?: 'Failed to create linked user account.');
+    }
     $stmt->close();
 }
 
@@ -563,39 +630,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
             $stmt->close();
 
             // Update emergency contacts (delete old, insert new)
-            $conn->query("DELETE FROM member_emergency_contacts WHERE member_id=" . $member_id);
+            if (!$conn->query("DELETE FROM member_emergency_contacts WHERE member_id=" . $member_id)) {
+                throw new Exception($conn->error ?: 'Failed to clear existing emergency contacts.');
+            }
             if (!empty($valid_contacts)) {
                 $ec_stmt = $conn->prepare("INSERT INTO member_emergency_contacts (member_id, name, mobile, relationship) VALUES (?, ?, ?, ?)");
+                if (!$ec_stmt) {
+                    throw new Exception($conn->error ?: 'Failed to prepare emergency contact insert.');
+                }
                 foreach ($valid_contacts as $c) {
                     $contact_name = $c['name'];
                     $contact_mobile = $c['mobile'];
                     $contact_relationship = $c['relationship'];
                     $ec_stmt->bind_param('isss', $member_id, $contact_name, $contact_mobile, $contact_relationship);
-                    $ec_stmt->execute();
+                    if (!$ec_stmt->execute()) {
+                        throw new Exception($ec_stmt->error ?: 'Failed to save an emergency contact.');
+                    }
                 }
                 $ec_stmt->close();
             }
 
             // Admin completion assigns organizations directly.
-            $conn->query("DELETE FROM member_organizations WHERE member_id=" . $member_id);
+            if (!$conn->query("DELETE FROM member_organizations WHERE member_id=" . $member_id)) {
+                throw new Exception($conn->error ?: 'Failed to clear existing organization assignments.');
+            }
             if (!empty($organizations)) {
-                $org_stmt = $conn->prepare("INSERT INTO member_organizations (member_id, organization_id) VALUES (?, ?)");
+                $requires_org_id = member_organizations_requires_explicit_id($conn);
+                $next_member_organization_id = $requires_org_id ? get_next_member_organization_id($conn) : 0;
+                $org_stmt = $requires_org_id
+                    ? $conn->prepare("INSERT INTO member_organizations (id, member_id, organization_id) VALUES (?, ?, ?)")
+                    : $conn->prepare("INSERT INTO member_organizations (member_id, organization_id) VALUES (?, ?)");
+                if (!$org_stmt) {
+                    throw new Exception($conn->error ?: 'Failed to prepare organization assignment insert.');
+                }
                 foreach ($organizations as $org_id) {
                     $organization_id = (int) $org_id;
-                    $org_stmt->bind_param('ii', $member_id, $organization_id);
-                    $org_stmt->execute();
+                    if ($requires_org_id) {
+                        $org_link_id = $next_member_organization_id++;
+                        $org_stmt->bind_param('iii', $org_link_id, $member_id, $organization_id);
+                    } else {
+                        $org_stmt->bind_param('ii', $member_id, $organization_id);
+                    }
+                    if (!$org_stmt->execute()) {
+                        throw new Exception($org_stmt->error ?: 'Failed to save an organization assignment.');
+                    }
                 }
                 $org_stmt->close();
             }
 
             // Update roles of serving (delete old, insert new)
-            $conn->query("DELETE FROM member_roles_of_serving WHERE member_id=" . $member_id);
+            if (!$conn->query("DELETE FROM member_roles_of_serving WHERE member_id=" . $member_id)) {
+                throw new Exception($conn->error ?: 'Failed to clear existing roles of serving.');
+            }
             if (!empty($roles_of_serving)) {
                 $role_stmt = $conn->prepare("INSERT INTO member_roles_of_serving (member_id, role_id) VALUES (?, ?)");
+                if (!$role_stmt) {
+                    throw new Exception($conn->error ?: 'Failed to prepare role-of-serving insert.');
+                }
                 foreach ($roles_of_serving as $role_id) {
                     $serving_role_id = (int) $role_id;
                     $role_stmt->bind_param('ii', $member_id, $serving_role_id);
-                    $role_stmt->execute();
+                    if (!$role_stmt->execute()) {
+                        throw new Exception($role_stmt->error ?: 'Failed to save a role of serving.');
+                    }
                 }
                 $role_stmt->close();
             }

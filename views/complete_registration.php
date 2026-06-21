@@ -4,23 +4,40 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
 require_once __DIR__.'/../helpers/spouse_link_helper.php';
 
+function normalize_user_sync_email(string $email): ?string
+{
+    $email = trim($email);
+    return $email === '' ? null : $email;
+}
+
 function sync_member_user_account(mysqli $conn, int $member_id, string $full_name, string $email, string $phone, string $password_hash, string $photo, int $church_id): void
 {
     $user_id = 0;
+    $email = normalize_user_sync_email($email);
 
     $stmt = $conn->prepare('SELECT id FROM users WHERE member_id = ? LIMIT 1');
+    if (!$stmt) {
+        throw new Exception($conn->error ?: 'Failed to prepare member lookup for user sync.');
+    }
     $stmt->bind_param('i', $member_id);
-    $stmt->execute();
+    if (!$stmt->execute()) {
+        throw new Exception($stmt->error ?: 'Failed to look up existing user by member id.');
+    }
     $result = $stmt->get_result();
     if ($row = $result->fetch_assoc()) {
         $user_id = (int) $row['id'];
     }
     $stmt->close();
 
-    if ($user_id <= 0 && $email !== '') {
+    if ($user_id <= 0 && $email !== null) {
         $stmt = $conn->prepare('SELECT u.id FROM users u WHERE u.email = ? AND u.member_id IS NULL AND NOT EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id) LIMIT 1');
+        if (!$stmt) {
+            throw new Exception($conn->error ?: 'Failed to prepare email lookup for user sync.');
+        }
         $stmt->bind_param('s', $email);
-        $stmt->execute();
+        if (!$stmt->execute()) {
+            throw new Exception($stmt->error ?: 'Failed to look up existing user by email.');
+        }
         $result = $stmt->get_result();
         if ($row = $result->fetch_assoc()) {
             $user_id = (int) $row['id'];
@@ -30,8 +47,13 @@ function sync_member_user_account(mysqli $conn, int $member_id, string $full_nam
 
     if ($user_id <= 0 && $phone !== '') {
         $stmt = $conn->prepare('SELECT u.id FROM users u WHERE u.phone = ? AND u.member_id IS NULL AND NOT EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id) LIMIT 1');
+        if (!$stmt) {
+            throw new Exception($conn->error ?: 'Failed to prepare phone lookup for user sync.');
+        }
         $stmt->bind_param('s', $phone);
-        $stmt->execute();
+        if (!$stmt->execute()) {
+            throw new Exception($stmt->error ?: 'Failed to look up existing user by phone.');
+        }
         $result = $stmt->get_result();
         if ($row = $result->fetch_assoc()) {
             $user_id = (int) $row['id'];
@@ -41,16 +63,26 @@ function sync_member_user_account(mysqli $conn, int $member_id, string $full_nam
 
     if ($user_id > 0) {
         $stmt = $conn->prepare('UPDATE users SET member_id = ?, church_id = ?, name = ?, email = ?, phone = ?, password_hash = ?, status = \'active\', photo = ? WHERE id = ?');
+        if (!$stmt) {
+            throw new Exception($conn->error ?: 'Failed to prepare user update during member sync.');
+        }
         $stmt->bind_param('iisssssi', $member_id, $church_id, $full_name, $email, $phone, $password_hash, $photo, $user_id);
-        $stmt->execute();
+        if (!$stmt->execute()) {
+            throw new Exception($stmt->error ?: 'Failed to update linked user account.');
+        }
         $stmt->close();
         return;
     }
 
     $user_status = 'active';
     $stmt = $conn->prepare('INSERT INTO users (member_id, church_id, name, email, phone, password_hash, status, photo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    if (!$stmt) {
+        throw new Exception($conn->error ?: 'Failed to prepare user insert during member sync.');
+    }
     $stmt->bind_param('iissssss', $member_id, $church_id, $full_name, $email, $phone, $password_hash, $user_status, $photo);
-    $stmt->execute();
+    if (!$stmt->execute()) {
+        throw new Exception($stmt->error ?: 'Failed to create linked user account.');
+    }
     $stmt->close();
 }
 
