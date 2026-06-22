@@ -102,3 +102,4 @@ migrations/2026_upgrade/2026_06_05_1000_bible_class_book_foundation.sql
 migrations/2026_upgrade/CPANEL_BIBLE_CLASS_BOOK_FOUNDATION_PATCH.sql
 migrations/2026_upgrade/rollbacks/2026_06_04_0900_spouse_relationship_requests.rollback.sql
 migrations/2026_upgrade/rollbacks/2026_06_05_1000_bible_class_book_foundation.rollback.sql
+views/bible_class_book.php
