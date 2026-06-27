@@ -1,1821 +1,1503 @@
 <?php
-require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions_v2.php';
-require_once __DIR__.'/../helpers/role_based_filter.php';
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../helpers/auth.php';
+require_once __DIR__ . '/../helpers/permissions_v2.php';
+require_once __DIR__ . '/../helpers/role_based_filter.php';
 
-// Ensure database connection is available
 global $conn;
-if (!isset($conn)) {
+if (!isset($conn) && isset($GLOBALS['conn'])) {
     $conn = $GLOBALS['conn'];
 }
 
-// Only allow logged-in users
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
 
-// Check both roles first to handle users with multiple roles
+function dashboard_redirect($path)
+{
+    header('Location: ' . BASE_URL . '/views/' . ltrim($path, '/'));
+    exit;
+}
+
+function dashboard_scalar($conn, $sql, $field = 'total', $default = 0)
+{
+    $result = $conn->query($sql);
+    if ($result && ($row = $result->fetch_assoc())) {
+        return isset($row[$field]) ? $row[$field] : $default;
+    }
+
+    return $default;
+}
+
+function dashboard_rows($conn, $sql)
+{
+    $rows = [];
+    $result = $conn->query($sql);
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $rows[] = $row;
+        }
+    }
+
+    return $rows;
+}
+
+function dashboard_month_buckets($months = 6)
+{
+    $buckets = [];
+    for ($i = $months - 1; $i >= 0; $i--) {
+        $stamp = strtotime("-{$i} months");
+        $bucket = date('Y-m', $stamp);
+        $buckets[$bucket] = [
+            'label' => date('M Y', $stamp),
+            'value' => 0,
+        ];
+    }
+
+    return $buckets;
+}
+
+function dashboard_merge_month_values($seed, $rows, $bucketKey, $valueKey)
+{
+    foreach ($rows as $row) {
+        $bucket = $row[$bucketKey] ?? null;
+        if ($bucket !== null && isset($seed[$bucket])) {
+            $seed[$bucket]['value'] = (float) ($row[$valueKey] ?? 0);
+        }
+    }
+
+    return $seed;
+}
+
+function dashboard_percent($numerator, $denominator, $precision = 1)
+{
+    if ((float) $denominator <= 0) {
+        return 0;
+    }
+
+    return round(((float) $numerator / (float) $denominator) * 100, $precision);
+}
+
+function dashboard_currency($amount)
+{
+    return 'GHS ' . number_format((float) $amount, 2);
+}
+
+function dashboard_status_tone($status)
+{
+    $value = strtolower((string) $status);
+    if ($value === 'active') {
+        return 'success';
+    }
+    if ($value === 'pending') {
+        return 'warning';
+    }
+    if ($value === 'inactive') {
+        return 'secondary';
+    }
+
+    return 'light';
+}
+
 $class_ids = get_user_class_ids();
 $org_ids = get_user_organization_ids();
+$force_main = isset($_GET['force_main']);
 
-// If user has both roles, let them choose or prioritize org leader
-if ($class_ids !== null && $org_ids !== null && !isset($_GET['force_main'])) {
-    // User has both roles - prioritize org leader (or add a role selection page)
-    // For now, redirect to org leader dashboard
-    header('Location: ' . BASE_URL . '/views/org_leader_dashboard.php');
-    exit;
+if (!$force_main) {
+    if ($org_ids !== null) {
+        dashboard_redirect('my_organization_leader.php');
+    }
+
+    if ($class_ids !== null) {
+        dashboard_redirect('my_bible_class_leader.php');
+    }
 }
 
-// Redirect class leaders to their specialized dashboard
-if ($class_ids !== null && !isset($_GET['force_main'])) {
-    header('Location: ' . BASE_URL . '/views/class_leader_dashboard.php');
-    exit;
-}
-
-// Redirect organizational leaders to their specialized dashboard
-if ($org_ids !== null && !isset($_GET['force_main'])) {
-    header('Location: ' . BASE_URL . '/views/org_leader_dashboard.php');
-    exit;
-}
-
-// Robust super admin bypass and permission check
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = function_exists('is_super_admin') ? is_super_admin() : (
+    ((int) ($_SESSION['user_id'] ?? 0) === 3) || ((int) ($_SESSION['role_id'] ?? 0) === 1)
+);
 
 if (!$is_super_admin && !has_permission('view_dashboard')) {
     http_response_code(403);
-    if (file_exists(__DIR__.'/errors/403.php')) {
-        include __DIR__.'/errors/403.php';
-    } else if (file_exists(dirname(__DIR__).'/views/errors/403.php')) {
-        include dirname(__DIR__).'/views/errors/403.php';
+    $error_page = __DIR__ . '/errors/403.php';
+    if (file_exists($error_page)) {
+        include $error_page;
     } else {
         echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
     }
     exit;
 }
 
-// Set permission flags for UI elements
-$can_view = true; // Already validated above
+$current_user_id = (int) ($_SESSION['user_id'] ?? 0);
+$display_name = trim((string) ($_SESSION['user_name'] ?? ($_SESSION['name'] ?? '')));
+if ($display_name === '') {
+    $display_name = 'User';
+}
 
-// --- COMPREHENSIVE DASHBOARD DATA QUERIES ---
-
-// Member Statistics - Strict Classification Based on Confirmed/Baptized Status
-// Only count members with proper confirmed/baptized values set
-
-// Get adherents (explicitly marked as adherents, active only)
-$adherent = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE membership_status = 'Adherent' AND status = 'active'")->fetch_assoc()['cnt'];
-
-// Get junior members (Sunday School)
-$junior_members = $conn->query("SELECT COUNT(*) as cnt FROM sunday_school")->fetch_assoc()['cnt'];
-
-// Full Members: Both baptized AND confirmed (excluding adherents, active only)
-$full_member = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE LOWER(confirmed) = 'yes' AND LOWER(baptized) = 'yes' AND (membership_status IS NULL OR membership_status != 'Adherent') AND status = 'active'")->fetch_assoc()['cnt'];
-
-// Catechumens: Either baptized OR confirmed (but not both) (excluding adherents and full members, active only)
-$catechumen = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE (LOWER(confirmed) = 'yes' OR LOWER(baptized) = 'yes') AND NOT (LOWER(confirmed) = 'yes' AND LOWER(baptized) = 'yes') AND (membership_status IS NULL OR membership_status != 'Adherent') AND status = 'active'")->fetch_assoc()['cnt'];
-
-// Total Members = Full Members + Catechumens + Junior Members + Adherents
-// Members without proper confirmed/baptized values are considered "created but not registered yet"
-$total_members = $full_member + $catechumen + $junior_members + $adherent;
-// Christian Community = Active Members + Sunday School Members
-$active_members = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'active'")->fetch_assoc()['cnt'];
-$sunday_school_members = $conn->query("SELECT COUNT(*) as cnt FROM sunday_school")->fetch_assoc()['cnt'];
-$registered_members = $active_members + $sunday_school_members;
-$pending_registration = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE status = 'pending'")->fetch_assoc()['cnt'];
-$members_no_payments = $conn->query("SELECT COUNT(*) as cnt FROM members m LEFT JOIN payments p ON m.id = p.member_id WHERE p.id IS NULL AND m.status = 'active'")->fetch_assoc()['cnt'];
-
-// --- CASH PAYMENT FILTERING LOGIC ---
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
-$user_id = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
-$cash_filter = "1"; // No filter, include all payment types
-$user_filter = $is_super_admin ? '' : " AND recorded_by = $user_id";
-
-// --- FILTERED CASH PAYMENT STATS ---
-// Reversal filter: exclude reversed payments (reversal_approved_at IS NOT NULL AND reversal_undone_at IS NULL)
-$reversal_filter = "AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL)";
-$total_cash_payments = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter$user_filter $reversal_filter")->fetch_assoc()['total'];
-$cash_payments_today = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND DATE(payment_date) = CURDATE()$user_filter $reversal_filter")->fetch_assoc()['total'];
-$cash_payments_week = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1)$user_filter $reversal_filter")->fetch_assoc()['total'];
-$cash_payments_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE())$user_filter $reversal_filter")->fetch_assoc()['total'];
-$cash_payments_last_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE $cash_filter AND YEAR(payment_date) = YEAR(CURDATE() - INTERVAL 1 MONTH) AND MONTH(payment_date) = MONTH(CURDATE() - INTERVAL 1 MONTH)$user_filter $reversal_filter")->fetch_assoc()['total'];
-
-// Payment Statistics (All Payment Types)
-$total_payments = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL)")->fetch_assoc()['total'];
-$payments_today = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE DATE(payment_date) = CURDATE() AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL)")->fetch_assoc()['total'];
-$payments_this_week = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1) AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL)")->fetch_assoc()['total'];
-$payments_this_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE()) AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL)")->fetch_assoc()['total'];
-$payments_last_month = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE YEAR(payment_date) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH)) AND MONTH(payment_date) = MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH)) AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL)")->fetch_assoc()['total'];
-$avg_payment_per_member = $registered_members > 0 ? $total_payments / $registered_members : 0;
-
-// Payment Mode Breakdown
-$payment_modes = $conn->query("SELECT mode, COUNT(id) as count, COALESCE(SUM(amount),0) as total FROM payments WHERE (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL) GROUP BY mode ORDER BY total DESC");
-
-// Attendance Statistics
-$total_attendance_sessions = $conn->query("SELECT COUNT(*) as cnt FROM attendance_sessions")->fetch_assoc()['cnt'];
-$recent_attendance_rate = 0;
-if ($total_attendance_sessions > 0) {
-    $recent_session = $conn->query("SELECT id FROM attendance_sessions ORDER BY service_date DESC LIMIT 1")->fetch_assoc();
-    if ($recent_session) {
-        $present_count = $conn->query("SELECT COUNT(*) as cnt FROM attendance_records WHERE session_id = {$recent_session['id']} AND status = 'present'")->fetch_assoc()['cnt'];
-        $total_records = $conn->query("SELECT COUNT(*) as cnt FROM attendance_records WHERE session_id = {$recent_session['id']}")->fetch_assoc()['cnt'];
-        $recent_attendance_rate = $total_records > 0 ? ($present_count / $total_records) * 100 : 0;
+$role_rows = function_exists('get_user_roles') ? get_user_roles() : [];
+$role_names = [];
+foreach ($role_rows as $role_row) {
+    if (!empty($role_row['name'])) {
+        $role_names[] = $role_row['name'];
     }
 }
 
-// Health Records Statistics
-$health_records_count = $conn->query("SELECT COUNT(*) as cnt FROM health_records")->fetch_assoc()['cnt'];
-$health_records_this_month = $conn->query("SELECT COUNT(*) as cnt FROM health_records WHERE YEAR(recorded_at) = YEAR(CURDATE()) AND MONTH(recorded_at) = MONTH(CURDATE())")->fetch_assoc()['cnt'];
-
-// Event Statistics
-$upcoming_events = $conn->query("SELECT COUNT(*) as cnt FROM events WHERE event_date >= CURDATE()")->fetch_assoc()['cnt'];
-$events_this_month = $conn->query("SELECT COUNT(*) as cnt FROM events WHERE YEAR(event_date) = YEAR(CURDATE()) AND MONTH(event_date) = MONTH(CURDATE())")->fetch_assoc()['cnt'];
-
-// ZKTeco Device Statistics
-//$active_devices = $conn->query("SELECT COUNT(*) as cnt FROM zkteco_devices WHERE is_active = 1")->fetch_assoc()['cnt'];
-//$enrolled_members = $conn->query("SELECT COUNT(DISTINCT member_id) as cnt FROM member_biometric_data WHERE is_active = 1")->fetch_assoc()['cnt'];
-
-// Recent Activity Data
-$recent_members = $conn->query("SELECT m.id, CONCAT(m.last_name, ' ', m.first_name, ' ', m.middle_name) AS name, bc.name AS class, m.status, m.created_at FROM members m LEFT JOIN bible_classes bc ON m.class_id = bc.id ORDER BY m.created_at DESC, m.id DESC LIMIT 8");
-$recent_payments = $conn->query("SELECT p.id, p.amount, p.payment_date, pt.name as payment_type, CONCAT(m.last_name, ' ', m.first_name) as member_name FROM payments p LEFT JOIN payment_types pt ON p.payment_type_id = pt.id LEFT JOIN members m ON p.member_id = m.id WHERE (p.reversal_approved_at IS NULL OR p.reversal_undone_at IS NOT NULL) ORDER BY p.payment_date DESC LIMIT 8");
-$recent_events = $conn->query("SELECT id, name, event_date, location FROM events WHERE event_date >= CURDATE() ORDER BY event_date ASC LIMIT 5");
-
-// All Payment Types Breakdown
-$all_payment_types = $conn->query("SELECT pt.name, COALESCE(SUM(p.amount),0) as total, COUNT(p.id) as count FROM payment_types pt LEFT JOIN payments p ON p.payment_type_id = pt.id WHERE (p.reversal_approved_at IS NULL OR p.reversal_undone_at IS NOT NULL) GROUP BY pt.id ORDER BY total DESC");
-
-// Top Payment Types (keep for chart or old UI)
-$top_payment_types = $conn->query("SELECT pt.name, COALESCE(SUM(p.amount),0) as total, COUNT(p.id) as count FROM payment_types pt LEFT JOIN payments p ON p.payment_type_id = pt.id WHERE (p.reversal_approved_at IS NULL OR p.reversal_undone_at IS NOT NULL) GROUP BY pt.id ORDER BY total DESC LIMIT 6");
-
-// Gender Distribution
-$gender_stats = $conn->query("SELECT gender, COUNT(*) as count FROM members WHERE gender IN ('Male', 'Female') GROUP BY gender");
-
-// Age Group Distribution
-$age_groups = $conn->query("SELECT 
-    CASE 
-        WHEN TIMESTAMPDIFF(YEAR, dob, CURDATE()) < 18 THEN 'Under 18'
-        WHEN TIMESTAMPDIFF(YEAR, dob, CURDATE()) BETWEEN 18 AND 30 THEN '18-30'
-        WHEN TIMESTAMPDIFF(YEAR, dob, CURDATE()) BETWEEN 31 AND 50 THEN '31-50'
-        WHEN TIMESTAMPDIFF(YEAR, dob, CURDATE()) BETWEEN 51 AND 65 THEN '51-65'
-        ELSE 'Over 65'
-    END as age_group,
-    COUNT(*) as count
-    FROM members 
-    WHERE dob IS NOT NULL 
-    GROUP BY age_group
-    ORDER BY FIELD(age_group, 'Under 18', '18-30', '31-50', '51-65', 'Over 65')");
-
-// Monthly Growth Data (Last 12 months)
-$monthly_growth = [];
-$monthly_payments_data = [];
-$monthly_labels = [];
-for ($i = 11; $i >= 0; $i--) {
-    $month = date('Y-m', strtotime("-$i months"));
-    $label = date('M Y', strtotime("-$i months"));
-    $monthly_labels[] = $label;
-    
-    // Member growth
-    $member_count = $conn->query("SELECT COUNT(*) as cnt FROM members WHERE DATE_FORMAT(created_at, '%Y-%m') = '$month'")->fetch_assoc()['cnt'];
-    $monthly_growth[] = (int)$member_count;
-    
-    // Payment data
-    $payment_total = $conn->query("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE DATE_FORMAT(payment_date, '%Y-%m') = '$month' AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL)")->fetch_assoc()['total'];
-    $monthly_payments_data[] = (float)$payment_total;
+if (empty($role_names) && !empty($_SESSION['role_id'])) {
+    $fallback_role_id = (int) $_SESSION['role_id'];
+    $fallback_role_name = dashboard_scalar(
+        $conn,
+        "SELECT name FROM roles WHERE id = {$fallback_role_id} LIMIT 1",
+        'name',
+        'User'
+    );
+    $role_names[] = $fallback_role_name;
 }
 
-// Bible Classes Distribution
-$bible_classes_data = $conn->query("SELECT bc.name, COUNT(m.id) as member_count FROM bible_classes bc LEFT JOIN members m ON bc.id = m.class_id GROUP BY bc.id ORDER BY member_count DESC LIMIT 8");
+$is_cashier = false;
+foreach ($role_names as $role_name) {
+    if (strtolower((string) $role_name) === 'cashier') {
+        $is_cashier = true;
+        break;
+    }
+}
 
-// Attendance Trends (Last 6 sessions)
-$attendance_trends = $conn->query("SELECT 
-    s.title, 
-    s.service_date,
-    COUNT(ar.id) as total_records,
-    SUM(CASE WHEN ar.status = 'present' THEN 1 ELSE 0 END) as present_count,
-    ROUND((SUM(CASE WHEN ar.status = 'present' THEN 1 ELSE 0 END) / COUNT(ar.id)) * 100, 1) as attendance_rate
-    FROM attendance_sessions s 
-    LEFT JOIN attendance_records ar ON s.id = ar.session_id 
-    GROUP BY s.id 
-    ORDER BY s.service_date DESC 
-    LIMIT 6");
+$reversal_filter = "(reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL)";
+$cashier_filter = $is_cashier && $current_user_id > 0 ? " AND p.recorded_by = {$current_user_id}" : '';
+$cashier_filter_no_alias = $is_cashier && $current_user_id > 0 ? " AND recorded_by = {$current_user_id}" : '';
+
+$active_members = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM members WHERE status = 'active'");
+$pending_members = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM members WHERE status = 'pending'");
+$adherents = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM members WHERE membership_status = 'Adherent' AND status = 'active'");
+$junior_members = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM sunday_school");
+$full_members = (int) dashboard_scalar(
+    $conn,
+    "SELECT COUNT(*) AS total
+     FROM members
+     WHERE LOWER(COALESCE(confirmed, '')) = 'yes'
+       AND LOWER(COALESCE(baptized, '')) = 'yes'
+       AND (membership_status IS NULL OR membership_status != 'Adherent')
+       AND status = 'active'"
+);
+$catechumens = (int) dashboard_scalar(
+    $conn,
+    "SELECT COUNT(*) AS total
+     FROM members
+     WHERE (LOWER(COALESCE(confirmed, '')) = 'yes' OR LOWER(COALESCE(baptized, '')) = 'yes')
+       AND NOT (LOWER(COALESCE(confirmed, '')) = 'yes' AND LOWER(COALESCE(baptized, '')) = 'yes')
+       AND (membership_status IS NULL OR membership_status != 'Adherent')
+       AND status = 'active'"
+);
+$members_without_payments = (int) dashboard_scalar(
+    $conn,
+    "SELECT COUNT(*) AS total
+     FROM members m
+     LEFT JOIN payments p
+       ON p.member_id = m.id
+      AND {$reversal_filter}
+     WHERE m.status = 'active' AND p.id IS NULL"
+);
+
+$community_size = $active_members + $junior_members;
+$classified_members = $full_members + $catechumens + $adherents + $junior_members;
+
+$payment_total = (float) dashboard_scalar($conn, "SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE {$reversal_filter}");
+$payment_count = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM payments WHERE {$reversal_filter}");
+$payments_today = (float) dashboard_scalar($conn, "SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE DATE(payment_date) = CURDATE() AND {$reversal_filter}");
+$payments_this_week = (float) dashboard_scalar($conn, "SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1) AND {$reversal_filter}");
+$payments_this_month = (float) dashboard_scalar($conn, "SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE()) AND {$reversal_filter}");
+$average_payment = $payment_count > 0 ? ($payment_total / $payment_count) : 0;
+
+$attendance_sessions = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM attendance_sessions");
+$latest_session = dashboard_rows(
+    $conn,
+    "SELECT id, service_date, COALESCE(NULLIF(title, ''), CONCAT('Session ', id)) AS title
+     FROM attendance_sessions
+     ORDER BY service_date DESC, id DESC
+     LIMIT 1"
+);
+$latest_attendance_rate = 0;
+$latest_attendance_title = 'No attendance session yet';
+if (!empty($latest_session)) {
+    $latest_session_id = (int) $latest_session[0]['id'];
+    $latest_attendance_title = $latest_session[0]['title'];
+    $latest_attendance = dashboard_rows(
+        $conn,
+        "SELECT
+            SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) AS present_count,
+            COUNT(*) AS total_count
+         FROM attendance_records
+         WHERE session_id = {$latest_session_id}"
+    );
+    if (!empty($latest_attendance)) {
+        $latest_attendance_rate = dashboard_percent(
+            (int) ($latest_attendance[0]['present_count'] ?? 0),
+            (int) ($latest_attendance[0]['total_count'] ?? 0)
+        );
+    }
+}
+
+$health_records = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM health_records");
+$health_this_month = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM health_records WHERE YEAR(recorded_at) = YEAR(CURDATE()) AND MONTH(recorded_at) = MONTH(CURDATE())");
+
+$upcoming_events = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM events WHERE event_date >= CURDATE()");
+$events_this_month = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM events WHERE YEAR(event_date) = YEAR(CURDATE()) AND MONTH(event_date) = MONTH(CURDATE())");
+
+$membership_mix = [
+    ['label' => 'Full Members', 'value' => $full_members],
+    ['label' => 'Catechumens', 'value' => $catechumens],
+    ['label' => 'Adherents', 'value' => $adherents],
+    ['label' => 'Junior Members', 'value' => $junior_members],
+];
+
+$payment_modes = dashboard_rows(
+    $conn,
+    "SELECT
+        COALESCE(NULLIF(mode, ''), 'Unspecified') AS label,
+        COUNT(*) AS entry_count,
+        COALESCE(SUM(amount), 0) AS total_amount
+     FROM payments
+     WHERE {$reversal_filter}
+     GROUP BY COALESCE(NULLIF(mode, ''), 'Unspecified')
+     ORDER BY total_amount DESC"
+);
+
+$top_payment_types = dashboard_rows(
+    $conn,
+    "SELECT
+        COALESCE(NULLIF(pt.name, ''), 'Unspecified') AS label,
+        COUNT(p.id) AS entry_count,
+        COALESCE(SUM(p.amount), 0) AS total_amount
+     FROM payments p
+     LEFT JOIN payment_types pt ON pt.id = p.payment_type_id
+     WHERE {$reversal_filter}
+     GROUP BY pt.id, pt.name
+     ORDER BY total_amount DESC
+     LIMIT 5"
+);
+
+$recent_members = dashboard_rows(
+    $conn,
+    "SELECT
+        m.id,
+        CONCAT_WS(' ', m.last_name, m.first_name, m.middle_name) AS member_name,
+        COALESCE(NULLIF(bc.name, ''), 'Unassigned') AS class_name,
+        COALESCE(NULLIF(m.status, ''), 'unknown') AS status,
+        m.created_at
+     FROM members m
+     LEFT JOIN bible_classes bc ON bc.id = m.class_id
+     ORDER BY m.created_at DESC, m.id DESC
+     LIMIT 6"
+);
+
+$recent_payments = dashboard_rows(
+    $conn,
+    "SELECT
+        p.id,
+        p.amount,
+        p.payment_date,
+        COALESCE(NULLIF(pt.name, ''), 'Payment') AS payment_type,
+        COALESCE(
+            NULLIF(CONCAT_WS(' ', m.last_name, m.first_name), ''),
+            NULLIF(CONCAT_WS(' ', ss.last_name, ss.first_name), ''),
+            'Unknown payer'
+        ) AS payer_name
+     FROM payments p
+     LEFT JOIN members m ON m.id = p.member_id
+     LEFT JOIN sunday_school ss ON ss.id = p.sundayschool_id
+     LEFT JOIN payment_types pt ON pt.id = p.payment_type_id
+     WHERE {$reversal_filter}
+     ORDER BY p.payment_date DESC, p.id DESC
+     LIMIT 6"
+);
+
+$recent_events = dashboard_rows(
+    $conn,
+    "SELECT id, name, event_date, location
+     FROM events
+     WHERE event_date >= CURDATE()
+     ORDER BY event_date ASC, id ASC
+     LIMIT 5"
+);
+
+$attendance_trend_rows = dashboard_rows(
+    $conn,
+    "SELECT
+        s.id,
+        s.service_date,
+        COALESCE(NULLIF(s.title, ''), CONCAT('Session ', s.id)) AS title,
+        SUM(CASE WHEN ar.status = 'present' THEN 1 ELSE 0 END) AS present_count,
+        COUNT(ar.id) AS total_count
+     FROM attendance_sessions s
+     LEFT JOIN attendance_records ar ON ar.session_id = s.id
+     GROUP BY s.id, s.service_date, s.title
+     ORDER BY s.service_date DESC, s.id DESC
+     LIMIT 6"
+);
+$attendance_trend_rows = array_reverse($attendance_trend_rows);
+
+$month_seed = dashboard_month_buckets(6);
+$member_growth_rows = dashboard_rows(
+    $conn,
+    "SELECT DATE_FORMAT(created_at, '%Y-%m') AS bucket, COUNT(*) AS total_count
+     FROM members
+     WHERE created_at >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 5 MONTH), '%Y-%m-01')
+     GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+     ORDER BY bucket ASC"
+);
+$payment_growth_rows = dashboard_rows(
+    $conn,
+    "SELECT DATE_FORMAT(payment_date, '%Y-%m') AS bucket, COALESCE(SUM(amount), 0) AS total_amount
+     FROM payments
+     WHERE payment_date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 5 MONTH), '%Y-%m-01')
+       AND {$reversal_filter}
+     GROUP BY DATE_FORMAT(payment_date, '%Y-%m')
+     ORDER BY bucket ASC"
+);
+
+$member_growth_map = dashboard_merge_month_values($month_seed, $member_growth_rows, 'bucket', 'total_count');
+$payment_growth_map = dashboard_merge_month_values($month_seed, $payment_growth_rows, 'bucket', 'total_amount');
+
+$trend_labels = [];
+$member_growth_values = [];
+$payment_growth_values = [];
+foreach ($member_growth_map as $bucket => $item) {
+    $trend_labels[] = $item['label'];
+    $member_growth_values[] = (int) $item['value'];
+    $payment_growth_values[] = (float) ($payment_growth_map[$bucket]['value'] ?? 0);
+}
+
+$attendance_labels = [];
+$attendance_values = [];
+foreach ($attendance_trend_rows as $trend_row) {
+    $attendance_labels[] = date('M j', strtotime((string) $trend_row['service_date']));
+    $attendance_values[] = dashboard_percent(
+        (int) ($trend_row['present_count'] ?? 0),
+        (int) ($trend_row['total_count'] ?? 0)
+    );
+}
+
+$membership_labels = [];
+$membership_values = [];
+foreach ($membership_mix as $item) {
+    if ((int) $item['value'] > 0) {
+        $membership_labels[] = $item['label'];
+        $membership_values[] = (int) $item['value'];
+    }
+}
+
+$cashier_payment_count = 0;
+$cashier_total_amount = 0;
+$cashier_today_amount = 0;
+$cashier_today_count = 0;
+$cashier_week_count = 0;
+$cashier_month_count = 0;
+$cashier_average_ticket = 0;
+$cashier_payment_modes = [];
+$cashier_recent_payments = [];
+$cashier_month_labels = $trend_labels;
+$cashier_month_values = array_fill(0, count($trend_labels), 0);
+
+if ($is_cashier && $current_user_id > 0) {
+    $cashier_payment_count = (int) dashboard_scalar(
+        $conn,
+        "SELECT COUNT(*) AS total FROM payments WHERE {$reversal_filter}{$cashier_filter_no_alias}"
+    );
+    $cashier_total_amount = (float) dashboard_scalar(
+        $conn,
+        "SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE {$reversal_filter}{$cashier_filter_no_alias}"
+    );
+    $cashier_today_count = (int) dashboard_scalar(
+        $conn,
+        "SELECT COUNT(*) AS total FROM payments WHERE DATE(payment_date) = CURDATE() AND {$reversal_filter}{$cashier_filter_no_alias}"
+    );
+    $cashier_today_amount = (float) dashboard_scalar(
+        $conn,
+        "SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE DATE(payment_date) = CURDATE() AND {$reversal_filter}{$cashier_filter_no_alias}"
+    );
+    $cashier_week_count = (int) dashboard_scalar(
+        $conn,
+        "SELECT COUNT(*) AS total FROM payments WHERE YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1) AND {$reversal_filter}{$cashier_filter_no_alias}"
+    );
+    $cashier_month_count = (int) dashboard_scalar(
+        $conn,
+        "SELECT COUNT(*) AS total FROM payments WHERE YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE()) AND {$reversal_filter}{$cashier_filter_no_alias}"
+    );
+    $cashier_average_ticket = $cashier_payment_count > 0 ? ($cashier_total_amount / $cashier_payment_count) : 0;
+
+    $cashier_payment_modes = dashboard_rows(
+        $conn,
+        "SELECT
+            COALESCE(NULLIF(p.mode, ''), 'Unspecified') AS label,
+            COUNT(*) AS entry_count,
+            COALESCE(SUM(p.amount), 0) AS total_amount
+         FROM payments p
+         WHERE {$reversal_filter}{$cashier_filter}
+         GROUP BY COALESCE(NULLIF(p.mode, ''), 'Unspecified')
+         ORDER BY total_amount DESC"
+    );
+
+    $cashier_recent_payments = dashboard_rows(
+        $conn,
+        "SELECT
+            p.id,
+            p.amount,
+            p.payment_date,
+            COALESCE(NULLIF(pt.name, ''), 'Payment') AS payment_type,
+            COALESCE(
+                NULLIF(CONCAT_WS(' ', m.last_name, m.first_name), ''),
+                NULLIF(CONCAT_WS(' ', ss.last_name, ss.first_name), ''),
+                'Unknown payer'
+            ) AS payer_name
+         FROM payments p
+         LEFT JOIN members m ON m.id = p.member_id
+         LEFT JOIN sunday_school ss ON ss.id = p.sundayschool_id
+         LEFT JOIN payment_types pt ON pt.id = p.payment_type_id
+         WHERE {$reversal_filter}{$cashier_filter}
+         ORDER BY p.payment_date DESC, p.id DESC
+         LIMIT 8"
+    );
+
+    $cashier_month_rows = dashboard_rows(
+        $conn,
+        "SELECT DATE_FORMAT(payment_date, '%Y-%m') AS bucket, COALESCE(SUM(amount), 0) AS total_amount
+         FROM payments
+         WHERE payment_date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 5 MONTH), '%Y-%m-01')
+           AND {$reversal_filter}{$cashier_filter_no_alias}
+         GROUP BY DATE_FORMAT(payment_date, '%Y-%m')
+         ORDER BY bucket ASC"
+    );
+
+    $cashier_month_map = dashboard_merge_month_values(dashboard_month_buckets(6), $cashier_month_rows, 'bucket', 'total_amount');
+    $cashier_month_labels = [];
+    $cashier_month_values = [];
+    foreach ($cashier_month_map as $cashier_month) {
+        $cashier_month_labels[] = $cashier_month['label'];
+        $cashier_month_values[] = (float) $cashier_month['value'];
+    }
+}
+
+$dashboard_actions = [];
+if ($is_super_admin || has_permission('create_member')) {
+    $dashboard_actions[] = ['label' => 'Register Member', 'icon' => 'fas fa-user-plus', 'href' => BASE_URL . '/views/member_form.php', 'tone' => 'primary'];
+}
+if ($is_super_admin || has_permission('view_member')) {
+    $dashboard_actions[] = ['label' => 'Member Directory', 'icon' => 'fas fa-users', 'href' => BASE_URL . '/views/member_list.php', 'tone' => 'dark'];
+}
+if ($is_super_admin || has_permission('create_payment')) {
+    $dashboard_actions[] = ['label' => 'Record Payment', 'icon' => 'fas fa-hand-holding-usd', 'href' => BASE_URL . '/views/payment_form.php', 'tone' => 'success'];
+}
+if ($is_super_admin || has_permission('view_payment_list')) {
+    $dashboard_actions[] = ['label' => 'Payment History', 'icon' => 'fas fa-receipt', 'href' => BASE_URL . '/views/payment_list.php', 'tone' => 'success'];
+}
+if ($is_super_admin || has_permission('view_attendance_list') || has_permission('mark_attendance')) {
+    $dashboard_actions[] = ['label' => 'Attendance', 'icon' => 'fas fa-clipboard-check', 'href' => BASE_URL . '/views/attendance_list.php', 'tone' => 'info'];
+}
+if ($is_super_admin || has_permission('view_reports_dashboard')) {
+    $dashboard_actions[] = ['label' => 'Reports', 'icon' => 'fas fa-chart-line', 'href' => BASE_URL . '/views/reports.php', 'tone' => 'warning'];
+}
+if ($is_super_admin || has_permission('view_event_list')) {
+    $dashboard_actions[] = ['label' => 'Events', 'icon' => 'fas fa-calendar-alt', 'href' => BASE_URL . '/views/event_list.php', 'tone' => 'secondary'];
+}
+if ($is_super_admin || has_permission('view_health_list')) {
+    $dashboard_actions[] = ['label' => 'Health Records', 'icon' => 'fas fa-heartbeat', 'href' => BASE_URL . '/views/health_list.php', 'tone' => 'danger'];
+}
+if ($is_super_admin || has_permission('view_sms_bulk') || has_permission('send_bulk_sms')) {
+    $dashboard_actions[] = ['label' => 'Bulk SMS', 'icon' => 'fas fa-paper-plane', 'href' => BASE_URL . '/views/sms_bulk.php', 'tone' => 'warning'];
+}
+
+$leadership_links = [];
+if ($class_ids !== null) {
+    $leadership_links[] = [
+        'label' => 'Bible Class Leadership',
+        'href' => BASE_URL . '/views/my_bible_class_leader.php',
+        'icon' => 'fas fa-chalkboard-teacher',
+    ];
+}
+if ($org_ids !== null) {
+    $leadership_links[] = [
+        'label' => 'Organization Leadership',
+        'href' => BASE_URL . '/views/my_organization_leader.php',
+        'icon' => 'fas fa-sitemap',
+    ];
+}
+
+$page_title = $is_cashier ? 'Cashier Dashboard' : 'Dashboard';
 
 ob_start();
-$user_name = isset($_SESSION['user_name']) ? $_SESSION['user_name'] : 'User';
-
-// Get role name from database using role_id
-$user_role = 'Admin'; // Default
-$role_id = isset($_SESSION['role_id']) ? intval($_SESSION['role_id']) : 0;
-if ($role_id > 0) {
-    $role_stmt = $conn->prepare("SELECT name FROM roles WHERE id = ?");
-    $role_stmt->bind_param('i', $role_id);
-    $role_stmt->execute();
-    $role_result = $role_stmt->get_result();
-    if ($role_result && $role_row = $role_result->fetch_assoc()) {
-        $user_role = $role_row['name'];
-    }
-    $role_stmt->close();
-}
-
-// Check if user is a cashier
-$is_cashier = (strtolower($user_role) === 'cashier');
-$current_user_id = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
-
-// Debug: Add temporary debug output
-echo "<!-- DEBUG: Role ID: $role_id, User Role: " . htmlspecialchars($user_role) . ", Is Cashier: " . ($is_cashier ? 'YES' : 'NO') . " -->";
-
-// If cashier, recalculate statistics to show only their payments
-if ($is_cashier && $current_user_id > 0) {
-    // Cashier-specific payment statistics
-    $cashier_filter = " AND recorded_by = $current_user_id";
-    
-    // Total payments by this cashier
-    $total_payments_cashier = $conn->query("SELECT COUNT(*) as cnt FROM payments WHERE (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL) $cashier_filter")->fetch_assoc()['cnt'];
-    
-    // Total amount collected by this cashier
-    $total_amount_cashier = $conn->query("SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL) $cashier_filter")->fetch_assoc()['total'];
-    
-    // Today's payments by this cashier
-    $today_payments_cashier = $conn->query("SELECT COUNT(*) as cnt FROM payments WHERE DATE(payment_date) = CURDATE() AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL) $cashier_filter")->fetch_assoc()['cnt'];
-    
-    // Today's amount by this cashier
-    $today_amount_cashier = $conn->query("SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE DATE(payment_date) = CURDATE() AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL) $cashier_filter")->fetch_assoc()['total'];
-    
-    // This week's payments by this cashier
-    $week_payments_cashier = $conn->query("SELECT COUNT(*) as cnt FROM payments WHERE YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1) AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL) $cashier_filter")->fetch_assoc()['cnt'];
-    
-    // This month's payments by this cashier
-    $month_payments_cashier = $conn->query("SELECT COUNT(*) as cnt FROM payments WHERE YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE()) AND (reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL) $cashier_filter")->fetch_assoc()['cnt'];
-    
-    // Payment types breakdown for this cashier
-    $payment_types_cashier = $conn->query("
-        SELECT pt.name, COUNT(*) as count, SUM(p.amount) as total_amount 
-        FROM payments p 
-        LEFT JOIN payment_types pt ON p.payment_type_id = pt.id 
-        WHERE (p.reversal_approved_at IS NULL OR p.reversal_undone_at IS NOT NULL) $cashier_filter 
-        GROUP BY pt.name 
-        ORDER BY total_amount DESC 
-        LIMIT 10
-    ");
-    
-    // Recent payments by this cashier
-    $recent_payments_cashier = $conn->query("
-        SELECT p.*, pt.name as payment_type, 
-               COALESCE(m.first_name, ss.first_name) as first_name,
-               COALESCE(m.last_name, ss.last_name) as last_name,
-               COALESCE(m.crn, ss.srn) as identifier
-        FROM payments p 
-        LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
-        LEFT JOIN members m ON p.member_id = m.id
-        LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
-        WHERE (p.reversal_approved_at IS NULL OR p.reversal_undone_at IS NOT NULL) $cashier_filter 
-        ORDER BY p.payment_date DESC 
-        LIMIT 10
-    ");
-}
 ?>
-
-<!-- Modern Dashboard Header -->
-<div class="content-header pb-3 mt-2 px-3">
-    <div class="row mb-3 align-items-center">
-        <div class="col-md-8">
-            <div class="d-flex align-items-center">
-                <div class="dashboard-icon-wrapper mr-3">
-                    <i class="fas fa-tachometer-alt dashboard-main-icon"></i>
-                </div>
-                <div>
-                    <h3 class="mb-1 font-weight-bold text-dark dashboard-title"><?= $is_cashier ? 'Cashier Payment Dashboard' : 'Church Management Dashboard' ?></h3>
-                    <p class="text-muted mb-0">Welcome back, <strong><?= htmlspecialchars($user_name) ?></strong> | <?= htmlspecialchars($user_role) ?> | <?= date('l, F j, Y') ?></p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4 text-right">
-            <div class="btn-group" role="group">
-                <?php if ($is_cashier): ?>
-                    <a href="<?= BASE_URL ?>/views/payment_form.php" class="btn btn-gradient-success btn-sm"><i class="fa fa-money-bill mr-1"></i> New Payment</a>
-                    <a href="<?= BASE_URL ?>/views/payment_bulk.php" class="btn btn-gradient-primary btn-sm"><i class="fa fa-layer-group mr-1"></i> Bulk Payment</a>
-                    <a href="<?= BASE_URL ?>/views/payment_list.php" class="btn btn-gradient-info btn-sm"><i class="fa fa-list mr-1"></i> Payment History</a>
-                <?php else: ?>
-                    <a href="<?= BASE_URL ?>/views/member_form.php" class="btn btn-gradient-primary btn-sm"><i class="fa fa-plus mr-1"></i> Add Member</a>
-                    <a href="<?= BASE_URL ?>/views/payment_form.php" class="btn btn-gradient-success btn-sm"><i class="fa fa-money-bill mr-1"></i> Payment</a>
-                    <a href="<?= BASE_URL ?>/views/reports.php" class="btn btn-gradient-info btn-sm"><i class="fa fa-chart-bar mr-1"></i> Reports</a>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-</div>
-<div class="dashboard-main px-2 px-lg-4 pt-2">
-
-<?php if ($is_cashier): ?>
-    <!-- CASHIER DASHBOARD - Payment Statistics Only -->
-    <div class="row mb-3">
-        <div class="col-12">
-            <div class="alert alert-info">
-                <i class="fas fa-cash-register mr-2"></i>
-                <strong>Cashier Dashboard</strong> - Showing your payment collection statistics and membership overview
-            </div>
-        </div>
-    </div>
-
-    <!-- Membership Stats Cards for Cashier -->
-    <div class="row g-2 mb-3">
-        <div class="col-6 col-md-3 mb-2">
-            <div class="info-box bg-primary shadow-sm">
-                <span class="info-box-icon bg-gradient-primary elevation-1"><i class="fas fa-user-check"></i></span>
-                <div class="info-box-content">
-                    <span class="info-box-text">Full Members</span>
-                    <span class="info-box-number h4 mb-0"><?= number_format($full_member) ?></span>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3 mb-2">
-            <div class="info-box bg-success shadow-sm">
-                <span class="info-box-icon bg-gradient-success elevation-1"><i class="fas fa-user-graduate"></i></span>
-                <div class="info-box-content">
-                    <span class="info-box-text">Catechumens</span>
-                    <span class="info-box-number h4 mb-0"><?= number_format($catechumen) ?></span>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3 mb-2">
-            <div class="info-box bg-warning shadow-sm">
-                <span class="info-box-icon bg-gradient-warning elevation-1"><i class="fas fa-child"></i></span>
-                <div class="info-box-content">
-                    <span class="info-box-text">Junior Members</span>
-                    <span class="info-box-number h4 mb-0"><?= number_format($junior_members) ?></span>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3 mb-2">
-            <div class="info-box bg-danger shadow-sm">
-                <span class="info-box-icon bg-gradient-danger elevation-1"><i class="fas fa-user-slash"></i></span>
-                <div class="info-box-content">
-                    <span class="info-box-text">Adherents</span>
-                    <span class="info-box-number h4 mb-0"><?= number_format($adherent) ?></span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Additional Member Stats Cards for Cashier -->
-    <div class="row g-2 mb-3">
-        <div class="col-6 col-md-4 mb-2">
-            <div class="card bg-light shadow-sm">
-                <div class="card-body text-center p-2">
-                    <div class="text-secondary small">Christian Community</div>
-                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-users mr-1 text-primary"></i><?= number_format($registered_members) ?></div>
-                    <div class="text-muted small">Total Registered</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-4 mb-2">
-            <div class="card bg-light shadow-sm">
-                <div class="card-body text-center p-2">
-                    <div class="text-secondary small">Pending Registration</div>
-                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-user-clock mr-1 text-warning"></i><?= number_format($pending_registration) ?></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-4 mb-2">
-            <div class="card bg-light shadow-sm">
-                <div class="card-body text-center p-2">
-                    <div class="text-secondary small">Members with No Payments</div>
-                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-user-times mr-1 text-danger"></i><?= number_format($members_no_payments) ?></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Cashier Payment Stats Cards -->
-    <div class="row g-3 mb-4">
-        <div class="col-12 col-md-6">
-            <div class="card border-0 shadow-sm h-100 gradient-card bg-success text-white">
-                <div class="card-body text-center">
-                    <div class="mb-2"><i class="fas fa-coins fa-2x"></i></div>
-                    <div class="h5 mb-1 font-weight-bold">Total Collected</div>
-                    <div class="h3 mb-0 font-weight-bold">₵<?= number_format($total_amount_cashier, 2) ?></div>
-                    <div class="small opacity-75"><?= number_format($total_payments_cashier) ?> payments</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-12 col-md-6">
-            <div class="card border-0 shadow-sm h-100 gradient-card bg-info text-white">
-                <div class="card-body text-center">
-                    <div class="mb-2"><i class="fas fa-calendar-day fa-2x"></i></div>
-                    <div class="h5 mb-1 font-weight-bold">Today's Collections</div>
-                    <div class="h3 mb-0 font-weight-bold">₵<?= number_format($today_amount_cashier, 2) ?></div>
-                    <div class="small opacity-75"><?= number_format($today_payments_cashier) ?> payments</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-12 col-md-4">
-            <div class="card border-0 shadow-sm h-100 gradient-card bg-warning text-white">
-                <div class="card-body text-center">
-                    <div class="mb-2"><i class="fas fa-calendar-week fa-2x"></i></div>
-                    <div class="h5 mb-1 font-weight-bold">This Week</div>
-                    <div class="h3 mb-0 font-weight-bold"><?= number_format($week_payments_cashier) ?></div>
-                    <div class="small opacity-75">payments</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-12 col-md-4">
-            <div class="card border-0 shadow-sm h-100 gradient-card bg-primary text-white">
-                <div class="card-body text-center">
-                    <div class="mb-2"><i class="fas fa-calendar-alt fa-2x"></i></div>
-                    <div class="h5 mb-1 font-weight-bold">This Month</div>
-                    <div class="h3 mb-0 font-weight-bold"><?= number_format($month_payments_cashier) ?></div>
-                    <div class="small opacity-75">payments</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-12 col-md-4">
-            <div class="card border-0 shadow-sm h-100 gradient-card bg-secondary text-white">
-                <div class="card-body text-center">
-                    <div class="mb-2"><i class="fas fa-chart-line fa-2x"></i></div>
-                    <div class="h5 mb-1 font-weight-bold">Average Payment</div>
-                    <div class="h3 mb-0 font-weight-bold">₵<?= $total_payments_cashier > 0 ? number_format($total_amount_cashier / $total_payments_cashier, 2) : '0.00' ?></div>
-                    <div class="small opacity-75">per transaction</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Cashier Payment Types and Recent Payments -->
-    <div class="row g-3 mb-4">
-        <div class="col-lg-6">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-gradient-primary text-white font-weight-bold py-2 d-flex align-items-center">
-                    <i class="fas fa-list-alt mr-2"></i> Your Payment Types Breakdown
-                </div>
-                <div class="card-body p-2">
-                    <?php if ($payment_types_cashier && $payment_types_cashier->num_rows > 0): ?>
-                        <div class="table-responsive">
-                            <table class="table table-sm table-borderless mb-0">
-                                <thead>
-                                    <tr class="text-muted small">
-                                        <th>Payment Type</th>
-                                        <th class="text-center">Count</th>
-                                        <th class="text-right">Amount</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php while ($pt = $payment_types_cashier->fetch_assoc()): ?>
-                                        <tr>
-                                            <td class="font-weight-bold"><?= htmlspecialchars($pt['name'] ?? 'Unknown') ?></td>
-                                            <td class="text-center"><?= number_format($pt['count']) ?></td>
-                                            <td class="text-right font-weight-bold text-success">₵<?= number_format($pt['total_amount'], 2) ?></td>
-                                        </tr>
-                                    <?php endwhile; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    <?php else: ?>
-                        <div class="text-center text-muted py-3">
-                            <i class="fas fa-info-circle fa-2x mb-2"></i>
-                            <p>No payment data available</p>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-lg-6">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-gradient-success text-white font-weight-bold py-2 d-flex align-items-center">
-                    <i class="fas fa-history mr-2"></i> Your Recent Payments
-                </div>
-                <div class="card-body p-2">
-                    <?php if ($recent_payments_cashier && $recent_payments_cashier->num_rows > 0): ?>
-                        <div class="table-responsive">
-                            <table class="table table-sm table-borderless mb-0">
-                                <tbody>
-                                    <?php while ($rp = $recent_payments_cashier->fetch_assoc()): ?>
-                                        <tr>
-                                            <td>
-                                                <div class="font-weight-bold"><?= htmlspecialchars(trim(($rp['first_name'] ?? '') . ' ' . ($rp['last_name'] ?? '')) ?: 'Unknown') ?></div>
-                                                <div class="small text-muted"><?= htmlspecialchars($rp['payment_type'] ?? 'Unknown') ?> • <?= htmlspecialchars($rp['identifier'] ?? 'N/A') ?></div>
-                                            </td>
-                                            <td class="text-right">
-                                                <div class="font-weight-bold text-success">₵<?= number_format($rp['amount'], 2) ?></div>
-                                                <div class="small text-muted"><?= date('M j, Y', strtotime($rp['payment_date'])) ?></div>
-                                            </td>
-                                        </tr>
-                                    <?php endwhile; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    <?php else: ?>
-                        <div class="text-center text-muted py-3">
-                            <i class="fas fa-info-circle fa-2x mb-2"></i>
-                            <p>No recent payments</p>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Cashier Quick Actions -->
-    <div class="row g-3 mb-4">
-        <div class="col-12">
-            <div class="card shadow-sm">
-                <div class="card-header bg-gradient-info text-white font-weight-bold py-2">
-                    <i class="fas fa-bolt mr-2"></i> Quick Actions
-                </div>
-                <div class="card-body p-3">
-                    <div class="row">
-                        <div class="col-6 col-md-3 mb-2">
-                            <a href="<?= BASE_URL ?>/views/payment_form.php" class="btn btn-success btn-block">
-                                <i class="fas fa-plus mr-1"></i> New Payment
-                            </a>
-                        </div>
-                        <div class="col-6 col-md-3 mb-2">
-                            <a href="<?= BASE_URL ?>/views/payment_bulk.php" class="btn btn-primary btn-block">
-                                <i class="fas fa-layer-group mr-1"></i> Bulk Payment
-                            </a>
-                        </div>
-                        <div class="col-6 col-md-3 mb-2">
-                            <a href="<?= BASE_URL ?>/views/payment_list.php" class="btn btn-info btn-block">
-                                <i class="fas fa-list mr-1"></i> Payment History
-                            </a>
-                        </div>
-                        <div class="col-6 col-md-3 mb-2">
-                            <a href="<?= BASE_URL ?>/views/reports.php" class="btn btn-warning btn-block">
-                                <i class="fas fa-chart-bar mr-1"></i> Reports
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-<?php else: ?>
-    <!-- REGULAR DASHBOARD - Full Statistics -->
-    <!-- Member Stats Cards -->
-    <div class="row g-2 mb-3">
-        <div class="col-6 col-md-3 mb-2">
-            <div class="info-box bg-primary shadow-sm">
-                <span class="info-box-icon bg-gradient-primary elevation-1"><i class="fas fa-user-check"></i></span>
-                <div class="info-box-content">
-                    <span class="info-box-text">Full Members</span>
-                    <span class="info-box-number h4 mb-0"><?= number_format($full_member) ?></span>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3 mb-2">
-            <div class="info-box bg-success shadow-sm">
-                <span class="info-box-icon bg-gradient-success elevation-1"><i class="fas fa-user-graduate"></i></span>
-                <div class="info-box-content">
-                    <span class="info-box-text">Catechumens</span>
-                    <span class="info-box-number h4 mb-0"><?= number_format($catechumen) ?></span>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3 mb-2">
-            <div class="info-box bg-warning shadow-sm">
-                <span class="info-box-icon bg-gradient-warning elevation-1"><i class="fas fa-child"></i></span>
-                <div class="info-box-content">
-                    <span class="info-box-text">Junior Members</span>
-                    <span class="info-box-number h4 mb-0"><?= number_format($junior_members) ?></span>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3 mb-2">
-            <div class="info-box bg-danger shadow-sm">
-                <span class="info-box-icon bg-gradient-danger elevation-1"><i class="fas fa-user-slash"></i></span>
-                <div class="info-box-content">
-                    <span class="info-box-text">Adherents</span>
-                    <span class="info-box-number h4 mb-0"><?= number_format($adherent) ?></span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Additional Member Stats Cards -->
-    <div class="row g-2 mb-3">
-        <div class="col-6 col-md-3 mb-2">
-            <div class="card bg-light shadow-sm">
-                <div class="card-body text-center p-2">
-                    <div class="text-secondary small">Christian Community</div>
-                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-users mr-1 text-primary"></i><?= number_format($registered_members) ?></div>
-                    <div class="text-muted small">Total Registered</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3 mb-2">
-            <div class="card bg-light shadow-sm">
-                <div class="card-body text-center p-2">
-                    <div class="text-secondary small">Pending Registration</div>
-                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-user-clock mr-1 text-warning"></i><?= number_format($pending_registration) ?></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3 mb-2">
-            <div class="card bg-light shadow-sm">
-                <div class="card-body text-center p-2">
-                    <div class="text-secondary small">Members with No Payments</div>
-                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-user-times mr-1 text-danger"></i><?= number_format($members_no_payments) ?></div>
-                </div>
-            </div>
-        </div>
-    </div>
- 
-    <!-- Payment Stats Cards (Row 1: Total, Today, Average) -->
-    <!-- <div class="row g-2 mb-3">
-        <div class="col-12 col-md-4 mb-2">
-            <div class="card bg-light shadow-sm">
-                <div class="card-body text-center p-2">
-                    <div class="text-secondary small">Total Payments</div>
-                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-coins mr-1 text-success"></i>₵<?= number_format($total_payments,2) ?></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-12 col-md-4 mb-2">
-            <div class="card bg-light shadow-sm">
-                <div class="card-body text-center p-2">
-                    <div class="text-secondary small">Payments Today</div>
-                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-calendar-day mr-1 text-primary"></i>₵<?= number_format($payments_today,2) ?></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-12 col-md-4 mb-2">
-            <div class="card bg-light shadow-sm">
-                <div class="card-body text-center p-2">
-                    <div class="text-secondary small">Average Payment</div>
-                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-chart-line mr-1 text-primary"></i>₵<?= number_format($total_payments / max($registered_members,1),2) ?></div>
-                </div>
-            </div>
-        </div>
-    </div>
-    Payment Stats Cards (Row 2: Week, Month, Last Month)
-    <div class="row g-2 mb-3">
-        <div class="col-12 col-md-4 mb-2">
-            <div class="card bg-light shadow-sm">
-                <div class="card-body text-center p-2">
-                    <div class="text-secondary small">Payments This Week</div>
-                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-calendar-week mr-1 text-info"></i>₵<?= number_format($payments_this_week,2) ?></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-12 col-md-4 mb-2">
-            <div class="card bg-light shadow-sm">
-                <div class="card-body text-center p-2">
-                    <div class="text-secondary small">Payments This Month</div>
-                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-calendar-alt mr-1 text-info"></i>₵<?= number_format($payments_this_month,2) ?></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-12 col-md-4 mb-2">
-            <div class="card bg-light shadow-sm">
-                <div class="card-body text-center p-2">
-                    <div class="text-secondary small">Payments Last Month</div>
-                    <div class="h4 mb-0 font-weight-bold"><i class="fas fa-calendar-minus mr-1 text-secondary"></i>₵<?= number_format($payments_last_month,2) ?></div>
-                </div>
-            </div>
-        </div>
-    </div> -->
-<!-- Cash Payment Stats Cards -->
-<div class="row g-3 mb-3">
-    <!-- Row 1: Two Cards -->
-    <div class="col-12 col-md-6">
-        <div class="card border-0 shadow-sm h-100 gradient-card bg-success text-white">
-            <div class="card-body text-center">
-                <div class="mb-2"><i class="fas fa-coins fa-2x"></i></div>
-                <div class="h5 mb-1 font-weight-bold">Total Payments</div>
-                <div class="h3 font-weight-bold mb-1">₵ <?= number_format($total_cash_payments,2); ?></div>
-                <div class="small">All Time</div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-12 col-md-6">
-        <div class="card border-0 shadow-sm h-100 gradient-card bg-info text-white">
-            <div class="card-body text-center">
-                <div class="mb-2"><i class="fas fa-calendar-day fa-2x"></i></div>
-                <div class="h5 mb-1 font-weight-bold">Payments Today</div>
-                <div class="h3 font-weight-bold mb-1">₵ <?= number_format($cash_payments_today,2); ?></div>
-                <div class="small">Today</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Row 2: Three Cards -->
-    <div class="col-12 col-md-4">
-        <div class="card border-0 shadow-sm h-100 gradient-card bg-warning text-white">
-            <div class="card-body text-center">
-                <div class="mb-2"><i class="fas fa-calendar-week fa-2x"></i></div>
-                <div class="h5 mb-1 font-weight-bold">Payments This Week</div>
-                <div class="h3 font-weight-bold mb-1">₵ <?= number_format($cash_payments_week,2); ?></div>
-                <div class="small">This Week</div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-12 col-md-4">
-        <div class="card border-0 shadow-sm h-100 gradient-card bg-primary text-white">
-            <div class="card-body text-center">
-                <div class="mb-2"><i class="fas fa-calendar-alt fa-2x"></i></div>
-                <div class="h5 mb-1 font-weight-bold">Payments This Month</div>
-                <div class="h3 font-weight-bold mb-1">₵ <?= number_format($cash_payments_month,2); ?></div>
-                <div class="small">This Month</div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-12 col-md-4">
-        <div class="card border-0 shadow-sm h-100 gradient-card bg-secondary text-white">
-            <div class="card-body text-center">
-                <div class="mb-2"><i class="fas fa-calendar-minus fa-2x"></i></div>
-                <div class="h5 mb-1 font-weight-bold">Payments Last Month</div>
-                <div class="h3 font-weight-bold mb-1">₵ <?= number_format($cash_payments_last_month,2); ?></div>
-                <div class="small">Last Month</div>
-            </div>
-        </div>
-    </div>
-</div>
-
-   <!-- Payment Mode Breakdown Table -->
-   <div class="row mb-3">
-        
-    </div>
-    <!-- Payment Type Breakdown Section -->
-    <div class="row g-2 mb-3">
-    <div class="col-lg-6 mb-2">
-            <div class="card shadow-sm">
-                <div class="card-header bg-gradient-info text-white font-weight-bold py-2 d-flex align-items-center">
-                    <i class="fas fa-money-check-alt mr-2"></i> Payment Mode Breakdown
-                </div>
-                <div class="card-body p-2">
-                    <div class="table-responsive">
-                        <table class="table table-striped table-hover table-bordered mb-0">
-                            <thead class="thead-light">
-                                <tr>
-                                    <th>#</th>
-                                    <th>Payment Mode</th>
-                                    <th>Count</th>
-                                    <th>Total Amount (₵)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php $i=1; $mode_total=0; $mode_count=0; while($mode = $payment_modes->fetch_assoc()): $mode_total += $mode['total']; $mode_count += $mode['count']; ?>
-                                <tr>
-                                    <td><?= $i++ ?></td>
-                                    <td><?= htmlspecialchars($mode['mode']) ?></td>
-                                    <td><span class="badge badge-info p-2 px-3 font-weight-bold"><?= $mode['count'] ?></span></td>
-                                    <td><span class="badge badge-success p-2 px-3 font-weight-bold">₵ <?= number_format($mode['total'],2) ?></span></td>
-                                </tr>
-                                <?php endwhile; ?>
-                            </tbody>
-                            <tfoot>
-                                <tr class="font-weight-bold bg-light">
-                                    <td colspan="2" class="text-right">Grand Total</td>
-                                    <td><?= $mode_count ?></td>
-                                    <td>₵<?= number_format($mode_total, 2) ?></td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-6 mb-2">
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-gradient-primary text-white font-weight-bold py-2 d-flex align-items-center">
-                    <i class="fas fa-list-alt mr-2"></i> Payment Type Breakdown
-                </div>
-                <div class="card-body p-2">
-                    <div class="table-responsive">
-                        <table class="table table-striped table-hover table-bordered mb-0">
-                            <thead class="thead-light">
-                                <tr>
-                                    <th>#</th>
-                                    <th>Payment Type</th>
-                                    <th>Count</th>
-                                    <th>Total Amount (₵)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php $i=1; $grand_total=0; $grand_count=0; while($type = $all_payment_types->fetch_assoc()): $grand_total += $type['total']; $grand_count += $type['count']; ?>
-                                <tr>
-                                    <td><?= $i++ ?></td>
-                                    <td><?= htmlspecialchars($type['name']) ?></td>
-                                    <td><span class="badge badge-info p-2 px-3 font-weight-bold"><?= $type['count'] ?></span></td>
-                                    <td><span class="badge badge-success p-2 px-3 font-weight-bold">₵ <?= number_format($type['total'],2) ?></span></td>
-                                </tr>
-                                <?php endwhile; ?>
-                            </tbody>
-                            <tfoot>
-                                <tr class="font-weight-bold bg-light">
-                                    <td colspan="2" class="text-right">Grand Total</td>
-                                    <td><?= $grand_count ?></td>
-                                    <td>₵<?= number_format($grand_total, 2) ?></td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    <!-- Quick Links and Recent Members Side by Side -->
-        <div class="col-lg-6 mb-2">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-primary text-white font-weight-bold py-2"><i class="fa fa-link mr-2"></i>Quick Links</div>
-                <div class="card-body p-2">
-                    <a href="<?= BASE_URL ?>/views/member_list.php" class="btn btn-outline-primary btn-block btn-sm mb-2"><i class="fa fa-users mr-1"></i> Member List</a>
-                    <a href="<?= BASE_URL ?>/views/bibleclass_list.php" class="btn btn-outline-info btn-block btn-sm mb-2"><i class="fa fa-book mr-1"></i> Bible Classes</a>
-                    <a href="<?= BASE_URL ?>/views/payment_list.php" class="btn btn-outline-success btn-block btn-sm mb-2"><i class="fa fa-coins mr-1"></i> Payments</a>
-                    <a href="<?= BASE_URL ?>/views/reports.php" class="btn btn-outline-secondary btn-block btn-sm mb-2"><i class="fa fa-chart-bar mr-1"></i> Reports</a>
-                    <a href="<?= BASE_URL ?>/views/sms_bulk.php" class="btn btn-outline-warning btn-block btn-sm mb-2"><i class="fa fa-paper-plane mr-1"></i> Bulk SMS</a>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-6 mb-2">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-info text-white font-weight-bold py-2"><i class="fa fa-user-plus mr-2"></i>Recent Members</div>
-                <div class="card-body p-2">
-                    <ul class="list-group list-group-flush">
-                        <?php while($m = $recent_members->fetch_assoc()): ?>
-                            <li class="list-group-item d-flex justify-content-between align-items-center p-2">
-                                <span><?= htmlspecialchars($m['name']) ?> <span class="badge badge-secondary ml-2"><?= htmlspecialchars($m['class'] ?? '-') ?></span></span>
-                                <span class="badge badge-success">Active</span>
-                            </li>
-                        <?php endwhile; ?>
-                    </ul>
-                </div>
-            </div>
-        </div>
-    </div>
-    <!-- Top 5 Payment Types and Recent Payments Side by Side -->
-    <div class="row g-2 mb-3">
-        <div class="col-lg-6 mb-2">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-gradient-info text-white font-weight-bold py-2 d-flex align-items-center justify-content-between">
-                    <span><i class="fas fa-star mr-2"></i>Top 5 Payment Types</span>
-                    <form id="payment-type-filter-form" class="form-inline mb-0">
-                        <input type="date" name="start_date" id="topTypeStart" class="form-control form-control-sm mr-1" value="<?= date('Y-01-01') ?>">
-                        <input type="date" name="end_date" id="topTypeEnd" class="form-control form-control-sm mr-1" value="<?= date('Y-m-d') ?>">
-                        <button type="submit" class="btn btn-sm btn-light">Filter</button>
-                    </form>
-                </div>
-                <div class="card-body p-2" id="top-payment-types-list">
-                    <ul class="list-group list-group-flush">
-                        <?php while($type = $top_payment_types->fetch_assoc()): ?>
-                            <li class="list-group-item d-flex justify-content-between align-items-center p-2">
-                                <span><?= htmlspecialchars($type['name']) ?></span>
-                                <span class="badge badge-primary">₵ <?= number_format($type['total'],2) ?></span>
-                            </li>
-                        <?php endwhile; ?>
-                    </ul>
-                </div>
-<script>
-$('#payment-type-filter-form').on('submit', function(e) {
-    e.preventDefault();
-    var start = $('#topTypeStart').val();
-    var end = $('#topTypeEnd').val();
-    $.get('ajax_top_payment_types.php', {start_date: start, end_date: end}, function(html) {
-        $('#top-payment-types-list ul').html(html);
-    });
-});
-</script>
-            </div>
-        </div>
-        <div class="col-lg-6 mb-2">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-success text-white font-weight-bold py-2 d-flex align-items-center justify-content-between">
-                    <span><i class="fa fa-coins mr-2"></i>Recent Payments</span>
-                </div>
-                <div class="card-body p-2">
-                    <div class="recent-payments-list" style="max-height: 300px; overflow-y: auto;">
-                        <?php while($payment = $recent_payments->fetch_assoc()): ?>
-                            <div class="payment-item d-flex justify-content-between align-items-center p-2 border-bottom">
-                                <div>
-                                    <div class="font-weight-bold text-dark"><?= htmlspecialchars($payment['member_name']) ?></div>
-                                    <small class="text-muted"><?= htmlspecialchars($payment['payment_type']) ?> • <?= date('M j, Y', strtotime($payment['payment_date'])) ?></small>
-                                </div>
-                                <span class="badge badge-success font-weight-bold">₵<?= number_format($payment['amount'],2) ?></span>
-                            </div>
-                        <?php endwhile; ?>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-    <!-- Advanced Analytics Section -->
-    <div class="row g-3 mb-4">
-        <!-- Member Growth Chart -->
-        <div class="col-lg-8 mb-3">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-gradient-primary text-white d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="fas fa-chart-line mr-2"></i>Member Growth & Payment Trends</h5>
-                    <div class="btn-group btn-group-sm" role="group">
-                        <button type="button" class="btn btn-light btn-sm active" data-chart="growth">Growth</button>
-                        <button type="button" class="btn btn-light btn-sm" data-chart="payments">Payments</button>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <canvas id="growthChart" height="120"></canvas>
-                </div>
-            </div>
-        </div>
-        
-        <!-- System Overview Cards -->
-        <div class="col-lg-4 mb-3">
-            <div class="row g-2">
-                <div class="col-12 mb-2">
-                    <div class="card bg-gradient-info text-white shadow-sm">
-                        <div class="card-body p-3">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 class="mb-1">Attendance Rate</h6>
-                                    <h3 class="mb-0"><?= number_format($recent_attendance_rate, 1) ?>%</h3>
-                                    <small>Last Service</small>
-                                </div>
-                                <i class="fas fa-users fa-2x opacity-50"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-12 mb-2">
-                    <div class="card bg-gradient-success text-white shadow-sm">
-                        <div class="card-body p-3">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 class="mb-1">Health Records</h6>
-                                    <h3 class="mb-0"><?= number_format($health_records_count) ?></h3>
-                                    <small><?= $health_records_this_month ?> this month</small>
-                                </div>
-                                <i class="fas fa-heartbeat fa-2x opacity-50"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-12 mb-2">
-                    <div class="card bg-gradient-warning text-white shadow-sm">
-                        <div class="card-body p-3">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 class="mb-1">Upcoming Events</h6>
-                                    <h3 class="mb-0"><?= number_format($upcoming_events) ?></h3>
-                                    <small><?= $events_this_month ?> this month</small>
-                                </div>
-                                <i class="fas fa-calendar-check fa-2x opacity-50"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <!-- <div class="col-12 mb-2">
-                    <div class="card bg-gradient-dark text-white shadow-sm">
-                        <div class="card-body p-3">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 class="mb-1">ZKTeco Devices</h6>
-                                    <h3 class="mb-0"><?= number_format($active_devices) ?></h3>
-                                    <small><?= $enrolled_members ?> enrolled</small>
-                                </div>
-                                <i class="fas fa-fingerprint fa-2x opacity-50"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div> -->
-            </div>
-        </div>
-    </div>
-
-    <!-- Demographics & Distribution Charts -->
-    <div class="row g-3 mb-4">
-        <!-- Gender & Age Distribution -->
-        <div class="col-lg-6 mb-3">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-gradient-info text-white">
-                    <h5 class="mb-0"><i class="fas fa-chart-pie mr-2"></i>Member Demographics</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-6">
-                            <h6 class="text-center mb-3">Gender Distribution</h6>
-                            <canvas id="genderChart" height="150"></canvas>
-                        </div>
-                        <div class="col-6">
-                            <h6 class="text-center mb-3">Age Groups</h6>
-                            <canvas id="ageChart" height="150"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Bible Classes & Payment Types -->
-        <div class="col-lg-6 mb-3">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-gradient-success text-white">
-                    <h5 class="mb-0"><i class="fas fa-chart-bar mr-2"></i>Classes & Payment Distribution</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-6">
-                            <h6 class="text-center mb-3">Bible Classes</h6>
-                            <canvas id="classesChart" height="150"></canvas>
-                        </div>
-                        <div class="col-6">
-                            <h6 class="text-center mb-3">Payment Types</h6>
-                            <canvas id="paymentTypesChart" height="150"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Attendance Trends & Recent Activity -->
-    <div class="row g-3 mb-4">
-        <!-- Attendance Trends -->
-        <div class="col-lg-8 mb-3">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-gradient-warning text-white">
-                    <h5 class="mb-0"><i class="fas fa-chart-area mr-2"></i>Attendance Trends (Last 6 Sessions)</h5>
-                </div>
-                <div class="card-body">
-                    <canvas id="attendanceChart" height="120"></canvas>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Recent Events -->
-        <div class="col-lg-4 mb-3">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-gradient-purple text-white">
-                    <h5 class="mb-0"><i class="fas fa-calendar-alt mr-2"></i>Upcoming Events</h5>
-                </div>
-                <div class="card-body p-2">
-                    <div class="events-list" style="max-height: 300px; overflow-y: auto;">
-                        <?php while($event = $recent_events->fetch_assoc()): ?>
-                            <div class="event-item p-2 border-bottom">
-                                <div class="font-weight-bold text-dark"><?= htmlspecialchars($event['name']) ?></div>
-                                <small class="text-muted">
-                                    <i class="fas fa-calendar mr-1"></i><?= date('M j, Y', strtotime($event['event_date'])) ?>
-                                    <?php if($event['location']): ?>
-                                        <br><i class="fas fa-map-marker-alt mr-1"></i><?= htmlspecialchars($event['location']) ?>
-                                    <?php endif; ?>
-                                </small>
-                            </div>
-                        <?php endwhile; ?>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Performance Metrics Dashboard -->
-    <div class="row g-3 mb-4">
-        <div class="col-12">
-            <div class="card shadow-sm">
-                <div class="card-header bg-gradient-dark text-white">
-                    <h5 class="mb-0"><i class="fas fa-tachometer-alt mr-2"></i>Key Performance Indicators</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row text-center">
-                        <div class="col-md-2 col-6 mb-3">
-                            <div class="kpi-item">
-                                <div class="kpi-value text-primary"><?= number_format(($full_member / max($total_members, 1)) * 100, 1) ?>%</div>
-                                <div class="kpi-label">Full Members</div>
-                            </div>
-                        </div>
-                        <div class="col-md-2 col-6 mb-3">
-                            <div class="kpi-item">
-                                <div class="kpi-value text-success">₵<?= number_format($avg_payment_per_member, 0) ?></div>
-                                <div class="kpi-label">Avg Payment</div>
-                            </div>
-                        </div>
-                        <div class="col-md-2 col-6 mb-3">
-                            <div class="kpi-item">
-                                <div class="kpi-value text-info"><?= number_format($recent_attendance_rate, 1) ?>%</div>
-                                <div class="kpi-label">Attendance</div>
-                            </div>
-                        </div>
-                        <div class="col-md-2 col-6 mb-3">
-                            <div class="kpi-item">
-                                <div class="kpi-value text-warning"><?= number_format($total_attendance_sessions) ?></div>
-                                <div class="kpi-label">Total Sessions</div>
-                            </div>
-                        </div>
-                        <div class="col-md-2 col-6 mb-3">
-                            <div class="kpi-item">
-                                <div class="kpi-value text-danger"><?= number_format(($enrolled_members / max($registered_members, 1)) * 100, 1) ?>%</div>
-                                <div class="kpi-label">Biometric Enrolled</div>
-                            </div>
-                        </div>
-                        <div class="col-md-2 col-6 mb-3">
-                            <div class="kpi-item">
-                                <div class="kpi-value text-dark"><?= number_format($health_records_count) ?></div>
-                                <div class="kpi-label">Health Records</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
 <style>
-/* Modern Dashboard Styling */
-.dashboard-main {
-    min-width: 0;
-    width: 100%;
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-    min-height: 100vh;
-    padding-bottom: 2rem;
+:root {
+    --dashboard-ink: #0f172a;
+    --dashboard-muted: #64748b;
+    --dashboard-surface: #ffffff;
+    --dashboard-border: rgba(15, 23, 42, 0.08);
+    --dashboard-shadow: 0 18px 44px rgba(15, 23, 42, 0.10);
+    --dashboard-primary: #0f766e;
+    --dashboard-primary-soft: #ccfbf1;
+    --dashboard-accent: #ea580c;
+    --dashboard-accent-soft: #ffedd5;
+    --dashboard-gold: #d97706;
+    --dashboard-slate-soft: #e2e8f0;
 }
 
-/* Header Styling */
-.dashboard-icon-wrapper {
-    width: 60px;
-    height: 60px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border-radius: 15px;
-    display: flex;
+.dashboard-shell {
+    padding: 26px 18px 34px;
+    background:
+        radial-gradient(circle at top left, rgba(15, 118, 110, 0.16), transparent 28%),
+        radial-gradient(circle at top right, rgba(234, 88, 12, 0.12), transparent 25%),
+        linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+}
+
+.dashboard-hero {
+    position: relative;
+    overflow: hidden;
+    border-radius: 28px;
+    padding: 28px;
+    margin-bottom: 22px;
+    color: #fff;
+    background: linear-gradient(135deg, #0f172a 0%, #0f766e 54%, #ea580c 100%);
+    box-shadow: 0 22px 50px rgba(15, 23, 42, 0.20);
+}
+
+.dashboard-hero::after {
+    content: "";
+    position: absolute;
+    inset: auto -70px -90px auto;
+    width: 240px;
+    height: 240px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.10);
+}
+
+.dashboard-eyebrow {
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
-}
-
-.dashboard-main-icon {
-    font-size: 28px;
-    color: white;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    font-size: 0.82rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .dashboard-title {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-}
-
-/* Button Gradients */
-.btn-gradient-primary {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border: none;
-    color: white;
-    transition: all 0.3s ease;
-}
-
-.btn-gradient-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
-    color: white;
-}
-
-.btn-gradient-success {
-    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-    border: none;
-    color: white;
-    transition: all 0.3s ease;
-}
-
-.btn-gradient-success:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 16px rgba(79, 172, 254, 0.3);
-    color: white;
-}
-
-.btn-gradient-info {
-    background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
-    border: none;
-    color: #333;
-    transition: all 0.3s ease;
-}
-
-.btn-gradient-info:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 16px rgba(168, 237, 234, 0.3);
-    color: #333;
-}
-
-/* Card Enhancements */
-.card {
-    border: none;
-    border-radius: 15px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-    transition: all 0.3s ease;
-    overflow: hidden;
-}
-
-.card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
-}
-
-.card-header {
-    border: none;
-    border-radius: 15px 15px 0 0 !important;
-    padding: 1rem 1.5rem;
-    font-weight: 600;
-}
-
-.bg-gradient-primary {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-}
-
-.bg-gradient-success {
-    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%) !important;
-}
-
-.bg-gradient-info {
-    background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%) !important;
-    color: #333 !important;
-}
-
-.bg-gradient-warning {
-    background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%) !important;
-    color: #333 !important;
-}
-
-.bg-gradient-danger {
-    background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%) !important;
-    color: #333 !important;
-}
-
-.bg-gradient-dark {
-    background: linear-gradient(135deg, #434343 0%, #000000 100%) !important;
-}
-
-.bg-gradient-purple {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-}
-
-.bg-gradient-secondary {
-    background: linear-gradient(135deg, #6c757d 0%, #495057 100%) !important;
-    color: white !important;
-}
-
-/* Info Box Styling */
-.info-box {
-    border-radius: 15px;
-    border: none;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-    transition: all 0.3s ease;
-    overflow: hidden;
-}
-
-.info-box:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
-}
-
-.info-box-icon {
-    border-radius: 12px;
-    width: 60px;
-    height: 60px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-}
-
-/* KPI Styling */
-.kpi-item {
-    padding: 1rem;
-    border-radius: 10px;
-    background: white;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
-    transition: all 0.3s ease;
-}
-
-.kpi-item:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
-}
-
-.kpi-value {
+    margin: 0 0 8px;
     font-size: 2rem;
     font-weight: 700;
-    margin-bottom: 0.5rem;
+    line-height: 1.15;
 }
 
-.kpi-label {
-    font-size: 0.875rem;
-    color: #6c757d;
-    font-weight: 500;
+.dashboard-subtitle {
+    max-width: 720px;
+    margin: 0;
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 1rem;
+}
+
+.dashboard-role-list,
+.dashboard-link-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.dashboard-role-chip,
+.dashboard-link-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+    text-decoration: none;
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.dashboard-role-chip {
+    cursor: default;
+}
+
+.dashboard-link-chip:hover {
+    color: #fff;
+    text-decoration: none;
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.22);
+}
+
+.dashboard-panel {
+    background: var(--dashboard-surface);
+    border: 1px solid var(--dashboard-border);
+    border-radius: 22px;
+    box-shadow: var(--dashboard-shadow);
+    overflow: hidden;
+    height: 100%;
+}
+
+.dashboard-panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 22px 22px 0;
+}
+
+.dashboard-panel-header h3,
+.dashboard-panel-header h4 {
+    margin: 0;
+    color: var(--dashboard-ink);
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+
+.dashboard-panel-header p {
+    margin: 6px 0 0;
+    color: var(--dashboard-muted);
+    font-size: 0.92rem;
+}
+
+.dashboard-panel-body {
+    padding: 22px;
+}
+
+.dashboard-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 22px;
+}
+
+.dashboard-stat-card {
+    position: relative;
+    overflow: hidden;
+    padding: 18px 18px 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    min-height: 142px;
+}
+
+.dashboard-stat-card.primary {
+    background: linear-gradient(135deg, #ecfeff 0%, #ccfbf1 100%);
+}
+
+.dashboard-stat-card.success {
+    background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+}
+
+.dashboard-stat-card.warning {
+    background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+}
+
+.dashboard-stat-card.dark {
+    background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
+}
+
+.dashboard-stat-card.info {
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+}
+
+.dashboard-stat-card.danger {
+    background: linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%);
+}
+
+.dashboard-stat-label {
+    color: var(--dashboard-muted);
+    font-size: 0.84rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
 }
 
-/* Payment and Event Items */
-.payment-item, .event-item {
-    border-radius: 8px;
-    transition: all 0.3s ease;
-    margin-bottom: 0.5rem;
+.dashboard-stat-value {
+    margin-top: 12px;
+    color: var(--dashboard-ink);
+    font-size: 2rem;
+    font-weight: 800;
+    line-height: 1;
 }
 
-.payment-item:hover, .event-item:hover {
-    background-color: #f8f9fa;
-    transform: translateX(5px);
+.dashboard-stat-meta {
+    margin-top: 12px;
+    color: #334155;
+    font-size: 0.92rem;
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
-    .dashboard-main {
-        padding: 1rem;
-    }
-    
-    .dashboard-icon-wrapper {
-        width: 50px;
-        height: 50px;
-    }
-    
-    .dashboard-main-icon {
-        font-size: 24px;
-    }
-    
-    .kpi-value {
-        font-size: 1.5rem;
-    }
-    
-    .btn-group .btn {
-        padding: 0.25rem 0.5rem;
-        font-size: 0.875rem;
-    }
+.dashboard-action-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
 }
 
-/* Animation Classes */
-@keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(30px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+.dashboard-action-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 16px 18px;
+    border-radius: 18px;
+    border: 1px solid var(--dashboard-border);
+    background: #fff;
+    color: var(--dashboard-ink);
+    text-decoration: none;
+    min-height: 120px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
-.fade-in-up {
-    animation: fadeInUp 0.6s ease forwards;
+.dashboard-action-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 16px 28px rgba(15, 23, 42, 0.10);
+    color: var(--dashboard-ink);
+    text-decoration: none;
 }
 
-/* Chart Container Styling */
-canvas {
-    border-radius: 8px;
-    touch-action: manipulation;
-    user-select: none;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
+.dashboard-action-card .icon {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
 }
 
-/* Chart Container Fixes for Scrolling Issues */
-.card-body canvas {
-    position: relative;
-    z-index: 1;
-    pointer-events: auto;
+.dashboard-action-card.primary .icon { background: #dbeafe; color: #1d4ed8; }
+.dashboard-action-card.success .icon { background: #dcfce7; color: #15803d; }
+.dashboard-action-card.warning .icon { background: #ffedd5; color: #c2410c; }
+.dashboard-action-card.info .icon { background: #cffafe; color: #0f766e; }
+.dashboard-action-card.danger .icon { background: #ffe4e6; color: #be123c; }
+.dashboard-action-card.secondary .icon,
+.dashboard-action-card.dark .icon { background: #e2e8f0; color: #334155; }
+
+.dashboard-action-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
 }
 
-/* Prevent scrolling on chart containers */
-.card-body:has(canvas) {
-    overflow: hidden;
-    touch-action: pan-y;
+.dashboard-action-copy {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--dashboard-muted);
 }
 
-/* Alternative for browsers that don't support :has() */
-.chart-container {
-    overflow: hidden;
-    touch-action: pan-y;
-    position: relative;
+.dashboard-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
-.chart-container canvas {
+.dashboard-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px 16px;
+    border: 1px solid var(--dashboard-border);
+    border-radius: 18px;
+    background: #fff;
+}
+
+.dashboard-list-item strong {
     display: block;
-    max-width: 100%;
-    height: auto !important;
-    max-height: 400px;
+    color: var(--dashboard-ink);
+    line-height: 1.25;
 }
 
-/* Fixed height containers for charts */
-.chart-wrapper {
+.dashboard-list-item small {
+    color: var(--dashboard-muted);
+}
+
+.dashboard-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.dashboard-pill.success { background: #dcfce7; color: #166534; }
+.dashboard-pill.warning { background: #fef3c7; color: #92400e; }
+.dashboard-pill.secondary { background: #e2e8f0; color: #475569; }
+.dashboard-pill.light { background: #f1f5f9; color: #64748b; }
+
+.dashboard-empty {
+    padding: 26px 20px;
+    border-radius: 18px;
+    border: 1px dashed #cbd5e1;
+    color: var(--dashboard-muted);
+    text-align: center;
+    background: #f8fafc;
+}
+
+.dashboard-chart-wrap {
     position: relative;
-    height: 300px;
-    width: 100%;
+    height: 290px;
 }
 
-.chart-wrapper canvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100% !important;
-    height: 100% !important;
+.dashboard-chart-wrap.compact {
+    height: 250px;
 }
 
-/* Specific chart height controls */
-#growthChart {
-    max-height: 300px !important;
+.dashboard-highlight {
+    display: grid;
+    gap: 14px;
 }
 
-#genderChart, #ageChart {
-    max-height: 200px !important;
+.dashboard-highlight-card {
+    padding: 16px 18px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, #fff7ed 0%, #ffffff 100%);
+    border: 1px solid var(--dashboard-border);
 }
 
-#classesChart, #paymentTypesChart {
-    max-height: 200px !important;
+.dashboard-highlight-card h5 {
+    margin: 0 0 8px;
+    font-size: 0.92rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--dashboard-muted);
 }
 
-#attendanceChart {
-    max-height: 250px !important;
+.dashboard-highlight-value {
+    color: var(--dashboard-ink);
+    font-size: 1.5rem;
+    font-weight: 800;
 }
 
-/* Prevent chart container from growing */
-.card-body:has(canvas) {
-    overflow: hidden;
-    touch-action: pan-y;
-    height: auto;
-    min-height: 200px;
-    max-height: 400px;
+.dashboard-mini-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
 }
 
-/* Scrollbar Styling */
-.recent-payments-list::-webkit-scrollbar,
-.events-list::-webkit-scrollbar {
-    width: 6px;
+.dashboard-mini-card {
+    padding: 16px;
+    border-radius: 18px;
+    background: #f8fafc;
+    border: 1px solid var(--dashboard-border);
 }
 
-.recent-payments-list::-webkit-scrollbar-track,
-.events-list::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 3px;
+.dashboard-mini-card .label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--dashboard-muted);
+    font-size: 0.84rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
-.recent-payments-list::-webkit-scrollbar-thumb,
-.events-list::-webkit-scrollbar-thumb {
-    background: #c1c1c1;
-    border-radius: 3px;
+.dashboard-mini-card .value {
+    color: var(--dashboard-ink);
+    font-size: 1.55rem;
+    font-weight: 800;
+    line-height: 1.05;
 }
 
-.recent-payments-list::-webkit-scrollbar-thumb:hover,
-.events-list::-webkit-scrollbar-thumb:hover {
-    background: #a8a8a8;
+.dashboard-mini-card .meta {
+    display: block;
+    margin-top: 8px;
+    color: var(--dashboard-muted);
+    font-size: 0.88rem;
+}
+
+@media (max-width: 1199.98px) {
+    .dashboard-stat-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 767.98px) {
+    .dashboard-shell {
+        padding: 16px 10px 28px;
+    }
+
+    .dashboard-hero {
+        padding: 22px 18px;
+        border-radius: 22px;
+    }
+
+    .dashboard-title {
+        font-size: 1.7rem;
+    }
+
+    .dashboard-stat-grid,
+    .dashboard-mini-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-list-item {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .dashboard-chart-wrap,
+    .dashboard-chart-wrap.compact {
+        height: 240px;
+    }
 }
 </style>
 
+<div class="dashboard-shell">
+    <section class="dashboard-hero">
+        <div class="row align-items-end">
+            <div class="col-lg-8">
+                <div class="dashboard-eyebrow">
+                    <i class="fas fa-chart-pie"></i>
+                    <span><?= $is_cashier ? 'Cash Collection Dashboard' : 'Church Operations Dashboard' ?></span>
+                </div>
+                <h1 class="dashboard-title">
+                    <?= $is_cashier ? 'Welcome back, ' . htmlspecialchars($display_name) : 'Welcome back, ' . htmlspecialchars($display_name) ?>
+                </h1>
+                <p class="dashboard-subtitle">
+                    <?= $is_cashier
+                        ? 'This view focuses on your recorded collections while still keeping the broader church snapshot close at hand.'
+                        : 'This redesigned dashboard gives you a cleaner view of membership, giving, attendance, health activity, and upcoming events.' ?>
+                </p>
+            </div>
+            <div class="col-lg-4 mt-4 mt-lg-0">
+                <div class="dashboard-role-list justify-content-lg-end">
+                    <?php if (!empty($role_names)): ?>
+                        <?php foreach ($role_names as $role_name): ?>
+                            <span class="dashboard-role-chip">
+                                <i class="fas fa-user-shield"></i>
+                                <?= htmlspecialchars($role_name) ?>
+                            </span>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <span class="dashboard-role-chip">
+                            <i class="fas fa-user"></i>
+                            User
+                        </span>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+
+        <?php if (!empty($leadership_links) && $force_main): ?>
+            <div class="dashboard-link-list mt-4">
+                <?php foreach ($leadership_links as $link): ?>
+                    <a class="dashboard-link-chip" href="<?= htmlspecialchars($link['href']) ?>">
+                        <i class="<?= htmlspecialchars($link['icon']) ?>"></i>
+                        <?= htmlspecialchars($link['label']) ?>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+    </section>
+
+    <?php if ($is_cashier): ?>
+        <section class="dashboard-stat-grid">
+            <article class="dashboard-stat-card success">
+                <div class="dashboard-stat-label">Total Collected</div>
+                <div class="dashboard-stat-value"><?= htmlspecialchars(dashboard_currency($cashier_total_amount)) ?></div>
+                <div class="dashboard-stat-meta"><?= number_format($cashier_payment_count) ?> successful payments recorded by you</div>
+            </article>
+            <article class="dashboard-stat-card info">
+                <div class="dashboard-stat-label">Collected Today</div>
+                <div class="dashboard-stat-value"><?= htmlspecialchars(dashboard_currency($cashier_today_amount)) ?></div>
+                <div class="dashboard-stat-meta"><?= number_format($cashier_today_count) ?> payments posted today</div>
+            </article>
+            <article class="dashboard-stat-card warning">
+                <div class="dashboard-stat-label">This Week</div>
+                <div class="dashboard-stat-value"><?= number_format($cashier_week_count) ?></div>
+                <div class="dashboard-stat-meta">Payments recorded in the current week</div>
+            </article>
+            <article class="dashboard-stat-card dark">
+                <div class="dashboard-stat-label">Average Ticket</div>
+                <div class="dashboard-stat-value"><?= htmlspecialchars(dashboard_currency($cashier_average_ticket)) ?></div>
+                <div class="dashboard-stat-meta"><?= number_format($cashier_month_count) ?> payments in the current month</div>
+            </article>
+        </section>
+    <?php else: ?>
+        <section class="dashboard-stat-grid">
+            <article class="dashboard-stat-card primary">
+                <div class="dashboard-stat-label">Community Size</div>
+                <div class="dashboard-stat-value"><?= number_format($community_size) ?></div>
+                <div class="dashboard-stat-meta"><?= number_format($active_members) ?> active members and <?= number_format($junior_members) ?> junior members</div>
+            </article>
+            <article class="dashboard-stat-card success">
+                <div class="dashboard-stat-label">Total Giving</div>
+                <div class="dashboard-stat-value"><?= htmlspecialchars(dashboard_currency($payment_total)) ?></div>
+                <div class="dashboard-stat-meta"><?= number_format($payment_count) ?> successful payment records</div>
+            </article>
+            <article class="dashboard-stat-card warning">
+                <div class="dashboard-stat-label">Attendance Snapshot</div>
+                <div class="dashboard-stat-value"><?= number_format($latest_attendance_rate, 1) ?>%</div>
+                <div class="dashboard-stat-meta"><?= htmlspecialchars($latest_attendance_title) ?></div>
+            </article>
+            <article class="dashboard-stat-card dark">
+                <div class="dashboard-stat-label">Upcoming Events</div>
+                <div class="dashboard-stat-value"><?= number_format($upcoming_events) ?></div>
+                <div class="dashboard-stat-meta"><?= number_format($events_this_month) ?> scheduled this month</div>
+            </article>
+        </section>
+    <?php endif; ?>
+
+    <?php if (!empty($dashboard_actions)): ?>
+        <section class="dashboard-panel mb-4">
+            <div class="dashboard-panel-header">
+                <div>
+                    <h3>Quick Actions</h3>
+                    <p>Shortcuts to the pages you are most likely to need next.</p>
+                </div>
+            </div>
+            <div class="dashboard-panel-body">
+                <div class="dashboard-action-grid">
+                    <?php foreach ($dashboard_actions as $action): ?>
+                        <a class="dashboard-action-card <?= htmlspecialchars($action['tone']) ?>" href="<?= htmlspecialchars($action['href']) ?>">
+                            <span class="icon">
+                                <i class="<?= htmlspecialchars($action['icon']) ?>"></i>
+                            </span>
+                            <div>
+                                <h4 class="dashboard-action-title"><?= htmlspecialchars($action['label']) ?></h4>
+                                <p class="dashboard-action-copy">Open this workspace directly from your dashboard.</p>
+                            </div>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </section>
+    <?php endif; ?>
+
+    <?php if ($is_cashier): ?>
+        <div class="row">
+            <div class="col-xl-8 mb-4">
+                <section class="dashboard-panel">
+                    <div class="dashboard-panel-header">
+                        <div>
+                            <h3>Collection Trend</h3>
+                            <p>Your successful collections across the last six months.</p>
+                        </div>
+                    </div>
+                    <div class="dashboard-panel-body">
+                        <div class="dashboard-chart-wrap">
+                            <canvas id="cashierCollectionsChart"></canvas>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="col-xl-4 mb-4">
+                <section class="dashboard-panel">
+                    <div class="dashboard-panel-header">
+                        <div>
+                            <h3>Church Snapshot</h3>
+                            <p>Context around the wider church while you work.</p>
+                        </div>
+                    </div>
+                    <div class="dashboard-panel-body">
+                        <div class="dashboard-highlight">
+                            <div class="dashboard-highlight-card">
+                                <h5>Church Giving This Month</h5>
+                                <div class="dashboard-highlight-value"><?= htmlspecialchars(dashboard_currency($payments_this_month)) ?></div>
+                            </div>
+                            <div class="dashboard-mini-grid">
+                                <div class="dashboard-mini-card">
+                                    <span class="label">Active Members</span>
+                                    <span class="value"><?= number_format($active_members) ?></span>
+                                    <span class="meta"><?= number_format($pending_members) ?> pending registrations</span>
+                                </div>
+                                <div class="dashboard-mini-card">
+                                    <span class="label">Latest Attendance</span>
+                                    <span class="value"><?= number_format($latest_attendance_rate, 1) ?>%</span>
+                                    <span class="meta"><?= htmlspecialchars($latest_attendance_title) ?></span>
+                                </div>
+                                <div class="dashboard-mini-card">
+                                    <span class="label">Health Records</span>
+                                    <span class="value"><?= number_format($health_records) ?></span>
+                                    <span class="meta"><?= number_format($health_this_month) ?> added this month</span>
+                                </div>
+                                <div class="dashboard-mini-card">
+                                    <span class="label">Upcoming Events</span>
+                                    <span class="value"><?= number_format($upcoming_events) ?></span>
+                                    <span class="meta"><?= number_format($events_this_month) ?> in this month</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-xl-4 mb-4">
+                <section class="dashboard-panel">
+                    <div class="dashboard-panel-header">
+                        <div>
+                            <h3>Payment Modes</h3>
+                            <p>How your collections are being recorded.</p>
+                        </div>
+                    </div>
+                    <div class="dashboard-panel-body">
+                        <?php if (!empty($cashier_payment_modes)): ?>
+                            <div class="dashboard-list">
+                                <?php foreach ($cashier_payment_modes as $mode): ?>
+                                    <div class="dashboard-list-item">
+                                        <div>
+                                            <strong><?= htmlspecialchars($mode['label']) ?></strong>
+                                            <small><?= number_format((int) $mode['entry_count']) ?> payments</small>
+                                        </div>
+                                        <strong><?= htmlspecialchars(dashboard_currency($mode['total_amount'])) ?></strong>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="dashboard-empty">No payment records have been posted by you yet.</div>
+                        <?php endif; ?>
+                    </div>
+                </section>
+            </div>
+            <div class="col-xl-8 mb-4">
+                <section class="dashboard-panel">
+                    <div class="dashboard-panel-header">
+                        <div>
+                            <h3>Recent Payments</h3>
+                            <p>Your latest payment activity, newest first.</p>
+                        </div>
+                    </div>
+                    <div class="dashboard-panel-body">
+                        <?php if (!empty($cashier_recent_payments)): ?>
+                            <div class="dashboard-list">
+                                <?php foreach ($cashier_recent_payments as $payment): ?>
+                                    <div class="dashboard-list-item">
+                                        <div>
+                                            <strong><?= htmlspecialchars($payment['payer_name']) ?></strong>
+                                            <small><?= htmlspecialchars($payment['payment_type']) ?> on <?= date('M j, Y g:i A', strtotime($payment['payment_date'])) ?></small>
+                                        </div>
+                                        <strong><?= htmlspecialchars(dashboard_currency($payment['amount'])) ?></strong>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="dashboard-empty">No recent cashier payments are available yet.</div>
+                        <?php endif; ?>
+                    </div>
+                </section>
+            </div>
+        </div>
+    <?php else: ?>
+        <div class="row">
+            <div class="col-xl-8 mb-4">
+                <section class="dashboard-panel">
+                    <div class="dashboard-panel-header">
+                        <div>
+                            <h3>Growth and Giving Trend</h3>
+                            <p>New members and successful giving over the last six months.</p>
+                        </div>
+                    </div>
+                    <div class="dashboard-panel-body">
+                        <div class="dashboard-chart-wrap">
+                            <canvas id="growthTrendChart"></canvas>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="col-xl-4 mb-4">
+                <section class="dashboard-panel">
+                    <div class="dashboard-panel-header">
+                        <div>
+                            <h3>Membership Mix</h3>
+                            <p>A quick look at how the community is distributed.</p>
+                        </div>
+                    </div>
+                    <div class="dashboard-panel-body">
+                        <div class="dashboard-chart-wrap compact">
+                            <canvas id="membershipMixChart"></canvas>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-xl-4 mb-4">
+                <section class="dashboard-panel">
+                    <div class="dashboard-panel-header">
+                        <div>
+                            <h3>Membership Health</h3>
+                            <p>Registration and classification totals at a glance.</p>
+                        </div>
+                    </div>
+                    <div class="dashboard-panel-body">
+                        <div class="dashboard-mini-grid">
+                            <div class="dashboard-mini-card">
+                                <span class="label">Full Members</span>
+                                <span class="value"><?= number_format($full_members) ?></span>
+                                <span class="meta">Confirmed and baptized</span>
+                            </div>
+                            <div class="dashboard-mini-card">
+                                <span class="label">Catechumens</span>
+                                <span class="value"><?= number_format($catechumens) ?></span>
+                                <span class="meta">Partially confirmed or baptized</span>
+                            </div>
+                            <div class="dashboard-mini-card">
+                                <span class="label">Adherents</span>
+                                <span class="value"><?= number_format($adherents) ?></span>
+                                <span class="meta">Active adherent records</span>
+                            </div>
+                            <div class="dashboard-mini-card">
+                                <span class="label">Pending</span>
+                                <span class="value"><?= number_format($pending_members) ?></span>
+                                <span class="meta"><?= number_format($members_without_payments) ?> active members with no payments</span>
+                            </div>
+                        </div>
+                        <div class="dashboard-highlight mt-3">
+                            <div class="dashboard-highlight-card">
+                                <h5>Members Classified by Current Rules</h5>
+                                <div class="dashboard-highlight-value"><?= number_format($classified_members) ?></div>
+                            </div>
+                            <div class="dashboard-highlight-card">
+                                <h5>Giving This Week</h5>
+                                <div class="dashboard-highlight-value"><?= htmlspecialchars(dashboard_currency($payments_this_week)) ?></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="col-xl-4 mb-4">
+                <section class="dashboard-panel">
+                    <div class="dashboard-panel-header">
+                        <div>
+                            <h3>Payment Modes</h3>
+                            <p>Amounts grouped by recorded payment mode.</p>
+                        </div>
+                    </div>
+                    <div class="dashboard-panel-body">
+                        <?php if (!empty($payment_modes)): ?>
+                            <div class="dashboard-list">
+                                <?php foreach ($payment_modes as $mode): ?>
+                                    <div class="dashboard-list-item">
+                                        <div>
+                                            <strong><?= htmlspecialchars($mode['label']) ?></strong>
+                                            <small><?= number_format((int) $mode['entry_count']) ?> payments</small>
+                                        </div>
+                                        <strong><?= htmlspecialchars(dashboard_currency($mode['total_amount'])) ?></strong>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="dashboard-empty">No payment mode data is available yet.</div>
+                        <?php endif; ?>
+                    </div>
+                </section>
+            </div>
+            <div class="col-xl-4 mb-4">
+                <section class="dashboard-panel">
+                    <div class="dashboard-panel-header">
+                        <div>
+                            <h3>Top Payment Types</h3>
+                            <p>The five strongest payment categories by amount.</p>
+                        </div>
+                    </div>
+                    <div class="dashboard-panel-body">
+                        <?php if (!empty($top_payment_types)): ?>
+                            <div class="dashboard-list">
+                                <?php foreach ($top_payment_types as $type): ?>
+                                    <div class="dashboard-list-item">
+                                        <div>
+                                            <strong><?= htmlspecialchars($type['label']) ?></strong>
+                                            <small><?= number_format((int) $type['entry_count']) ?> payments</small>
+                                        </div>
+                                        <strong><?= htmlspecialchars(dashboard_currency($type['total_amount'])) ?></strong>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="dashboard-empty">No payment type data is available yet.</div>
+                        <?php endif; ?>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-xl-4 mb-4">
+                <section class="dashboard-panel">
+                    <div class="dashboard-panel-header">
+                        <div>
+                            <h3>Recent Members</h3>
+                            <p>The newest additions to the directory.</p>
+                        </div>
+                    </div>
+                    <div class="dashboard-panel-body">
+                        <?php if (!empty($recent_members)): ?>
+                            <div class="dashboard-list">
+                                <?php foreach ($recent_members as $member): ?>
+                                    <div class="dashboard-list-item">
+                                        <div>
+                                            <strong><?= htmlspecialchars($member['member_name']) ?></strong>
+                                            <small><?= htmlspecialchars($member['class_name']) ?> • <?= date('M j, Y', strtotime($member['created_at'])) ?></small>
+                                        </div>
+                                        <span class="dashboard-pill <?= dashboard_status_tone($member['status']) ?>">
+                                            <?= htmlspecialchars($member['status']) ?>
+                                        </span>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="dashboard-empty">No member registrations are available yet.</div>
+                        <?php endif; ?>
+                    </div>
+                </section>
+            </div>
+            <div class="col-xl-4 mb-4">
+                <section class="dashboard-panel">
+                    <div class="dashboard-panel-header">
+                        <div>
+                            <h3>Recent Payments</h3>
+                            <p>Latest successful transactions across the church.</p>
+                        </div>
+                    </div>
+                    <div class="dashboard-panel-body">
+                        <?php if (!empty($recent_payments)): ?>
+                            <div class="dashboard-list">
+                                <?php foreach ($recent_payments as $payment): ?>
+                                    <div class="dashboard-list-item">
+                                        <div>
+                                            <strong><?= htmlspecialchars($payment['payer_name']) ?></strong>
+                                            <small><?= htmlspecialchars($payment['payment_type']) ?> on <?= date('M j, Y g:i A', strtotime($payment['payment_date'])) ?></small>
+                                        </div>
+                                        <strong><?= htmlspecialchars(dashboard_currency($payment['amount'])) ?></strong>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="dashboard-empty">No recent payment activity is available yet.</div>
+                        <?php endif; ?>
+                    </div>
+                </section>
+            </div>
+            <div class="col-xl-4 mb-4">
+                <section class="dashboard-panel">
+                    <div class="dashboard-panel-header">
+                        <div>
+                            <h3>Upcoming Events</h3>
+                            <p>What the church calendar looks like next.</p>
+                        </div>
+                    </div>
+                    <div class="dashboard-panel-body">
+                        <?php if (!empty($recent_events)): ?>
+                            <div class="dashboard-list">
+                                <?php foreach ($recent_events as $event): ?>
+                                    <div class="dashboard-list-item">
+                                        <div>
+                                            <strong><?= htmlspecialchars($event['name']) ?></strong>
+                                            <small><?= date('D, M j, Y', strtotime($event['event_date'])) ?><?php if (!empty($event['location'])): ?> • <?= htmlspecialchars($event['location']) ?><?php endif; ?></small>
+                                        </div>
+                                        <span class="dashboard-pill light">Event</span>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="dashboard-empty">No upcoming events are scheduled right now.</div>
+                        <?php endif; ?>
+                    </div>
+                </section>
+            </div>
+        </div>
+    <?php endif; ?>
+
+    <div class="row">
+        <div class="col-xl-6 mb-4">
+            <section class="dashboard-panel">
+                <div class="dashboard-panel-header">
+                    <div>
+                        <h3>Attendance Trend</h3>
+                        <p>Attendance rates across the latest six sessions.</p>
+                    </div>
+                </div>
+                <div class="dashboard-panel-body">
+                    <?php if (!empty($attendance_values)): ?>
+                        <div class="dashboard-chart-wrap compact">
+                            <canvas id="attendanceTrendChart"></canvas>
+                        </div>
+                    <?php else: ?>
+                        <div class="dashboard-empty">Attendance trend data is not available yet.</div>
+                    <?php endif; ?>
+                </div>
+            </section>
+        </div>
+        <div class="col-xl-6 mb-4">
+            <section class="dashboard-panel">
+                <div class="dashboard-panel-header">
+                    <div>
+                        <h3>Operational Snapshot</h3>
+                        <p>Additional indicators for today and this month.</p>
+                    </div>
+                </div>
+                <div class="dashboard-panel-body">
+                    <div class="dashboard-mini-grid">
+                        <div class="dashboard-mini-card">
+                            <span class="label">Giving Today</span>
+                            <span class="value"><?= htmlspecialchars(dashboard_currency($payments_today)) ?></span>
+                            <span class="meta">Successful payments recorded today</span>
+                        </div>
+                        <div class="dashboard-mini-card">
+                            <span class="label">Giving This Month</span>
+                            <span class="value"><?= htmlspecialchars(dashboard_currency($payments_this_month)) ?></span>
+                            <span class="meta"><?= htmlspecialchars(dashboard_currency($average_payment)) ?> average payment amount</span>
+                        </div>
+                        <div class="dashboard-mini-card">
+                            <span class="label">Health Activity</span>
+                            <span class="value"><?= number_format($health_records) ?></span>
+                            <span class="meta"><?= number_format($health_this_month) ?> records added this month</span>
+                        </div>
+                        <div class="dashboard-mini-card">
+                            <span class="label">Attendance Sessions</span>
+                            <span class="value"><?= number_format($attendance_sessions) ?></span>
+                            <span class="meta">Total sessions recorded in the system</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-// Comprehensive Dashboard Data
-<?php
-// Prepare all data for JavaScript
-$gender_data = [];
-$gender_labels = [];
-while($gender = $gender_stats->fetch_assoc()) {
-    $gender_labels[] = $gender['gender'];
-    $gender_data[] = (int)$gender['count'];
-}
-
-$age_data = [];
-$age_labels = [];
-while($age = $age_groups->fetch_assoc()) {
-    $age_labels[] = $age['age_group'];
-    $age_data[] = (int)$age['count'];
-}
-
-$classes_data = [];
-$classes_labels = [];
-while($class = $bible_classes_data->fetch_assoc()) {
-    $classes_labels[] = $class['name'];
-    $classes_data[] = (int)$class['member_count'];
-}
-
-$payment_types_data = [];
-$payment_types_labels = [];
-$top_payment_types->data_seek(0); // Reset pointer
-while($type = $top_payment_types->fetch_assoc()) {
-    $payment_types_labels[] = $type['name'];
-    $payment_types_data[] = (float)$type['total'];
-}
-
-$attendance_data = [];
-$attendance_labels = [];
-while($attendance = $attendance_trends->fetch_assoc()) {
-    $attendance_labels[] = date('M j', strtotime($attendance['service_date']));
-    $attendance_data[] = (float)$attendance['attendance_rate'];
-}
-?>
-
-window.DASHBOARD_STATS = {
-    // Member Statistics
-    full_member: <?= (int)$full_member ?>,
-    catechumen: <?= (int)$catechumen ?>,
-    junior_members: <?= (int)$junior_members ?>,
-    adherent: <?= (int)$adherent ?>,
-    total_members: <?= (int)$total_members ?>,
-    registered_members: <?= (int)$registered_members ?>,
-    pending_registration: <?= (int)$pending_registration ?>,
-    members_no_payments: <?= (int)$members_no_payments ?>,
-    
-    // Payment Statistics
-    total_payments: <?= (float)$total_payments ?>,
-    monthly_labels: <?= json_encode($monthly_labels) ?>,
-    monthly_growth: <?= json_encode($monthly_growth) ?>,
-    monthly_payments: <?= json_encode($monthly_payments_data) ?>,
-    
-    // Demographics
-    gender_labels: <?= json_encode($gender_labels) ?>,
-    gender_data: <?= json_encode($gender_data) ?>,
-    age_labels: <?= json_encode($age_labels) ?>,
-    age_data: <?= json_encode($age_data) ?>,
-    
-    // Classes and Payment Types
-    classes_labels: <?= json_encode($classes_labels) ?>,
-    classes_data: <?= json_encode($classes_data) ?>,
-    payment_types_labels: <?= json_encode($payment_types_labels) ?>,
-    payment_types_data: <?= json_encode($payment_types_data) ?>,
-    
-    // Attendance
-    attendance_labels: <?= json_encode($attendance_labels) ?>,
-    attendance_data: <?= json_encode($attendance_data) ?>
-};
-
-// Initialize Dashboard Charts
-document.addEventListener('DOMContentLoaded', function() {
-    initializeDashboardCharts();
-    addAnimations();
-    preventChartScrolling();
-});
-
-// Prevent scrolling issues with charts
-function preventChartScrolling() {
-    // Get all canvas elements
-    const canvases = document.querySelectorAll('canvas');
-    
-    canvases.forEach(canvas => {
-        // Prevent default touch behaviors that cause scrolling
-        canvas.addEventListener('touchstart', function(e) {
-            e.preventDefault();
-        }, { passive: false });
-        
-        canvas.addEventListener('touchmove', function(e) {
-            e.preventDefault();
-        }, { passive: false });
-        
-        canvas.addEventListener('touchend', function(e) {
-            e.preventDefault();
-        }, { passive: false });
-        
-        // Prevent mouse wheel scrolling on charts
-        canvas.addEventListener('wheel', function(e) {
-            e.preventDefault();
-        }, { passive: false });
-        
-        // Prevent context menu on right click
-        canvas.addEventListener('contextmenu', function(e) {
-            e.preventDefault();
-        });
-    });
-    
-    // Add chart-container class to card bodies with canvas
-    const cardBodies = document.querySelectorAll('.card-body');
-    cardBodies.forEach(cardBody => {
-        if (cardBody.querySelector('canvas')) {
-            cardBody.classList.add('chart-container');
-        }
-    });
-    
-    // Fix chart height issues
-    fixChartHeights();
-}
-
-// Function to fix chart height issues
-function fixChartHeights() {
-    const canvases = document.querySelectorAll('canvas');
-    
-    canvases.forEach(canvas => {
-        // Remove height attribute to prevent conflicts
-        canvas.removeAttribute('height');
-        
-        // Set fixed dimensions via CSS
-        const canvasId = canvas.id;
-        switch(canvasId) {
-            case 'growthChart':
-                canvas.style.height = '300px';
-                break;
-            case 'genderChart':
-            case 'ageChart':
-            case 'classesChart':
-            case 'paymentTypesChart':
-                canvas.style.height = '200px';
-                break;
-            case 'attendanceChart':
-                canvas.style.height = '250px';
-                break;
-            default:
-                canvas.style.height = '250px';
-        }
-        
-        // Ensure width is responsive
-        canvas.style.width = '100%';
-        
-        // Prevent further resizing
-        canvas.style.maxHeight = canvas.style.height;
-    });
-    
-    // Disable window resize handling for charts
-    window.removeEventListener('resize', handleChartResize);
-    
-    // Add controlled resize handling
-    let resizeTimeout;
-    window.addEventListener('resize', function() {
-        clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(() => {
-            // Only resize charts if window width changed significantly
-            const currentWidth = window.innerWidth;
-            if (Math.abs(currentWidth - (window.lastWidth || 0)) > 100) {
-                Object.values(Chart.instances).forEach(chart => {
-                    if (chart && chart.resize) {
-                        chart.resize();
-                    }
-                });
-                window.lastWidth = currentWidth;
-            }
-        }, 250);
-    });
-}
-
-// Prevent default chart resize handler
-function handleChartResize() {
-    // Do nothing - we handle resizing manually
-}
-
-function initializeDashboardCharts() {
-    // Chart.js default configuration
-    Chart.defaults.font.family = 'Inter, system-ui, sans-serif';
-    Chart.defaults.color = '#6c757d';
-    Chart.defaults.plugins.legend.display = true;
-    Chart.defaults.plugins.legend.position = 'bottom';
-    Chart.defaults.plugins.legend.labels.padding = 20;
-    Chart.defaults.plugins.legend.labels.usePointStyle = true;
-    
-    // Global interaction settings to prevent scrolling issues
-    Chart.defaults.interaction = {
-        intersect: false,
-        mode: 'index'
-    };
-    
-    // Prevent default behaviors that cause scrolling
-    Chart.defaults.onHover = function(event, activeElements) {
-        if (event.native && event.native.target) {
-            event.native.target.style.cursor = activeElements.length > 0 ? 'pointer' : 'default';
-        }
-    };
-    
-    // Global settings to prevent height growth issues
-    Chart.defaults.responsive = true;
-    Chart.defaults.maintainAspectRatio = false;
-    Chart.defaults.resizeDelay = 0;
-    
-    // Disable Chart.js resize observer to prevent height conflicts
-    Chart.defaults.plugins.resize = {
-        delay: 0
-    };
-    
-    // Color palettes
-    const primaryColors = ['#667eea', '#764ba2', '#4facfe', '#00f2fe', '#a8edea', '#fed6e3'];
-    const backgroundColors = primaryColors.map(color => color + '20');
-    const borderColors = primaryColors;
-    
-    // 1. Growth Chart (Line Chart)
-    const growthCtx = document.getElementById('growthChart');
-    if (growthCtx) {
-        window.growthChart = new Chart(growthCtx, {
-            type: 'line',
-            data: {
-                labels: window.DASHBOARD_STATS.monthly_labels,
-                datasets: [{
-                    label: 'New Members',
-                    data: window.DASHBOARD_STATS.monthly_growth,
-                    borderColor: '#667eea',
-                    backgroundColor: '#667eea20',
-                    borderWidth: 3,
-                    fill: true,
-                    tension: 0.4,
-                    pointBackgroundColor: '#667eea',
-                    pointBorderColor: '#ffffff',
-                    pointBorderWidth: 2,
-                    pointRadius: 6
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: {
-                            color: '#e9ecef'
-                        }
-                    },
-                    x: {
-                        grid: {
-                            display: false
-                        }
-                    }
-                },
-                elements: {
-                    point: {
-                        hoverRadius: 8
-                    }
-                }
-            }
-        });
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof Chart === 'undefined') {
+        return;
     }
-    
-    // 2. Gender Distribution (Doughnut Chart)
-    const genderCtx = document.getElementById('genderChart');
-    if (genderCtx && window.DASHBOARD_STATS.gender_data.length > 0) {
-        new Chart(genderCtx, {
-            type: 'doughnut',
-            data: {
-                labels: window.DASHBOARD_STATS.gender_labels,
-                datasets: [{
-                    data: window.DASHBOARD_STATS.gender_data,
-                    backgroundColor: ['#667eea', '#764ba2'],
-                    borderWidth: 0,
-                    cutout: '60%'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            padding: 15,
-                            font: {
-                                size: 12
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-    
-    // 3. Age Groups (Polar Area Chart)
-    const ageCtx = document.getElementById('ageChart');
-    if (ageCtx && window.DASHBOARD_STATS.age_data.length > 0) {
-        new Chart(ageCtx, {
-            type: 'polarArea',
-            data: {
-                labels: window.DASHBOARD_STATS.age_labels,
-                datasets: [{
-                    data: window.DASHBOARD_STATS.age_data,
-                    backgroundColor: backgroundColors.slice(0, window.DASHBOARD_STATS.age_data.length),
-                    borderColor: borderColors.slice(0, window.DASHBOARD_STATS.age_data.length),
-                    borderWidth: 2
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            padding: 10,
-                            font: {
-                                size: 10
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    r: {
-                        beginAtZero: true
-                    }
-                }
-            }
-        });
-    }
-    
-    // 4. Bible Classes (Bar Chart)
-    const classesCtx = document.getElementById('classesChart');
-    if (classesCtx && window.DASHBOARD_STATS.classes_data.length > 0) {
-        new Chart(classesCtx, {
+
+    const palette = {
+        teal: '#0f766e',
+        tealSoft: 'rgba(15, 118, 110, 0.18)',
+        orange: '#ea580c',
+        orangeSoft: 'rgba(234, 88, 12, 0.18)',
+        slate: '#334155',
+        gold: '#d97706',
+        blue: '#2563eb',
+        rose: '#e11d48'
+    };
+
+    const sharedGrid = {
+        color: 'rgba(148, 163, 184, 0.18)',
+        drawBorder: false
+    };
+
+    <?php if ($is_cashier): ?>
+    const cashierCollectionsCanvas = document.getElementById('cashierCollectionsChart');
+    if (cashierCollectionsCanvas) {
+        new Chart(cashierCollectionsCanvas, {
             type: 'bar',
             data: {
-                labels: window.DASHBOARD_STATS.classes_labels,
+                labels: <?= json_encode($cashier_month_labels, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
                 datasets: [{
-                    data: window.DASHBOARD_STATS.classes_data,
-                    backgroundColor: '#4facfe40',
-                    borderColor: '#4facfe',
+                    label: 'Collections',
+                    data: <?= json_encode($cashier_month_values, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+                    backgroundColor: palette.tealSoft,
+                    borderColor: palette.teal,
                     borderWidth: 2,
-                    borderRadius: 8,
+                    borderRadius: 10,
                     borderSkipped: false
                 }]
             },
@@ -1823,43 +1505,85 @@ function initializeDashboardCharts() {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: {
-                        display: false
-                    }
+                    legend: { display: false }
                 },
                 scales: {
+                    x: { grid: { display: false } },
                     y: {
                         beginAtZero: true,
-                        grid: {
-                            color: '#e9ecef'
-                        }
-                    },
-                    x: {
-                        grid: {
-                            display: false
-                        },
-                        ticks: {
-                            maxRotation: 45
-                        }
+                        grid: sharedGrid
                     }
                 }
             }
         });
     }
-    
-    // 5. Payment Types (Doughnut Chart)
-    const paymentTypesCtx = document.getElementById('paymentTypesChart');
-    if (paymentTypesCtx && window.DASHBOARD_STATS.payment_types_data.length > 0) {
-        new Chart(paymentTypesCtx, {
+    <?php else: ?>
+    const growthTrendCanvas = document.getElementById('growthTrendChart');
+    if (growthTrendCanvas) {
+        new Chart(growthTrendCanvas, {
+            type: 'line',
+            data: {
+                labels: <?= json_encode($trend_labels, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+                datasets: [{
+                    label: 'New Members',
+                    data: <?= json_encode($member_growth_values, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+                    borderColor: palette.teal,
+                    backgroundColor: palette.tealSoft,
+                    fill: true,
+                    tension: 0.35,
+                    borderWidth: 3,
+                    pointRadius: 4,
+                    pointBackgroundColor: palette.teal
+                }, {
+                    label: 'Giving Amount',
+                    data: <?= json_encode($payment_growth_values, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+                    borderColor: palette.orange,
+                    backgroundColor: palette.orangeSoft,
+                    tension: 0.35,
+                    borderWidth: 3,
+                    pointRadius: 4,
+                    pointBackgroundColor: palette.orange,
+                    yAxisID: 'y1'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                scales: {
+                    x: { grid: { display: false } },
+                    y: {
+                        beginAtZero: true,
+                        grid: sharedGrid
+                    },
+                    y1: {
+                        beginAtZero: true,
+                        position: 'right',
+                        grid: { drawOnChartArea: false }
+                    }
+                }
+            }
+        });
+    }
+
+    const membershipMixCanvas = document.getElementById('membershipMixChart');
+    if (membershipMixCanvas) {
+        new Chart(membershipMixCanvas, {
             type: 'doughnut',
             data: {
-                labels: window.DASHBOARD_STATS.payment_types_labels,
+                labels: <?= json_encode($membership_labels, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
                 datasets: [{
-                    data: window.DASHBOARD_STATS.payment_types_data,
-                    backgroundColor: backgroundColors.slice(0, window.DASHBOARD_STATS.payment_types_data.length),
-                    borderColor: borderColors.slice(0, window.DASHBOARD_STATS.payment_types_data.length),
-                    borderWidth: 2,
-                    cutout: '50%'
+                    data: <?= json_encode($membership_values, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+                    backgroundColor: [
+                        'rgba(15, 118, 110, 0.88)',
+                        'rgba(37, 99, 235, 0.82)',
+                        'rgba(217, 119, 6, 0.82)',
+                        'rgba(225, 29, 72, 0.80)'
+                    ],
+                    borderWidth: 0
                 }]
             },
             options: {
@@ -1869,154 +1593,54 @@ function initializeDashboardCharts() {
                     legend: {
                         position: 'bottom',
                         labels: {
-                            padding: 10,
-                            font: {
-                                size: 10
-                            }
+                            boxWidth: 12,
+                            padding: 16
                         }
                     }
-                }
+                },
+                cutout: '62%'
             }
         });
     }
-    
-    // 6. Attendance Trends (Area Chart)
-    const attendanceCtx = document.getElementById('attendanceChart');
-    if (attendanceCtx && window.DASHBOARD_STATS.attendance_data.length > 0) {
-        new Chart(attendanceCtx, {
+    <?php endif; ?>
+
+    const attendanceTrendCanvas = document.getElementById('attendanceTrendChart');
+    if (attendanceTrendCanvas) {
+        new Chart(attendanceTrendCanvas, {
             type: 'line',
             data: {
-                labels: window.DASHBOARD_STATS.attendance_labels,
+                labels: <?= json_encode($attendance_labels, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
                 datasets: [{
                     label: 'Attendance Rate (%)',
-                    data: window.DASHBOARD_STATS.attendance_data,
-                    borderColor: '#ffecd2',
-                    backgroundColor: '#ffecd220',
-                    borderWidth: 3,
+                    data: <?= json_encode($attendance_values, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+                    borderColor: palette.slate,
+                    backgroundColor: 'rgba(51, 65, 85, 0.12)',
                     fill: true,
-                    tension: 0.4,
-                    pointBackgroundColor: '#fcb69f',
-                    pointBorderColor: '#ffffff',
-                    pointBorderWidth: 2,
-                    pointRadius: 6
+                    tension: 0.35,
+                    borderWidth: 3,
+                    pointRadius: 4,
+                    pointBackgroundColor: palette.gold
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: {
-                        display: false
-                    }
+                    legend: { display: false }
                 },
                 scales: {
+                    x: { grid: { display: false } },
                     y: {
                         beginAtZero: true,
                         max: 100,
-                        grid: {
-                            color: '#e9ecef'
-                        },
-                        ticks: {
-                            callback: function(value) {
-                                return value + '%';
-                            }
-                        }
-                    },
-                    x: {
-                        grid: {
-                            display: false
-                        }
+                        grid: sharedGrid
                     }
                 }
             }
         });
     }
-    
-    // Chart Toggle Functionality
-    const chartButtons = document.querySelectorAll('[data-chart]');
-    chartButtons.forEach(button => {
-        button.addEventListener('click', function() {
-            const chartType = this.getAttribute('data-chart');
-            
-            // Update button states
-            chartButtons.forEach(btn => btn.classList.remove('active'));
-            this.classList.add('active');
-            
-            // Update chart data
-            if (window.growthChart) {
-                if (chartType === 'growth') {
-                    window.growthChart.data.datasets[0].label = 'New Members';
-                    window.growthChart.data.datasets[0].data = window.DASHBOARD_STATS.monthly_growth;
-                    window.growthChart.data.datasets[0].borderColor = '#667eea';
-                    window.growthChart.data.datasets[0].backgroundColor = '#667eea20';
-                } else if (chartType === 'payments') {
-                    window.growthChart.data.datasets[0].label = 'Monthly Payments (₵)';
-                    window.growthChart.data.datasets[0].data = window.DASHBOARD_STATS.monthly_payments;
-                    window.growthChart.data.datasets[0].borderColor = '#4facfe';
-                    window.growthChart.data.datasets[0].backgroundColor = '#4facfe20';
-                }
-                window.growthChart.update('active');
-            }
-        });
-    });
-}
-
-function addAnimations() {
-    // Add fade-in animations to cards
-    const cards = document.querySelectorAll('.card, .info-box');
-    cards.forEach((card, index) => {
-        setTimeout(() => {
-            card.classList.add('fade-in-up');
-        }, index * 100);
-    });
-    
-    // Add counter animations to KPI values
-    const kpiValues = document.querySelectorAll('.kpi-value');
-    kpiValues.forEach(value => {
-        const finalValue = value.textContent;
-        const numericValue = parseFloat(finalValue.replace(/[^0-9.]/g, ''));
-        
-        if (!isNaN(numericValue)) {
-            let currentValue = 0;
-            const increment = numericValue / 50;
-            const timer = setInterval(() => {
-                currentValue += increment;
-                if (currentValue >= numericValue) {
-                    currentValue = numericValue;
-                    clearInterval(timer);
-                }
-                
-                if (finalValue.includes('%')) {
-                    value.textContent = Math.round(currentValue) + '%';
-                } else if (finalValue.includes('₵')) {
-                    value.textContent = '₵' + Math.round(currentValue).toLocaleString();
-                } else {
-                    value.textContent = Math.round(currentValue).toLocaleString();
-                }
-            }, 50);
-        }
-    });
-}
-
-// Utility function for number formatting
-function formatNumber(num) {
-    if (num >= 1000000) {
-        return (num / 1000000).toFixed(1) + 'M';
-    } else if (num >= 1000) {
-        return (num / 1000).toFixed(1) + 'K';
-    }
-    return num.toString();
-}
-
-// Real-time updates (optional - can be implemented with WebSockets or periodic AJAX calls)
-function updateDashboardData() {
-    // This function can be called periodically to update dashboard data
-    // Implementation depends on your real-time requirements
-}
+});
 </script>
-
-<?php endif; // End cashier conditional ?>
-
 <?php
 $page_content = ob_get_clean();
-include __DIR__.'/../includes/layout.php';
+include __DIR__ . '/../includes/layout.php';
