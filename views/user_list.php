@@ -84,7 +84,7 @@ if ($where) {
 $total_count = 0;
 // Use original params for count (before adding LIMIT/OFFSET)
 $count_params = array_slice($params, 0, count($params));
-$count_types = substr($types, 0, strlen($types) - 2); // Remove 'ii' from end
+$count_types = $types;
 if ($count_params) {
     $count_stmt = $conn->prepare($count_sql);
     $count_stmt->bind_param($count_types, ...$count_params);
