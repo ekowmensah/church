@@ -25,8 +25,9 @@ if (count($org_leaderships) > 1) {
     $org_id = isset($_GET['org_id']) ? intval($_GET['org_id']) : 0;
     
     if (!$org_id) {
-        // Redirect to organization selector
-        header('Location: my_organizations_leader.php');
+        // Default to the first organization leader dashboard instead of a missing selector page
+        $default_org_id = (int) $org_leaderships[0]['organization_id'];
+        header('Location: my_organization_leader.php?org_id=' . $default_org_id);
         exit;
     }
     
