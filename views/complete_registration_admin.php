@@ -5,6 +5,7 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
+require_once __DIR__.'/../helpers/leader_helpers.php';
 require_once __DIR__.'/../helpers/spouse_link_helper.php';
 
 if (!is_logged_in()) {
@@ -30,41 +31,6 @@ function normalize_user_sync_email(string $email): ?string
 {
     $email = trim($email);
     return $email === '' ? null : $email;
-}
-
-function member_organizations_requires_explicit_id(mysqli $conn): bool
-{
-    static $requiresExplicitId = null;
-    if ($requiresExplicitId !== null) {
-        return $requiresExplicitId;
-    }
-
-    $requiresExplicitId = false;
-    $result = $conn->query("SHOW COLUMNS FROM member_organizations LIKE 'id'");
-    if ($result && ($row = $result->fetch_assoc())) {
-        $extra = strtolower((string) ($row['Extra'] ?? ''));
-        $nullAllowed = strtoupper((string) ($row['Null'] ?? 'YES')) === 'YES';
-        $defaultValue = $row['Default'] ?? null;
-        $requiresExplicitId = strpos($extra, 'auto_increment') === false && !$nullAllowed && $defaultValue === null;
-    }
-    if ($result) {
-        $result->free();
-    }
-
-    return $requiresExplicitId;
-}
-
-function get_next_member_organization_id(mysqli $conn): int
-{
-    $result = $conn->query('SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM member_organizations');
-    if (!$result) {
-        throw new Exception($conn->error ?: 'Failed to determine the next member organization id.');
-    }
-
-    $row = $result->fetch_assoc();
-    $result->free();
-
-    return max(1, (int) ($row['next_id'] ?? 1));
 }
 
 function sync_member_user_account(mysqli $conn, int $member_id, string $full_name, string $email, string $phone, string $password_hash, string $photo, int $church_id): void
@@ -322,9 +288,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!is_array($posted_contact)) {
                 continue;
             }
+            $posted_crn = trim((string) ($posted_contact['crn'] ?? ''));
+            $posted_name = trim((string) ($posted_contact['name'] ?? ''));
             $entry = [
-                'crn' => trim((string) ($posted_contact['crn'] ?? '')),
-                'name' => trim((string) ($posted_contact['name'] ?? '')),
+                'crn' => $posted_crn,
+                'name' => $posted_name !== '' ? $posted_name : $posted_crn,
                 'mobile' => trim((string) ($posted_contact['mobile'] ?? '')),
                 'relationship' => trim((string) ($posted_contact['relationship'] ?? '')),
             ];
@@ -494,17 +462,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
     // Validate required fields (add more as needed)
     // Ensure $emergency_contacts is always an array of arrays
     if (!is_array($emergency_contacts)) $emergency_contacts = [];
-    $emergency_contacts = array_filter($emergency_contacts, function($c) {
-        return is_array($c) && (isset($c['name']) || isset($c['mobile']) || isset($c['relationship']));
-    });
-    $valid_contacts = array_filter($emergency_contacts, function($c) {
-        return !empty($c['name']) && !empty($c['mobile']) && !empty($c['relationship']);
-    });
+    $normalized_contacts = [];
+    foreach ($emergency_contacts as $contact) {
+        if (!is_array($contact)) {
+            continue;
+        }
+
+        $contact_crn = trim((string) ($contact['crn'] ?? ''));
+        $contact_name = trim((string) ($contact['name'] ?? ''));
+        $contact_mobile = trim((string) ($contact['mobile'] ?? ''));
+        $contact_relationship = trim((string) ($contact['relationship'] ?? ''));
+
+        if ($contact_name === '' && $contact_crn !== '') {
+            $contact_name = $contact_crn;
+        }
+
+        if ($contact_name === '' && $contact_mobile === '' && $contact_relationship === '') {
+            continue;
+        }
+
+        $normalized_contacts[] = [
+            'crn' => $contact_crn,
+            'name' => $contact_name,
+            'mobile' => $contact_mobile,
+            'relationship' => $contact_relationship,
+        ];
+    }
+
+    $valid_contacts = array_values(array_filter($normalized_contacts, function($contact) {
+        return $contact['name'] !== '' && $contact['mobile'] !== '' && $contact['relationship'] !== '';
+    }));
     // Remove $membership_status from required fields (field removed from form)
     if (!$first_name || !$last_name || !$gender || !$dob || !$place_of_birth || !$marital_status || ($marital_status === 'Married' && !$marriage_type) || !$home_town || !$region || !$phone || count($valid_contacts) === 0 || !$employment_status || !$baptized || !$confirmed || ($is_password_required && !$password)) {
         // Debug output for troubleshooting
         error_log('DEBUG: valid_contacts count: ' . count($valid_contacts));
-        error_log('DEBUG: emergency_contacts: ' . print_r($emergency_contacts, true));
+        error_log('DEBUG: emergency_contacts: ' . print_r($normalized_contacts, true));
         $error = 'Please fill in all required fields (at least one emergency contact).';
     } else {
         // Enforce phone uniqueness at member level.
@@ -1009,6 +1001,8 @@ ob_start();
         $contact_relationship = trim((string) ($contact_entry['relationship'] ?? ''));
         $contact_select_value = $contact_crn !== '' ? $contact_crn : $contact_name;
         $contact_select_label = $contact_name !== '' ? $contact_name : $contact_select_value;
+        $contact_is_likely_member = $contact_crn !== '' && $contact_name !== '' && strcasecmp($contact_crn, $contact_name) !== 0;
+        $show_contact_mobile = !$contact_is_likely_member || $contact_mobile === '';
       ?>
       <div class="form-row emergency-contact-row">
         <div class="form-group col-md-7">
@@ -1020,8 +1014,19 @@ ob_start();
             <?php endif; ?>
           </select>
           <input type="hidden" class="emergency-contact-name" name="emergency_contacts[<?= (int) $contact_idx ?>][name]" value="<?= htmlspecialchars($contact_name) ?>">
-          <input type="hidden" class="emergency-contact-mobile" name="emergency_contacts[<?= (int) $contact_idx ?>][mobile]" value="<?= htmlspecialchars($contact_mobile) ?>">
           <small class="form-text text-muted">Search for member or type full name</small>
+          <div class="emergency-contact-mobile-wrap mt-2<?= $show_contact_mobile ? '' : ' d-none' ?>">
+            <label class="small mb-1">Contact Number</label>
+            <input
+              type="text"
+              class="form-control emergency-contact-mobile"
+              name="emergency_contacts[<?= (int) $contact_idx ?>][mobile]"
+              value="<?= htmlspecialchars($contact_mobile) ?>"
+              placeholder="<?= htmlspecialchars($contact_is_likely_member ? 'Selected member has no phone on file. Enter contact number.' : 'Enter contact number for non-member contact.') ?>"
+              <?= $show_contact_mobile ? 'required' : '' ?>
+            >
+            <small class="form-text text-muted">Shown for non-member contacts or members without a saved mobile number.</small>
+          </div>
         </div>
         <div class="form-group col-md-4">
           <label>Relationship</label>

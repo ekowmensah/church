@@ -338,6 +338,31 @@ $(document).ready(function () {
         return '<input type="text" class="form-control" name="emergency_contacts[' + idx + '][relationship]" placeholder="Relationship" required>';
     }
 
+    function syncEmergencyContactMobileState(row) {
+        var selectValue = $.trim(row.find('.emergency-contact-search').val() || '');
+        var contactName = $.trim(row.find('.emergency-contact-name').val() || '');
+        var mobileInput = row.find('.emergency-contact-mobile');
+        var mobileWrap = row.find('.emergency-contact-mobile-wrap');
+        var contactMobile = $.trim(mobileInput.val() || '');
+        var hasContact = selectValue !== '' || contactName !== '' || contactMobile !== '';
+        var isLikelyMember = selectValue !== '' && contactName !== '' && selectValue.toLowerCase() !== contactName.toLowerCase();
+        var shouldShow = hasContact && (!isLikelyMember || contactMobile === '');
+
+        if (shouldShow) {
+            mobileWrap.removeClass('d-none');
+            mobileInput.prop('required', true).prop('readonly', false);
+            mobileInput.attr(
+                'placeholder',
+                isLikelyMember
+                    ? 'Selected member has no phone on file. Enter contact number.'
+                    : 'Enter contact number for non-member contact.'
+            );
+        } else {
+            mobileWrap.addClass('d-none');
+            mobileInput.prop('required', false).prop('readonly', false);
+        }
+    }
+
     $(document).on('click', '#add-emergency-contact', function (e) {
         e.preventDefault();
         let idx = $('.emergency-contact-row').length + 1;
@@ -348,8 +373,12 @@ $(document).ready(function () {
                     <option value="">-- Search by CRN/name/phone or type name --</option>
                 </select>
                 <input type="hidden" class="emergency-contact-name" name="emergency_contacts[${idx}][name]">
-                <input type="hidden" class="emergency-contact-mobile" name="emergency_contacts[${idx}][mobile]">
                 <small class="form-text text-muted">Search for member or type full name</small>
+                <div class="emergency-contact-mobile-wrap mt-2 d-none">
+                    <label class="small mb-1">Contact Number</label>
+                    <input type="text" class="form-control emergency-contact-mobile" name="emergency_contacts[${idx}][mobile]" placeholder="Enter contact number for non-member contact.">
+                    <small class="form-text text-muted">Shown for non-member contacts or members without a saved mobile number.</small>
+                </div>
             </div>
             <div class="form-group col-md-4">
                 <label>Relationship</label>
@@ -502,6 +531,41 @@ $(document).ready(function () {
                 row.find('.emergency-contact-name').val(data.text || data.id);
                 row.find('.emergency-contact-mobile').val('');
             }
+            syncEmergencyContactMobileState(row);
+        });
+
+        // Preserve manually typed names when the user creates a free-text tag.
+        element.off('select2:closing.emergencyManual').on('select2:closing.emergencyManual', function () {
+            var row = element.closest('.emergency-contact-row');
+            var searchField = element.data('select2') && element.data('select2').dropdown
+                ? element.data('select2').dropdown.$search || element.data('select2').selection.$search
+                : null;
+            var typedText = searchField && searchField.length ? $.trim(searchField.val()) : '';
+
+            if (typedText !== '' && $.trim(row.find('.emergency-contact-name').val()) === '') {
+                row.find('.emergency-contact-name').val(typedText);
+                row.find('.emergency-contact-mobile').val('');
+            }
+            syncEmergencyContactMobileState(row);
+        });
+
+        element.off('change.emergencyManual').on('change.emergencyManual', function () {
+            var row = element.closest('.emergency-contact-row');
+            var selectedValue = $.trim(element.val() || '');
+            var currentName = $.trim(row.find('.emergency-contact-name').val());
+
+            if (selectedValue === '') {
+                row.find('.emergency-contact-name').val('');
+                row.find('.emergency-contact-mobile').val('');
+                syncEmergencyContactMobileState(row);
+                return;
+            }
+
+            if (currentName === '') {
+                row.find('.emergency-contact-name').val(selectedValue);
+            }
+
+            syncEmergencyContactMobileState(row);
         });
 
         // When cleared, clear hidden fields
@@ -509,12 +573,15 @@ $(document).ready(function () {
             var row = element.closest('.emergency-contact-row');
             row.find('.emergency-contact-name').val('');
             row.find('.emergency-contact-mobile').val('');
+            syncEmergencyContactMobileState(row);
         });
     }
 
     // Initialize existing emergency contact searches on page load
     $('.emergency-contact-search').each(function () {
+        var row = $(this).closest('.emergency-contact-row');
         initializeEmergencyContactSearch($(this));
+        syncEmergencyContactMobileState(row);
     });
 
 

@@ -450,23 +450,25 @@ function get_organization_attendance_stats($conn, $org_id, $start_date = null, $
  * @param mysqli $conn Database connection
  * @return bool
  */
-function member_organizations_requires_explicit_id($conn) {
-    static $requiresExplicitId = null;
-    if ($requiresExplicitId !== null) {
+if (!function_exists('member_organizations_requires_explicit_id')) {
+    function member_organizations_requires_explicit_id($conn) {
+        static $requiresExplicitId = null;
+        if ($requiresExplicitId !== null) {
+            return $requiresExplicitId;
+        }
+
+        $requiresExplicitId = false;
+        $result = $conn->query("SHOW COLUMNS FROM member_organizations LIKE 'id'");
+        if ($result && ($row = $result->fetch_assoc())) {
+            $extra = strtolower((string) ($row['Extra'] ?? ''));
+            $nullAllowed = strtoupper((string) ($row['Null'] ?? 'YES')) === 'YES';
+            $defaultValue = $row['Default'] ?? null;
+            $requiresExplicitId = strpos($extra, 'auto_increment') === false && !$nullAllowed && $defaultValue === null;
+            $result->free();
+        }
+
         return $requiresExplicitId;
     }
-
-    $requiresExplicitId = false;
-    $result = $conn->query("SHOW COLUMNS FROM member_organizations LIKE 'id'");
-    if ($result && ($row = $result->fetch_assoc())) {
-        $extra = strtolower((string) ($row['Extra'] ?? ''));
-        $nullAllowed = strtoupper((string) ($row['Null'] ?? 'YES')) === 'YES';
-        $defaultValue = $row['Default'] ?? null;
-        $requiresExplicitId = strpos($extra, 'auto_increment') === false && !$nullAllowed && $defaultValue === null;
-        $result->free();
-    }
-
-    return $requiresExplicitId;
 }
 
 /**
@@ -476,16 +478,18 @@ function member_organizations_requires_explicit_id($conn) {
  * @return int
  * @throws Exception
  */
-function get_next_member_organization_id($conn) {
-    $result = $conn->query('SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM member_organizations');
-    if (!$result) {
-        throw new Exception($conn->error ?: 'Failed to determine the next member organization id.');
+if (!function_exists('get_next_member_organization_id')) {
+    function get_next_member_organization_id($conn) {
+        $result = $conn->query('SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM member_organizations');
+        if (!$result) {
+            throw new Exception($conn->error ?: 'Failed to determine the next member organization id.');
+        }
+
+        $row = $result->fetch_assoc();
+        $result->free();
+
+        return max(1, (int) ($row['next_id'] ?? 1));
     }
-
-    $row = $result->fetch_assoc();
-    $result->free();
-
-    return max(1, (int) ($row['next_id'] ?? 1));
 }
 
 /**
