@@ -10,6 +10,7 @@ if (!is_logged_in() || (!(isset($_SESSION['role_id']) && $_SESSION['role_id'] ==
 }
 
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+$referer = $_SERVER['HTTP_REFERER'] ?? '';
 if ($id > 0) {
     // Only allow archiving of members with status 'pending' or 'de-activated'
     $reg_check = $conn->query("SELECT status FROM members WHERE id = $id");
@@ -28,10 +29,37 @@ if ($id > 0) {
     // Archive member to deleted_members, but NEVER delete from members table
     $member = $conn->query("SELECT * FROM members WHERE id = $id")->fetch_assoc();
     if ($member) {
-        $cols = array_keys($member);
-        $cols_sql = '`' . implode('`,`', $cols) . '`,deleted_at';
-        $vals = array_map(function($v) use ($conn) { return $v === null ? 'NULL' : "'".$conn->real_escape_string($v)."'"; }, array_values($member));
-        $vals_sql = implode(',', $vals) . ",NOW()";
+        $archive_cols = [];
+        $archive_result = $conn->query('SHOW COLUMNS FROM deleted_members');
+        if ($archive_result) {
+            while ($archive_col = $archive_result->fetch_assoc()) {
+                $archive_cols[strtolower($archive_col['Field'])] = true;
+            }
+        }
+
+        $insert_cols = [];
+        $insert_vals = [];
+        foreach ($member as $col => $value) {
+            $normalized_col = strtolower($col);
+            if ($normalized_col === 'deleted_at' || !isset($archive_cols[$normalized_col])) {
+                continue;
+            }
+            $insert_cols[] = '`' . str_replace('`', '``', $col) . '`';
+            $insert_vals[] = $value === null ? 'NULL' : "'" . $conn->real_escape_string((string) $value) . "'";
+        }
+
+        if (empty($insert_cols)) {
+            $insert_cols[] = '`id`';
+            $insert_vals[] = (int) $member['id'];
+            $insert_cols[] = '`status`';
+            $insert_vals[] = $member['status'] === null ? 'NULL' : "'" . $conn->real_escape_string((string) $member['status']) . "'";
+        }
+
+        $insert_cols[] = '`deleted_at`';
+        $insert_vals[] = 'NOW()';
+
+        $cols_sql = implode(',', $insert_cols);
+        $vals_sql = implode(',', $insert_vals);
         $ins = $conn->query("INSERT INTO deleted_members ($cols_sql) VALUES ($vals_sql)");
         if ($ins) {
             // Also set member status to 'deleted' in members table
