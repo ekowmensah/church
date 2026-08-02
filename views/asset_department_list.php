@@ -70,6 +70,7 @@ ob_start();
             <table class="table table-bordered table-hover" id="assetDepartmentsTable">
                 <thead class="thead-light">
                     <tr>
+                        <th>Code</th>
                         <th>Name</th>
                         <th>Description</th>
                         <?php if (asset_is_super_admin()): ?><th>Church</th><?php endif; ?>
@@ -80,6 +81,7 @@ ob_start();
                 <tbody>
                 <?php foreach ($departments as $dept): ?>
                     <tr>
+                        <td><?= htmlspecialchars((string) ($dept['department_code'] ?? '')) ?></td>
                         <td><?= htmlspecialchars($dept['name']) ?></td>
                         <td><?= htmlspecialchars((string) ($dept['description'] ?? '')) ?></td>
                         <?php if (asset_is_super_admin()): ?>
@@ -113,7 +115,7 @@ ob_start();
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($departments)): ?>
-                    <tr><td colspan="<?= asset_is_super_admin() ? 5 : 4 ?>" class="text-center">No departments found.</td></tr>
+                    <tr><td colspan="<?= asset_is_super_admin() ? 6 : 5 ?>" class="text-center">No departments found.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

@@ -13,10 +13,11 @@ $churchId = asset_is_super_admin()
     : asset_current_church_id($conn);
 
 $name = '';
+$departmentCode = '';
 $description = '';
 
 if ($isEdit) {
-    $sql = 'SELECT id, church_id, name, description FROM asset_departments WHERE id = ?';
+    $sql = 'SELECT id, church_id, name, department_code, description FROM asset_departments WHERE id = ?';
     if (!asset_is_super_admin()) {
         $sql .= ' AND church_id = ?';
     }
@@ -39,6 +40,7 @@ if ($isEdit) {
 
     $churchId = (int) $row['church_id'];
     $name = (string) $row['name'];
+    $departmentCode = (string) ($row['department_code'] ?? '');
     $description = (string) ($row['description'] ?? '');
 }
 
@@ -52,6 +54,7 @@ if (asset_is_super_admin()) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim((string) ($_POST['name'] ?? ''));
+    $departmentCode = strtoupper(trim((string) ($_POST['department_code'] ?? '')));
     $description = trim((string) ($_POST['description'] ?? ''));
 
     if (asset_is_super_admin()) {
@@ -62,17 +65,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Please select a church.';
     } elseif ($name === '') {
         $error = 'Department name is required.';
+    } elseif ($departmentCode === '') {
+        $error = 'Department code is required.';
     } else {
         if ($isEdit) {
-            $sql = 'UPDATE asset_departments SET church_id = ?, name = ?, description = ? WHERE id = ?';
+            $sql = 'UPDATE asset_departments SET church_id = ?, name = ?, department_code = ?, description = ? WHERE id = ?';
             if (!asset_is_super_admin()) {
                 $sql .= ' AND church_id = ?';
             }
             $stmt = $conn->prepare($sql);
             if (asset_is_super_admin()) {
-                $stmt->bind_param('issi', $churchId, $name, $description, $deptId);
+                $stmt->bind_param('isssi', $churchId, $name, $departmentCode, $description, $deptId);
             } else {
-                $stmt->bind_param('issii', $churchId, $name, $description, $deptId, $churchId);
+                $stmt->bind_param('isssii', $churchId, $name, $departmentCode, $description, $deptId, $churchId);
             }
             $ok = $stmt->execute();
             $stmt->close();
@@ -80,14 +85,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 asset_log_action('asset_department_update', 'asset_department', $deptId, [
                     'church_id' => $churchId,
                     'name' => $name,
+                    'department_code' => $departmentCode,
                 ]);
                 header('Location: asset_department_list.php?saved=1' . ($churchId ? '&church_id=' . $churchId : ''));
                 exit;
             }
             $error = 'Failed to update department. It may already exist for this church.';
         } else {
-            $stmt = $conn->prepare('INSERT INTO asset_departments (church_id, name, description, is_active) VALUES (?, ?, ?, 1)');
-            $stmt->bind_param('iss', $churchId, $name, $description);
+            $stmt = $conn->prepare('INSERT INTO asset_departments (church_id, name, department_code, description, is_active) VALUES (?, ?, ?, ?, 1)');
+            $stmt->bind_param('isss', $churchId, $name, $departmentCode, $description);
             $ok = $stmt->execute();
             $newId = (int) $conn->insert_id;
             $stmt->close();
@@ -95,6 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 asset_log_action('asset_department_create', 'asset_department', $newId, [
                     'church_id' => $churchId,
                     'name' => $name,
+                    'department_code' => $departmentCode,
                 ]);
                 header('Location: asset_department_list.php?saved=1' . ($churchId ? '&church_id=' . $churchId : ''));
                 exit;
@@ -137,6 +144,12 @@ ob_start();
                 <div class="form-group">
                     <label for="name">Department Name <span class="text-danger">*</span></label>
                     <input type="text" class="form-control" id="name" name="name" value="<?= htmlspecialchars($name) ?>" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="department_code">Department Code <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control text-uppercase" id="department_code" name="department_code" value="<?= htmlspecialchars($departmentCode) ?>" maxlength="10" required>
+                    <small class="text-muted">Used in asset codes, for example `BRI`.</small>
                 </div>
 
                 <div class="form-group">

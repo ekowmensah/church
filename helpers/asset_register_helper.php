@@ -20,6 +20,50 @@ if (!function_exists('asset_condition_options')) {
     }
 }
 
+if (!function_exists('asset_acquisition_mode_options')) {
+    function asset_acquisition_mode_options(): array {
+        return [
+            'purchase' => 'Purchase',
+            'donation' => 'Donation',
+            'grant' => 'Grant',
+            'gift' => 'Gift',
+            'inheritance' => 'Inheritance',
+            'construction' => 'Construction',
+            'manufactured_fabricated' => 'Manufactured/Fabricated',
+            'transfer' => 'Transfer',
+            'exchange_trade_in' => 'Exchange/Trade-In',
+            'lease' => 'Lease',
+            'hire_purchase' => 'Hire Purchase',
+            'capital_project' => 'Capital Project',
+            'sponsorship' => 'Sponsorship',
+            'recovered' => 'Recovered',
+            'other' => 'Other (specify)',
+        ];
+    }
+}
+
+if (!function_exists('asset_acquisition_mode_descriptions')) {
+    function asset_acquisition_mode_descriptions(): array {
+        return [
+            'purchase' => 'Asset bought using church funds.',
+            'donation' => 'Asset received free of charge from an individual, family, or organization.',
+            'grant' => 'Asset acquired through a grant or funding from a donor agency, NGO, government, or partner organization.',
+            'gift' => 'Asset presented to the church as a gift during an event or special occasion.',
+            'inheritance' => 'Asset received through a will or estate after the owner\'s death.',
+            'construction' => 'Asset built or constructed by the church.',
+            'manufactured_fabricated' => 'Asset produced or assembled by the church or its members.',
+            'transfer' => 'Asset transferred from another church society, circuit, diocese, organization, or department.',
+            'exchange_trade_in' => 'Asset acquired by exchanging an old asset, with or without additional payment.',
+            'lease' => 'Asset not fully owned yet and obtained through a long-term lease arrangement.',
+            'hire_purchase' => 'Asset acquired through instalment payments with ownership transferred after full payment.',
+            'capital_project' => 'Asset acquired as part of a specific development or capital project.',
+            'sponsorship' => 'Asset provided by a sponsor, corporate body, or philanthropist.',
+            'recovered' => 'Asset recovered and returned to the church after being lost or misappropriated.',
+            'other' => 'Any acquisition method not covered by the standard options.',
+        ];
+    }
+}
+
 if (!function_exists('asset_is_super_admin')) {
     function asset_is_super_admin(): bool {
         return (isset($_SESSION['user_id']) && (int) $_SESSION['user_id'] === 3)
@@ -57,7 +101,12 @@ if (!function_exists('asset_require_permission')) {
 
 if (!function_exists('asset_fetch_departments')) {
     function asset_fetch_departments(mysqli $conn, ?int $churchId, bool $includeInactive = false): array {
-        $sql = "SELECT id, church_id, name, description, is_active FROM asset_departments WHERE 1";
+        $hasDepartmentCode = asset_column_exists($conn, 'asset_departments', 'department_code');
+        $sql = "SELECT id, church_id, name, description, is_active";
+        if ($hasDepartmentCode) {
+            $sql .= ", department_code";
+        }
+        $sql .= " FROM asset_departments WHERE 1";
         $params = [];
         $types = '';
 
@@ -90,36 +139,162 @@ if (!function_exists('asset_fetch_departments')) {
     }
 }
 
-if (!function_exists('asset_generate_code')) {
-    function asset_generate_code(mysqli $conn, int $churchId, int $departmentId, string $itemGroup = ''): string {
-        $departmentCode = 'AST';
-        $stmt = $conn->prepare("SELECT name FROM asset_departments WHERE id = ? LIMIT 1");
-        $stmt->bind_param('i', $departmentId);
-        $stmt->execute();
-        $res = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        $basis = trim($itemGroup) !== '' ? $itemGroup : ((string) ($res['name'] ?? 'AST'));
-        $basis = strtoupper(preg_replace('/[^A-Z0-9]/', '', $basis));
-        if ($basis !== '') {
-            $departmentCode = substr($basis, 0, 3);
+if (!function_exists('asset_fetch_groups')) {
+    function asset_fetch_groups(mysqli $conn, ?int $churchId, bool $includeInactive = false): array {
+        if (!asset_table_exists($conn, 'asset_groups')) {
+            return [];
         }
 
-        $year = date('Y');
-        for ($attempt = 1; $attempt <= 100; $attempt++) {
-            $seq = str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
-            $candidate = sprintf('AST-%s-C%02d-%s-%s', $departmentCode, $churchId, $year, $seq);
-            $check = $conn->prepare("SELECT id FROM assets WHERE church_id = ? AND asset_code = ? LIMIT 1");
-            $check->bind_param('is', $churchId, $candidate);
-            $check->execute();
-            $exists = $check->get_result()->num_rows > 0;
-            $check->close();
-            if (!$exists) {
-                return $candidate;
+        $sql = "SELECT id, church_id, name, group_code, default_quantity, quantity_rule, description, is_active
+                FROM asset_groups
+                WHERE 1";
+        $params = [];
+        $types = '';
+
+        if ($churchId !== null) {
+            $sql .= " AND church_id = ?";
+            $params[] = $churchId;
+            $types .= 'i';
+        }
+
+        if (!$includeInactive) {
+            $sql .= " AND is_active = 1";
+        }
+
+        $sql .= " ORDER BY name ASC";
+
+        $stmt = $conn->prepare($sql);
+        if (!empty($params)) {
+            $stmt->bind_param($types, ...$params);
+        }
+        $stmt->execute();
+        $res = $stmt->get_result();
+
+        $rows = [];
+        while ($row = $res->fetch_assoc()) {
+            $rows[] = $row;
+        }
+        $stmt->close();
+
+        return $rows;
+    }
+}
+
+if (!function_exists('asset_group_map_by_id')) {
+    function asset_group_map_by_id(array $groups): array {
+        $map = [];
+        foreach ($groups as $group) {
+            $map[(int) $group['id']] = $group;
+        }
+        return $map;
+    }
+}
+
+if (!function_exists('asset_request_statuses')) {
+    function asset_request_statuses(): array {
+        return ['pending', 'approved', 'rejected', 'checked_out', 'returned', 'cancelled', 'overdue'];
+    }
+}
+
+if (!function_exists('asset_request_status_badge_class')) {
+    function asset_request_status_badge_class(string $status): string {
+        $map = [
+            'pending' => 'warning',
+            'approved' => 'info',
+            'rejected' => 'danger',
+            'checked_out' => 'primary',
+            'returned' => 'success',
+            'cancelled' => 'secondary',
+            'overdue' => 'dark',
+        ];
+        return $map[$status] ?? 'secondary';
+    }
+}
+
+if (!function_exists('asset_normalize_code_part')) {
+    function asset_normalize_code_part(string $value, int $length = 3, string $fallback = 'UNK'): string {
+        $clean = strtoupper((string) preg_replace('/[^A-Za-z0-9]/', '', $value));
+        if ($clean === '') {
+            $clean = strtoupper($fallback);
+        }
+        return substr($clean, 0, max(1, $length));
+    }
+}
+
+if (!function_exists('asset_generate_code')) {
+    function asset_generate_code(
+        mysqli $conn,
+        int $churchId,
+        int $departmentId,
+        string $itemGroup = '',
+        ?int $assetGroupId = null,
+        ?string $purchaseDate = null
+    ): string {
+        $churchCode = 'FMC';
+        $societyCode = 'SOC';
+        $stmt = $conn->prepare("SELECT church_code, circuit_code, name FROM churches WHERE id = ? LIMIT 1");
+        $stmt->bind_param('i', $churchId);
+        $stmt->execute();
+        $church = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        if ($church) {
+            $churchCode = asset_normalize_code_part((string) ($church['church_code'] ?? $church['name'] ?? ''), 3, 'FMC');
+            $societyCode = asset_normalize_code_part((string) ($church['circuit_code'] ?? $church['name'] ?? ''), 3, 'SOC');
+        }
+
+        $departmentCode = 'GEN';
+        $hasDepartmentCode = asset_column_exists($conn, 'asset_departments', 'department_code');
+        if ($hasDepartmentCode) {
+            $stmt = $conn->prepare("SELECT name, department_code FROM asset_departments WHERE id = ? LIMIT 1");
+        } else {
+            $stmt = $conn->prepare("SELECT name FROM asset_departments WHERE id = ? LIMIT 1");
+        }
+        $stmt->bind_param('i', $departmentId);
+        $stmt->execute();
+        $department = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($department) {
+            $departmentCode = asset_normalize_code_part(
+                (string) ($department['department_code'] ?? $department['name'] ?? ''),
+                3,
+                'GEN'
+            );
+        }
+
+        $groupCode = asset_normalize_code_part($itemGroup, 3, 'GEN');
+        if ($assetGroupId !== null && $assetGroupId > 0 && asset_table_exists($conn, 'asset_groups')) {
+            $stmt = $conn->prepare("SELECT name, group_code FROM asset_groups WHERE id = ? LIMIT 1");
+            $stmt->bind_param('i', $assetGroupId);
+            $stmt->execute();
+            $group = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if ($group) {
+                $groupCode = asset_normalize_code_part((string) ($group['group_code'] ?? $group['name'] ?? ''), 3, 'GEN');
             }
         }
 
-        return sprintf('AST-%s-C%02d-%s-%s', $departmentCode, $churchId, date('Y'), uniqid());
+        $yearSource = $purchaseDate ?: date('Y-m-d');
+        $year = substr((string) date('y', strtotime($yearSource) ?: time()), 0, 2);
+        $prefix = sprintf('%s/%s/%s/', $churchCode, $departmentCode, $groupCode);
+        $suffix = sprintf('/%s/%s', $year, $societyCode);
+
+        $stmt = $conn->prepare("SELECT asset_code FROM assets WHERE church_id = ? AND asset_code LIKE ? ORDER BY id DESC");
+        $like = $prefix . '%' . $suffix;
+        $stmt->bind_param('is', $churchId, $like);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $maxSeq = 0;
+        while ($row = $res->fetch_assoc()) {
+            $code = (string) ($row['asset_code'] ?? '');
+            if (preg_match('#^' . preg_quote($prefix, '#') . '([0-9]+)' . preg_quote($suffix, '#') . '$#', $code, $m)) {
+                $maxSeq = max($maxSeq, (int) $m[1]);
+            }
+        }
+        $stmt->close();
+
+        $nextSeq = $maxSeq + 1;
+        return sprintf('%s%s%s', $prefix, str_pad((string) $nextSeq, 3, '0', STR_PAD_LEFT), $suffix);
     }
 }
 
@@ -287,6 +462,12 @@ if (!function_exists('asset_can_use_lifecycle')) {
     }
 }
 
+if (!function_exists('asset_can_use_groups')) {
+    function asset_can_use_groups(mysqli $conn): bool {
+        return asset_table_exists($conn, 'asset_groups') && asset_column_exists($conn, 'assets', 'asset_group_id');
+    }
+}
+
 if (!function_exists('asset_can_use_maintenance_fields')) {
     function asset_can_use_maintenance_fields(mysqli $conn): bool {
         return asset_column_exists($conn, 'assets', 'next_maintenance_date')
@@ -305,6 +486,12 @@ if (!function_exists('asset_document_categories')) {
             'photo' => 'Photo',
             'other' => 'Other',
         ];
+    }
+}
+
+if (!function_exists('asset_use_requests_available')) {
+    function asset_use_requests_available(mysqli $conn): bool {
+        return asset_table_exists($conn, 'asset_use_requests');
     }
 }
 
@@ -343,6 +530,135 @@ if (!function_exists('asset_ensure_documents_dir')) {
 if (!function_exists('asset_user_can_approve_requests')) {
     function asset_user_can_approve_requests(): bool {
         return asset_is_super_admin() || has_permission('approve_asset_request');
+    }
+}
+
+if (!function_exists('asset_user_can_view_use_requests')) {
+    function asset_user_can_view_use_requests(): bool {
+        return asset_is_super_admin() || has_permission('view_asset_requests') || has_permission('approve_asset_use_request');
+    }
+}
+
+if (!function_exists('asset_user_can_manage_groups')) {
+    function asset_user_can_manage_groups(): bool {
+        return asset_is_super_admin() || has_permission('manage_asset_groups');
+    }
+}
+
+if (!function_exists('asset_use_request_actor')) {
+    function asset_use_request_actor(mysqli $conn): array {
+        $name = (string) ($_SESSION['name'] ?? $_SESSION['member_name'] ?? 'Requester');
+        $phone = null;
+        $memberId = isset($_SESSION['member_id']) ? (int) $_SESSION['member_id'] : null;
+        $userId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
+
+        if ($memberId) {
+            $stmt = $conn->prepare('SELECT CONCAT_WS(" ", first_name, middle_name, last_name) AS full_name, phone FROM members WHERE id = ? LIMIT 1');
+            $stmt->bind_param('i', $memberId);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if ($row) {
+                $name = trim((string) ($row['full_name'] ?? $name)) !== '' ? trim((string) $row['full_name']) : $name;
+                $phone = (string) ($row['phone'] ?? '');
+            }
+        } elseif ($userId) {
+            $stmt = $conn->prepare('SELECT name, phone FROM users WHERE id = ? LIMIT 1');
+            if ($stmt) {
+                $stmt->bind_param('i', $userId);
+                $stmt->execute();
+                $row = $stmt->get_result()->fetch_assoc();
+                $stmt->close();
+                if ($row) {
+                    $name = trim((string) ($row['name'] ?? $name)) !== '' ? trim((string) $row['name']) : $name;
+                    $phone = (string) ($row['phone'] ?? '');
+                }
+            }
+        }
+
+        return [
+            'user_id' => $userId,
+            'member_id' => $memberId,
+            'name' => $name,
+            'phone' => $phone,
+        ];
+    }
+}
+
+if (!function_exists('asset_parse_serial_numbers')) {
+    function asset_parse_serial_numbers(string $input): array {
+        $parts = preg_split('/[\r\n,;]+/', $input) ?: [];
+        $seen = [];
+        $rows = [];
+        foreach ($parts as $part) {
+            $serial = trim($part);
+            if ($serial === '') {
+                continue;
+            }
+            $key = strtolower($serial);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $rows[] = $serial;
+        }
+        return $rows;
+    }
+}
+
+if (!function_exists('asset_fetch_serial_numbers')) {
+    function asset_fetch_serial_numbers(mysqli $conn, int $assetId): array {
+        if (!asset_table_exists($conn, 'asset_serial_numbers')) {
+            return [];
+        }
+
+        $stmt = $conn->prepare('SELECT serial_number FROM asset_serial_numbers WHERE asset_id = ? ORDER BY serial_number ASC');
+        $stmt->bind_param('i', $assetId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $rows = [];
+        while ($row = $res->fetch_assoc()) {
+            $rows[] = (string) $row['serial_number'];
+        }
+        $stmt->close();
+        return $rows;
+    }
+}
+
+if (!function_exists('asset_sync_serial_numbers')) {
+    function asset_sync_serial_numbers(mysqli $conn, int $churchId, int $assetId, array $serials): array {
+        if (!asset_table_exists($conn, 'asset_serial_numbers')) {
+            return ['ok' => true, 'message' => 'serial table unavailable'];
+        }
+
+        foreach ($serials as $serial) {
+            $stmt = $conn->prepare('SELECT asset_id FROM asset_serial_numbers WHERE church_id = ? AND serial_number = ? AND asset_id <> ? LIMIT 1');
+            $stmt->bind_param('isi', $churchId, $serial, $assetId);
+            $stmt->execute();
+            $dup = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if ($dup) {
+                return ['ok' => false, 'message' => 'Serial number already assigned: ' . $serial];
+            }
+        }
+
+        $stmt = $conn->prepare('DELETE FROM asset_serial_numbers WHERE asset_id = ?');
+        $stmt->bind_param('i', $assetId);
+        $stmt->execute();
+        $stmt->close();
+
+        if (empty($serials)) {
+            return ['ok' => true, 'message' => 'cleared'];
+        }
+
+        $stmt = $conn->prepare('INSERT INTO asset_serial_numbers (church_id, asset_id, serial_number) VALUES (?, ?, ?)');
+        foreach ($serials as $serial) {
+            $stmt->bind_param('iis', $churchId, $assetId, $serial);
+            $stmt->execute();
+        }
+        $stmt->close();
+
+        return ['ok' => true, 'message' => 'saved'];
     }
 }
 

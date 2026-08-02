@@ -6,6 +6,16 @@
 function get_user_church_id($conn) {
     // Try to get church_id from session first
     $church_id = $_SESSION['church_id'] ?? null;
+
+    // Member portal sessions may not populate church_id directly.
+    if (!$church_id && isset($_SESSION['member_id'])) {
+        $stmt = $conn->prepare('SELECT church_id FROM members WHERE id = ? LIMIT 1');
+        $stmt->bind_param('i', $_SESSION['member_id']);
+        $stmt->execute();
+        $result = $stmt->get_result()->fetch_assoc();
+        $church_id = $result['church_id'] ?? null;
+        $stmt->close();
+    }
     
     // If not in session, try to get from user's member record
     if (!$church_id && isset($_SESSION['user_id'])) {

@@ -6,15 +6,20 @@ asset_require_permission('view_asset_register');
 
 $isSuper = asset_is_super_admin();
 $hasLifecycle = asset_can_use_lifecycle($conn);
+$hasGroups = asset_can_use_groups($conn);
+$hasAcquisitionMode = asset_column_exists($conn, 'assets', 'acquisition_mode');
 $churchId = $isSuper ? (isset($_GET['church_id']) && (int) $_GET['church_id'] > 0 ? (int) $_GET['church_id'] : null) : asset_current_church_id($conn);
 $departmentId = isset($_GET['department_id']) && (int) $_GET['department_id'] > 0 ? (int) $_GET['department_id'] : null;
+$assetGroupId = isset($_GET['asset_group_id']) && (int) $_GET['asset_group_id'] > 0 ? (int) $_GET['asset_group_id'] : null;
 $condition = trim((string) ($_GET['condition_status'] ?? ''));
 $status = trim((string) ($_GET['status'] ?? ''));
 $lifecycle = trim((string) ($_GET['lifecycle_status'] ?? ''));
+$acquisitionMode = trim((string) ($_GET['acquisition_mode'] ?? ''));
 $q = trim((string) ($_GET['q'] ?? ''));
 
 $conditions = asset_condition_options();
 $lifecycleOptions = asset_lifecycle_options();
+$acquisitionModes = asset_acquisition_mode_options();
 $canCreate = $isSuper || has_permission('create_asset');
 $canEdit = $isSuper || has_permission('edit_asset');
 $canDelete = $isSuper || has_permission('delete_asset');
@@ -24,8 +29,11 @@ $canViewAudit = $isSuper || has_permission('view_asset_audit');
 $canViewDetail = $isSuper || has_permission('view_asset_detail') || has_permission('view_asset_register');
 $canViewReports = $isSuper || has_permission('view_asset_reports');
 $canViewApprovals = $isSuper || has_permission('approve_asset_request') || has_permission('request_asset_approval');
+$canManageGroups = $isSuper || has_permission('manage_asset_groups');
+$canViewUseRequests = asset_user_can_view_use_requests() || isset($_SESSION['member_id']);
 
 $departments = asset_fetch_departments($conn, $churchId, true);
+$groups = $hasGroups ? asset_fetch_groups($conn, $churchId, true) : [];
 $churches = [];
 if ($isSuper) {
     $resChurches = $conn->query('SELECT id, name FROM churches ORDER BY name ASC');
@@ -35,10 +43,11 @@ if ($isSuper) {
 }
 
 $sql = "
-    SELECT a.*, d.name AS department_name, c.name AS church_name
+    SELECT a.*, d.name AS department_name, c.name AS church_name" . ($hasGroups ? ", g.name AS asset_group_name, g.group_code AS asset_group_code" : "") . "
     FROM assets a
     LEFT JOIN asset_departments d ON d.id = a.department_id
     LEFT JOIN churches c ON c.id = a.church_id
+    " . ($hasGroups ? "LEFT JOIN asset_groups g ON g.id = a.asset_group_id" : "") . "
     WHERE 1
 ";
 $types = '';
@@ -53,6 +62,11 @@ if ($departmentId !== null) {
     $sql .= ' AND a.department_id = ?';
     $types .= 'i';
     $params[] = $departmentId;
+}
+if ($hasGroups && $assetGroupId !== null) {
+    $sql .= ' AND a.asset_group_id = ?';
+    $types .= 'i';
+    $params[] = $assetGroupId;
 }
 if ($condition !== '' && in_array($condition, $conditions, true)) {
     $sql .= ' AND a.condition_status = ?';
@@ -69,14 +83,42 @@ if ($hasLifecycle && $lifecycle !== '' && in_array($lifecycle, $lifecycleOptions
     $types .= 's';
     $params[] = $lifecycle;
 }
+if ($hasAcquisitionMode && $acquisitionMode !== '' && array_key_exists($acquisitionMode, $acquisitionModes)) {
+    $sql .= ' AND a.acquisition_mode = ?';
+    $types .= 's';
+    $params[] = $acquisitionMode;
+}
 if ($q !== '') {
-    $sql .= ' AND (a.asset_code LIKE ? OR a.item_name LIKE ? OR a.item_group LIKE ? OR a.receipt_or_serial_number LIKE ?)';
+    $sql .= ' AND (a.asset_code LIKE ? OR a.item_name LIKE ? OR a.item_group LIKE ? OR a.receipt_or_serial_number LIKE ?';
+    if (asset_column_exists($conn, 'assets', 'receipt_number')) {
+        $sql .= ' OR a.receipt_number LIKE ?';
+    }
+    if (asset_column_exists($conn, 'assets', 'serial_number')) {
+        $sql .= ' OR a.serial_number LIKE ?';
+    }
+    if ($hasGroups) {
+        $sql .= ' OR g.name LIKE ? OR g.group_code LIKE ?';
+    }
+    $sql .= ')';
     $types .= 'ssss';
     $like = '%' . $q . '%';
     $params[] = $like;
     $params[] = $like;
     $params[] = $like;
     $params[] = $like;
+    if (asset_column_exists($conn, 'assets', 'receipt_number')) {
+        $types .= 's';
+        $params[] = $like;
+    }
+    if (asset_column_exists($conn, 'assets', 'serial_number')) {
+        $types .= 's';
+        $params[] = $like;
+    }
+    if ($hasGroups) {
+        $types .= 'ss';
+        $params[] = $like;
+        $params[] = $like;
+    }
 }
 
 $sql .= ' ORDER BY a.created_at DESC';
@@ -165,6 +207,12 @@ ob_start();
                 <?php if ($canViewReports): ?>
                     <a class="btn btn-outline-light mr-2" href="asset_reports.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>"><i class="fas fa-chart-line mr-1"></i> Reports</a>
                 <?php endif; ?>
+                <?php if ($canViewUseRequests): ?>
+                    <a class="btn btn-outline-light mr-2" href="asset_request_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>"><i class="fas fa-hand-holding mr-1"></i> Requests</a>
+                <?php endif; ?>
+                <?php if ($canManageGroups): ?>
+                    <a class="btn btn-outline-light mr-2" href="asset_group_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>"><i class="fas fa-layer-group mr-1"></i> Categories</a>
+                <?php endif; ?>
                 <?php if ($canExport): ?>
                     <a class="btn btn-outline-light mr-2" href="asset_export.php?<?= htmlspecialchars(http_build_query($_GET)) ?>"><i class="fas fa-file-csv mr-1"></i> Export</a>
                 <?php endif; ?>
@@ -230,6 +278,19 @@ ob_start();
                         <?php endforeach; ?>
                     </select>
                 </div>
+                <?php if ($hasGroups): ?>
+                <div class="form-group col-md-2">
+                    <label>Item Category</label>
+                    <select class="form-control" name="asset_group_id">
+                        <option value="">All</option>
+                        <?php foreach ($groups as $group): ?>
+                            <option value="<?= (int) $group['id'] ?>" <?= $assetGroupId === (int) $group['id'] ? 'selected' : '' ?>>
+                                <?= htmlspecialchars((string) $group['name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <?php endif; ?>
                 <div class="form-group col-md-2">
                     <label>Condition</label>
                     <select class="form-control" name="condition_status">
@@ -247,6 +308,17 @@ ob_start();
                         <option value="disposed" <?= $status === 'disposed' ? 'selected' : '' ?>>Disposed</option>
                     </select>
                 </div>
+                <?php if ($hasAcquisitionMode): ?>
+                <div class="form-group col-md-2">
+                    <label>Acquisition</label>
+                    <select class="form-control" name="acquisition_mode">
+                        <option value="">All</option>
+                        <?php foreach ($acquisitionModes as $key => $label): ?>
+                            <option value="<?= htmlspecialchars($key) ?>" <?= $acquisitionMode === $key ? 'selected' : '' ?>><?= htmlspecialchars($label) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <?php endif; ?>
                 <?php if ($hasLifecycle): ?>
                 <div class="form-group col-md-2">
                     <label>Lifecycle</label>
@@ -260,7 +332,7 @@ ob_start();
                 <?php endif; ?>
                 <div class="form-group <?= $hasLifecycle ? 'col-md-2' : 'col-md-3' ?>">
                     <label>Search</label>
-                    <input type="text" class="form-control" name="q" value="<?= htmlspecialchars($q) ?>" placeholder="Code, item, serial...">
+                    <input type="text" class="form-control" name="q" value="<?= htmlspecialchars($q) ?>" placeholder="Code, item, receipt, serial...">
                 </div>
                 <div class="form-group col-md-1">
                     <button class="btn btn-outline-primary btn-block" type="submit">Go</button>
@@ -275,13 +347,14 @@ ob_start();
                 <thead class="thead-light">
                     <tr>
                         <th>Code</th>
-                        <th>Item Group</th>
+                        <th>Item Category</th>
                         <th>Item Name</th>
                         <th>Department</th>
                         <?php if ($isSuper): ?><th>Church</th><?php endif; ?>
                         <th>Purchase Date</th>
                         <th>Qty</th>
                         <th>Amount</th>
+                        <?php if ($hasAcquisitionMode): ?><th>Acquisition</th><?php endif; ?>
                         <th>Condition</th>
                         <?php if ($hasLifecycle): ?><th>Lifecycle</th><?php endif; ?>
                         <th>Status</th>
@@ -299,13 +372,16 @@ ob_start();
                         ?>
                         <tr>
                             <td><?= htmlspecialchars((string) $asset['asset_code']) ?></td>
-                            <td><?= htmlspecialchars((string) ($asset['item_group'] ?? '')) ?></td>
+                            <td><?= htmlspecialchars((string) (($asset['asset_group_name'] ?? $asset['item_group'] ?? '') !== '' ? (($asset['asset_group_name'] ?? $asset['item_group'] ?? '') . (!empty($asset['asset_group_code']) ? ' (' . $asset['asset_group_code'] . ')' : '')) : '-')) ?></td>
                             <td><?= htmlspecialchars((string) $asset['item_name']) ?></td>
                             <td><?= htmlspecialchars((string) ($asset['department_name'] ?? '-')) ?></td>
                             <?php if ($isSuper): ?><td><?= htmlspecialchars((string) ($asset['church_name'] ?? '-')) ?></td><?php endif; ?>
                             <td><?= htmlspecialchars((string) ($asset['purchase_date'] ?? '')) ?></td>
                             <td><?= (int) $asset['quantity'] ?></td>
                             <td><?= $asset['amount'] !== null ? number_format((float) $asset['amount'], 2) : '' ?></td>
+                            <?php if ($hasAcquisitionMode): ?>
+                                <td><?= htmlspecialchars((string) (asset_acquisition_mode_options()[(string) ($asset['acquisition_mode'] ?? '')] ?? ucfirst(str_replace('_', ' ', (string) ($asset['acquisition_mode'] ?? ''))))) ?></td>
+                            <?php endif; ?>
                             <td><span class="badge badge-<?= asset_condition_badge_class($assetCondition) ?>"><?= htmlspecialchars($assetCondition) ?></span></td>
                             <?php if ($hasLifecycle): ?>
                                 <td><span class="badge badge-<?= asset_lifecycle_badge_class($effectiveLifecycle) ?>"><?= htmlspecialchars(asset_lifecycle_label($effectiveLifecycle)) ?></span></td>
@@ -328,7 +404,7 @@ ob_start();
                         </tr>
                     <?php endforeach; ?>
                     <?php if (empty($assets)): ?>
-                        <tr><td colspan="<?= $isSuper ? ($hasLifecycle ? 12 : 11) : ($hasLifecycle ? 11 : 10) ?>" class="text-center">No assets found.</td></tr>
+                        <tr><td colspan="<?= 10 + ($isSuper ? 1 : 0) + ($hasAcquisitionMode ? 1 : 0) + ($hasLifecycle ? 1 : 0) ?>" class="text-center">No assets found.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>

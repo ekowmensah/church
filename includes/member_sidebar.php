@@ -75,6 +75,16 @@ if (isset($_SESSION['member_id'])) {
             <div class="nav-indicator"></div>
           </a>
         </li>
+
+        <li class="nav-item">
+          <a class="nav-link modern-nav-link" href="<?php echo BASE_URL; ?>/views/asset_request_list.php">
+            <div class="nav-icon-wrapper">
+              <i class="nav-icon fas fa-hand-holding"></i>
+            </div>
+            <span class="nav-text">Asset Requests</span>
+            <div class="nav-indicator"></div>
+          </a>
+        </li>
         
         <li class="nav-item">
           <a class="nav-link modern-nav-link" href="<?php echo BASE_URL; ?>/views/member_health_records.php">
