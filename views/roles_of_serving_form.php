@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/permissions.php';
+require_once __DIR__.'/../helpers/csrf.php';
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
@@ -29,9 +31,29 @@ if ($id) {
     }
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $id = isset($_POST['id']) ? max(0, intval($_POST['id'])) : $id;
     $name = trim($_POST['name'] ?? '');
     $description = trim($_POST['description'] ?? '');
-    if ($name == '') $errors[] = 'Role name is required.';
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Your form session expired. Refresh the page and try again.';
+    }
+    if ($name === '') {
+        $errors[] = 'Role name is required.';
+    }
+    if (strlen($name) > 100) {
+        $errors[] = 'Role name cannot exceed 100 characters.';
+    }
+
+    if (!$errors) {
+        $duplicate = $conn->prepare('SELECT id FROM roles_of_serving WHERE name = ? AND id <> ? LIMIT 1');
+        $duplicate->bind_param('si', $name, $id);
+        $duplicate->execute();
+        if ($duplicate->get_result()->fetch_assoc()) {
+            $errors[] = 'A role with this name already exists.';
+        }
+        $duplicate->close();
+    }
+
     if (!$errors) {
         if ($id) {
             $stmt = $conn->prepare("UPDATE roles_of_serving SET name=?, description=? WHERE id=?");
@@ -43,11 +65,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $success = $stmt->execute();
         }
         if ($success) {
-            header('Location: roles_of_serving_list.php?success=1');
+            $_SESSION['roles_of_serving_success'] = $id ? 'Role updated successfully.' : 'Role added successfully.';
+            header('Location: roles_of_serving_list.php');
             exit;
         } else {
-            $errors[] = 'Error saving role: ' . htmlspecialchars($conn->error);
+            $errors[] = 'Error saving role: ' . ($stmt->error ?: $conn->error);
         }
+        $stmt->close();
     }
 }
 ob_start();
@@ -58,6 +82,8 @@ ob_start();
     <div class="alert alert-danger"><ul><?php foreach ($errors as $e): ?><li><?= htmlspecialchars($e) ?></li><?php endforeach; ?></ul></div>
   <?php endif; ?>
   <form method="post" class="card card-body shadow-sm">
+    <?= csrf_input() ?>
+    <input type="hidden" name="id" value="<?= (int) $id ?>">
     <div class="form-group">
       <label for="name">Role Name <span class="text-danger">*</span></label>
       <input type="text" class="form-control" name="name" id="name" value="<?= htmlspecialchars($name) ?>" required>

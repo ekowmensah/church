@@ -501,20 +501,15 @@ if (!function_exists('get_next_member_organization_id')) {
  * @throws Exception
  */
 function add_member_to_organization($conn, $member_id, $org_id) {
-    if (member_organizations_requires_explicit_id($conn)) {
-        $nextId = get_next_member_organization_id($conn);
-        $stmt = $conn->prepare('INSERT INTO member_organizations (id, member_id, organization_id) VALUES (?, ?, ?)');
-        if (!$stmt) {
-            throw new Exception($conn->error ?: 'Failed to prepare membership insert.');
-        }
-        $stmt->bind_param('iii', $nextId, $member_id, $org_id);
-    } else {
-        $stmt = $conn->prepare('INSERT INTO member_organizations (member_id, organization_id) VALUES (?, ?)');
-        if (!$stmt) {
-            throw new Exception($conn->error ?: 'Failed to prepare membership insert.');
-        }
-        $stmt->bind_param('ii', $member_id, $org_id);
+    $stmt = $conn->prepare(
+        'INSERT INTO member_organizations (member_id, organization_id)
+         VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE member_id = VALUES(member_id)'
+    );
+    if (!$stmt) {
+        throw new Exception($conn->error ?: 'Failed to prepare membership insert.');
     }
+    $stmt->bind_param('ii', $member_id, $org_id);
 
     if (!$stmt->execute()) {
         $error = $stmt->error ?: 'Failed to add member to organization.';
