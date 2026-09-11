@@ -29,6 +29,7 @@ if (!$is_super_admin && !has_permission('view_organization_list')) {
 $can_add = $is_super_admin || has_permission('create_organization');
 $can_edit = $is_super_admin || has_permission('edit_organization');
 $can_delete = $is_super_admin || has_permission('delete_organization');
+$can_view_groups = $is_super_admin || has_permission('view_organization_groups');
 $can_view = true; // Already validated above
 
 $result = $conn->query("
@@ -126,6 +127,9 @@ $(function(){
                   <?php endif; ?>
                 </td>
                 <td class="organization-action-btns text-nowrap">
+                  <?php if ($can_view_groups): ?>
+                  <a href="organization_groups.php?org_id=<?= $row['id'] ?>" class="btn btn-sm btn-outline-info" data-toggle="tooltip" title="Groups and Sections"><i class="fas fa-layer-group"></i></a>
+                  <?php endif; ?>
                   <?php if ($can_edit): ?>
                   <a href="organization_edit.php?id=<?= $row['id'] ?>" class="btn btn-sm btn-outline-warning" data-toggle="tooltip" title="Edit"><i class="fas fa-edit"></i></a>
                   <?php endif; ?>

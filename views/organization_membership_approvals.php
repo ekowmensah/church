@@ -7,6 +7,8 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/auth.php';
 require_once __DIR__ . '/../helpers/permissions_v2.php';
 require_once __DIR__ . '/../helpers/leader_helpers.php';
+require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../services/OrganizationGroupService.php';
 
 function build_organization_membership_approvals_url($org_id = 0) {
     $url = $_SERVER['PHP_SELF'];
@@ -24,13 +26,19 @@ if (!is_logged_in()) {
 
 $sessionUserId = (int) ($_SESSION['user_id'] ?? 0);
 $sessionMemberId = (int) ($_SESSION['member_id'] ?? 0);
-$isSuperAdmin = isset($_SESSION['role_id']) && (int) $_SESSION['role_id'] === 1;
+$sessionRoleId = (int) ($_SESSION['role_id'] ?? 0);
+$isSuperAdmin = $sessionRoleId === 1;
+$isOrganizationLeaderRole = $sessionRoleId === 6;
 $leaderOrganizations = is_organization_leader($conn, $sessionUserId ?: null, $sessionMemberId ?: null);
 $isOrgLeader = !empty($leaderOrganizations);
 
-$canViewApprovals = $isSuperAdmin || $isOrgLeader || has_permission('view_organization_membership_approvals');
-$canApproveMemberships = $isSuperAdmin || $isOrgLeader || has_permission('approve_organization_memberships');
-$canRejectMemberships = $isSuperAdmin || $isOrgLeader || has_permission('reject_organization_memberships');
+$canViewApprovals = $isSuperAdmin || $isOrgLeader
+    || (!$isOrganizationLeaderRole && has_permission('view_organization_membership_approvals'));
+$canApproveMemberships = $isSuperAdmin || $isOrgLeader
+    || (!$isOrganizationLeaderRole && has_permission('approve_organization_memberships'));
+$canRejectMemberships = $isSuperAdmin || $isOrgLeader
+    || (!$isOrganizationLeaderRole && has_permission('reject_organization_memberships'));
+$organizationGroupService = new OrganizationGroupService($conn);
 
 if (!$canViewApprovals) {
     http_response_code(403);
@@ -45,7 +53,7 @@ if (!$canViewApprovals) {
 }
 
 $userOrganizations = [];
-if ($isSuperAdmin || (!$isOrgLeader && $canViewApprovals)) {
+if ($isSuperAdmin || (!$isOrganizationLeaderRole && !$isOrgLeader && $canViewApprovals)) {
     $orgResult = $conn->query('SELECT id, name, church_id FROM organizations ORDER BY name ASC');
     if ($orgResult) {
         while ($org = $orgResult->fetch_assoc()) {
@@ -83,7 +91,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $organizationId = (int) ($_POST['organization_id'] ?? $selectedOrgId);
     $notes = trim((string) ($_POST['notes'] ?? ''));
 
-    if ($organizationId <= 0 || (!empty($managedOrgIds) && !in_array($organizationId, $managedOrgIds, true))) {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $error = 'Your form session expired. Refresh the page and try again.';
+    } elseif ($organizationId <= 0 || (!empty($managedOrgIds) && !in_array($organizationId, $managedOrgIds, true))) {
         $error = 'You cannot manage approvals for the selected organization.';
     } elseif (!in_array($action, ['approve', 'reject'], true) || $approvalId <= 0) {
         $error = 'Invalid approval request.';
@@ -112,30 +122,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if ($action === 'approve') {
                 $conn->begin_transaction();
                 try {
+                    $actorUserId = $sessionUserId > 0 ? $sessionUserId : null;
                     $updateStmt = $conn->prepare("
                         UPDATE organization_membership_approvals
                         SET status = 'approved', approved_by = ?, approved_at = NOW(), notes = ?
-                        WHERE id = ?
+                        WHERE id = ? AND status = 'pending'
                     ");
-                    $updateStmt->bind_param('isi', $sessionUserId, $notes, $approvalId);
-                    if (!$updateStmt->execute()) {
+                    $updateStmt->bind_param('isi', $actorUserId, $notes, $approvalId);
+                    if (!$updateStmt->execute() || $updateStmt->affected_rows !== 1) {
                         throw new Exception($updateStmt->error ?: 'Failed to update approval status.');
                     }
                     $updateStmt->close();
 
-                    $existsStmt = $conn->prepare('SELECT 1 FROM member_organizations WHERE member_id = ? AND organization_id = ? LIMIT 1');
-                    $existsStmt->bind_param('ii', $approvalData['member_id'], $approvalData['organization_id']);
-                    $existsStmt->execute();
-                    $existsResult = $existsStmt->get_result();
-                    $alreadyMember = $existsResult->num_rows > 0;
-                    $existsStmt->close();
-
-                    if (!$alreadyMember) {
-                        add_member_to_organization($conn, (int) $approvalData['member_id'], (int) $approvalData['organization_id']);
-                    }
+                    add_member_to_organization($conn, (int) $approvalData['member_id'], (int) $approvalData['organization_id']);
+                    $assignedUnits = $organizationGroupService->assignForApprovedMembership(
+                        (int) $approvalData['member_id'],
+                        (int) $approvalData['organization_id'],
+                        $approvalId,
+                        $actorUserId,
+                        [
+                            'vocal_part_unit_id' => (int) ($_POST['vocal_part_unit_id'] ?? 0),
+                            'brigade_section_unit_id' => (int) ($_POST['brigade_section_unit_id'] ?? 0),
+                            'brigade_rank' => trim((string) ($_POST['brigade_rank'] ?? '')),
+                        ]
+                    );
 
                     $conn->commit();
-                    $_SESSION['approval_success'] = 'Membership approved for ' . $approvalData['first_name'] . ' ' . $approvalData['last_name'] . '.';
+                    $assignmentNames = array_map(static function ($unit) {
+                        return $unit['name'];
+                    }, $assignedUnits);
+                    $assignmentSuffix = $assignmentNames
+                        ? ' Assigned to: ' . implode(', ', $assignmentNames) . '.'
+                        : '';
+                    $_SESSION['approval_success'] = 'Membership approved for ' . $approvalData['first_name'] . ' ' . $approvalData['last_name'] . '.' . $assignmentSuffix;
                     header('Location: ' . build_organization_membership_approvals_url($organizationId));
                     exit;
                 } catch (Exception $e) {
@@ -143,13 +162,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $error = 'Error approving membership: ' . $e->getMessage();
                 }
             } else {
+                $actorUserId = $sessionUserId > 0 ? $sessionUserId : null;
                 $updateStmt = $conn->prepare("
                     UPDATE organization_membership_approvals
                     SET status = 'rejected', approved_by = ?, approved_at = NOW(), notes = ?
-                    WHERE id = ?
+                    WHERE id = ? AND status = 'pending'
                 ");
-                $updateStmt->bind_param('isi', $sessionUserId, $notes, $approvalId);
-                if (!$updateStmt->execute()) {
+                $updateStmt->bind_param('isi', $actorUserId, $notes, $approvalId);
+                if (!$updateStmt->execute() || $updateStmt->affected_rows !== 1) {
                     $error = 'Failed to update rejection status: ' . $updateStmt->error;
                 } else {
                     $_SESSION['approval_success'] = 'Membership rejected for ' . $approvalData['first_name'] . ' ' . $approvalData['last_name'] . '.';
@@ -167,6 +187,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 $pendingRequests = [];
 if ($selectedOrgId > 0) {
     $pendingRequests = get_organization_pending_membership_requests($conn, $selectedOrgId);
+}
+
+$organizationGroupConfig = null;
+$vocalPartUnits = [];
+$brigadeSectionUnits = [];
+if ($selectedOrgId > 0) {
+    try {
+        $organizationGroupConfig = $organizationGroupService->getOrganizationConfig($selectedOrgId);
+        $vocalPartUnits = $organizationGroupService->getUnits($selectedOrgId, 'vocal_part');
+        $brigadeSectionUnits = $organizationGroupService->getUnits($selectedOrgId, 'brigade_section');
+    } catch (Throwable $e) {
+        $error = $error ?? $e->getMessage();
+    }
 }
 
 if (isset($_SESSION['approval_success'])) {
@@ -324,11 +357,46 @@ ob_start();
             </div>
             <form method="post">
                 <div class="modal-body">
+                    <?= csrf_input() ?>
                     <input type="hidden" name="approval_id" id="modal-approval-id">
                     <input type="hidden" name="organization_id" id="modal-organization-id">
                     <input type="hidden" name="action" id="modal-action">
 
                     <p id="modal-message"></p>
+
+                    <?php if (($organizationGroupConfig['assignment_strategy'] ?? '') === 'balanced_auto'): ?>
+                        <div class="alert alert-info approval-assignment-fields">
+                            The member will be assigned automatically to the smallest active group.
+                        </div>
+                    <?php elseif (($organizationGroupConfig['assignment_strategy'] ?? '') === 'manual_vocal_part'): ?>
+                        <div class="form-group approval-assignment-fields">
+                            <label for="vocal_part_unit_id">Vocal Part <span class="text-danger">*</span></label>
+                            <select class="form-control approval-required-field" name="vocal_part_unit_id" id="vocal_part_unit_id" required>
+                                <option value="">Select vocal part</option>
+                                <?php foreach ($vocalPartUnits as $unit): ?>
+                                    <option value="<?= (int) $unit['id'] ?>"><?= htmlspecialchars($unit['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small class="form-text text-muted">Select the part that matches the member's assessed vocal range.</small>
+                        </div>
+                    <?php elseif (($organizationGroupConfig['assignment_strategy'] ?? '') === 'balanced_plus_section'): ?>
+                        <div class="alert alert-info approval-assignment-fields">
+                            The Brigade group will be balanced automatically. Select the rank-based section below.
+                        </div>
+                        <div class="form-group approval-assignment-fields">
+                            <label for="brigade_rank">Brigade Rank or Level <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control approval-required-field" name="brigade_rank" id="brigade_rank" maxlength="100" required>
+                        </div>
+                        <div class="form-group approval-assignment-fields">
+                            <label for="brigade_section_unit_id">Brigade Section <span class="text-danger">*</span></label>
+                            <select class="form-control approval-required-field" name="brigade_section_unit_id" id="brigade_section_unit_id" required>
+                                <option value="">Select section</option>
+                                <?php foreach ($brigadeSectionUnits as $unit): ?>
+                                    <option value="<?= (int) $unit['id'] ?>"><?= htmlspecialchars(ucfirst($unit['branch']) . ' - ' . $unit['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    <?php endif; ?>
 
                     <div class="form-group">
                         <label for="notes">Notes (Optional)</label>
@@ -365,6 +433,8 @@ $(document).ready(function() {
         $('#modal-approval-id').val(id);
         $('#modal-organization-id').val(orgId);
         $('#modal-action').val('approve');
+        $('.approval-assignment-fields').show();
+        $('.approval-required-field').prop('disabled', false);
         $('#approvalModalTitle').text('Approve Membership');
         $('#modal-message').html('Are you sure you want to <strong>approve</strong> ' + member + '\'s membership request for <strong>' + org + '</strong>?');
         $('#modal-confirm-btn').removeClass('btn-danger').addClass('btn-success').text('Approve');
@@ -380,6 +450,8 @@ $(document).ready(function() {
         $('#modal-approval-id').val(id);
         $('#modal-organization-id').val(orgId);
         $('#modal-action').val('reject');
+        $('.approval-assignment-fields').hide();
+        $('.approval-required-field').prop('disabled', true);
         $('#approvalModalTitle').text('Reject Membership');
         $('#modal-message').html('Are you sure you want to <strong>reject</strong> ' + member + '\'s membership request for <strong>' + org + '</strong>?');
         $('#modal-confirm-btn').removeClass('btn-success').addClass('btn-danger').text('Reject');
