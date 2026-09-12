@@ -9,6 +9,14 @@ require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/leader_helpers.php';
 require_once __DIR__.'/../helpers/csrf.php';
 require_once __DIR__.'/../services/OrganizationGroupService.php';
+require_once __DIR__.'/../services/OrganizationLogoService.php';
+
+function organization_logo_url(?string $relativePath): ?string {
+    if (!$relativePath || !preg_match('#^organizations/(?:org|unit)_[A-Za-z0-9_]+\.(?:jpg|png|webp)$#', $relativePath)) {
+        return null;
+    }
+    return BASE_URL . '/uploads/' . implode('/', array_map('rawurlencode', explode('/', $relativePath)));
+}
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -63,6 +71,7 @@ $canReassignMembers = $canManageAll
     || in_array($organizationId, $leaderOrganizationIds, true)
     || (!$mustScopeToLedOrganizations && has_permission('reassign_organization_groups'));
 $service = new OrganizationGroupService($conn);
+$logoService = new OrganizationLogoService($conn);
 $success = $_SESSION['organization_groups_success'] ?? '';
 $error = $_SESSION['organization_groups_error'] ?? '';
 unset($_SESSION['organization_groups_success'], $_SESSION['organization_groups_error']);
@@ -76,12 +85,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $action = (string) ($_POST['action'] ?? '');
+    $transactionStarted = false;
     try {
         if (!$organizationId) {
             throw new RuntimeException('Select an organization first.');
         }
 
+        if (in_array($action, ['upload_organization_logo', 'remove_organization_logo', 'upload_unit_logo', 'remove_unit_logo'], true)) {
+            if (!$canManageSelected) {
+                throw new RuntimeException('You cannot manage logos for this organization.');
+            }
+            $actorUserId = $sessionUserId > 0 ? $sessionUserId : null;
+            $unitId = max(0, intval($_POST['unit_id'] ?? 0));
+            if ($action === 'upload_organization_logo') {
+                $logoService->uploadOrganizationLogo(
+                    $organizationId,
+                    $_FILES['logo'] ?? [],
+                    (string) ($_POST['logo_alt_text'] ?? ''),
+                    $actorUserId
+                );
+                $message = 'Organization logo uploaded.';
+            } elseif ($action === 'remove_organization_logo') {
+                $message = $logoService->removeOrganizationLogo($organizationId, $actorUserId)
+                    ? 'Organization logo removed.'
+                    : 'This organization does not have a logo.';
+            } elseif ($action === 'upload_unit_logo') {
+                $logoService->uploadUnitLogo(
+                    $organizationId,
+                    $unitId,
+                    $_FILES['logo'] ?? [],
+                    (string) ($_POST['logo_alt_text'] ?? ''),
+                    $actorUserId
+                );
+                $message = 'Organization unit logo uploaded.';
+            } else {
+                $message = $logoService->removeUnitLogo($organizationId, $unitId, $actorUserId)
+                    ? 'Organization unit logo removed.'
+                    : 'This organization unit does not have a logo.';
+            }
+
+            $_SESSION['organization_groups_success'] = $message;
+            header('Location: ' . $redirectUrl);
+            exit;
+        }
+
         $conn->begin_transaction();
+        $transactionStarted = true;
         if ($action === 'update_strategy') {
             if (!$canManageSelected) {
                 throw new RuntimeException('You cannot change this organization configuration.');
@@ -173,9 +222,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $conn->commit();
+        $transactionStarted = false;
         $_SESSION['organization_groups_success'] = $message;
     } catch (Throwable $e) {
-        $conn->rollback();
+        if ($transactionStarted) {
+            $conn->rollback();
+        }
         $_SESSION['organization_groups_error'] = $e->getMessage();
     }
 
@@ -188,6 +240,9 @@ $units = [];
 $leadersByUnit = [];
 $eligibleMembersByUnit = [];
 $organizationMemberOptions = [];
+$currentAssignments = [];
+$assignmentHistory = [];
+$mediaHistory = [];
 $unassignedPrimary = 0;
 $unassignedLabel = 'primary group';
 if ($organizationId) {
@@ -254,6 +309,54 @@ if ($organizationId) {
     $unassignedStmt->execute();
     $unassignedPrimary = (int) $unassignedStmt->get_result()->fetch_assoc()['total'];
     $unassignedStmt->close();
+
+    $assignmentStmt = $conn->prepare(
+        'SELECT m.id AS member_id, m.crn, m.first_name, m.middle_name, m.last_name,
+                assignment.assignment_type, assignment.assignment_method,
+                assignment.rank_or_level, assignment.effective_from,
+                unit.id AS unit_id, unit.name AS unit_name, unit.unit_type, unit.branch
+           FROM organization_unit_assignments assignment
+           INNER JOIN member_organizations membership ON membership.id = assignment.member_organization_id
+           INNER JOIN members m ON m.id = membership.member_id
+           INNER JOIN organization_units unit ON unit.id = assignment.unit_id
+          WHERE membership.organization_id = ?
+          ORDER BY m.last_name, m.first_name, assignment.assignment_type'
+    );
+    $assignmentStmt->bind_param('i', $organizationId);
+    $assignmentStmt->execute();
+    $currentAssignments = $assignmentStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $assignmentStmt->close();
+
+    $historyStmt = $conn->prepare(
+        'SELECT history.*, m.crn, m.first_name, m.middle_name, m.last_name,
+                from_unit.name AS from_unit_name, to_unit.name AS to_unit_name,
+                actor.name AS actor_name
+           FROM organization_unit_assignment_history history
+           LEFT JOIN members m ON m.id = history.member_id
+           LEFT JOIN organization_units from_unit ON from_unit.id = history.from_unit_id
+           LEFT JOIN organization_units to_unit ON to_unit.id = history.to_unit_id
+           LEFT JOIN users actor ON actor.id = history.actor_user_id
+          WHERE history.organization_id = ?
+          ORDER BY history.created_at DESC, history.id DESC
+          LIMIT 50'
+    );
+    $historyStmt->bind_param('i', $organizationId);
+    $historyStmt->execute();
+    $assignmentHistory = $historyStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $historyStmt->close();
+
+    $mediaStmt = $conn->prepare(
+        'SELECT history.*, actor.name AS actor_name
+           FROM organization_media_history history
+           LEFT JOIN users actor ON actor.id = history.actor_user_id
+          WHERE history.organization_id = ?
+          ORDER BY history.created_at DESC, history.id DESC
+          LIMIT 25'
+    );
+    $mediaStmt->bind_param('i', $organizationId);
+    $mediaStmt->execute();
+    $mediaHistory = $mediaStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $mediaStmt->close();
 }
 
 $unitTypeLabels = [
@@ -266,6 +369,11 @@ $strategyLabels = [
     'balanced_auto' => 'Balanced automatic groups',
     'manual_vocal_part' => 'Manual vocal-part assignment',
     'balanced_plus_section' => 'Balanced groups + manual rank section',
+];
+$assignmentTypeLabels = [
+    'primary_group' => 'Group',
+    'vocal_part' => 'Vocal Part',
+    'brigade_section' => 'Brigade Section',
 ];
 
 ob_start();
@@ -297,7 +405,7 @@ ob_start();
 
   <?php if ($organization): ?>
     <div class="row mb-4">
-      <div class="col-lg-7">
+      <div class="col-lg-4">
         <div class="card shadow-sm h-100"><div class="card-body">
           <h5><?= htmlspecialchars($organization['name']) ?></h5>
           <p class="mb-3"><strong>Strategy:</strong> <?= htmlspecialchars($strategyLabels[$organization['assignment_strategy']] ?? $organization['assignment_strategy']) ?></p>
@@ -316,7 +424,38 @@ ob_start();
           <?php endif; ?>
         </div></div>
       </div>
-      <div class="col-lg-5 mt-3 mt-lg-0">
+      <div class="col-lg-4 mt-3 mt-lg-0">
+        <div class="card shadow-sm h-100"><div class="card-body">
+          <h5>Organization Logo</h5>
+          <?php $organizationLogoUrl = organization_logo_url($organization['logo_path'] ?? null); ?>
+          <?php if ($organizationLogoUrl): ?>
+            <img src="<?= htmlspecialchars($organizationLogoUrl) ?>" alt="<?= htmlspecialchars($organization['logo_alt_text'] ?: $organization['name'] . ' logo') ?>" class="img-thumbnail mb-3" style="max-height: 90px; max-width: 180px;">
+          <?php else: ?>
+            <p class="text-muted">No logo uploaded.</p>
+          <?php endif; ?>
+          <?php if ($canManageSelected): ?>
+            <form method="post" enctype="multipart/form-data" class="mb-2">
+              <?= csrf_input() ?>
+              <input type="hidden" name="action" value="upload_organization_logo">
+              <input type="hidden" name="org_id" value="<?= $organizationId ?>">
+              <input type="hidden" name="MAX_FILE_SIZE" value="2097152">
+              <div class="form-group mb-2"><input type="file" name="logo" class="form-control-file" accept="image/jpeg,image/png,image/webp" required></div>
+              <div class="form-group mb-2"><input type="text" name="logo_alt_text" class="form-control form-control-sm" maxlength="160" value="<?= htmlspecialchars($organization['logo_alt_text'] ?? '') ?>" placeholder="Logo description (optional)"></div>
+              <button class="btn btn-sm btn-primary"><i class="fas fa-upload mr-1"></i><?= $organizationLogoUrl ? 'Replace Logo' : 'Upload Logo' ?></button>
+              <small class="form-text text-muted">JPG, PNG, or WebP; maximum 2 MB.</small>
+            </form>
+            <?php if ($organizationLogoUrl): ?>
+              <form method="post" onsubmit="return confirm('Remove this organization logo?');">
+                <?= csrf_input() ?>
+                <input type="hidden" name="action" value="remove_organization_logo">
+                <input type="hidden" name="org_id" value="<?= $organizationId ?>">
+                <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash mr-1"></i>Remove</button>
+              </form>
+            <?php endif; ?>
+          <?php endif; ?>
+        </div></div>
+      </div>
+      <div class="col-lg-4 mt-3 mt-lg-0">
         <div class="card shadow-sm h-100"><div class="card-body">
           <h5>Existing Member Backfill</h5>
           <p class="mb-3"><strong><?= $unassignedPrimary ?></strong> member(s) do not have a <?= htmlspecialchars($unassignedLabel) ?>.</p>
@@ -352,49 +491,90 @@ ob_start();
       </div></div>
     <?php endif; ?>
 
+    <?php if ($canReassignMembers && $units): ?>
+      <div class="card shadow-sm mb-4">
+        <div class="card-header"><strong>Assign or Reassign Member</strong></div>
+        <div class="card-body">
+          <form method="post" class="form-row align-items-end">
+            <?= csrf_input() ?>
+            <input type="hidden" name="action" value="assign_member">
+            <input type="hidden" name="org_id" value="<?= $organizationId ?>">
+            <div class="col-lg-3 col-md-6 mb-2">
+              <label>Member</label>
+              <select class="form-control" name="member_id" required>
+                <option value="">Select organization member</option>
+                <?php foreach ($organizationMemberOptions as $member): ?>
+                  <option value="<?= (int) $member['id'] ?>"><?= htmlspecialchars(($member['crn'] ? $member['crn'] . ' - ' : '') . $member['first_name'] . ' ' . $member['last_name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-lg-3 col-md-6 mb-2">
+              <label>Destination</label>
+              <select class="form-control" name="unit_id" required>
+                <option value="">Select group, part, or section</option>
+                <?php foreach ($units as $unit): ?>
+                  <?php if (!$unit['is_active']) continue; ?>
+                  <option value="<?= (int) $unit['id'] ?>"><?= htmlspecialchars(($unitTypeLabels[$unit['unit_type']] ?? 'Unit') . ': ' . $unit['name'] . ($unit['branch'] !== 'mixed' ? ' (' . ucfirst($unit['branch']) . ')' : '')) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-lg-2 col-md-6 mb-2">
+              <label>Brigade Rank</label>
+              <input class="form-control" name="rank_or_level" maxlength="100" placeholder="Required for section">
+            </div>
+            <div class="col-lg-3 col-md-6 mb-2">
+              <label>Reason</label>
+              <input class="form-control" name="reason" maxlength="255" placeholder="Reason for assignment/change">
+            </div>
+            <div class="col-lg-1 col-md-12 mb-2"><button class="btn btn-primary btn-block">Save</button></div>
+          </form>
+        </div>
+      </div>
+    <?php endif; ?>
+
     <?php foreach ($unitTypeLabels as $type => $label): ?>
       <?php $typeUnits = array_values(array_filter($units, static fn($unit) => $unit['unit_type'] === $type)); ?>
       <?php if (!$typeUnits) continue; ?>
       <div class="card shadow-sm mb-4">
         <div class="card-header"><strong><?= htmlspecialchars($label) ?></strong></div>
         <div class="table-responsive"><table class="table table-bordered mb-0">
-          <thead><tr><th>Name</th><th>Code</th><th>Branch</th><th>Members</th><th>Member Assignment</th><th>Leadership</th></tr></thead>
+          <thead><tr><th>Name</th><th>Logo</th><th>Code</th><th>Branch</th><th>Members</th><th>Leadership</th></tr></thead>
           <tbody>
           <?php foreach ($typeUnits as $unit): $unitId = (int) $unit['id']; ?>
             <tr class="<?= $unit['is_active'] ? '' : 'table-secondary' ?>">
               <td><?= htmlspecialchars($unit['name']) ?><?= $unit['is_active'] ? '' : ' (inactive)' ?></td>
+              <td style="min-width: 220px;">
+                <?php $unitLogoUrl = organization_logo_url($unit['logo_path'] ?? null); ?>
+                <?php if ($unitLogoUrl): ?>
+                  <img src="<?= htmlspecialchars($unitLogoUrl) ?>" alt="<?= htmlspecialchars($unit['logo_alt_text'] ?: $unit['name'] . ' logo') ?>" class="img-thumbnail mb-2" style="max-height: 55px; max-width: 110px;">
+                <?php else: ?>
+                  <span class="text-muted d-block mb-2">No logo</span>
+                <?php endif; ?>
+                <?php if ($canManageSelected && $unit['is_active']): ?>
+                  <form method="post" enctype="multipart/form-data" class="mb-2">
+                    <?= csrf_input() ?>
+                    <input type="hidden" name="action" value="upload_unit_logo">
+                    <input type="hidden" name="org_id" value="<?= $organizationId ?>">
+                    <input type="hidden" name="unit_id" value="<?= $unitId ?>">
+                    <input type="hidden" name="MAX_FILE_SIZE" value="2097152">
+                    <input type="file" name="logo" class="form-control-file form-control-sm mb-1" accept="image/jpeg,image/png,image/webp" required>
+                    <input type="text" name="logo_alt_text" class="form-control form-control-sm mb-1" maxlength="160" value="<?= htmlspecialchars($unit['logo_alt_text'] ?? '') ?>" placeholder="Logo description">
+                    <button class="btn btn-sm btn-outline-primary"><?= $unitLogoUrl ? 'Replace' : 'Upload' ?></button>
+                  </form>
+                  <?php if ($unitLogoUrl): ?>
+                    <form method="post" onsubmit="return confirm('Remove this unit logo?');">
+                      <?= csrf_input() ?>
+                      <input type="hidden" name="action" value="remove_unit_logo">
+                      <input type="hidden" name="org_id" value="<?= $organizationId ?>">
+                      <input type="hidden" name="unit_id" value="<?= $unitId ?>">
+                      <button class="btn btn-sm btn-outline-danger">Remove</button>
+                    </form>
+                  <?php endif; ?>
+                <?php endif; ?>
+              </td>
               <td><?= htmlspecialchars($unit['code']) ?></td>
               <td><?= htmlspecialchars(ucfirst($unit['branch'])) ?></td>
               <td><?= (int) $unit['member_count'] ?></td>
-              <td>
-                <?php if ($canReassignMembers && $unit['is_active']): ?>
-                  <form method="post" class="mb-0">
-                    <?= csrf_input() ?>
-                    <input type="hidden" name="action" value="assign_member">
-                    <input type="hidden" name="org_id" value="<?= $organizationId ?>">
-                    <input type="hidden" name="unit_id" value="<?= $unitId ?>">
-                    <div class="form-group mb-2">
-                      <select class="form-control form-control-sm" name="member_id" required>
-                        <option value="">Select member</option>
-                        <?php foreach ($organizationMemberOptions as $member): ?>
-                          <option value="<?= (int) $member['id'] ?>"><?= htmlspecialchars(($member['crn'] ? $member['crn'] . ' - ' : '') . $member['first_name'] . ' ' . $member['last_name']) ?></option>
-                        <?php endforeach; ?>
-                      </select>
-                    </div>
-                    <?php if ($unit['unit_type'] === 'brigade_section'): ?>
-                      <div class="form-group mb-2">
-                        <input class="form-control form-control-sm" name="rank_or_level" maxlength="100" placeholder="Rank or level" required>
-                      </div>
-                    <?php endif; ?>
-                    <div class="form-group mb-2">
-                      <input class="form-control form-control-sm" name="reason" maxlength="255" placeholder="Reason (optional)">
-                    </div>
-                    <button class="btn btn-sm btn-outline-primary">Assign / Reassign</button>
-                  </form>
-                <?php else: ?>
-                  <span class="text-muted">View only</span>
-                <?php endif; ?>
-              </td>
               <td>
                 <?php foreach ($leadersByUnit[$unitId] ?? [] as $leader): ?>
                   <div><strong><?= htmlspecialchars(ucfirst($leader['leader_role'])) ?>:</strong> <?= htmlspecialchars(trim($leader['first_name'].' '.$leader['middle_name'].' '.$leader['last_name'])) ?></div>
@@ -423,6 +603,88 @@ ob_start();
         </table></div>
       </div>
     <?php endforeach; ?>
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-header"><strong>Current Assignment Roster</strong></div>
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover mb-0">
+          <thead><tr><th>CRN</th><th>Member</th><th>Assignment</th><th>Unit</th><th>Rank / Branch</th><th>Effective</th></tr></thead>
+          <tbody>
+          <?php if (!$currentAssignments): ?>
+            <tr><td colspan="6" class="text-center text-muted py-4">No members have been assigned yet.</td></tr>
+          <?php else: ?>
+            <?php foreach ($currentAssignments as $assignment): ?>
+              <tr>
+                <td><?= htmlspecialchars($assignment['crn'] ?: '-') ?></td>
+                <td><?= htmlspecialchars(trim($assignment['first_name'] . ' ' . $assignment['middle_name'] . ' ' . $assignment['last_name'])) ?></td>
+                <td><?= htmlspecialchars($assignmentTypeLabels[$assignment['assignment_type']] ?? $assignment['assignment_type']) ?></td>
+                <td><?= htmlspecialchars($assignment['unit_name']) ?></td>
+                <td><?= htmlspecialchars($assignment['rank_or_level'] ?: ucfirst($assignment['branch'])) ?></td>
+                <td><?= htmlspecialchars($assignment['effective_from']) ?><br><small class="text-muted"><?= htmlspecialchars(ucwords(str_replace('_', ' ', $assignment['assignment_method']))) ?></small></td>
+              </tr>
+            <?php endforeach; ?>
+          <?php endif; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-header"><strong>Recent Assignment History</strong> <span class="text-muted">(latest 50)</span></div>
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover mb-0">
+          <thead><tr><th>Date</th><th>Member</th><th>Type</th><th>Change</th><th>Reason / Rank</th><th>Changed By</th></tr></thead>
+          <tbody>
+          <?php if (!$assignmentHistory): ?>
+            <tr><td colspan="6" class="text-center text-muted py-4">No assignment history recorded yet.</td></tr>
+          <?php else: ?>
+            <?php foreach ($assignmentHistory as $history): ?>
+              <tr>
+                <td><?= htmlspecialchars($history['created_at']) ?></td>
+                <td><?= htmlspecialchars(($history['crn'] ? $history['crn'] . ' - ' : '') . trim(($history['first_name'] ?? '') . ' ' . ($history['middle_name'] ?? '') . ' ' . ($history['last_name'] ?? ''))) ?></td>
+                <td><?= htmlspecialchars($assignmentTypeLabels[$history['assignment_type']] ?? $history['assignment_type']) ?></td>
+                <td><?= htmlspecialchars(($history['from_unit_name'] ?: 'Unassigned') . ' -> ' . ($history['to_unit_name'] ?: 'Removed')) ?></td>
+                <td><?= htmlspecialchars($history['reason'] ?: '-') ?><?php if ($history['rank_or_level']): ?><br><small>Rank: <?= htmlspecialchars($history['rank_or_level']) ?></small><?php endif; ?></td>
+                <td><?= htmlspecialchars($history['actor_name'] ?: 'System') ?></td>
+              </tr>
+            <?php endforeach; ?>
+          <?php endif; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-header"><strong>Logo Change History</strong> <span class="text-muted">(latest 25)</span></div>
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover mb-0">
+          <thead><tr><th>Date</th><th>Item</th><th>Action</th><th>Image Details</th><th>Changed By</th></tr></thead>
+          <tbody>
+          <?php if (!$mediaHistory): ?>
+            <tr><td colspan="5" class="text-center text-muted py-4">No logo changes recorded yet.</td></tr>
+          <?php else: ?>
+            <?php foreach ($mediaHistory as $history): ?>
+              <tr>
+                <td><?= htmlspecialchars($history['created_at']) ?></td>
+                <td><?= htmlspecialchars($history['entity_name']) ?><br><small class="text-muted"><?= htmlspecialchars(ucwords(str_replace('_', ' ', $history['entity_type']))) ?></small></td>
+                <td><?= htmlspecialchars(ucfirst($history['action'])) ?></td>
+                <td>
+                  <?php if ($history['new_path']): ?>
+                    <?= htmlspecialchars((string) $history['mime_type']) ?>,
+                    <?= number_format(((int) $history['file_size']) / 1024, 1) ?> KB,
+                    <?= (int) $history['image_width'] ?> x <?= (int) $history['image_height'] ?>
+                  <?php else: ?>
+                    Removed
+                  <?php endif; ?>
+                </td>
+                <td><?= htmlspecialchars($history['actor_name'] ?: 'System') ?></td>
+              </tr>
+            <?php endforeach; ?>
+          <?php endif; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
   <?php endif; ?>
 </div>
 <?php

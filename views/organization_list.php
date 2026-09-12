@@ -3,6 +3,13 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 
+function organization_list_logo_url(?string $relativePath): ?string {
+    if (!$relativePath || !preg_match('#^organizations/org_[A-Za-z0-9_]+\.(?:jpg|png|webp)$#', $relativePath)) {
+        return null;
+    }
+    return BASE_URL . '/uploads/' . implode('/', array_map('rawurlencode', explode('/', $relativePath)));
+}
+
 // Only allow logged-in users
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -77,6 +84,7 @@ $(function(){
         <table id="organizationTable" class="table table-hover table-striped table-bordered organization-table" style="width:100%">
           <thead class="thead-light">
             <tr>
+              <th>Logo</th>
               <th>Name</th>
               <th>Church</th>
               <th>Description</th>
@@ -87,6 +95,14 @@ $(function(){
           <tbody>
             <?php if ($result && $result->num_rows > 0): $i=1; while($row = $result->fetch_assoc()): ?>
               <tr class="organization-table-row">
+                <td class="text-center">
+                  <?php $organizationLogoUrl = organization_list_logo_url($row['logo_path'] ?? null); ?>
+                  <?php if ($organizationLogoUrl): ?>
+                    <img src="<?= htmlspecialchars($organizationLogoUrl) ?>" alt="<?= htmlspecialchars(($row['logo_alt_text'] ?? '') ?: $row['name'] . ' logo') ?>" class="img-thumbnail" style="width: 48px; height: 48px; object-fit: contain;">
+                  <?php else: ?>
+                    <i class="fas fa-building text-muted" aria-hidden="true"></i><span class="sr-only">No logo</span>
+                  <?php endif; ?>
+                </td>
                 <td><?= htmlspecialchars($row['name']) ?></td>
                 <td><?= htmlspecialchars($row['church_name'] ?? '-') ?></td>
                 <td><?= htmlspecialchars($row['description']) ?></td>
@@ -139,7 +155,7 @@ $(function(){
                 </td>
               </tr>
             <?php endwhile; else: ?>
-              <tr><td colspan="5" class="text-center">No organizations found.</td></tr>
+              <tr><td colspan="6" class="text-center">No organizations found.</td></tr>
             <?php endif; ?>
           </tbody>
         </table>

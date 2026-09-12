@@ -8,7 +8,7 @@ class OrganizationGroupService {
     }
 
     public function getOrganizationConfig(int $organizationId, bool $forUpdate = false): array {
-        $sql = 'SELECT id, church_id, name, logo_path, assignment_strategy
+        $sql = 'SELECT id, church_id, name, logo_path, logo_alt_text, assignment_strategy
                   FROM organizations
                  WHERE id = ?';
         if ($forUpdate) {
