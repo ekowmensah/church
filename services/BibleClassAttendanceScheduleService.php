@@ -206,9 +206,12 @@ final class BibleClassAttendanceScheduleService {
                 $sessionStmt = $this->conn->prepare(
                     "INSERT INTO attendance_sessions
                         (church_id, title, service_date, attendance_scope, scope_id,
-                         class_group_id, generated_by_schedule, approval_status,
+                         class_group_id, attendance_report_category_id, classification_source,
+                         generated_by_schedule, approval_status,
                          created_by_user_id, created_by_member_id)
-                     VALUES (?, ?, ?, 'bible_class', ?, ?, 1, 'draft', ?, ?)"
+                     VALUES (?, ?, ?, 'bible_class', ?, ?,
+                             (SELECT id FROM attendance_report_categories WHERE code = 'bible_class' LIMIT 1),
+                             'scope', 1, 'draft', ?, ?)"
                 );
                 $churchId = (int) $class['church_id'];
                 $sessionStmt->bind_param(

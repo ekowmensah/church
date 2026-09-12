@@ -72,6 +72,7 @@ $can_delete = $is_super_admin || has_permission('delete_attendance');
 $can_view = true;
 $scope_columns_available = attendance_scope_columns_available($conn);
 $organizations_table_available = table_exists($conn, 'organizations');
+$reporting_categories_available = table_exists($conn, 'attendance_report_categories');
 
 // Filters
 $filter_church = $_GET['church_id'] ?? '';
@@ -93,7 +94,7 @@ $success_msg = '';
 $error_msg = '';
 
 // Auto-create recurring sessions for today if they don't exist
-function auto_create_recurring_sessions($conn, $scope_columns_available) {
+function auto_create_recurring_sessions($conn, $scope_columns_available, $reporting_categories_available) {
     $today = date('Y-m-d');
     $day_of_week = date('w'); // 0 (Sunday) to 6 (Saturday)
     $month = date('n'); // 1 to 12
@@ -126,8 +127,15 @@ function auto_create_recurring_sessions($conn, $scope_columns_available) {
                         $template_scope = 'church';
                     }
                     $template_scope_id = isset($template['scope_id']) ? intval($template['scope_id']) : null;
-                    $insert = $conn->prepare("INSERT INTO attendance_sessions (title, church_id, is_recurring, recurrence_type, recurrence_day, service_date, attendance_scope, scope_id) VALUES (?, ?, 1, ?, ?, ?, ?, ?)");
-                    $insert->bind_param('sisissi', $template['title'], $template['church_id'], $template['recurrence_type'], $template['recurrence_day'], $today, $template_scope, $template_scope_id);
+                    if ($reporting_categories_available) {
+                        $template_category_id = isset($template['attendance_report_category_id']) ? (int) $template['attendance_report_category_id'] : null;
+                        $template_classification = trim((string) ($template['classification_source'] ?? 'default')) ?: 'default';
+                        $insert = $conn->prepare("INSERT INTO attendance_sessions (title, church_id, is_recurring, recurrence_type, recurrence_day, service_date, attendance_scope, scope_id, attendance_report_category_id, classification_source) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?)");
+                        $insert->bind_param('sisissiis', $template['title'], $template['church_id'], $template['recurrence_type'], $template['recurrence_day'], $today, $template_scope, $template_scope_id, $template_category_id, $template_classification);
+                    } else {
+                        $insert = $conn->prepare("INSERT INTO attendance_sessions (title, church_id, is_recurring, recurrence_type, recurrence_day, service_date, attendance_scope, scope_id) VALUES (?, ?, 1, ?, ?, ?, ?, ?)");
+                        $insert->bind_param('sisissi', $template['title'], $template['church_id'], $template['recurrence_type'], $template['recurrence_day'], $today, $template_scope, $template_scope_id);
+                    }
                 } else {
                     $insert = $conn->prepare("INSERT INTO attendance_sessions (title, church_id, is_recurring, recurrence_type, recurrence_day, service_date) VALUES (?, ?, 1, ?, ?, ?)");
                     $insert->bind_param('sisis', $template['title'], $template['church_id'], $template['recurrence_type'], $template['recurrence_day'], $today);
@@ -145,7 +153,7 @@ function auto_create_recurring_sessions($conn, $scope_columns_available) {
 }
 
 // Run auto-creation on page load
-$auto_created = auto_create_recurring_sessions($conn, $scope_columns_available);
+$auto_created = auto_create_recurring_sessions($conn, $scope_columns_available, $reporting_categories_available);
 if ($auto_created > 0) {
     $success_msg = "Auto-created $auto_created recurring session(s) for today.";
 }
@@ -195,8 +203,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_next_recurring
                         $template_scope = 'church';
                     }
                     $template_scope_id = isset($row['scope_id']) ? intval($row['scope_id']) : null;
-                    $stmt = $conn->prepare("INSERT INTO attendance_sessions (title, church_id, is_recurring, recurrence_type, recurrence_day, service_date, attendance_scope, scope_id) VALUES (?, ?, 1, ?, ?, ?, ?, ?)");
-                    $stmt->bind_param('sisissi', $row['title'], $row['church_id'], $rec_type, $rec_day, $next_date, $template_scope, $template_scope_id);
+                    if ($reporting_categories_available) {
+                        $template_category_id = isset($row['attendance_report_category_id']) ? (int) $row['attendance_report_category_id'] : null;
+                        $template_classification = trim((string) ($row['classification_source'] ?? 'default')) ?: 'default';
+                        $stmt = $conn->prepare("INSERT INTO attendance_sessions (title, church_id, is_recurring, recurrence_type, recurrence_day, service_date, attendance_scope, scope_id, attendance_report_category_id, classification_source) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?)");
+                        $stmt->bind_param('sisissiis', $row['title'], $row['church_id'], $rec_type, $rec_day, $next_date, $template_scope, $template_scope_id, $template_category_id, $template_classification);
+                    } else {
+                        $stmt = $conn->prepare("INSERT INTO attendance_sessions (title, church_id, is_recurring, recurrence_type, recurrence_day, service_date, attendance_scope, scope_id) VALUES (?, ?, 1, ?, ?, ?, ?, ?)");
+                        $stmt->bind_param('sisissi', $row['title'], $row['church_id'], $rec_type, $rec_day, $next_date, $template_scope, $template_scope_id);
+                    }
                 } else {
                     $stmt = $conn->prepare("INSERT INTO attendance_sessions (title, church_id, is_recurring, recurrence_type, recurrence_day, service_date) VALUES (?, ?, 1, ?, ?, ?)");
                     $stmt->bind_param('sisis', $row['title'], $row['church_id'], $rec_type, $rec_day, $next_date);

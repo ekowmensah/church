@@ -1,244 +1,234 @@
 <?php
-require_once __DIR__.'/../../config/config.php';
-require_once __DIR__.'/../../helpers/auth.php';
-require_once __DIR__.'/../../helpers/permissions_v2.php';
+require_once __DIR__ . '/../../config/config.php';
+require_once __DIR__ . '/../../helpers/auth.php';
+require_once __DIR__ . '/../../helpers/permissions_v2.php';
+require_once __DIR__ . '/../../services/UnifiedAttendanceReportService.php';
 
-// Only allow logged-in users
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
 
-// Robust super admin bypass and permission check
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
-
-if (!$is_super_admin && !has_permission('view_attendance_report')) {
+$reportRoleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
+if (isset($_SESSION['role_id'])) $reportRoleIds[] = (int) $_SESSION['role_id'];
+$reportRoleIds = array_values(array_unique($reportRoleIds));
+$reportIsSuperAdmin = in_array(1, $reportRoleIds, true);
+if (!$reportIsSuperAdmin && !has_permission('view_attendance_report')) {
     http_response_code(403);
-    if (file_exists(__DIR__.'/../../views/errors/403.php')) {
-        include __DIR__.'/../../views/errors/403.php';
-    } else if (file_exists(__DIR__.'/../errors/403.php')) {
-        include __DIR__.'/../errors/403.php';
-    } else {
-        echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this report.</p></div>';
-    }
+    include __DIR__ . '/../errors/403.php';
     exit;
 }
 
-// Set permission flags for UI elements
-$can_view = true; // Already validated above
-$can_export = $is_super_admin || has_permission('export_attendance_report');
+function attendance_report_number($value): string {
+    $number = (float) $value;
+    return abs($number - round($number)) < 0.001
+        ? number_format($number, 0)
+        : number_format($number, 2);
+}
 
-$page_title = 'Attendance Report';
+$service = UnifiedAttendanceReportService::fromSession($conn);
+$churches = $service->getAllowedChurches();
+$categories = $service->getCategories();
+$canExport = $reportIsSuperAdmin || has_permission('export_attendance_report');
+$preset = (string) ($_GET['period'] ?? 'this_month');
+$status = (string) ($_GET['status'] ?? 'present');
+$categoryId = isset($_GET['category_id']) && $_GET['category_id'] !== '' ? (int) $_GET['category_id'] : null;
+$selectedChurchId = isset($_GET['church_id']) ? (int) $_GET['church_id'] : 0;
+$selectedChurch = null;
+$report = ['summary' => [], 'breakdown' => [], 'totals' => ['male' => 0, 'female' => 0, 'unspecified' => 0, 'total' => 0]];
+$fromDate = '';
+$toDate = '';
+$error = '';
+
+if ($selectedChurchId === 0 && $churches) $selectedChurchId = (int) $churches[0]['id'];
+foreach ($churches as $church) {
+    if ((int) $church['id'] === $selectedChurchId) $selectedChurch = $church;
+}
+
+try {
+    if (!$selectedChurch) throw new RuntimeException('No church is available for your reporting role.');
+    [$fromDate, $toDate] = $service->resolvePeriod(
+        $preset,
+        isset($_GET['from_date']) ? (string) $_GET['from_date'] : null,
+        isset($_GET['to_date']) ? (string) $_GET['to_date'] : null
+    );
+    $report = $service->buildReport($selectedChurchId, $fromDate, $toDate, $status, $categoryId);
+    $status = $report['status'];
+} catch (Throwable $exception) {
+    $error = $exception->getMessage();
+}
+
+$exportParams = http_build_query([
+    'church_id' => $selectedChurchId,
+    'period' => $preset,
+    'from_date' => $fromDate,
+    'to_date' => $toDate,
+    'status' => $status,
+    'category_id' => $categoryId,
+]);
+$statusLabels = [
+    'present' => 'Present', 'absent' => 'Absent', 'sick' => 'Sick',
+    'permission' => 'Permission', 'distance' => 'Distance',
+    'invalid' => 'Invalid', 'all' => 'All marked statuses',
+];
+$periodLabels = [
+    'today' => 'Today', 'yesterday' => 'Yesterday', 'this_week' => 'This week',
+    'last_week' => 'Last week', 'this_month' => 'This month', 'last_month' => 'Last month',
+    'q1' => 'Quarter 1', 'q2' => 'Quarter 2', 'q3' => 'Quarter 3', 'q4' => 'Quarter 4',
+    'this_year' => 'This year', 'last_year' => 'Last year', 'custom' => 'Custom range',
+];
+
+$page_title = 'Unified Attendance Report';
 ob_start();
-
-// Fetch filter options
-$churches = $conn->query("SELECT id, name FROM churches ORDER BY name");
-$classes = $conn->query("SELECT id, name FROM bible_classes ORDER BY name");
-
-// Handle filters
-$where = "WHERE (s.service_date IS NULL OR s.service_date <> '0000-00-00')";
-$params = [];
-$types = '';
-
-$allowed_statuses = ['present', 'absent', 'sick', 'permission', 'distance', 'invalid'];
-if (!empty($_GET['church_id'])) {
-    $where .= " AND s.church_id = ?";
-    $params[] = intval($_GET['church_id']);
-    $types .= 'i';
-}
-if (!empty($_GET['class_id'])) {
-    $where .= " AND m.class_id = ?";
-    $params[] = intval($_GET['class_id']);
-    $types .= 'i';
-}
-if (!empty($_GET['status']) && in_array($_GET['status'], $allowed_statuses, true)) {
-    $where .= " AND r.status = ?";
-    $params[] = $_GET['status'];
-    $types .= 's';
-}
-if (!empty($_GET['from_date'])) {
-    $where .= " AND s.service_date >= ?";
-    $params[] = $_GET['from_date'];
-    $types .= 's';
-}
-if (!empty($_GET['to_date'])) {
-    $where .= " AND s.service_date <= ?";
-    $params[] = $_GET['to_date'];
-    $types .= 's';
-}
-$sql = "SELECT r.*, s.title AS session_title, s.service_date, s.church_id AS session_church_id, ch.name AS church_name, m.crn, m.last_name, m.first_name, m.middle_name, m.class_id, bc.name AS class_name FROM attendance_records r INNER JOIN attendance_sessions s ON r.session_id = s.id LEFT JOIN churches ch ON s.church_id = ch.id LEFT JOIN members m ON r.member_id = m.id LEFT JOIN bible_classes bc ON m.class_id = bc.id $where ORDER BY s.service_date DESC, m.last_name, m.first_name, m.middle_name";
-$stmt = $conn->prepare($sql);
-if ($params) {
-    $stmt->bind_param($types, ...$params);
-}
-$stmt->execute();
-$records = $stmt->get_result();
-
-// For attendance trend chart: count presents per month
-$trend_sql = "SELECT DATE_FORMAT(s.service_date, '%Y-%m') AS ym, COUNT(*) AS count FROM attendance_records r INNER JOIN attendance_sessions s ON r.session_id = s.id LEFT JOIN members m ON r.member_id = m.id LEFT JOIN bible_classes bc ON m.class_id = bc.id $where AND r.status = 'present' GROUP BY ym ORDER BY ym";
-$trend_stmt = $conn->prepare($trend_sql);
-if ($params) {
-    $trend_stmt->bind_param($types, ...$params);
-}
-$trend_stmt->execute();
-$trend_res = $trend_stmt->get_result();
-$trend_labels = [];
-$trend_counts = [];
-while ($row = $trend_res->fetch_assoc()) {
-    $trend_labels[] = $row['ym'];
-    $trend_counts[] = $row['count'];
-}
 ?>
-<div class="container-fluid mt-4">
-  <h2 class="mb-4">Attendance Report</h2>
-  <form class="form-row mb-3" method="get">
-    <div class="form-group col-md-2">
-      <label>Church</label>
-      <select name="church_id" class="form-control">
-        <option value="">All</option>
-        <?php if ($churches) while($ch = $churches->fetch_assoc()): ?>
-          <option value="<?= $ch['id'] ?>"<?= isset($_GET['church_id']) && $_GET['church_id']==$ch['id'] ? ' selected' : '' ?>><?= htmlspecialchars($ch['name']) ?></option>
-        <?php endwhile; ?>
-      </select>
-    </div>
-    <div class="form-group col-md-2">
-      <label>Bible Class</label>
-      <select name="class_id" class="form-control">
-        <option value="">All</option>
-        <?php if ($classes) while($cl = $classes->fetch_assoc()): ?>
-          <option value="<?= $cl['id'] ?>"<?= isset($_GET['class_id']) && $_GET['class_id']==$cl['id'] ? ' selected' : '' ?>><?= htmlspecialchars($cl['name']) ?></option>
-        <?php endwhile; ?>
-      </select>
-    </div>
-    <div class="form-group col-md-2">
-      <label>Status</label>
-      <select name="status" class="form-control">
-        <option value="">All</option>
-        <option value="present"<?= isset($_GET['status']) && $_GET['status']=='present' ? ' selected' : '' ?>>Present</option>
-        <option value="absent"<?= isset($_GET['status']) && $_GET['status']=='absent' ? ' selected' : '' ?>>Absent</option>
-        <option value="sick"<?= isset($_GET['status']) && $_GET['status']=='sick' ? ' selected' : '' ?>>Sick</option>
-        <option value="permission"<?= isset($_GET['status']) && $_GET['status']=='permission' ? ' selected' : '' ?>>Permission</option>
-        <option value="distance"<?= isset($_GET['status']) && $_GET['status']=='distance' ? ' selected' : '' ?>>Distance</option>
-        <option value="invalid"<?= isset($_GET['status']) && $_GET['status']=='invalid' ? ' selected' : '' ?>>Invalid</option>
-      </select>
-    </div>
-    <div class="form-group col-md-2">
-      <label>From Date</label>
-      <input type="date" name="from_date" class="form-control" value="<?= htmlspecialchars($_GET['from_date'] ?? '') ?>">
-    </div>
-    <div class="form-group col-md-2">
-      <label>To Date</label>
-      <input type="date" name="to_date" class="form-control" value="<?= htmlspecialchars($_GET['to_date'] ?? '') ?>">
-    </div>
-    <div class="form-group col-md-2 align-self-end">
-      <button type="submit" class="btn btn-primary btn-block">Filter</button>
-    </div>
-  </form>
-
-  <div class="card mb-4">
-    <div class="card-header bg-light">
-      <strong>Attendance Trend (Present per Month)</strong>
-    </div>
-    <div class="card-body">
-      <canvas id="trendChart" height="60"></canvas>
-    </div>
-  </div>
-
-  <div class="card shadow mb-4">
-    <div class="card-header py-3">
-      <h6 class="m-0 font-weight-bold text-primary">Attendance Records</h6>
-    </div>
-    <div class="card-body">
-      <div class="table-responsive">
-        <table class="table table-bordered" id="attendanceTable" width="100%" cellspacing="0">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Session</th>
-              <th>Church</th>
-              <th>CRN</th>
-              <th>Full Name</th>
-              <th>Bible Class</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            <?php while($row = $records->fetch_assoc()): ?>
-            <tr>
-              <td><?=htmlspecialchars($row['service_date'])?></td>
-              <td><?=htmlspecialchars($row['session_title'])?></td>
-              <td><?=htmlspecialchars($row['church_name'])?></td>
-              <td><?=htmlspecialchars($row['crn'])?></td>
-              <td><?=htmlspecialchars(trim($row['last_name'].' '.$row['first_name'].' '.$row['middle_name']))?></td>
-              <td><?=htmlspecialchars($row['class_name'])?></td>
-              <td><?=htmlspecialchars(ucfirst($row['status']))?></td>
-            </tr>
-            <?php endwhile; ?>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- DataTables and Chart.js scripts -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap4.min.css">
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.bootstrap4.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.print.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-$(document).ready(function() {
-    $('#attendanceTable').DataTable({
-        dom: 'Bfrtip',
-        buttons: [
-            'copy', 'csv', 'excel', 'pdf', 'print'
-        ]
-    });
-    var ctx = document.getElementById('trendChart').getContext('2d');
-    var trendChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: <?= json_encode($trend_labels) ?>,
-            datasets: [{
-                label: 'Present',
-                data: <?= json_encode($trend_counts) ?>,
-                backgroundColor: 'rgba(40, 167, 69, 0.2)',
-                borderColor: 'rgba(40, 167, 69, 1)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.3
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: { display: false },
-                title: { display: false }
-            },
-            scales: {
-                y: { beginAtZero: true }
-            }
-        }
-    });
-});
-</script>
 <style>
-.btn-xs { padding: 0.14rem 0.34rem !important; font-size: 0.89rem !important; line-height: 1.15 !important; border-radius: 0.22rem !important; }
-#attendanceTable th, #attendanceTable td { vertical-align: middle !important; }
+    .attendance-report-page { background:#f4f7fb; min-height:calc(100vh - 70px); padding:1rem 0 2rem; }
+    .report-hero { background:linear-gradient(135deg,#123d63,#22689b); color:#fff; border-radius:16px; padding:1.3rem 1.5rem; box-shadow:0 8px 24px rgba(18,61,99,.22); }
+    .report-hero h1 { font-size:1.55rem; margin:0 0 .25rem; }
+    .report-filter, .report-card { border:0; border-radius:14px; box-shadow:0 5px 18px rgba(30,54,82,.09); }
+    .metric-card { background:#fff; border-radius:12px; padding:1rem; border-left:4px solid #22689b; height:100%; }
+    .metric-card .value { font-size:1.6rem; font-weight:700; color:#163d5d; }
+    .report-table thead th { background:#173f60; color:#fff; border-color:#2c5779; white-space:nowrap; }
+    .report-table .main-row td { background:#eaf2f8; font-weight:700; color:#173f60; }
+    .report-table .breakdown-name { padding-left:2rem; }
+    .report-meta { color:#dcebf6; font-size:.92rem; }
+    .average-badge { font-size:.72rem; background:#fff3cd; color:#765b00; padding:.18rem .4rem; border-radius:10px; }
+    .empty-state { padding:2.7rem 1rem; text-align:center; color:#6c757d; }
+    @media print { .no-print, .sidebar, nav { display:none !important; } .attendance-report-page { background:#fff; } }
 </style>
 
+<div class="attendance-report-page">
+  <div class="container-fluid">
+    <div class="report-hero mb-3 d-flex flex-wrap justify-content-between align-items-center">
+      <div>
+        <h1><i class="fas fa-chart-bar mr-2"></i>Unified Attendance Report</h1>
+        <div class="report-meta">Approved attendance, grouped by ministry and meeting type</div>
+      </div>
+      <?php if ($selectedChurch): ?>
+        <div class="text-right mt-2 mt-md-0"><strong><?= htmlspecialchars($selectedChurch['name']) ?></strong><br><em><?= htmlspecialchars($fromDate) ?> to <?= htmlspecialchars($toDate) ?></em></div>
+      <?php endif; ?>
+    </div>
+
+    <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+
+    <div class="card report-filter mb-3 no-print">
+      <div class="card-body">
+        <form method="get" id="attendanceReportFilters">
+          <div class="form-row">
+            <div class="form-group col-lg-3 col-md-6">
+              <label for="church_id">Church</label>
+              <select name="church_id" id="church_id" class="form-control" required>
+                <?php foreach ($churches as $church): ?>
+                  <option value="<?= (int) $church['id'] ?>" <?= (int) $church['id'] === $selectedChurchId ? 'selected' : '' ?>><?= htmlspecialchars($church['name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="form-group col-lg-3 col-md-6">
+              <label for="period">Period</label>
+              <select name="period" id="period" class="form-control">
+                <?php foreach ($periodLabels as $value => $label): ?>
+                  <option value="<?= $value ?>" <?= $preset === $value ? 'selected' : '' ?>><?= htmlspecialchars($label) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="form-group col-lg-3 col-md-6 custom-date-field">
+              <label for="from_date">From</label>
+              <input type="date" class="form-control" name="from_date" id="from_date" value="<?= htmlspecialchars($fromDate) ?>">
+            </div>
+            <div class="form-group col-lg-3 col-md-6 custom-date-field">
+              <label for="to_date">To</label>
+              <input type="date" class="form-control" name="to_date" id="to_date" value="<?= htmlspecialchars($toDate) ?>">
+            </div>
+            <div class="form-group col-lg-4 col-md-6">
+              <label for="category_id">Attendance Type</label>
+              <select name="category_id" id="category_id" class="form-control">
+                <option value="">All non-zero categories</option>
+                <?php foreach ($categories as $category): ?>
+                  <option value="<?= (int) $category['id'] ?>" <?= $categoryId === (int) $category['id'] ? 'selected' : '' ?>><?= htmlspecialchars($category['parent_name'] ? $category['parent_name'] . ' — ' . $category['name'] : $category['name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="form-group col-lg-3 col-md-6">
+              <label for="status">Attendance Status</label>
+              <select name="status" id="status" class="form-control">
+                <?php foreach ($statusLabels as $value => $label): ?>
+                  <option value="<?= $value ?>" <?= $status === $value ? 'selected' : '' ?>><?= htmlspecialchars($label) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="form-group col-lg-2 col-md-6 d-flex align-items-end">
+              <button type="submit" class="btn btn-primary btn-block"><i class="fas fa-filter mr-1"></i>Run Report</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <?php if (!$error): ?>
+      <div class="row mb-3">
+        <?php foreach (['male' => 'Male', 'female' => 'Female', 'unspecified' => 'Unspecified', 'total' => 'Total'] as $field => $label): ?>
+          <div class="col-lg-3 col-6 mb-2"><div class="metric-card"><div class="text-muted small text-uppercase"><?= $label ?></div><div class="value"><?= attendance_report_number($report['totals'][$field]) ?></div></div></div>
+        <?php endforeach; ?>
+      </div>
+
+      <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 no-print">
+        <div class="text-muted small">Zero-count types are hidden. Weekly-average types divide each week's total by its distinct meeting days.</div>
+        <?php if ($canExport): ?>
+          <div class="btn-group mt-2 mt-md-0">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="copyReport"><i class="far fa-copy mr-1"></i>Copy</button>
+            <a class="btn btn-outline-success btn-sm" href="attendance_report_export.php?format=csv&amp;<?= htmlspecialchars($exportParams) ?>"><i class="fas fa-file-csv mr-1"></i>CSV</a>
+            <a class="btn btn-outline-success btn-sm" href="attendance_report_export.php?format=excel&amp;<?= htmlspecialchars($exportParams) ?>"><i class="fas fa-file-excel mr-1"></i>Excel</a>
+            <a class="btn btn-outline-danger btn-sm" target="_blank" href="attendance_report_export.php?format=print&amp;<?= htmlspecialchars($exportParams) ?>"><i class="fas fa-file-pdf mr-1"></i>PDF / Print</a>
+          </div>
+        <?php endif; ?>
+      </div>
+
+      <div class="card report-card">
+        <div class="card-body p-0">
+          <?php if (!$report['summary']): ?>
+            <div class="empty-state"><i class="far fa-calendar-times fa-2x mb-2"></i><div>No approved attendance records match this period and filter.</div></div>
+          <?php else: ?>
+            <div class="table-responsive">
+              <table class="table table-bordered table-hover report-table mb-0" id="unifiedAttendanceTable">
+                <thead><tr><th>Attendance Type / Breakdown</th><th class="text-right">Male</th><th class="text-right">Female</th><th class="text-right">Unspecified</th><th class="text-right">Total</th><th class="text-right">Sessions</th></tr></thead>
+                <tbody>
+                <?php foreach ($report['summary'] as $main): ?>
+                  <tr class="main-row"><td><?= htmlspecialchars($main['main_name']) ?></td><td class="text-right"><?= attendance_report_number($main['male']) ?></td><td class="text-right"><?= attendance_report_number($main['female']) ?></td><td class="text-right"><?= attendance_report_number($main['unspecified']) ?></td><td class="text-right"><?= attendance_report_number($main['total']) ?></td><td class="text-right"><?= number_format((int) $main['sessions']) ?></td></tr>
+                  <?php foreach ($report['breakdown'] as $detail): if ((int) $detail['main_id'] !== (int) $main['main_id']) continue; ?>
+                    <tr><td class="breakdown-name">↳ <?= htmlspecialchars($detail['breakdown_name']) ?> <?php if ($detail['aggregation_method'] === 'weekly_average'): ?><span class="average-badge">weekly average</span><?php endif; ?></td><td class="text-right"><?= attendance_report_number($detail['male']) ?></td><td class="text-right"><?= attendance_report_number($detail['female']) ?></td><td class="text-right"><?= attendance_report_number($detail['unspecified']) ?></td><td class="text-right"><?= attendance_report_number($detail['total']) ?></td><td class="text-right"><?= number_format((int) $detail['sessions']) ?></td></tr>
+                  <?php endforeach; ?>
+                <?php endforeach; ?>
+                </tbody>
+                <tfoot><tr class="font-weight-bold"><td>Grand Total</td><td class="text-right"><?= attendance_report_number($report['totals']['male']) ?></td><td class="text-right"><?= attendance_report_number($report['totals']['female']) ?></td><td class="text-right"><?= attendance_report_number($report['totals']['unspecified']) ?></td><td class="text-right"><?= attendance_report_number($report['totals']['total']) ?></td><td></td></tr></tfoot>
+              </table>
+            </div>
+          <?php endif; ?>
+        </div>
+      </div>
+    <?php endif; ?>
+  </div>
+</div>
+<script>
+(function () {
+  var period = document.getElementById('period');
+  function toggleDates() {
+    var custom = period && period.value === 'custom';
+    document.querySelectorAll('.custom-date-field').forEach(function (field) { field.style.display = custom ? '' : 'none'; });
+    ['from_date','to_date'].forEach(function (id) { var input = document.getElementById(id); if (input) input.required = custom; });
+  }
+  if (period) { period.addEventListener('change', toggleDates); toggleDates(); }
+  var copy = document.getElementById('copyReport');
+  if (copy) copy.addEventListener('click', function () {
+    var table = document.getElementById('unifiedAttendanceTable');
+    if (!table) return;
+    var rows = Array.prototype.map.call(table.rows, function (row) {
+      return Array.prototype.map.call(row.cells, function (cell) { return cell.innerText.trim(); }).join('\t');
+    }).join('\n');
+    navigator.clipboard.writeText(rows).then(function () { copy.innerHTML = '<i class="fas fa-check mr-1"></i>Copied'; });
+  });
+})();
+</script>
 <?php
-// End output buffering and inject content into layout
 $page_content = ob_get_clean();
-include_once __DIR__ . '/../../includes/layout.php';
+include __DIR__ . '/../../includes/layout.php';
 ?>

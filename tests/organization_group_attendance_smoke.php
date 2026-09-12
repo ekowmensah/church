@@ -50,6 +50,12 @@ try {
         date('Y-m-d')
     );
     $session = $organizationLeader->getSession($sessionId);
+    $reportingCategory = $conn->query(
+        'SELECT category.code FROM attendance_sessions session '
+        . 'JOIN attendance_report_categories category ON category.id = session.attendance_report_category_id '
+        . 'WHERE session.id = ' . (int) $sessionId
+    )->fetch_assoc();
+    attendance_smoke_assert(($reportingCategory['code'] ?? '') === 'organization_meeting', 'organization session has the correct reporting category');
 
     attendance_smoke_assert($organizationLeader->canReview($session), 'organization leader can review its organization');
     attendance_smoke_assert($groupLeader->canMark($session), 'assigned unit leader can mark its unit');
@@ -101,6 +107,10 @@ try {
     echo "Organization group attendance smoke test completed successfully.\n";
 } finally {
     if ($sessionId !== null) {
+        $deleteRecords = $conn->prepare('DELETE FROM attendance_records WHERE session_id = ?');
+        $deleteRecords->bind_param('i', $sessionId);
+        $deleteRecords->execute();
+        $deleteRecords->close();
         $delete = $conn->prepare('DELETE FROM attendance_sessions WHERE id = ?');
         $delete->bind_param('i', $sessionId);
         $delete->execute();

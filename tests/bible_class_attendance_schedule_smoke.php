@@ -73,6 +73,15 @@ try {
     schedule_smoke_assert($session['attendance_scope'] === 'bible_class', 'Generated session has the wrong scope.');
     schedule_smoke_assert((int) $session['scope_id'] === $classId, 'Generated session targets the wrong class.');
     schedule_smoke_assert((string) $session['service_date'] === $testDate, 'Generated session has the wrong date.');
+    $reportingCategory = $conn->query(
+        'SELECT category.code FROM attendance_sessions session '
+        . 'JOIN attendance_report_categories category ON category.id = session.attendance_report_category_id '
+        . 'WHERE session.id = ' . $createdSessionId
+    )->fetch_assoc();
+    schedule_smoke_assert(
+        ($reportingCategory['code'] ?? '') === 'bible_class',
+        'Generated session has the wrong reporting category.'
+    );
 
     $year = (int) substr($testDate, 0, 4);
     $quarter = bcb_quarter_from_month((int) substr($testDate, 5, 2));
@@ -99,6 +108,10 @@ try {
         $deleteLedger->close();
     }
     if ($createdSessionId > 0) {
+        $deleteRecords = $conn->prepare('DELETE FROM attendance_records WHERE session_id = ?');
+        $deleteRecords->bind_param('i', $createdSessionId);
+        $deleteRecords->execute();
+        $deleteRecords->close();
         $deleteSession = $conn->prepare('DELETE FROM attendance_sessions WHERE id = ?');
         $deleteSession->bind_param('i', $createdSessionId);
         $deleteSession->execute();

@@ -443,8 +443,11 @@ final class AttendanceScopeService {
             $stmt = $this->conn->prepare(
                 "INSERT INTO attendance_sessions
                     (church_id, title, service_date, attendance_scope, scope_id,
-                     organization_unit_id, approval_status, created_by_user_id, created_by_member_id)
-                 VALUES (?, ?, ?, 'organization', ?, ?, 'draft', ?, ?)"
+                     organization_unit_id, attendance_report_category_id, classification_source,
+                     approval_status, created_by_user_id, created_by_member_id)
+                 VALUES (?, ?, ?, 'organization', ?, ?,
+                         (SELECT id FROM attendance_report_categories WHERE code = 'organization_meeting' LIMIT 1),
+                         'scope', 'draft', ?, ?)"
             );
             $churchId = (int) $organization['church_id'];
             $stmt->bind_param(

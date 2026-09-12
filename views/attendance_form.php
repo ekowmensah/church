@@ -46,6 +46,17 @@ function attendance_scope_columns_available($conn) {
     return $available;
 }
 
+function attendance_reporting_categories_available($conn) {
+    $sql = "SELECT COUNT(*) AS cnt
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'attendance_sessions'
+              AND COLUMN_NAME = 'attendance_report_category_id'";
+    $res = $conn->query($sql);
+    $row = $res ? $res->fetch_assoc() : null;
+    return $row && intval($row['cnt']) === 1;
+}
+
 function table_exists($conn, $tableName) {
     $stmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?");
     $stmt->bind_param('s', $tableName);
@@ -68,6 +79,7 @@ function normalize_date_input($rawDate) {
 }
 
 $scope_columns_available = attendance_scope_columns_available($conn);
+$reporting_categories_available = attendance_reporting_categories_available($conn);
 $organizations_table_available = table_exists($conn, 'organizations');
 
 $error = '';
@@ -81,6 +93,7 @@ $attendance_scope = 'church';
 $scope_id = null;
 $scope_class_id = null;
 $scope_org_id = null;
+$attendance_report_category_id = null;
 $edit_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
 // Load churches for dropdown
@@ -90,6 +103,18 @@ $bible_classes = $conn->query("SELECT id, church_id, name, code FROM bible_class
 $organizations = $organizations_table_available
     ? $conn->query("SELECT id, church_id, name FROM organizations ORDER BY name ASC")
     : false;
+$attendance_categories = [];
+if ($reporting_categories_available) {
+    $category_result = $conn->query(
+        "SELECT category.id, category.code, category.name, parent.name AS parent_name
+           FROM attendance_report_categories category
+           LEFT JOIN attendance_report_categories parent ON parent.id = category.parent_id
+          WHERE category.is_active = 1
+          ORDER BY COALESCE(parent.sort_order, category.sort_order),
+                   category.parent_id IS NOT NULL, category.sort_order"
+    );
+    $attendance_categories = $category_result ? $category_result->fetch_all(MYSQLI_ASSOC) : [];
+}
 
 // Load for edit
 if ($edit_id && $_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -116,6 +141,11 @@ if ($edit_id && $_SERVER['REQUEST_METHOD'] !== 'POST') {
                 $scope_org_id = $scope_id;
             }
         }
+        if ($reporting_categories_available) {
+            $attendance_report_category_id = isset($row['attendance_report_category_id'])
+                ? (int) $row['attendance_report_category_id']
+                : null;
+        }
     } else {
         header('Location: attendance_list.php?notfound=1');
         exit;
@@ -129,6 +159,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $recurrence_type = trim($_POST['recurrence_type'] ?? '');
     $recurrence_day = $_POST['recurrence_day'] ?? '';
     $church_id = intval($_POST['church_id'] ?? 0);
+    $attendance_report_category_id = isset($_POST['attendance_report_category_id'])
+        && $_POST['attendance_report_category_id'] !== ''
+        ? (int) $_POST['attendance_report_category_id']
+        : null;
     if ($scope_columns_available) {
         $attendance_scope = trim((string)($_POST['attendance_scope'] ?? 'church'));
         if (!in_array($attendance_scope, ['church', 'bible_class', 'organization'], true)) {
@@ -144,6 +178,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $scope_id = null;
         }
     }
+    $classification_source = 'manual';
+    if ($reporting_categories_available && in_array($attendance_scope, ['bible_class', 'organization'], true)) {
+        $category_code = $attendance_scope === 'bible_class' ? 'bible_class' : 'organization_meeting';
+        $category_stmt = $conn->prepare('SELECT id FROM attendance_report_categories WHERE code = ? AND is_active = 1 LIMIT 1');
+        $category_stmt->bind_param('s', $category_code);
+        $category_stmt->execute();
+        $attendance_report_category_id = (int) ($category_stmt->get_result()->fetch_assoc()['id'] ?? 0) ?: null;
+        $category_stmt->close();
+        $classification_source = 'scope';
+    }
     $edit_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
     if (!$title || (!$is_recurring && !$service_date) || !$church_id) {
         $error = 'All fields are required.';
@@ -155,15 +199,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Please select an organization for organization-scoped attendance sessions.';
     } elseif ($scope_columns_available && $attendance_scope === 'organization' && !$organizations_table_available) {
         $error = 'Organization scope is unavailable on this database.';
+    } elseif ($reporting_categories_available && (!$attendance_report_category_id || $attendance_report_category_id <= 0)) {
+        $error = 'Please select an attendance reporting type.';
     } else {
+        if ($reporting_categories_available) {
+            $category_stmt = $conn->prepare('SELECT COUNT(*) AS cnt FROM attendance_report_categories WHERE id = ? AND is_active = 1');
+            $category_stmt->bind_param('i', $attendance_report_category_id);
+            $category_stmt->execute();
+            $valid_category = (int) ($category_stmt->get_result()->fetch_assoc()['cnt'] ?? 0) === 1;
+            $category_stmt->close();
+            if (!$valid_category) {
+                $error = 'Please select a valid active attendance reporting type.';
+            }
+        }
+    }
+
+    if ($error === '') {
         if ($is_recurring) {
             $service_date = null;
         }
 
         if ($edit_id) {
-            if ($scope_columns_available) {
+            if ($scope_columns_available && $reporting_categories_available) {
+                $stmt = $conn->prepare("UPDATE attendance_sessions SET title=?, service_date=?, is_recurring=?, recurrence_type=?, recurrence_day=?, church_id=?, attendance_scope=?, scope_id=?, attendance_report_category_id=?, classification_source=? WHERE id=?");
+                $stmt->bind_param('ssissisiisi', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id, $attendance_scope, $scope_id, $attendance_report_category_id, $classification_source, $edit_id);
+            } elseif ($scope_columns_available) {
                 $stmt = $conn->prepare("UPDATE attendance_sessions SET title=?, service_date=?, is_recurring=?, recurrence_type=?, recurrence_day=?, church_id=?, attendance_scope=?, scope_id=? WHERE id=?");
                 $stmt->bind_param('ssissisii', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id, $attendance_scope, $scope_id, $edit_id);
+            } elseif ($reporting_categories_available) {
+                $stmt = $conn->prepare("UPDATE attendance_sessions SET title=?, service_date=?, is_recurring=?, recurrence_type=?, recurrence_day=?, church_id=?, attendance_report_category_id=?, classification_source=? WHERE id=?");
+                $stmt->bind_param('ssissiisi', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id, $attendance_report_category_id, $classification_source, $edit_id);
             } else {
                 $stmt = $conn->prepare("UPDATE attendance_sessions SET title=?, service_date=?, is_recurring=?, recurrence_type=?, recurrence_day=?, church_id=? WHERE id=?");
                 $stmt->bind_param('ssissii', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id, $edit_id);
@@ -174,9 +239,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: attendance_list.php?updated=1');
             exit;
         } else {
-            if ($scope_columns_available) {
+            if ($scope_columns_available && $reporting_categories_available) {
+                $stmt = $conn->prepare("INSERT INTO attendance_sessions (title, service_date, is_recurring, recurrence_type, recurrence_day, church_id, attendance_scope, scope_id, attendance_report_category_id, classification_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt->bind_param('ssissisiis', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id, $attendance_scope, $scope_id, $attendance_report_category_id, $classification_source);
+            } elseif ($scope_columns_available) {
                 $stmt = $conn->prepare("INSERT INTO attendance_sessions (title, service_date, is_recurring, recurrence_type, recurrence_day, church_id, attendance_scope, scope_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
                 $stmt->bind_param('ssissisi', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id, $attendance_scope, $scope_id);
+            } elseif ($reporting_categories_available) {
+                $stmt = $conn->prepare("INSERT INTO attendance_sessions (title, service_date, is_recurring, recurrence_type, recurrence_day, church_id, attendance_report_category_id, classification_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt->bind_param('ssissiis', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id, $attendance_report_category_id, $classification_source);
             } else {
                 $stmt = $conn->prepare("INSERT INTO attendance_sessions (title, service_date, is_recurring, recurrence_type, recurrence_day, church_id) VALUES (?, ?, ?, ?, ?, ?)");
                 $stmt->bind_param('ssissi', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id);
@@ -409,6 +480,32 @@ ob_start();
                     </div>
                     <?php endif; ?>
 
+                    <?php if ($reporting_categories_available): ?>
+                    <div class="form-section">
+                        <h6>Reporting Classification</h6>
+                        <div class="form-group mb-0">
+                            <label for="attendance_report_category_id">Attendance Type <span class="text-danger">*</span></label>
+                            <select class="form-control" name="attendance_report_category_id" id="attendance_report_category_id" required>
+                                <option value="">-- Select Attendance Type --</option>
+                                <?php foreach ($attendance_categories as $category): ?>
+                                    <option
+                                        value="<?= (int) $category['id'] ?>"
+                                        data-code="<?= htmlspecialchars($category['code'], ENT_QUOTES, 'UTF-8') ?>"
+                                        <?= (int) $attendance_report_category_id === (int) $category['id'] ? 'selected' : '' ?>
+                                    ><?= htmlspecialchars(
+                                        $category['parent_name']
+                                            ? $category['parent_name'] . ' — ' . $category['name']
+                                            : $category['name']
+                                    ) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small class="text-muted">
+                                This controls where the session appears in unified reports. Bible Class and Organization scopes are classified automatically.
+                            </small>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+
                     <div class="form-section">
                         <h6>Schedule</h6>
                         <div class="form-group">
@@ -589,6 +686,7 @@ ob_start();
         var orgGroup = document.getElementById('scope_org_group');
         var classSelect = document.getElementById('scope_class_id');
         var orgSelect = document.getElementById('scope_org_id');
+        var reportingCategory = document.getElementById('attendance_report_category_id');
         if (!scope) return;
 
         var showClass = scope.value === 'bible_class';
@@ -606,6 +704,15 @@ ob_start();
             orgSelect.required = showOrg;
             if (!showOrg) {
                 orgSelect.value = '';
+            }
+        }
+        if (reportingCategory && (showClass || showOrg)) {
+            var requiredCode = showClass ? 'bible_class' : 'organization_meeting';
+            for (var i = 0; i < reportingCategory.options.length; i++) {
+                if (reportingCategory.options[i].getAttribute('data-code') === requiredCode) {
+                    reportingCategory.value = reportingCategory.options[i].value;
+                    break;
+                }
             }
         }
         filterBibleClassesByChurch();
