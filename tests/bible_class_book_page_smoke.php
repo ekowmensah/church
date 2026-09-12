@@ -47,13 +47,15 @@ if ($target === 'book') {
 }
 
 if ($target === 'removals') {
-    $_GET = ['class_id' => $classId];
+    $_GET = [];
     $_REQUEST = $_GET;
-    $_SERVER['REQUEST_URI'] = '/views/bible_class_member_removals.php?' . http_build_query($_GET);
+    $_SERVER['REQUEST_URI'] = '/views/bible_class_member_removals.php';
     ob_start();
     include __DIR__ . '/../views/bible_class_member_removals.php';
     $html = ob_get_clean();
-    if (strpos($html, 'Approval removes the class assignment only') === false) {
+    if (strpos($html, 'Approval removes the class assignment only') === false
+        || strpos($html, 'Central approval queue') === false
+        || strpos($html, 'All Bible classes in my scope') === false) {
         throw new RuntimeException('Removal page render assertion failed.');
     }
     echo "PASS: Removal review page rendered for an administrator.\n";

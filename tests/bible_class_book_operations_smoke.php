@@ -119,6 +119,9 @@ try {
 
     $requestId = $service->requestRemoval($classId, $testMemberId, 'Automated workflow verification.');
     bcb_operations_assert($requestId > 0, 'A class leader could not create a removal request.');
+    $scopedQueue = $service->listRequestsForClasses([$classId]);
+    $queuedRequestIds = array_map('intval', array_column($scopedQueue, 'id'));
+    bcb_operations_assert(in_array($requestId, $queuedRequestIds, true), 'The central scoped queue omitted a pending request.');
 
     $duplicateBlocked = false;
     try {

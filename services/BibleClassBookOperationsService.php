@@ -138,6 +138,18 @@ final class BibleClassBookOperationsService {
         if (!$reviewAccess && !$this->scheduleService->canAccessClass($classId)) {
             throw new RuntimeException('You cannot view removal requests for that Bible class.');
         }
+        return $this->listRequestsForClasses([$classId]);
+    }
+
+    public function listRequestsForClasses(array $classIds): array {
+        $classIds = array_values(array_unique(array_filter(array_map('intval', $classIds), static function (int $id): bool {
+            return $id > 0;
+        })));
+        if (!$classIds) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($classIds), '?'));
         $stmt = $this->conn->prepare(
             "SELECT request.*, class.name AS class_name, member.crn,
                     CONCAT_WS(' ', member.first_name, member.middle_name, member.last_name) AS member_name,
@@ -152,10 +164,11 @@ final class BibleClassBookOperationsService {
                LEFT JOIN members requester_member ON requester_member.id = request.requested_by_member_id
                LEFT JOIN users reviewer ON reviewer.id = request.reviewed_by_user_id
                LEFT JOIN members reviewer_member ON reviewer_member.id = request.reviewed_by_member_id
-              WHERE request.class_id = ?
+              WHERE request.class_id IN ({$placeholders})
               ORDER BY (request.status = 'pending') DESC, request.created_at DESC"
         );
-        $stmt->bind_param('i', $classId);
+        $types = str_repeat('i', count($classIds));
+        $stmt->bind_param($types, ...$classIds);
         $stmt->execute();
         $requests = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
