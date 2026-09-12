@@ -69,6 +69,13 @@ if ($raw_session_scope === 'organization' && (int) ($session['scope_id'] ?? 0) >
     ]));
     exit;
 }
+if ($raw_session_scope === 'bible_class' && (int) ($session['scope_id'] ?? 0) > 0) {
+    header('Location: my_bible_class_attendance.php?' . http_build_query([
+        'class_id' => (int) $session['scope_id'],
+        'session_id' => $session_id,
+    ]));
+    exit;
+}
 if (!has_permission('mark_attendance')) {
     http_response_code(403);
     include '../views/errors/403.php';

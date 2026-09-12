@@ -3,6 +3,7 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../services/AttendanceScopeService.php';
+require_once __DIR__.'/../services/BibleClassAttendanceScheduleService.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -51,8 +52,16 @@ if (!$session) {
 }
 
 $attendanceScopeService = AttendanceScopeService::fromSession($conn);
-if (strtolower(trim((string) ($session['attendance_scope'] ?? ''))) === 'organization') {
+$rawScope = strtolower(trim((string) ($session['attendance_scope'] ?? '')));
+if ($rawScope === 'organization') {
     if (!$attendanceScopeService->canView($session)) {
+        http_response_code(403);
+        include '../views/errors/403.php';
+        exit;
+    }
+} elseif ($rawScope === 'bible_class') {
+    $classScheduleService = BibleClassAttendanceScheduleService::fromSession($conn);
+    if (!$classScheduleService->canAccessClass((int) ($session['scope_id'] ?? 0))) {
         http_response_code(403);
         include '../views/errors/403.php';
         exit;

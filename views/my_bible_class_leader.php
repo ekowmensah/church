@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/leader_helpers.php';
+require_once __DIR__.'/../services/BibleClassAttendanceScheduleService.php';
 
 // Check if user is logged in
 if (!is_logged_in()) {
@@ -9,20 +10,38 @@ if (!is_logged_in()) {
     exit;
 }
 
-// Check if user is a Bible class leader
-$user_id = $_SESSION['user_id'] ?? null;
-$member_id = $_SESSION['member_id'] ?? null;
-$leader_info = is_bible_class_leader($conn, $user_id, $member_id);
-
-if (!$leader_info) {
+$schedule_service = BibleClassAttendanceScheduleService::fromSession($conn);
+$leader_classes = $schedule_service->getLeaderClasses();
+if (!$leader_classes) {
     http_response_code(403);
     echo '<div class="alert alert-danger">You are not assigned as a Bible class leader.</div>';
     exit;
 }
-
-$class_id = $leader_info['class_id'];
+$leader_class_map = [];
+foreach ($leader_classes as $leader_class) {
+    $leader_class_map[(int) $leader_class['class_id']] = $leader_class;
+}
+$class_id = (int) ($_GET['class_id'] ?? array_key_first($leader_class_map));
+if (!isset($leader_class_map[$class_id]) || !$schedule_service->canAccessClass($class_id)) {
+    http_response_code(403);
+    echo '<div class="alert alert-danger">You cannot access that Bible class.</div>';
+    exit;
+}
+$leader_info = $leader_class_map[$class_id];
 $class_name = $leader_info['class_name'];
 $class_code = $leader_info['code'];
+$schedule_notice = '';
+$today_session_id = 0;
+if ($leader_info['meeting_day'] !== null && (int) $leader_info['meeting_day'] === (int) date('w')) {
+    try {
+        $today_session = $schedule_service->ensureForClassDate($class_id, date('Y-m-d'), 'dashboard');
+        $today_session_id = (int) $today_session['session_id'];
+    } catch (Throwable $exception) {
+        $schedule_notice = $exception->getMessage();
+    }
+} elseif ($leader_info['meeting_day'] === null) {
+    $schedule_notice = 'An administrator must configure the meeting day for this class group.';
+}
 
 // Get date range for filtering (default: current month)
 $start_date = $_GET['start_date'] ?? date('Y-m-01');
@@ -54,19 +73,12 @@ $stmt->execute();
 $recent_payments = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
-// Get upcoming attendance sessions
-$stmt = $conn->prepare("
-    SELECT ats.*, c.name as church_name
-    FROM attendance_sessions ats
-    LEFT JOIN churches c ON ats.church_id = c.id
-    WHERE ats.church_id = ? AND ats.service_date >= CURDATE()
-    ORDER BY ats.service_date ASC
-    LIMIT 5
-");
-$stmt->bind_param('i', $leader_info['church_id']);
-$stmt->execute();
-$upcoming_sessions = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+$upcoming_sessions = array_values(array_filter(
+    $schedule_service->getClassSessions($class_id, 100),
+    static fn(array $session): bool => (string) $session['service_date'] >= date('Y-m-d')
+));
+usort($upcoming_sessions, static fn(array $a, array $b): int => strcmp($a['service_date'], $b['service_date']));
+$upcoming_sessions = array_slice($upcoming_sessions, 0, 5);
 
 ob_start();
 ?>
@@ -150,7 +162,7 @@ ob_start();
         </div>
         <div>
             <div class="btn-group">
-                <a href="my_bible_class_attendance.php" class="btn btn-light btn-lg">
+                <a href="my_bible_class_attendance.php?class_id=<?= (int) $class_id ?>" class="btn btn-light btn-lg">
                     <i class="fas fa-clipboard-check"></i> Mark Attendance
                 </a>
                 <a href="bible_class_book.php?class_id=<?= (int) $class_id ?>&year=<?= date('Y') ?>&quarter=<?= ceil(date('n') / 3) ?>" class="btn btn-outline-light btn-lg">
@@ -175,9 +187,25 @@ ob_start();
     </div>
 </div>
 
+<?php if ($today_session_id > 0): ?>
+<div class="alert alert-info d-flex justify-content-between align-items-center">
+    <span><strong>Attendance is ready:</strong> today is the meeting day for <?= htmlspecialchars($leader_info['group_name']) ?>.</span>
+    <a class="btn btn-primary" href="my_bible_class_attendance.php?class_id=<?= (int) $class_id ?>&session_id=<?= $today_session_id ?>">Mark today</a>
+</div>
+<?php elseif ($schedule_notice !== ''): ?>
+<div class="alert alert-warning"><?= htmlspecialchars($schedule_notice) ?></div>
+<?php endif; ?>
+
+<?php if (count($leader_class_map) > 1): ?>
+<div class="filter-card"><form method="get" class="form-row align-items-end"><div class="col-md-8"><label for="class_id">Leadership class</label><select id="class_id" name="class_id" class="form-control" onchange="this.form.submit()">
+    <?php foreach ($leader_class_map as $leader_class): ?><option value="<?= (int) $leader_class['class_id'] ?>" <?= $class_id === (int) $leader_class['class_id'] ? 'selected' : '' ?>><?= htmlspecialchars($leader_class['class_name'] . ' — ' . $leader_class['group_name']) ?></option><?php endforeach; ?>
+</select></div></form></div>
+<?php endif; ?>
+
 <!-- Filter Section -->
 <div class="filter-card">
     <form method="get" class="row align-items-end">
+        <input type="hidden" name="class_id" value="<?= (int) $class_id ?>">
         <div class="col-md-4">
             <label class="form-label fw-bold">Start Date</label>
             <input type="date" name="start_date" class="form-control" value="<?= htmlspecialchars($start_date) ?>">
@@ -190,7 +218,7 @@ ob_start();
             <button type="submit" class="btn btn-primary">
                 <i class="fas fa-filter"></i> Apply Filter
             </button>
-            <a href="?" class="btn btn-secondary">
+            <a href="?class_id=<?= (int) $class_id ?>" class="btn btn-secondary">
                 <i class="fas fa-times"></i> Clear
             </a>
         </div>
@@ -328,7 +356,7 @@ ob_start();
                             <i class="fas fa-calendar"></i> <?= date('l, F j, Y', strtotime($session['service_date'])) ?>
                         </small>
                     </div>
-                    <a href="my_bible_class_attendance.php?session_id=<?= $session['id'] ?>" 
+                    <a href="my_bible_class_attendance.php?class_id=<?= (int) $class_id ?>&session_id=<?= (int) $session['id'] ?>"
                        class="btn btn-sm btn-primary">
                         <i class="fas fa-clipboard-check"></i> Mark
                     </a>

@@ -25,6 +25,11 @@ if (in_array(6, $attendance_role_ids, true)
     header('Location: my_organization_attendance.php');
     exit;
 }
+if (in_array(5, $attendance_role_ids, true)
+    && !array_intersect([1, 2, 4], $attendance_role_ids)) {
+    header('Location: my_bible_class_attendance.php');
+    exit;
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !csrf_is_valid($_POST['csrf_token'] ?? null)) {
     http_response_code(419);

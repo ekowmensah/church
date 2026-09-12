@@ -1,4 +1,7 @@
 <?php
+header('Location: classgroup_form.php?' . http_build_query(['id' => $_GET['id'] ?? '']));
+exit;
+
 //if (session_status() === PHP_SESSION_NONE) session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';

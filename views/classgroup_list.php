@@ -26,13 +26,25 @@ if (!$is_super_admin && !has_permission('view_class_group_list')) {
 }
 
 // Set permission flags for UI elements
-$can_add = $is_super_admin || has_permission('create_class_group');
-$can_edit = $is_super_admin || has_permission('edit_class_group');
-$can_delete = $is_super_admin || has_permission('delete_class_group');
+$can_add = $is_super_admin || has_permission('create_classgroup');
+$can_edit = $is_super_admin || has_permission('edit_classgroup');
+$can_delete = $is_super_admin || has_permission('delete_classgroup');
 $can_view = true; // Already validated above
 
 // Fetch all class groups
-$classgroups = $conn->query("SELECT * FROM class_groups ORDER BY id DESC");
+$classgroups = $conn->query(
+    "SELECT class_group.*, church.name AS church_name, COUNT(class.id) AS class_count,
+            MAX(CASE WHEN review_item.resolved = 0 THEN 1 ELSE 0 END) AS needs_schedule_review
+       FROM class_groups class_group
+       JOIN churches church ON church.id = class_group.church_id
+       LEFT JOIN bible_classes class ON class.class_group_id = class_group.id
+       LEFT JOIN class_group_schedule_review review_item
+              ON review_item.class_group_id = class_group.id
+             AND review_item.issue_type = 'missing_meeting_day'
+      GROUP BY class_group.id
+      ORDER BY class_group.name"
+);
+$meetingDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 ob_start();
 ?>
@@ -60,7 +72,11 @@ ob_start();
             <table class="table table-bordered" id="classgroupTable" width="100%" cellspacing="0">
                 <thead>
                     <tr>
-                        <th>Name</th>
+                        <th>Group</th>
+                        <th>Church</th>
+                        <th>Meeting Day</th>
+                        <th>Classes</th>
+                        <th>Schedule</th>
                         <?php if ($can_edit || $can_delete): ?><th>Actions</th><?php endif; ?>
                     </tr>
                 </thead>
@@ -68,6 +84,16 @@ ob_start();
                 <?php while($row = $classgroups->fetch_assoc()): ?>
                     <tr>
                         <td><?=htmlspecialchars($row['name'])?></td>
+                        <td><?= htmlspecialchars($row['church_name']) ?></td>
+                        <td><?= $row['meeting_day'] === null ? '<span class="text-danger">Not configured</span>' : htmlspecialchars($meetingDayNames[(int) $row['meeting_day']] ?? 'Invalid') ?></td>
+                        <td><?= (int) $row['class_count'] ?></td>
+                        <td>
+                            <?php if ($row['meeting_day'] === null || !empty($row['needs_schedule_review'])): ?>
+                                <span class="badge badge-warning">Review required</span>
+                            <?php else: ?>
+                                <span class="badge badge-success">Active</span>
+                            <?php endif; ?>
+                        </td>
                         <?php if ($can_edit || $can_delete): ?>
                         <td>
                             <?php if ($can_edit): ?>

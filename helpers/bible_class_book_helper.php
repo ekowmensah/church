@@ -184,23 +184,47 @@ function bcb_resolve_payment_type_ids($conn, $churchId, $classId) {
 }
 
 function bcb_fetch_quarter_session_dates($conn, $classId, $startDate, $endDate) {
-    // Use actual attendance records for this class to avoid wrong church-wide sessions.
-    $sql = "SELECT DISTINCT s.service_date
-            FROM attendance_records r
-            INNER JOIN attendance_sessions s ON s.id = r.session_id
-            INNER JOIN members m ON m.id = r.member_id
-            WHERE m.class_id = ?
-              AND s.service_date BETWEEN ? AND ?
-              AND s.service_date <> '0000-00-00'
-            ORDER BY s.service_date ASC";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param('iss', $classId, $startDate, $endDate);
+    if (bcb_scope_columns_available($conn)) {
+        // Scheduled class sessions appear even before a leader records attendance.
+        // The second branch preserves dates from older class attendance records.
+        $sql = "SELECT DISTINCT attendance_date
+                FROM (
+                    SELECT s.service_date AS attendance_date
+                    FROM attendance_sessions s
+                    WHERE s.attendance_scope = 'bible_class'
+                      AND s.scope_id = ?
+                      AND s.service_date BETWEEN ? AND ?
+                      AND s.service_date <> '0000-00-00'
+                    UNION
+                    SELECT s.service_date AS attendance_date
+                    FROM attendance_records r
+                    INNER JOIN attendance_sessions s ON s.id = r.session_id
+                    INNER JOIN members m ON m.id = r.member_id
+                    WHERE m.class_id = ?
+                      AND s.service_date BETWEEN ? AND ?
+                      AND s.service_date <> '0000-00-00'
+                ) class_dates
+                ORDER BY attendance_date ASC";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('ississ', $classId, $startDate, $endDate, $classId, $startDate, $endDate);
+    } else {
+        $sql = "SELECT DISTINCT s.service_date AS attendance_date
+                FROM attendance_records r
+                INNER JOIN attendance_sessions s ON s.id = r.session_id
+                INNER JOIN members m ON m.id = r.member_id
+                WHERE m.class_id = ?
+                  AND s.service_date BETWEEN ? AND ?
+                  AND s.service_date <> '0000-00-00'
+                ORDER BY s.service_date ASC";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('iss', $classId, $startDate, $endDate);
+    }
     $stmt->execute();
     $res = $stmt->get_result();
 
     $dates = [];
     while ($row = $res->fetch_assoc()) {
-        $d = $row['service_date'];
+        $d = $row['attendance_date'];
         if ($d) {
             $dates[] = $d;
         }
@@ -258,10 +282,26 @@ function bcb_fetch_attendance_map($conn, $classId, $startDate, $endDate) {
             INNER JOIN members m ON m.id = r.member_id
             WHERE m.class_id = ?
               AND s.service_date BETWEEN ? AND ?
-              AND s.service_date <> '0000-00-00'
-            ORDER BY r.updated_at DESC, r.id DESC";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param('iss', $classId, $startDate, $endDate);
+              AND s.service_date <> '0000-00-00'";
+    if (bcb_scope_columns_available($conn)) {
+        $sql .= " AND (
+                    (s.attendance_scope = 'bible_class' AND s.scope_id = ?)
+                    OR NOT EXISTS (
+                        SELECT 1 FROM attendance_sessions scoped
+                        WHERE scoped.attendance_scope = 'bible_class'
+                          AND scoped.scope_id = ?
+                          AND scoped.service_date = s.service_date
+                    )
+                  )
+                  ORDER BY (s.attendance_scope = 'bible_class' AND s.scope_id = ?) DESC,
+                           r.updated_at DESC, r.id DESC";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('issiii', $classId, $startDate, $endDate, $classId, $classId, $classId);
+    } else {
+        $sql .= ' ORDER BY r.updated_at DESC, r.id DESC';
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('iss', $classId, $startDate, $endDate);
+    }
     $stmt->execute();
     $res = $stmt->get_result();
 
@@ -354,6 +394,10 @@ function bcb_build_quarter_book_data($conn, $churchId, $classId, $year, $quarter
 
             $attendanceStatus = $attendanceMap[$mk]['status'] ?? null;
             $attendanceCode = $attendanceMap[$mk]['code'] ?? '';
+            if ($attendanceStatus === null && $slotKey <= date('Y-m-d')) {
+                $attendanceStatus = 'absent';
+                $attendanceCode = 'A';
+            }
             $payAmount = floatval($paymentMap[$mk]['amount'] ?? 0.0);
             $payCount = intval($paymentMap[$mk]['count'] ?? 0);
 
