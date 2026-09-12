@@ -5,6 +5,8 @@ require_once __DIR__ . '/../helpers/permissions_v2.php';
 require_once __DIR__ . '/../helpers/leader_helpers.php';
 require_once __DIR__ . '/../helpers/church_helper.php';
 require_once __DIR__ . '/../helpers/bible_class_book_helper.php';
+require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../services/BibleClassAttendanceScheduleService.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -18,17 +20,29 @@ $leaderInfo = is_bible_class_leader($conn, $userId, $memberId);
 if ($leaderInfo) {
     $isLeader = true;
 }
+$hasBookViewPermission = has_permission('view_bible_class_book');
+$leaderScoped = $isLeader && !$hasBookViewPermission;
+$scheduleService = BibleClassAttendanceScheduleService::fromSession($conn);
+$leaderClassMap = [];
+if ($leaderScoped) {
+    foreach ($scheduleService->getLeaderClasses() as $leaderClass) {
+        $leaderClassMap[(int) $leaderClass['class_id']] = $leaderClass;
+    }
+}
 
-$canView = has_permission('view_bible_class_book') || $isLeader;
+$canView = $hasBookViewPermission || $isLeader;
 if (!$canView) {
     http_response_code(403);
     include __DIR__ . '/errors/403.php';
     exit;
 }
 
-$canSync = has_permission('sync_bible_class_book') || $isLeader;
+$canSync = has_permission('sync_bible_class_book') || $leaderScoped;
 $canFinalize = has_permission('finalize_bible_class_book');
-$canExport = has_permission('export_bible_class_book') || $isLeader;
+$canExport = has_permission('export_bible_class_book') || $leaderScoped;
+$canReview = has_permission('review_bible_class_book');
+$canReviewRemoval = has_permission('review_bible_class_member_removal');
+$canRequestRemoval = has_permission('request_bible_class_member_removal') || $leaderScoped;
 $isSuper = has_permission('*') || has_role('Super Admin');
 
 $bookTablesAvailable = bcb_book_tables_available($conn);
@@ -45,9 +59,15 @@ if ($selectedQuarter < 1 || $selectedQuarter > 4) {
     $selectedQuarter = $currentQuarter;
 }
 
-if ($isLeader) {
-    $selectedChurchId = (int) $leaderInfo['church_id'];
-    $selectedClassId = (int) $leaderInfo['class_id'];
+if ($leaderScoped) {
+    $requestedClassId = (int) ($_REQUEST['class_id'] ?? array_key_first($leaderClassMap));
+    if (!isset($leaderClassMap[$requestedClassId])) {
+        http_response_code(403);
+        include __DIR__ . '/errors/403.php';
+        exit;
+    }
+    $selectedClassId = $requestedClassId;
+    $selectedChurchId = (int) $leaderClassMap[$selectedClassId]['church_id'];
 } else {
     $defaultChurchId = (int) (get_user_church_id($conn) ?: 0);
     $selectedChurchId = $isSuper
@@ -65,7 +85,15 @@ if ($isSuper) {
 }
 
 $classOptions = [];
-if ($selectedChurchId > 0) {
+if ($leaderScoped) {
+    foreach ($leaderClassMap as $leaderClass) {
+        $classOptions[] = [
+            'id' => (int) $leaderClass['class_id'],
+            'name' => $leaderClass['class_name'],
+            'code' => $leaderClass['code'],
+        ];
+    }
+} elseif ($selectedChurchId > 0) {
     $classStmt = $conn->prepare('SELECT id, name, code FROM bible_classes WHERE church_id = ? ORDER BY name ASC');
     $classStmt->bind_param('i', $selectedChurchId);
     $classStmt->execute();
@@ -74,23 +102,6 @@ if ($selectedChurchId > 0) {
         $classOptions[] = $row;
     }
     $classStmt->close();
-}
-
-if ($isLeader && $selectedClassId > 0) {
-    $existsInOptions = false;
-    foreach ($classOptions as $opt) {
-        if ((int) $opt['id'] === $selectedClassId) {
-            $existsInOptions = true;
-            break;
-        }
-    }
-    if (!$existsInOptions) {
-        $classOptions[] = [
-            'id' => $selectedClassId,
-            'name' => $leaderInfo['class_name'] ?? 'My Class',
-            'code' => $leaderInfo['code'] ?? ''
-        ];
-    }
 }
 
 $alerts = [];
@@ -118,7 +129,10 @@ $bookHeader = $fetchBookHeader($selectedChurchId, $selectedClassId, $selectedYea
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = trim((string) ($_POST['action'] ?? ''));
 
-    if (!$bookTablesAvailable) {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        http_response_code(419);
+        $alerts[] = ['type' => 'danger', 'text' => 'Your form expired. Refresh the page and try again.'];
+    } elseif (!$bookTablesAvailable) {
         $alerts[] = ['type' => 'danger', 'text' => 'Bible Class Book tables are missing. Run migration 2026_06_05_1000 first.'];
     } elseif ($selectedChurchId <= 0 || $selectedClassId <= 0) {
         $alerts[] = ['type' => 'warning', 'text' => 'Select a valid church and class to continue.'];
@@ -134,6 +148,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $alerts[] = ['type' => 'success', 'text' => 'Snapshot refreshed successfully.'];
             } else {
                 $alerts[] = ['type' => 'danger', 'text' => 'Sync failed: ' . ($result['message'] ?? 'Unknown error')];
+            }
+        }
+    } elseif ($action === 'save_review') {
+        if (!$canReview) {
+            $alerts[] = ['type' => 'danger', 'text' => 'You do not have permission to review this class book.'];
+        } else {
+            if (!$bookHeader) {
+                $bookData = bcb_build_quarter_book_data($conn, $selectedChurchId, $selectedClassId, $selectedYear, $selectedQuarter);
+                bcb_upsert_snapshot($conn, $selectedChurchId, $selectedClassId, $selectedYear, $selectedQuarter, (int) ($userId ?: 0), $bookData);
+                $bookHeader = $fetchBookHeader($selectedChurchId, $selectedClassId, $selectedYear, $selectedQuarter);
+            }
+            if ($bookHeader) {
+                $ministerComments = trim((string) ($_POST['minister_comments'] ?? ''));
+                $observations = trim((string) ($_POST['observations'] ?? ''));
+                $recommendations = trim((string) ($_POST['recommendations'] ?? ''));
+                $overallReview = trim((string) ($_POST['overall_review'] ?? ''));
+                $review = $conn->prepare(
+                    'UPDATE bible_class_books SET minister_comments = ?, observations = ?, recommendations = ?,
+                     overall_review = ?, reviewed_by_user_id = ?, reviewed_by_member_id = ?, reviewed_at = NOW()
+                     WHERE id = ?'
+                );
+                $bookId = (int) $bookHeader['id'];
+                $review->bind_param('ssssiii', $ministerComments, $observations, $recommendations, $overallReview, $userId, $memberId, $bookId);
+                $review->execute();
+                $review->close();
+                $alerts[] = ['type' => 'success', 'text' => 'Quarterly pastoral review saved.'];
             }
         }
     } elseif ($action === 'finalize') {
@@ -232,6 +272,8 @@ ob_start();
 }
 .bcb-sheet-wrap {
     overflow-x: auto;
+    max-height: 72vh;
+    overflow-y: auto;
     background: #fff;
 }
 .bcb-sheet {
@@ -355,11 +397,27 @@ ob_start();
     color: #38485a;
     margin-right: 3px;
 }
+.bcb-sheet thead {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+.bcb-sticky-col { position: sticky; background: #fff; z-index: 8; }
+.bcb-sheet thead .bcb-sticky-col { background: #efefef; z-index: 30; }
+.bcb-sticky-1 { left: 0; min-width: 52px; }
+.bcb-sticky-2 { left: 52px; min-width: 72px; }
+.bcb-sticky-3 { left: 124px; min-width: 130px; }
+.bcb-sticky-4 { left: 254px; min-width: 175px; box-shadow: 3px 0 4px rgba(0,0,0,.08); }
+.bcb-print-header, .bcb-print-footer { display: none; }
 @media print {
     .no-print { display: none !important; }
     .content-wrapper { margin-left: 0 !important; }
     .bcb-member-meta { display: block !important; }
     .bcb-expand-btn { display: none !important; }
+    .bcb-sheet-wrap { max-height: none; overflow: visible; }
+    .bcb-sheet thead, .bcb-sticky-col { position: static; }
+    .bcb-print-header { display: block; text-align: right; font-style: italic; margin-bottom: 10px; }
+    .bcb-print-footer { display: block; position: fixed; bottom: 0; left: 0; right: 0; text-align: center; font-size: 10px; }
 }
 </style>
 
@@ -372,7 +430,14 @@ ob_start();
             </div>
             <div class="mt-2 mt-md-0 no-print">
                 <?php if ($canExport): ?>
-                    <button type="button" class="btn btn-light mr-2" onclick="window.print()"><i class="fas fa-print mr-1"></i>Print</button>
+                    <?php $exportQuery = http_build_query(['church_id' => $selectedChurchId, 'class_id' => $selectedClassId, 'year' => $selectedYear, 'quarter' => $selectedQuarter]); ?>
+                    <a class="btn btn-light mr-1" href="bible_class_book_export.php?<?= htmlspecialchars($exportQuery) ?>&format=xls"><i class="fas fa-file-excel mr-1"></i>Excel</a>
+                    <a class="btn btn-light mr-1" href="bible_class_book_export.php?<?= htmlspecialchars($exportQuery) ?>&format=csv"><i class="fas fa-file-csv mr-1"></i>CSV</a>
+                    <a class="btn btn-light mr-1" target="_blank" href="bible_class_book_export.php?<?= htmlspecialchars($exportQuery) ?>&format=print"><i class="fas fa-file-pdf mr-1"></i>PDF / Print</a>
+                    <button type="button" class="btn btn-light mr-2" id="copyClassBook"><i class="fas fa-copy mr-1"></i>Copy</button>
+                <?php endif; ?>
+                <?php if (($canRequestRemoval || $canReviewRemoval) && $selectedClassId > 0): ?>
+                    <a href="bible_class_member_removals.php?class_id=<?= (int) $selectedClassId ?>" class="btn btn-outline-light mr-1"><i class="fas fa-user-minus mr-1"></i>Removal Requests</a>
                 <?php endif; ?>
                 <?php if ($isLeader): ?>
                     <a href="my_bible_class_leader.php" class="btn btn-outline-light"><i class="fas fa-chalkboard-teacher mr-1"></i>Leader Dashboard</a>
@@ -395,7 +460,7 @@ ob_start();
     <div class="card shadow-sm mb-3 no-print">
         <div class="card-body">
             <form method="get" class="form-row align-items-end">
-                <?php if ($isSuper && !$isLeader): ?>
+                <?php if ($isSuper && !$leaderScoped): ?>
                     <div class="form-group col-md-3">
                         <label>Church</label>
                         <select class="form-control" name="church_id">
@@ -407,9 +472,9 @@ ob_start();
                         </select>
                     </div>
                 <?php endif; ?>
-                <div class="form-group <?= ($isSuper && !$isLeader) ? 'col-md-4' : 'col-md-5' ?>">
+                <div class="form-group <?= ($isSuper && !$leaderScoped) ? 'col-md-4' : 'col-md-5' ?>">
                     <label>Bible Class</label>
-                    <select class="form-control" name="class_id" <?= $isLeader ? 'disabled' : '' ?>>
+                    <select class="form-control" name="class_id">
                         <option value="">Select class</option>
                         <?php foreach ($classOptions as $class): ?>
                             <option value="<?= (int) $class['id'] ?>" <?= $selectedClassId === (int) $class['id'] ? 'selected' : '' ?>>
@@ -417,9 +482,6 @@ ob_start();
                             </option>
                         <?php endforeach; ?>
                     </select>
-                    <?php if ($isLeader): ?>
-                        <input type="hidden" name="class_id" value="<?= (int) $selectedClassId ?>">
-                    <?php endif; ?>
                 </div>
                 <div class="form-group col-md-2">
                     <label>Year</label>
@@ -459,22 +521,8 @@ ob_start();
         $dynamicColumnCount = 0;
         foreach ($monthsInQuarter as $mCount) {
             $actualMonthSlots = $bookData['slots_by_month'][$mCount] ?? [];
-            $displayMonthSlots[$mCount] = [];
-
-            for ($week = 1; $week <= 5; $week++) {
-                if (isset($actualMonthSlots[$week - 1])) {
-                    $displayMonthSlots[$mCount][] = $actualMonthSlots[$week - 1];
-                } else {
-                    $displayMonthSlots[$mCount][] = [
-                        'slot_key' => null,
-                        'month_no' => $mCount,
-                        'month_label' => date('F', strtotime(sprintf('%04d-%02d-01', $selectedYear, $mCount))),
-                        'week_no_in_month' => $week,
-                        'date_label' => ''
-                    ];
-                }
-            }
-            $dynamicColumnCount += 10; // 5 weeks * 2 columns (A and P)
+            $displayMonthSlots[$mCount] = $actualMonthSlots;
+            $dynamicColumnCount += count($actualMonthSlots);
         }
         $quarterLabels = [1 => 'First', 2 => 'Second', 3 => 'Third', 4 => 'Fourth'];
         $quarterTitle = strtoupper(($quarterLabels[$selectedQuarter] ?? 'Quarter') . ' Quarter Ending ' . date('F, Y', strtotime($bookData['end_date'])));
@@ -504,7 +552,9 @@ ob_start();
                     <div class="mt-2 mt-md-0 no-print text-right">
                         <?php if ($canSync): ?>
                             <form method="post" class="d-inline">
+                                <?= csrf_input() ?>
                                 <input type="hidden" name="action" value="sync">
+                                <input type="hidden" name="class_id" value="<?= (int) $selectedClassId ?>">
                                 <button type="submit" class="btn btn-outline-primary mr-2" <?= $status === 'finalized' ? 'disabled' : '' ?>>
                                     <i class="fas fa-sync-alt mr-1"></i>Sync Snapshot
                                 </button>
@@ -512,7 +562,9 @@ ob_start();
                         <?php endif; ?>
                         <?php if ($canFinalize): ?>
                             <form method="post" class="d-inline" onsubmit="return confirm('Finalize this quarter book? This will lock sync updates.');">
+                                <?= csrf_input() ?>
                                 <input type="hidden" name="action" value="finalize">
+                                <input type="hidden" name="class_id" value="<?= (int) $selectedClassId ?>">
                                 <button type="submit" class="btn btn-success" <?= $status === 'finalized' ? 'disabled' : '' ?>>
                                     <i class="fas fa-lock mr-1"></i>Finalize
                                 </button>
@@ -552,8 +604,9 @@ ob_start();
 
         <div class="card shadow-sm">
             <div class="card-body p-0">
+                <div class="bcb-print-header">Bible Class Book - <?= htmlspecialchars($className) ?> - Q<?= (int) $selectedQuarter ?> <?= (int) $selectedYear ?></div>
                 <div class="bcb-sheet-wrap">
-                    <table class="bcb-sheet mb-0">
+                    <table class="bcb-sheet mb-0" id="bibleClassBookTable">
                         <thead>
                             <tr>
                                 <th class="meta-label"><span class="wrapped-head">CLASS NAME</span></th>
@@ -566,18 +619,18 @@ ob_start();
                                 <th colspan="3" class="sheet-quarter-title"><?= htmlspecialchars($quarterTitle) ?></th>
                                 <?php foreach ($monthsInQuarter as $monthNo): ?>
                                     <?php $monthSlots = $displayMonthSlots[$monthNo] ?? []; ?>
-                                    <th colspan="<?= count($monthSlots) * 2 ?>" class="month-name"><?= htmlspecialchars(date('F', strtotime(sprintf('%04d-%02d-01', $selectedYear, $monthNo)))) ?></th>
+                                    <th colspan="<?= count($monthSlots) ?>" class="month-name"><?= htmlspecialchars(date('F', strtotime(sprintf('%04d-%02d-01', $selectedYear, $monthNo)))) ?></th>
                                 <?php endforeach; ?>
                             </tr>
                             <tr>
-                                <th rowspan="2" class="left-meta">No.</th>
-                                <th rowspan="2" class="left-meta"><span class="wrapped-head">Member Status</span></th>
-                                <th rowspan="2" class="crn-col">CRN</th>
-                                <th rowspan="2" class="name-col">Full Name</th>
+                                <th rowspan="2" class="left-meta bcb-sticky-col bcb-sticky-1">No.</th>
+                                <th rowspan="2" class="left-meta bcb-sticky-col bcb-sticky-2"><span class="wrapped-head">Member Status</span></th>
+                                <th rowspan="2" class="crn-col bcb-sticky-col bcb-sticky-3">CRN</th>
+                                <th rowspan="2" class="name-col bcb-sticky-col bcb-sticky-4">Full Name</th>
                                 <?php foreach ($monthsInQuarter as $monthNo): ?>
                                     <?php $monthSlots = $displayMonthSlots[$monthNo] ?? []; ?>
                                     <?php foreach ($monthSlots as $slot): ?>
-                                        <th colspan="2" class="week-label">WK <?= (int) $slot['week_no_in_month'] ?> <?= htmlspecialchars((string) $slot['date_label']) ?></th>
+                                        <th class="week-label"><?= htmlspecialchars((string) $slot['header_label']) ?><br><small><?= htmlspecialchars((string) $slot['date_label']) ?></small></th>
                                     <?php endforeach; ?>
                                 <?php endforeach; ?>
                             </tr>
@@ -585,8 +638,7 @@ ob_start();
                                 <?php foreach ($monthsInQuarter as $monthNo): ?>
                                     <?php $monthSlots = $displayMonthSlots[$monthNo] ?? []; ?>
                                     <?php foreach ($monthSlots as $slot): ?>
-                                        <th class="ap-label">A</th>
-                                        <th class="ap-label">P</th>
+                                        <th class="ap-label"><?= $slot['entry_type'] === 'attendance' ? 'A' : 'P' ?></th>
                                     <?php endforeach; ?>
                                 <?php endforeach; ?>
                             </tr>
@@ -596,27 +648,28 @@ ob_start();
                                 <?php
                                 $member = $row['member'] ?? [];
                                 $dob = !empty($member['dob']) ? date('Y-m-d', strtotime((string) $member['dob'])) : '';
-                                $marital = strtoupper(substr((string) ($member['marital_status'] ?? ''), 0, 1));
+                                $marital = (string) ($member['marital_status'] ?? '');
                                 $contact = (string) ($member['phone'] ?? '');
                                 $profession = strtoupper((string) ($member['profession'] ?? ''));
                                 $metaId = 'bcb-meta-' . $idx;
                                 ?>
                                 <tr>
-                                    <td class="num-cell"><?= $idx + 1 ?></td>
-                                    <td class="num-cell"><?= htmlspecialchars((string) ($member['member_status_code'] ?? '--')) ?></td>
-                                    <td>
+                                    <td class="num-cell bcb-sticky-col bcb-sticky-1"><?= $idx + 1 ?></td>
+                                    <td class="num-cell bcb-sticky-col bcb-sticky-2"><?= htmlspecialchars((string) ($member['member_status_code'] ?? '--')) ?></td>
+                                    <td class="bcb-sticky-col bcb-sticky-3">
                                         <div class="d-flex align-items-center justify-content-between">
                                             <span><?= htmlspecialchars((string) ($member['crn'] ?? '')) ?></span>
                                             <button type="button" class="bcb-expand-btn no-print" data-meta-id="<?= htmlspecialchars($metaId) ?>" aria-label="Toggle member details">+</button>
                                         </div>
                                     </td>
-                                    <td>
+                                    <td class="bcb-sticky-col bcb-sticky-4">
                                         <div><?= htmlspecialchars((string) ($member['full_name'] ?? '')) ?></div>
                                         <div id="<?= htmlspecialchars($metaId) ?>" class="bcb-member-meta">
                                             <div><span class="bcb-meta-label">DOB</span><?= htmlspecialchars($dob !== '' ? $dob : '-') ?></div>
                                             <div><span class="bcb-meta-label">Marital</span><?= htmlspecialchars($marital !== '' ? $marital : '-') ?></div>
                                             <div><span class="bcb-meta-label">Contact</span><?= htmlspecialchars($contact !== '' ? $contact : '-') ?></div>
                                             <div><span class="bcb-meta-label">Profession</span><?= htmlspecialchars($profession !== '' ? $profession : '-') ?></div>
+                                            <?php if ($canRequestRemoval): ?><div class="mt-1 no-print"><a href="bible_class_member_removals.php?class_id=<?= (int) $selectedClassId ?>&member_id=<?= (int) $member['id'] ?>" class="text-danger">Request class-list removal</a></div><?php endif; ?>
                                         </div>
                                     </td>
                                     <?php foreach ($monthsInQuarter as $monthNo): ?>
@@ -628,8 +681,7 @@ ob_start();
                                             $attCode = strtoupper((string) ($cell['attendance_code'] ?? ''));
                                             $amount = (float) ($cell['payment_amount'] ?? 0);
                                             ?>
-                                            <td class="text-center bcb-cell"><?= htmlspecialchars($attCode !== '' ? $attCode : '') ?></td>
-                                            <td class="text-center bcb-cell"><?= $amount > 0 ? number_format($amount, 0) : '' ?></td>
+                                            <td class="text-center bcb-cell"><?= $slot['entry_type'] === 'attendance' ? htmlspecialchars($attCode) : ($amount > 0 ? number_format($amount, 0) : '') ?></td>
                                         <?php endforeach; ?>
                                     <?php endforeach; ?>
                                     <td class="money-cell"><?= number_format((float) ($row['total_amount'] ?? 0), 0) ?></td>
@@ -649,8 +701,7 @@ ob_start();
                                         <?php $monthSlots = $displayMonthSlots[$monthNo] ?? []; ?>
                                         <?php foreach ($monthSlots as $slot): ?>
                                             <?php $slotKey = $slot['slot_key'] ?? null; ?>
-                                            <th class="text-center"></th>
-                                            <th class="text-center"><?= $slotKey ? number_format((float) ($bookData['totals']['amount_by_slot'][$slotKey] ?? 0), 0) : '' ?></th>
+                                            <th class="text-center"><?= $slot['entry_type'] === 'payment' ? number_format((float) ($bookData['totals']['amount_by_slot'][$slotKey] ?? 0), 0) : '' ?></th>
                                         <?php endforeach; ?>
                                     <?php endforeach; ?>
                                     <th class="money-cell"><?= number_format((float) ($bookData['totals']['quarter_total_amount'] ?? 0), 0) ?></th>
@@ -661,33 +712,10 @@ ob_start();
                                         <?php $monthSlots = $displayMonthSlots[$monthNo] ?? []; ?>
                                         <?php foreach ($monthSlots as $slot): ?>
                                             <?php $slotKey = $slot['slot_key'] ?? null; ?>
-                                            <th class="text-center"><?= $slotKey ? (int) ($bookData['totals']['present_by_slot'][$slotKey] ?? 0) : '' ?></th>
-                                            <th class="text-center"></th>
+                                            <th class="text-center"><?= $slot['entry_type'] === 'attendance' ? (int) ($bookData['totals']['present_by_slot'][$slotKey] ?? 0) : '' ?></th>
                                         <?php endforeach; ?>
                                     <?php endforeach; ?>
                                     <th class="num-cell"><?= array_sum($bookData['totals']['present_by_slot'] ?? []) ?></th>
-                                </tr>
-                                <tr class="summary-row">
-                                    <th colspan="4" class="text-right">VARIANCE (AMOUNT/PRESENT)</th>
-                                    <?php foreach ($monthsInQuarter as $monthNo): ?>
-                                        <?php $monthSlots = $displayMonthSlots[$monthNo] ?? []; ?>
-                                        <?php foreach ($monthSlots as $slot): ?>
-                                            <?php
-                                            $slotKey = $slot['slot_key'] ?? null;
-                                            $present = $slotKey ? (int) ($bookData['totals']['present_by_slot'][$slotKey] ?? 0) : 0;
-                                            $amount = $slotKey ? (float) ($bookData['totals']['amount_by_slot'][$slotKey] ?? 0) : 0;
-                                            $variance = $present > 0 ? ($amount / $present) : 0;
-                                            ?>
-                                            <th class="text-center"></th>
-                                            <th class="text-center"><?= $slotKey ? ($variance > 0 ? number_format($variance, 2) : '0.00') : '' ?></th>
-                                        <?php endforeach; ?>
-                                    <?php endforeach; ?>
-                                    <?php
-                                    $grandPresent = array_sum($bookData['totals']['present_by_slot'] ?? []);
-                                    $grandAmount = (float) ($bookData['totals']['quarter_total_amount'] ?? 0);
-                                    $grandVariance = $grandPresent > 0 ? ($grandAmount / $grandPresent) : 0;
-                                    ?>
-                                    <th class="money-cell"><?= number_format($grandVariance, 4) ?></th>
                                 </tr>
                                 <tr class="summary-row">
                                     <th class="text-center">STATUS</th>
@@ -702,6 +730,32 @@ ob_start();
                 </div>
             </div>
         </div>
+
+        <div class="card shadow-sm mt-3">
+            <div class="card-header bg-white"><strong>Quarterly Minister / Steward Review</strong></div>
+            <div class="card-body">
+                <?php if ($canReview): ?>
+                    <form method="post">
+                        <?= csrf_input() ?>
+                        <input type="hidden" name="action" value="save_review">
+                        <input type="hidden" name="class_id" value="<?= (int) $selectedClassId ?>">
+                        <div class="form-row">
+                            <div class="form-group col-md-6"><label>Minister comments</label><textarea class="form-control" name="minister_comments" rows="3" maxlength="5000"><?= htmlspecialchars((string) ($bookHeader['minister_comments'] ?? '')) ?></textarea></div>
+                            <div class="form-group col-md-6"><label>Observations</label><textarea class="form-control" name="observations" rows="3" maxlength="5000"><?= htmlspecialchars((string) ($bookHeader['observations'] ?? '')) ?></textarea></div>
+                            <div class="form-group col-md-6"><label>Recommendations</label><textarea class="form-control" name="recommendations" rows="3" maxlength="5000"><?= htmlspecialchars((string) ($bookHeader['recommendations'] ?? '')) ?></textarea></div>
+                            <div class="form-group col-md-6"><label>Overall quarterly review</label><textarea class="form-control" name="overall_review" rows="3" maxlength="5000"><?= htmlspecialchars((string) ($bookHeader['overall_review'] ?? '')) ?></textarea></div>
+                        </div>
+                        <button class="btn btn-primary"><i class="fas fa-save mr-1"></i>Save Review</button>
+                    </form>
+                <?php else: ?>
+                    <?php $hasReview = !empty($bookHeader['minister_comments']) || !empty($bookHeader['observations']) || !empty($bookHeader['recommendations']) || !empty($bookHeader['overall_review']); ?>
+                    <?php if ($hasReview): ?>
+                        <dl class="row mb-0"><dt class="col-md-3">Minister comments</dt><dd class="col-md-9"><?= nl2br(htmlspecialchars((string) ($bookHeader['minister_comments'] ?? ''))) ?></dd><dt class="col-md-3">Observations</dt><dd class="col-md-9"><?= nl2br(htmlspecialchars((string) ($bookHeader['observations'] ?? ''))) ?></dd><dt class="col-md-3">Recommendations</dt><dd class="col-md-9"><?= nl2br(htmlspecialchars((string) ($bookHeader['recommendations'] ?? ''))) ?></dd><dt class="col-md-3">Overall review</dt><dd class="col-md-9"><?= nl2br(htmlspecialchars((string) ($bookHeader['overall_review'] ?? ''))) ?></dd></dl>
+                    <?php else: ?><span class="text-muted">No quarterly review has been recorded.</span><?php endif; ?>
+                <?php endif; ?>
+            </div>
+        </div>
+        <div class="bcb-print-footer">Powered By: MyFreeman Digital NetWorks - Evangelism, Through Digitalization!<br>Extenditque Manum Omni Membri, Ubique!!</div>
     <?php endif; ?>
 </div>
 
@@ -723,6 +777,21 @@ document.addEventListener('DOMContentLoaded', function () {
             this.textContent = panel.classList.contains('is-open') ? '-' : '+';
         });
     });
+    var copyButton = document.getElementById('copyClassBook');
+    if (copyButton) {
+        copyButton.addEventListener('click', function () {
+            var table = document.getElementById('bibleClassBookTable');
+            if (!table) return;
+            var range = document.createRange();
+            range.selectNode(table);
+            var selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            document.execCommand('copy');
+            selection.removeAllRanges();
+            copyButton.innerHTML = '<i class="fas fa-check mr-1"></i>Copied';
+        });
+    }
 });
 </script>
 

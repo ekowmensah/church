@@ -78,9 +78,10 @@ try {
     $quarter = bcb_quarter_from_month((int) substr($testDate, 5, 2));
     $bookData = bcb_build_quarter_book_data($conn, (int) $session['church_id'], $classId, $year, $quarter);
     $firstMemberRow = $bookData['rows'][0] ?? null;
-    schedule_smoke_assert(isset($firstMemberRow['slots'][$testDate]), 'Generated date is missing from the class book.');
+    $attendanceSlotKey = 'a|' . $testDate;
+    schedule_smoke_assert(isset($firstMemberRow['slots'][$attendanceSlotKey]), 'Generated date is missing from the class book.');
     schedule_smoke_assert(
-        ($firstMemberRow['slots'][$testDate]['attendance_code'] ?? '') === 'A',
+        ($firstMemberRow['slots'][$attendanceSlotKey]['attendance_code'] ?? '') === 'A',
         'An unmarked past scheduled date was not represented as absent.'
     );
 

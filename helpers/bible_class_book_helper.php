@@ -114,7 +114,8 @@ function bcb_fetch_class_members($conn, $classId) {
     $sql = "SELECT id, crn, first_name, middle_name, last_name, dob, marital_status, phone, profession, membership_status
             FROM members
             WHERE class_id = ? AND status = 'active'
-            ORDER BY last_name, first_name, middle_name";
+            ORDER BY CASE WHEN crn IS NULL OR TRIM(crn) = '' THEN 1 ELSE 0 END,
+                     crn, last_name, first_name, middle_name";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param('i', $classId);
     $stmt->execute();
@@ -234,7 +235,39 @@ function bcb_fetch_quarter_session_dates($conn, $classId, $startDate, $endDate) 
     return $dates;
 }
 
-function bcb_build_quarter_slots($year, $quarter, $attendanceDates) {
+function bcb_fetch_class_meeting_day($conn, $classId) {
+    $stmt = $conn->prepare(
+        'SELECT class_group.meeting_day
+           FROM bible_classes class
+           JOIN class_groups class_group ON class_group.id = class.class_group_id
+          WHERE class.id = ? AND class_group.is_active = 1 LIMIT 1'
+    );
+    $stmt->bind_param('i', $classId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $row && $row['meeting_day'] !== null ? (int) $row['meeting_day'] : null;
+}
+
+function bcb_dates_for_weekday($startDate, $endDate, $weekday) {
+    $dates = [];
+    $cursor = new DateTimeImmutable($startDate);
+    $end = new DateTimeImmutable($endDate);
+    while ((int) $cursor->format('w') !== (int) $weekday) {
+        $cursor = $cursor->modify('+1 day');
+    }
+    while ($cursor <= $end) {
+        $dates[] = $cursor->format('Y-m-d');
+        $cursor = $cursor->modify('+7 days');
+    }
+    return $dates;
+}
+
+function bcb_quarter_sundays($startDate, $endDate) {
+    return bcb_dates_for_weekday($startDate, $endDate, 0);
+}
+
+function bcb_build_quarter_slots($year, $quarter, $attendanceDates, $paymentDates = []) {
     $months = bcb_quarter_months($quarter);
     $slots = [];
     $slotsByMonth = [];
@@ -248,27 +281,51 @@ function bcb_build_quarter_slots($year, $quarter, $attendanceDates) {
         if (!isset($monthDateMap[$month])) {
             $monthDateMap[$month] = [];
         }
-        $monthDateMap[$month][] = $d;
+        $monthDateMap[$month][] = ['entry_type' => 'attendance', 'record_date' => $d];
+    }
+    foreach ($paymentDates as $d) {
+        $month = intval(date('n', strtotime($d)));
+        if (!isset($monthDateMap[$month])) {
+            $monthDateMap[$month] = [];
+        }
+        $monthDateMap[$month][] = ['entry_type' => 'payment', 'record_date' => $d];
     }
 
     foreach ($months as $m) {
-        $dates = $monthDateMap[$m] ?? [];
-        sort($dates);
-        $dates = array_slice($dates, 0, 5); // Workbook style: up to 5 weekly columns per month
+        $events = $monthDateMap[$m] ?? [];
+        usort($events, static function (array $a, array $b): int {
+            $dateOrder = strcmp($a['record_date'], $b['record_date']);
+            if ($dateOrder !== 0) return $dateOrder;
+            return $a['entry_type'] === $b['entry_type'] ? 0 : ($a['entry_type'] === 'attendance' ? -1 : 1);
+        });
 
-        $weekNo = 1;
-        foreach ($dates as $d) {
-            $slotKey = date('Y-m-d', strtotime($d));
+        $attendanceNo = 0;
+        $paymentNo = 0;
+        foreach ($events as $event) {
+            $recordDate = date('Y-m-d', strtotime($event['record_date']));
+            $entryType = $event['entry_type'];
+            if ($entryType === 'attendance') {
+                $attendanceNo++;
+                $sequenceNo = $attendanceNo;
+            } else {
+                $paymentNo++;
+                $sequenceNo = $paymentNo;
+            }
+            $slotKey = substr($entryType, 0, 1) . '|' . $recordDate;
             $slot = [
                 'slot_key' => $slotKey,
+                'entry_type' => $entryType,
+                'record_date' => $recordDate,
                 'month_no' => $m,
-                'month_label' => date('F', strtotime($slotKey)),
-                'week_no_in_month' => $weekNo,
-                'date_label' => date('jS', strtotime($slotKey))
+                'month_label' => date('F', strtotime($recordDate)),
+                'week_no_in_month' => $sequenceNo,
+                'date_label' => date('jS', strtotime($recordDate)),
+                'header_label' => $entryType === 'attendance'
+                    ? date('jS', strtotime($recordDate))
+                    : 'WK ' . $sequenceNo,
             ];
             $slots[] = $slot;
             $slotsByMonth[$m][] = $slot;
-            $weekNo++;
         }
     }
 
@@ -326,7 +383,9 @@ function bcb_fetch_payment_map($conn, $classId, $startDate, $endDate, $paymentTy
     }
 
     $inPlaceholders = implode(',', array_fill(0, count($paymentTypeIds), '?'));
-    $sql = "SELECT p.member_id, DATE(p.payment_date) AS payment_day,
+    $queryStart = date('Y-m-d', strtotime($startDate . ' -6 days'));
+    $weekExpression = 'DATE_ADD(DATE(p.payment_date), INTERVAL MOD(8 - DAYOFWEEK(DATE(p.payment_date)), 7) DAY)';
+    $sql = "SELECT p.member_id, {$weekExpression} AS week_ending,
                    SUM(p.amount) AS total_amount,
                    COUNT(*) AS payment_count
             FROM payments p
@@ -339,19 +398,19 @@ function bcb_fetch_payment_map($conn, $classId, $startDate, $endDate, $paymentTy
         $sql .= " AND (p.reversal_approved_at IS NULL OR p.reversal_undone_at IS NOT NULL)";
     }
 
-    $sql .= "
-            GROUP BY p.member_id, DATE(p.payment_date)";
+    $sql .= " GROUP BY p.member_id, week_ending
+              HAVING week_ending BETWEEN ? AND ?";
 
     $stmt = $conn->prepare($sql);
-    $types = 'iss' . str_repeat('i', count($paymentTypeIds));
-    $params = array_merge([$classId, $startDate, $endDate], $paymentTypeIds);
+    $types = 'iss' . str_repeat('i', count($paymentTypeIds)) . 'ss';
+    $params = array_merge([$classId, $queryStart, $endDate], $paymentTypeIds, [$startDate, $endDate]);
     $stmt->bind_param($types, ...$params);
     $stmt->execute();
     $res = $stmt->get_result();
 
     $map = [];
     while ($row = $res->fetch_assoc()) {
-        $key = intval($row['member_id']) . '|' . $row['payment_day'];
+        $key = intval($row['member_id']) . '|' . $row['week_ending'];
         $map[$key] = [
             'amount' => floatval($row['total_amount'] ?? 0),
             'count' => intval($row['payment_count'] ?? 0)
@@ -365,8 +424,12 @@ function bcb_build_quarter_book_data($conn, $churchId, $classId, $year, $quarter
     list($startDate, $endDate) = bcb_quarter_range($year, $quarter);
     $members = bcb_fetch_class_members($conn, $classId);
 
-    $sessionDates = bcb_fetch_quarter_session_dates($conn, $classId, $startDate, $endDate);
-    list($slots, $slotsByMonth) = bcb_build_quarter_slots($year, $quarter, $sessionDates);
+    $meetingDay = bcb_fetch_class_meeting_day($conn, $classId);
+    $attendanceDates = $meetingDay === null
+        ? bcb_fetch_quarter_session_dates($conn, $classId, $startDate, $endDate)
+        : bcb_dates_for_weekday($startDate, $endDate, $meetingDay);
+    $paymentDates = bcb_quarter_sundays($startDate, $endDate);
+    list($slots, $slotsByMonth) = bcb_build_quarter_slots($year, $quarter, $attendanceDates, $paymentDates);
 
     $attendanceMap = bcb_fetch_attendance_map($conn, $classId, $startDate, $endDate);
     $paymentTypeIds = bcb_resolve_payment_type_ids($conn, $churchId, $classId);
@@ -390,16 +453,24 @@ function bcb_build_quarter_book_data($conn, $churchId, $classId, $year, $quarter
 
         foreach ($slots as $slot) {
             $slotKey = $slot['slot_key'];
-            $mk = intval($member['id']) . '|' . $slotKey;
+            $recordDate = $slot['record_date'];
+            $mk = intval($member['id']) . '|' . $recordDate;
 
-            $attendanceStatus = $attendanceMap[$mk]['status'] ?? null;
-            $attendanceCode = $attendanceMap[$mk]['code'] ?? '';
-            if ($attendanceStatus === null && $slotKey <= date('Y-m-d')) {
-                $attendanceStatus = 'absent';
-                $attendanceCode = 'A';
+            $attendanceStatus = null;
+            $attendanceCode = '';
+            $payAmount = 0.0;
+            $payCount = 0;
+            if ($slot['entry_type'] === 'attendance') {
+                $attendanceStatus = $attendanceMap[$mk]['status'] ?? null;
+                $attendanceCode = $attendanceMap[$mk]['code'] ?? '';
+                if ($attendanceStatus === null && $recordDate <= date('Y-m-d')) {
+                    $attendanceStatus = 'absent';
+                    $attendanceCode = 'A';
+                }
+            } else {
+                $payAmount = floatval($paymentMap[$mk]['amount'] ?? 0.0);
+                $payCount = intval($paymentMap[$mk]['count'] ?? 0);
             }
-            $payAmount = floatval($paymentMap[$mk]['amount'] ?? 0.0);
-            $payCount = intval($paymentMap[$mk]['count'] ?? 0);
 
             if ($attendanceCode === 'P') {
                 $row['present_count']++;
@@ -436,6 +507,9 @@ function bcb_build_quarter_book_data($conn, $churchId, $classId, $year, $quarter
         'quarter' => intval($quarter),
         'start_date' => $startDate,
         'end_date' => $endDate,
+        'meeting_day' => $meetingDay,
+        'attendance_dates' => $attendanceDates,
+        'payment_dates' => $paymentDates,
         'slots' => $slots,
         'slots_by_month' => $slotsByMonth,
         'rows' => $rows,
@@ -479,8 +553,10 @@ function bcb_upsert_snapshot($conn, $churchId, $classId, $year, $quarter, $userI
 
     $ins = $conn->prepare("
         INSERT INTO bible_class_book_entries
-        (book_id, member_id, week_start_date, month_no, week_no_in_month, attendance_status, attendance_code, payment_amount, payment_count, is_manual_override, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)
+        (book_id, member_id, week_start_date, entry_type, record_date, month_no,
+         week_no_in_month, attendance_status, attendance_code, payment_amount,
+         payment_count, is_manual_override, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)
     ");
 
     foreach ($bookData['rows'] as $row) {
@@ -488,6 +564,11 @@ function bcb_upsert_snapshot($conn, $churchId, $classId, $year, $quarter, $userI
         foreach ($bookData['slots'] as $slot) {
             $slotKey = $slot['slot_key'];
             $cell = $row['slots'][$slotKey] ?? [];
+            $entryType = (string) $slot['entry_type'];
+            $recordDate = (string) $slot['record_date'];
+            $weekStartDate = $entryType === 'payment'
+                ? date('Y-m-d', strtotime($recordDate . ' -6 days'))
+                : $recordDate;
             $attendanceStatus = $cell['attendance_status'] ?? null;
             $attendanceCode = $cell['attendance_code'] ?? null;
             $paymentAmount = floatval($cell['payment_amount'] ?? 0);
@@ -496,10 +577,12 @@ function bcb_upsert_snapshot($conn, $churchId, $classId, $year, $quarter, $userI
             $weekNo = intval($slot['week_no_in_month']);
 
             $ins->bind_param(
-                'iisiissdi',
+                'iisssiissdi',
                 $bookId,
                 $memberId,
-                $slotKey,
+                $weekStartDate,
+                $entryType,
+                $recordDate,
                 $monthNo,
                 $weekNo,
                 $attendanceStatus,
