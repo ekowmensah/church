@@ -760,24 +760,27 @@ function get_organization_recent_payments($conn, $org_id, $start_date, $end_date
 }
 
 /**
- * Get upcoming attendance sessions for an organization's church.
+ * Get upcoming attendance sessions scoped to an organization.
  *
  * @param mysqli $conn Database connection
- * @param int $church_id Church ID
+ * @param int $org_id Organization ID
  * @param int $limit Result limit
  * @return array
  */
-function get_upcoming_organization_sessions($conn, $church_id, $limit = 5) {
+function get_upcoming_organization_sessions($conn, $org_id, $limit = 5) {
     $limit = max(1, (int) $limit);
     $stmt = $conn->prepare("
-        SELECT ats.*, c.name AS church_name
+        SELECT ats.*, c.name AS church_name, unit.name AS unit_name
         FROM attendance_sessions ats
         LEFT JOIN churches c ON ats.church_id = c.id
-        WHERE ats.church_id = ? AND ats.service_date >= CURDATE()
+        LEFT JOIN organization_units unit ON unit.id = ats.organization_unit_id
+        WHERE ats.attendance_scope = 'organization'
+          AND ats.scope_id = ?
+          AND ats.service_date >= CURDATE()
         ORDER BY ats.service_date ASC
         LIMIT $limit
     ");
-    $stmt->bind_param('i', $church_id);
+    $stmt->bind_param('i', $org_id);
     $stmt->execute();
     $sessions = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();

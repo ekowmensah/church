@@ -218,8 +218,25 @@ $current_url = $_SERVER['REQUEST_URI'] ?? '';
     
     $bible_class_leader = is_bible_class_leader($conn);
     $org_leader = is_organization_leader($conn);
+    $unit_attendance_leader = false;
+    $sidebar_member_id = (int) ($_SESSION['member_id'] ?? 0);
+    if ($sidebar_member_id <= 0 && !empty($_SESSION['user_id'])) {
+      $linked_member_stmt = $conn->prepare('SELECT member_id FROM users WHERE id = ? LIMIT 1');
+      $sidebar_user_id = (int) $_SESSION['user_id'];
+      $linked_member_stmt->bind_param('i', $sidebar_user_id);
+      $linked_member_stmt->execute();
+      $sidebar_member_id = (int) ($linked_member_stmt->get_result()->fetch_assoc()['member_id'] ?? 0);
+      $linked_member_stmt->close();
+    }
+    if ($sidebar_member_id > 0) {
+      $unit_leader_stmt = $conn->prepare("SELECT 1 FROM organization_unit_leaders WHERE member_id = ? AND status = 'active' AND (effective_to IS NULL OR effective_to >= CURDATE()) LIMIT 1");
+      $unit_leader_stmt->bind_param('i', $sidebar_member_id);
+      $unit_leader_stmt->execute();
+      $unit_attendance_leader = (bool) $unit_leader_stmt->get_result()->fetch_assoc();
+      $unit_leader_stmt->close();
+    }
     
-    if ($bible_class_leader || $org_leader) {
+    if ($bible_class_leader || $org_leader || $unit_attendance_leader) {
       echo '<div class="sidebar-heading" onclick="toggleMenuGroup(\'menu-group-leadership\', this)">';
       echo '<i class="fas fa-user-tie"></i>';
       echo '<span>My Leadership</span>';
@@ -257,6 +274,16 @@ $current_url = $_SERVER['REQUEST_URI'] ?? '';
           echo '</a>';
           echo '</li>';
         }
+      }
+
+      if ($org_leader || $unit_attendance_leader) {
+        $is_active = strpos($current_url, 'my_organization_attendance.php') !== false;
+        echo '<li class="nav-item">';
+        echo '<a href="' . BASE_URL . '/views/my_organization_attendance.php" class="nav-link' . ($is_active ? ' active' : '') . '">';
+        echo '<i class="nav-icon fas fa-clipboard-check"></i>';
+        echo '<p>Organization Attendance</p>';
+        echo '</a>';
+        echo '</li>';
       }
       
       echo '</ul>';

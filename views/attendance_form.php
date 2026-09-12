@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -13,6 +14,19 @@ if (!has_permission('edit_attendance')) {
     http_response_code(403);
     include '../views/errors/403.php';
     exit;
+}
+
+
+$attendance_role_ids = array_map('intval', $_SESSION['role_ids'] ?? [$_SESSION['role_id'] ?? 0]);
+if (in_array(6, $attendance_role_ids, true)
+    && !array_intersect([1, 2, 4], $attendance_role_ids)) {
+    header('Location: my_organization_attendance.php');
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(419);
+    exit('Your form expired. Refresh and try again.');
 }
 
 function attendance_scope_columns_available($conn) {
@@ -318,6 +332,7 @@ ob_start();
                 <?php endif; ?>
 
                 <form method="post" autocomplete="off">
+                    <?= csrf_input() ?>
                     <div class="form-section">
                         <h6>Session Details</h6>
                         <div class="row">

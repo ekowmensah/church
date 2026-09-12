@@ -21,7 +21,7 @@ if (!$session_id) {
     exit('No session ID');
 }
 
-$session_stmt = $conn->prepare("SELECT church_id FROM attendance_sessions WHERE id = ? LIMIT 1");
+$session_stmt = $conn->prepare("SELECT church_id, attendance_scope FROM attendance_sessions WHERE id = ? LIMIT 1");
 $session_stmt->bind_param('i', $session_id);
 $session_stmt->execute();
 $session = $session_stmt->get_result()->fetch_assoc();
@@ -29,6 +29,10 @@ $session_stmt->close();
 if (!$session) {
     http_response_code(404);
     exit('Session not found');
+}
+if (strtolower(trim((string) ($session['attendance_scope'] ?? ''))) === 'organization') {
+    http_response_code(403);
+    exit('Organization attendance is available only through the scoped organization attendance page.');
 }
 
 $filter_class = $_GET['class_id'] ?? '';

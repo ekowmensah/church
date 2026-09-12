@@ -2,15 +2,10 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../services/AttendanceScopeService.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
-    exit;
-}
-
-if (!has_permission('view_attendance_list')) {
-    http_response_code(403);
-    include '../views/errors/403.php';
     exit;
 }
 
@@ -52,6 +47,19 @@ $stmt->execute();
 $session = $stmt->get_result()->fetch_assoc();
 if (!$session) {
     header('Location: attendance_list.php');
+    exit;
+}
+
+$attendanceScopeService = AttendanceScopeService::fromSession($conn);
+if (strtolower(trim((string) ($session['attendance_scope'] ?? ''))) === 'organization') {
+    if (!$attendanceScopeService->canView($session)) {
+        http_response_code(403);
+        include '../views/errors/403.php';
+        exit;
+    }
+} elseif (!has_permission('view_attendance_list')) {
+    http_response_code(403);
+    include '../views/errors/403.php';
     exit;
 }
 

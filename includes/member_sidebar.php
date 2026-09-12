@@ -102,8 +102,17 @@ if (isset($_SESSION['member_id'])) {
         
         $bible_class_leader = is_bible_class_leader($conn);
         $org_leader = is_organization_leader($conn);
+        $unit_attendance_leader = false;
+        if (!empty($_SESSION['member_id'])) {
+          $unit_leader_stmt = $conn->prepare("SELECT 1 FROM organization_unit_leaders WHERE member_id = ? AND status = 'active' AND (effective_to IS NULL OR effective_to >= CURDATE()) LIMIT 1");
+          $unit_leader_member_id = (int) $_SESSION['member_id'];
+          $unit_leader_stmt->bind_param('i', $unit_leader_member_id);
+          $unit_leader_stmt->execute();
+          $unit_attendance_leader = (bool) $unit_leader_stmt->get_result()->fetch_assoc();
+          $unit_leader_stmt->close();
+        }
         
-        if ($bible_class_leader || $org_leader) {
+        if ($bible_class_leader || $org_leader || $unit_attendance_leader) {
         ?>
         <!-- Leadership Section -->
         <li class="nav-header" style="color: rgba(255,255,255,0.6); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin: 1.5rem 0 0.5rem 0;">
@@ -134,6 +143,15 @@ if (isset($_SESSION['member_id'])) {
               <i class="nav-icon fas fa-users-cog"></i>
             </div>
             <span class="nav-text"><?= $org_label ?><?php if ($org_count > 1): ?> <span class="badge badge-info"><?= $org_count ?></span><?php endif; ?></span>
+            <div class="nav-indicator"></div>
+          </a>
+        </li>
+        <?php endif; ?>
+        <?php if ($org_leader || $unit_attendance_leader): ?>
+        <li class="nav-item">
+          <a class="nav-link modern-nav-link" href="<?php echo BASE_URL; ?>/views/my_organization_attendance.php">
+            <div class="nav-icon-wrapper"><i class="nav-icon fas fa-clipboard-check"></i></div>
+            <span class="nav-text">Organization Attendance</span>
             <div class="nav-indicator"></div>
           </a>
         </li>

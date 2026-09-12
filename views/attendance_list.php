@@ -3,6 +3,7 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/role_based_filter.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -16,6 +17,18 @@ if (!$is_super_admin && !has_permission('view_attendance_list')) {
     http_response_code(403);
     echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
     exit;
+}
+
+$attendance_role_ids = array_map('intval', $_SESSION['role_ids'] ?? [$_SESSION['role_id'] ?? 0]);
+if (in_array(6, $attendance_role_ids, true)
+    && !array_intersect([1, 2, 4], $attendance_role_ids)) {
+    header('Location: my_organization_attendance.php');
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(419);
+    exit('Your form expired. Refresh and try again.');
 }
 
 function attendance_scope_columns_available($conn) {
@@ -1035,6 +1048,7 @@ ob_start();
                                 <?php if ($can_delete && !$is_marked): ?>
                                     <form method="post" action="attendance_list.php" style="display:inline;" 
                                           onsubmit="return confirm('Delete this session? This will remove all attendance records.');">
+                                        <?= csrf_input() ?>
                                         <input type="hidden" name="delete_id" value="<?= $row['id'] ?>">
                                         <button type="submit" class="btn btn-danger" title="Delete Session">
                                             <i class="fas fa-trash"></i>
@@ -1122,6 +1136,7 @@ if ($recurring_check && $recurring_check->num_rows > 0) {
         <div class="modal-dialog" role="document">
             <div class="modal-content">
                 <form method="post" action="attendance_list.php">
+                    <?= csrf_input() ?>
                     <div class="modal-header">
                         <h5 class="modal-title">Create Next Recurring Session</h5>
                         <button type="button" class="close" data-dismiss="modal">

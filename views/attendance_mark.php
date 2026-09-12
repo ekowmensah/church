@@ -2,15 +2,10 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
-    exit;
-}
-
-if (!has_permission('mark_attendance')) {
-    http_response_code(403);
-    include '../views/errors/403.php';
     exit;
 }
 
@@ -64,6 +59,19 @@ $stmt->execute();
 $session = $stmt->get_result()->fetch_assoc();
 if (!$session) {
     header('Location: attendance_list.php');
+    exit;
+}
+$raw_session_scope = strtolower(trim((string) ($session['attendance_scope'] ?? '')));
+if ($raw_session_scope === 'organization' && (int) ($session['scope_id'] ?? 0) > 0) {
+    header('Location: my_organization_attendance.php?' . http_build_query([
+        'org_id' => (int) $session['scope_id'],
+        'session_id' => $session_id,
+    ]));
+    exit;
+}
+if (!has_permission('mark_attendance')) {
+    http_response_code(403);
+    include '../views/errors/403.php';
     exit;
 }
 $scope_columns_available = attendance_scope_columns_available($conn);
@@ -157,6 +165,7 @@ $stmt->bind_param($types, ...$params);
 $stmt->execute();
 $members_result = $stmt->get_result();
 $members = $members_result ? $members_result->fetch_all(MYSQLI_ASSOC) : [];
+$eligible_member_ids = array_map('intval', array_column($members, 'id'));
 
 // Fetch member organizations for filtering
 $member_orgs = [];
@@ -235,6 +244,11 @@ $attendance_rate = $total_members > 0 ? round(($present_count / $total_members) 
 // Handle AJAX draft save
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_draft') {
     header('Content-Type: application/json');
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        http_response_code(419);
+        echo json_encode(['success' => false, 'message' => 'Your form expired. Refresh and try again.']);
+        exit;
+    }
     $member_id = intval($_POST['member_id'] ?? 0);
     $status = $_POST['status'] ?? 'absent';
     
@@ -245,7 +259,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit;
     }
     
-    if ($member_id > 0) {
+    if ($member_id > 0 && in_array($member_id, $eligible_member_ids, true)) {
         // Save as draft (is_draft = 1)
         $stmt = $conn->prepare("REPLACE INTO attendance_records (session_id, member_id, status, marked_by, is_draft, created_at, updated_at) VALUES (?, ?, ?, ?, 1, NOW(), NOW())");
         $stmt->bind_param('iisi', $session_id, $member_id, $status, $_SESSION['user_id']);
@@ -262,6 +276,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // Handle POST (finalize attendance)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_POST['action']) || $_POST['action'] === 'finalize')) {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        http_response_code(419);
+        exit('Your form expired. Refresh and try again.');
+    }
     $marked = $_POST['attendance'] ?? [];
     $valid_statuses = ['present', 'absent', 'sick', 'permission', 'distance', 'invalid'];
 
@@ -957,6 +975,7 @@ ob_start();
     </div>
 
     <form method="post" id="attendanceForm">
+        <?= csrf_input() ?>
         <div class="bulk-actions">
             <h6 class="mb-0"><i class="fas fa-users"></i> Mark Attendance (<?= $total_members ?> members)</h6>
             <div class="bulk-actions-buttons">
@@ -1183,6 +1202,7 @@ function updateMemberSelect(selectElement) {
 function saveDraft(memberId, status) {
     const formData = new FormData();
     formData.append('action', 'save_draft');
+    formData.append('csrf_token', <?= json_encode(csrf_token()) ?>);
     formData.append('member_id', memberId);
     formData.append('status', status);
     

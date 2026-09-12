@@ -226,7 +226,7 @@ $attendance_stats = get_organization_attendance_stats($conn, $org_id, $start_dat
 $pending_count = get_organization_pending_membership_count($conn, $org_id);
 $active_leader_member_ids = get_active_organization_leader_member_ids($conn, $org_id);
 $recent_payments = get_organization_recent_payments($conn, $org_id, $start_date, $end_date, 10);
-$upcoming_sessions = get_upcoming_organization_sessions($conn, $church_id, 5);
+$upcoming_sessions = get_upcoming_organization_sessions($conn, $org_id, 5);
 
 if (strlen($member_search) >= 2) {
     $member_search_results = search_organization_member_candidates($conn, $org_id, $member_search, $church_id, 25);
@@ -858,7 +858,7 @@ ob_start();
                 <div class="org-panel-title">
                     <div>
                         <h5><i class="fas fa-calendar-alt text-info mr-2"></i>Upcoming Attendance Sessions</h5>
-                        <p class="text-muted mb-0">Quick access to the next sessions scheduled for your church.</p>
+                        <p class="text-muted mb-0">Quick access to upcoming sessions scoped to this organization.</p>
                     </div>
                 </div>
 

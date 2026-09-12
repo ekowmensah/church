@@ -1,453 +1,274 @@
 <?php
-require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/leader_helpers.php';
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../helpers/auth.php';
+require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../services/AttendanceScopeService.php';
 
-// Check if user is logged in
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
 
-// Check if user is an organization leader
-$user_id = $_SESSION['user_id'] ?? null;
-$member_id = $_SESSION['member_id'] ?? null;
-$org_leaderships = is_organization_leader($conn, $user_id, $member_id);
-
-if (!$org_leaderships) {
+$attendanceService = AttendanceScopeService::fromSession($conn);
+$contexts = $attendanceService->getOrganizationContexts();
+if (!$contexts) {
     http_response_code(403);
-    echo '<div class="alert alert-danger">You are not assigned as an organization leader.</div>';
+    include __DIR__ . '/errors/403.php';
     exit;
 }
 
-// If multiple organizations, require org_id parameter
-if (count($org_leaderships) > 1) {
-    $org_id = isset($_GET['org_id']) ? intval($_GET['org_id']) : 0;
-    
-    if (!$org_id) {
-        // Default to the first organization leader dashboard instead of a missing selector page
-        $default_org_id = (int) $org_leaderships[0]['organization_id'];
-        header('Location: my_organization_leader.php?org_id=' . $default_org_id);
-        exit;
+$organizations = [];
+foreach ($contexts as $context) {
+    $organizationId = (int) $context['organization_id'];
+    if (!isset($organizations[$organizationId])) {
+        $organizations[$organizationId] = [
+            'id' => $organizationId,
+            'name' => $context['organization_name'],
+            'church_id' => (int) $context['church_id'],
+            'can_review' => false,
+            'units' => [],
+        ];
     }
-    
-    // Verify the org_id is one they lead
-    $leader_info = null;
-    foreach ($org_leaderships as $org) {
-        if ($org['organization_id'] == $org_id) {
-            $leader_info = $org;
-            break;
+    if (!empty($context['can_review'])) {
+        $organizations[$organizationId]['can_review'] = true;
+    }
+    if (!empty($context['unit_id'])) {
+        $organizations[$organizationId]['units'][(int) $context['unit_id']] = [
+            'id' => (int) $context['unit_id'],
+            'name' => $context['unit_name'],
+            'leader_role' => $context['leader_role'],
+        ];
+    }
+}
+uasort($organizations, static fn(array $a, array $b): int => strcasecmp($a['name'], $b['name']));
+
+$selectedOrganizationId = (int) ($_REQUEST['org_id'] ?? array_key_first($organizations));
+if (!isset($organizations[$selectedOrganizationId])) {
+    http_response_code(403);
+    echo '<div class="alert alert-danger">You cannot access attendance for that organization.</div>';
+    exit;
+}
+$selectedOrganization = $organizations[$selectedOrganizationId];
+$error = '';
+$success = trim((string) ($_GET['message'] ?? ''));
+
+function organization_attendance_url(int $organizationId, array $extra = []): string {
+    return 'my_organization_attendance.php?' . http_build_query(array_merge(['org_id' => $organizationId], $extra));
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        http_response_code(419);
+        $error = 'Your form expired. Refresh the page and try again.';
+    } else {
+        $action = trim((string) ($_POST['action'] ?? ''));
+        try {
+            if ($action === 'create_session') {
+                $unitId = (int) ($_POST['organization_unit_id'] ?? 0);
+                $sessionId = $attendanceService->createOrganizationSession(
+                    $selectedOrganizationId,
+                    $unitId > 0 ? $unitId : null,
+                    (string) ($_POST['title'] ?? ''),
+                    (string) ($_POST['service_date'] ?? '')
+                );
+                header('Location: ' . organization_attendance_url($selectedOrganizationId, [
+                    'session_id' => $sessionId,
+                    'message' => 'Attendance session created.',
+                ]));
+                exit;
+            }
+
+            $sessionId = (int) ($_POST['session_id'] ?? 0);
+            if ($sessionId < 1) {
+                throw new RuntimeException('Select a valid attendance session.');
+            }
+            $targetSession = $attendanceService->getSession($sessionId);
+            if ((int) ($targetSession['scope_id'] ?? 0) !== $selectedOrganizationId) {
+                throw new RuntimeException('That session does not belong to this organization.');
+            }
+
+            if ($action === 'submit_attendance') {
+                $savedCount = $attendanceService->submitAttendance(
+                    $sessionId,
+                    is_array($_POST['attendance'] ?? null) ? $_POST['attendance'] : []
+                );
+                header('Location: ' . organization_attendance_url($selectedOrganizationId, [
+                    'session_id' => $sessionId,
+                    'message' => "Attendance submitted for {$savedCount} members.",
+                ]));
+                exit;
+            }
+
+            if ($action === 'review_attendance') {
+                $attendanceService->reviewAttendance(
+                    $sessionId,
+                    (string) ($_POST['decision'] ?? ''),
+                    (string) ($_POST['review_notes'] ?? '')
+                );
+                header('Location: ' . organization_attendance_url($selectedOrganizationId, [
+                    'session_id' => $sessionId,
+                    'message' => 'Attendance review recorded.',
+                ]));
+                exit;
+            }
+
+            throw new RuntimeException('Unsupported attendance action.');
+        } catch (Throwable $exception) {
+            $error = $exception->getMessage();
         }
     }
-    
-    if (!$leader_info) {
-        http_response_code(403);
-        echo '<div class="alert alert-danger">You are not the leader of this organization.</div>';
-        exit;
-    }
-} else {
-    // Only one organization, use it directly
-    $leader_info = $org_leaderships[0];
-    $org_id = $leader_info['organization_id'];
 }
 
-$org_name = $leader_info['org_name'];
+$sessions = $attendanceService->listOrganizationSessions($selectedOrganizationId);
+$allUnits = $selectedOrganization['can_review']
+    ? $attendanceService->getOrganizationUnits($selectedOrganizationId)
+    : array_values($selectedOrganization['units']);
 
-// Get session_id from URL or show session selection
-$session_id = isset($_GET['session_id']) ? intval($_GET['session_id']) : 0;
-
-if (!$session_id) {
-    // Show session selection
-    $stmt = $conn->prepare("
-        SELECT ats.*, c.name as church_name
-        FROM attendance_sessions ats
-        LEFT JOIN churches c ON ats.church_id = c.id
-        WHERE ats.church_id = ?
-        ORDER BY ats.service_date DESC
-        LIMIT 20
-    ");
-    $stmt->bind_param('i', $leader_info['church_id']);
-    $stmt->execute();
-    $sessions = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-    $stmt->close();
-    
-    ob_start();
-    ?>
-    <div class="container mt-4">
-        <div class="card">
-            <div class="card-header bg-primary text-white">
-                <h4><i class="fas fa-clipboard-check"></i> Select Attendance Session</h4>
-                <p class="mb-0">Organization: <?= htmlspecialchars($org_name) ?></p>
-            </div>
-            <div class="card-body">
-                <div class="list-group">
-                    <?php foreach ($sessions as $session): ?>
-                    <a href="?session_id=<?= $session['id'] ?>" class="list-group-item list-group-item-action">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="mb-1"><?= htmlspecialchars($session['title']) ?></h5>
-                                <p class="mb-1">
-                                    <i class="fas fa-calendar"></i> <?= date('l, F j, Y', strtotime($session['service_date'])) ?>
-                                    <span class="badge badge-info ml-2"><?= htmlspecialchars($session['church_name']) ?></span>
-                                </p>
-                            </div>
-                            <i class="fas fa-chevron-right"></i>
-                        </div>
-                    </a>
-                    <?php endforeach; ?>
-                    
-                    <?php if (empty($sessions)): ?>
-                    <div class="alert alert-info">No attendance sessions available.</div>
-                    <?php endif; ?>
-                </div>
-                
-                <div class="mt-3">
-                    <a href="my_organization_leader.php" class="btn btn-secondary">
-                        <i class="fas fa-arrow-left"></i> Back to Dashboard
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
-    <?php
-    $page_content = ob_get_clean();
-    $page_title = 'Select Attendance Session';
-    include '../includes/layout.php';
-    exit;
-}
-
-// Fetch session details
-$stmt = $conn->prepare("SELECT s.*, c.name AS church_name FROM attendance_sessions s LEFT JOIN churches c ON s.church_id = c.id WHERE s.id = ? LIMIT 1");
-$stmt->bind_param('i', $session_id);
-$stmt->execute();
-$session = $stmt->get_result()->fetch_assoc();
-$stmt->close();
-
-if (!$session) {
-    header('Location: my_organization_attendance.php');
-    exit;
-}
-
-// Get organization members
-$members = get_organization_members($conn, $org_id);
-
-// Fetch previous attendance
-$prev_attendance = [];
-$member_ids = array_column($members, 'id');
-if (count($member_ids) > 0) {
-    $placeholders = implode(',', array_fill(0, count($member_ids), '?'));
-    $sql_att = "SELECT member_id, status FROM attendance_records WHERE session_id = ? AND member_id IN ($placeholders)";
-    $stmt = $conn->prepare($sql_att);
-    $types_att = 'i' . str_repeat('i', count($member_ids));
-    $bind_params = array_merge([$session_id], $member_ids);
-    $stmt->bind_param($types_att, ...$bind_params);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    while ($row = $result->fetch_assoc()) {
-        $prev_attendance[$row['member_id']] = $row['status'];
-    }
-    $stmt->close();
-}
-
-// Handle POST (save attendance)
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $marked = $_POST['attendance'] ?? [];
-    $marked_by = $_SESSION['user_id'] ?? $_SESSION['member_id'] ?? null;
-    
-    foreach ($members as $m) {
-        $member_id = $m['id'];
-        $status = isset($marked[$member_id]) && $marked[$member_id] === 'present' ? 'present' : 'absent';
-        
-        $stmt = $conn->prepare("REPLACE INTO attendance_records (session_id, member_id, status, marked_by, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())");
-        $stmt->bind_param('iisi', $session_id, $member_id, $status, $marked_by);
-        $stmt->execute();
-        $stmt->close();
-    }
-    
-    header('Location: my_organization_leader.php?attendance_marked=1');
-    exit;
-}
-
-// Calculate statistics
-$total_members = count($members);
-$present_count = 0;
-$absent_count = 0;
-foreach ($members as $m) {
-    if (isset($prev_attendance[$m['id']]) && strtolower($prev_attendance[$m['id']]) === 'present') {
-        $present_count++;
-    } else {
-        $absent_count++;
+$sessionId = (int) ($_GET['session_id'] ?? 0);
+$activeSession = null;
+$members = [];
+$attendance = [];
+$canMark = false;
+$canReview = false;
+if ($sessionId > 0) {
+    try {
+        $candidate = $attendanceService->getSession($sessionId);
+        if ((int) ($candidate['scope_id'] ?? 0) !== $selectedOrganizationId
+            || !$attendanceService->canView($candidate)) {
+            throw new RuntimeException('You cannot access that attendance session.');
+        }
+        $activeSession = $candidate;
+        $canMark = $attendanceService->canMark($candidate);
+        $canReview = $attendanceService->canReview($candidate);
+        $members = $attendanceService->getEligibleMembers($candidate);
+        $attendance = $attendanceService->getAttendanceMap($sessionId, array_column($members, 'id'));
+    } catch (Throwable $exception) {
+        $error = $exception->getMessage();
+        $sessionId = 0;
     }
 }
-$attendance_rate = $total_members > 0 ? round(($present_count / $total_members) * 100, 1) : 0;
+
+$statusLabels = [
+    'present' => 'Present', 'absent' => 'Absent', 'sick' => 'Sick',
+    'permission' => 'Permission', 'distance' => 'Distance', 'invalid' => 'Invalid',
+];
+$badgeClasses = ['draft' => 'secondary', 'submitted' => 'warning', 'approved' => 'success', 'rejected' => 'danger'];
+$backUrl = isset($_SESSION['member_id']) && !isset($_SESSION['user_id'])
+    ? BASE_URL . '/views/member_dashboard.php' : BASE_URL . '/index.php';
 
 ob_start();
 ?>
 <style>
-.attendance-header {
-    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-    color: white;
-    padding: 30px;
-    border-radius: 15px;
-    box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-    margin-bottom: 20px;
-}
-
-.stat-box {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
-    border-left: 4px solid;
-    transition: transform 0.2s;
-}
-
-.stat-box:hover {
-    transform: translateY(-3px);
-}
-
-.stat-box.total { border-left-color: #f093fb; }
-.stat-box.present { border-left-color: #28a745; }
-.stat-box.absent { border-left-color: #dc3545; }
-.stat-box.rate { border-left-color: #17a2b8; }
-
-.stat-value {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #2c3e50;
-}
-
-.stat-label {
-    font-size: 0.85rem;
-    color: #6c757d;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 8px;
-}
-
-.members-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 15px;
-    margin-bottom: 25px;
-}
-
-.member-card {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
-    transition: all 0.3s ease;
-    border: 2px solid transparent;
-}
-
-.member-card.present {
-    border-color: #28a745;
-    background: #f8fff9;
-}
-
-.member-card.absent {
-    border-color: #e0e0e0;
-}
-
-.attendance-toggle {
-    position: relative;
-    width: 60px;
-    height: 30px;
-}
-
-.attendance-toggle input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-.toggle-slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: #ccc;
-    transition: .4s;
-    border-radius: 30px;
-}
-
-.toggle-slider:before {
-    position: absolute;
-    content: "";
-    height: 22px;
-    width: 22px;
-    left: 4px;
-    bottom: 4px;
-    background-color: white;
-    transition: .4s;
-    border-radius: 50%;
-}
-
-input:checked + .toggle-slider {
-    background-color: #28a745;
-}
-
-input:checked + .toggle-slider:before {
-    transform: translateX(30px);
-}
+.org-attendance-shell { max-width: 1180px; margin: 0 auto; }
+.org-attendance-hero { background: linear-gradient(135deg, #173f5f, #20639b); color: #fff; border-radius: 18px; padding: 24px; box-shadow: 0 12px 28px rgba(23,63,95,.18); }
+.org-attendance-card { border: 1px solid #dde6ef; border-radius: 14px; box-shadow: 0 5px 16px rgba(18,52,77,.06); }
+.member-attendance-row { border: 1px solid #e4ebf2; border-radius: 10px; padding: 12px; margin-bottom: 10px; background: #fff; }
+.member-attendance-row .member-name { font-weight: 700; color: #173f5f; }
+.workflow-status { text-transform: capitalize; }
+@media (max-width: 767px) { .org-attendance-hero { padding: 18px; } .table-responsive { font-size: .9rem; } }
 </style>
 
-<div class="attendance-header">
-    <div class="d-flex justify-content-between align-items-center">
-        <div>
-            <h2><i class="fas fa-clipboard-check"></i> Mark Attendance</h2>
-            <h4><?= htmlspecialchars($session['title']) ?></h4>
-            <p class="mb-0">
-                <i class="fas fa-calendar"></i> <?= date('l, F j, Y', strtotime($session['service_date'])) ?>
-                | <i class="fas fa-users-cog"></i> <?= htmlspecialchars($org_name) ?>
-            </p>
-        </div>
-        <div>
-            <a href="my_organization_attendance.php" class="btn btn-light btn-lg">
-                <i class="fas fa-arrow-left"></i> Change Session
-            </a>
-        </div>
-    </div>
-</div>
-
-<div class="row mb-4">
-    <div class="col-md-3">
-        <div class="stat-box total">
-            <div class="stat-label">Total Members</div>
-            <div class="stat-value" id="total-count"><?= $total_members ?></div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stat-box present">
-            <div class="stat-label">Present</div>
-            <div class="stat-value" id="present-count"><?= $present_count ?></div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stat-box absent">
-            <div class="stat-label">Absent</div>
-            <div class="stat-value" id="absent-count"><?= $absent_count ?></div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stat-box rate">
-            <div class="stat-label">Attendance Rate</div>
-            <div class="stat-value" id="attendance-rate"><?= $attendance_rate ?>%</div>
-        </div>
-    </div>
-</div>
-
-<form method="post" id="attendanceForm">
-    <div class="card mb-3">
-        <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="fas fa-users"></i> Organization Members (<?= $total_members ?>)</h5>
-                <div>
-                    <button type="button" class="btn btn-success btn-sm" onclick="markAllPresent()">
-                        <i class="fas fa-check-double"></i> Mark All Present
-                    </button>
-                    <button type="button" class="btn btn-danger btn-sm" onclick="markAllAbsent()">
-                        <i class="fas fa-times-circle"></i> Mark All Absent
-                    </button>
-                </div>
-            </div>
-        </div>
+<div class="container-fluid py-4">
+  <div class="org-attendance-shell">
+    <div class="org-attendance-hero mb-4 d-flex flex-wrap justify-content-between align-items-center">
+      <div>
+        <h2 class="mb-1"><i class="fas fa-clipboard-check mr-2"></i>Organization Attendance</h2>
+        <p class="mb-0">Scoped marking, submission, and organization-leader approval.</p>
+      </div>
+      <a href="<?= htmlspecialchars($backUrl) ?>" class="btn btn-light mt-2 mt-md-0"><i class="fas fa-arrow-left mr-1"></i> Back</a>
     </div>
 
-    <div class="members-grid">
-        <?php foreach($members as $member): 
-            $is_present = isset($prev_attendance[$member['id']]) && 
-                         strtolower($prev_attendance[$member['id']]) === 'present';
-        ?>
-        <div class="member-card <?= $is_present ? 'present' : 'absent' ?>">
-            <div class="d-flex justify-content-between align-items-start mb-2">
-                <div class="d-flex align-items-center">
-                    <img src="<?= BASE_URL ?>/uploads/members/<?= htmlspecialchars($member['photo'] ?? 'default.png') ?>" 
-                         alt="Photo" 
-                         style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover; margin-right: 10px;">
-                    <div>
-                        <h6 class="mb-0"><?= htmlspecialchars($member['last_name'] . ', ' . $member['first_name']) ?></h6>
-                        <small class="text-muted">
-                            <i class="fas fa-id-card"></i> <?= htmlspecialchars($member['crn'] ?? 'N/A') ?>
-                        </small>
-                    </div>
-                </div>
-                <label class="attendance-toggle">
-                    <input type="checkbox" 
-                           name="attendance[<?= $member['id'] ?>]" 
-                           value="present" 
-                           <?= $is_present ? 'checked' : '' ?>
-                           onchange="updateMemberCard(this)">
-                    <span class="toggle-slider"></span>
-                </label>
-            </div>
+    <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+    <?php if ($success): ?><div class="alert alert-success"><?= htmlspecialchars($success) ?></div><?php endif; ?>
+
+    <div class="card org-attendance-card mb-4"><div class="card-body">
+      <form method="get" class="form-row align-items-end">
+        <div class="col-md-6 form-group mb-md-0">
+          <label for="org_id">Organization</label>
+          <select id="org_id" name="org_id" class="form-control" onchange="this.form.submit()">
+            <?php foreach ($organizations as $organization): ?>
+              <option value="<?= (int) $organization['id'] ?>" <?= $selectedOrganizationId === (int) $organization['id'] ? 'selected' : '' ?>>
+                <?= htmlspecialchars($organization['name']) ?><?= $organization['can_review'] ? ' — organization leader' : ' — group leader' ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
         </div>
+        <div class="col-md-6 text-md-right"><span class="badge badge-info p-2"><?= $selectedOrganization['can_review'] ? 'Organization-wide review access' : 'Assigned group access only' ?></span></div>
+      </form>
+    </div></div>
+
+    <?php if ($selectedOrganization['can_review']): ?>
+    <div class="card org-attendance-card mb-4">
+      <div class="card-header bg-white"><strong>Create an organization or group session</strong></div>
+      <div class="card-body"><form method="post" class="form-row align-items-end">
+        <?= csrf_input() ?>
+        <input type="hidden" name="action" value="create_session"><input type="hidden" name="org_id" value="<?= $selectedOrganizationId ?>">
+        <div class="col-md-4 form-group"><label for="title">Title</label><input id="title" name="title" class="form-control" maxlength="255" required placeholder="Weekly group meeting"></div>
+        <div class="col-md-3 form-group"><label for="service_date">Date</label><input id="service_date" name="service_date" type="date" class="form-control" value="<?= date('Y-m-d') ?>" required></div>
+        <div class="col-md-3 form-group"><label for="organization_unit_id">Group / unit</label><select id="organization_unit_id" name="organization_unit_id" class="form-control">
+          <option value="">Whole organization</option>
+          <?php foreach ($allUnits as $unit): ?><option value="<?= (int) $unit['id'] ?>"><?= htmlspecialchars($unit['name']) ?><?= !empty($unit['branch']) && $unit['branch'] !== 'mixed' ? ' (' . htmlspecialchars(ucfirst($unit['branch'])) . ')' : '' ?></option><?php endforeach; ?>
+        </select></div>
+        <div class="col-md-2 form-group"><button class="btn btn-primary btn-block"><i class="fas fa-plus mr-1"></i>Create</button></div>
+      </form></div>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($activeSession): ?>
+    <div class="card org-attendance-card mb-4">
+      <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center">
+        <div><strong><?= htmlspecialchars($activeSession['title']) ?></strong><div class="small text-muted"><?= htmlspecialchars((string) $activeSession['service_date']) ?> · <?= htmlspecialchars($activeSession['unit_name'] ?: 'Whole organization') ?></div></div>
+        <?php $activeStatus = $activeSession['approval_status'] ?? 'draft'; ?><span class="badge badge-<?= $badgeClasses[$activeStatus] ?? 'secondary' ?> p-2 workflow-status"><?= htmlspecialchars($activeStatus) ?></span>
+      </div>
+      <div class="card-body">
+        <?php if ($canMark): ?>
+          <?php if (!$members): ?><div class="alert alert-warning mb-0">No active members are assigned to this scope. Assign members to the group before marking attendance.</div>
+          <?php elseif (!$canReview && in_array($activeStatus, ['submitted', 'approved'], true)): ?><div class="alert alert-info mb-0">This submission is locked while the organization leader reviews it.</div>
+          <?php else: ?>
+            <form method="post">
+              <?= csrf_input() ?><input type="hidden" name="action" value="submit_attendance"><input type="hidden" name="org_id" value="<?= $selectedOrganizationId ?>"><input type="hidden" name="session_id" value="<?= $sessionId ?>">
+              <div class="row">
+                <?php foreach ($members as $member): $memberId = (int) $member['id']; $currentStatus = $attendance[$memberId]['status'] ?? 'absent'; ?>
+                  <div class="col-lg-6"><div class="member-attendance-row">
+                    <div class="member-name"><?= htmlspecialchars(trim($member['first_name'] . ' ' . $member['middle_name'] . ' ' . $member['last_name'])) ?></div>
+                    <div class="small text-muted mb-2"><?= htmlspecialchars($member['crn'] ?: 'No CRN') ?></div>
+                    <select class="form-control" name="attendance[<?= $memberId ?>]">
+                      <?php foreach ($statusLabels as $value => $label): ?><option value="<?= $value ?>" <?= $currentStatus === $value ? 'selected' : '' ?>><?= $label ?></option><?php endforeach; ?>
+                    </select>
+                  </div></div>
+                <?php endforeach; ?>
+              </div>
+              <button class="btn btn-success" onclick="return confirm('Submit this attendance for organization review?')"><i class="fas fa-paper-plane mr-1"></i>Submit Attendance</button>
+            </form>
+          <?php endif; ?>
+        <?php else: ?><div class="alert alert-info">You have read-only access to this session.</div><?php endif; ?>
+
+        <?php if ($canReview && $activeStatus === 'submitted'): ?>
+          <hr><form method="post">
+            <?= csrf_input() ?><input type="hidden" name="action" value="review_attendance"><input type="hidden" name="org_id" value="<?= $selectedOrganizationId ?>"><input type="hidden" name="session_id" value="<?= $sessionId ?>">
+            <div class="form-group"><label for="review_notes">Review note <small class="text-muted">(required when rejecting)</small></label><textarea id="review_notes" name="review_notes" class="form-control" maxlength="500" rows="2"></textarea></div>
+            <button name="decision" value="approved" class="btn btn-success mr-2"><i class="fas fa-check mr-1"></i>Approve</button>
+            <button name="decision" value="rejected" class="btn btn-danger" onclick="return confirm('Reject and return this attendance for correction?')"><i class="fas fa-times mr-1"></i>Reject</button>
+          </form>
+        <?php elseif ($activeStatus === 'rejected' && !empty($activeSession['review_notes'])): ?><div class="alert alert-danger mt-3 mb-0"><strong>Correction requested:</strong> <?= htmlspecialchars($activeSession['review_notes']) ?></div><?php endif; ?>
+      </div>
+    </div>
+    <?php endif; ?>
+
+    <div class="card org-attendance-card">
+      <div class="card-header bg-white"><strong>Accessible sessions</strong></div>
+      <div class="table-responsive"><table class="table table-hover mb-0">
+        <thead class="thead-light"><tr><th>Date</th><th>Session</th><th>Scope</th><th>Status</th><th>Records</th><th></th></tr></thead><tbody>
+        <?php foreach ($sessions as $session): $workflowStatus = $session['approval_status'] ?? 'draft'; ?>
+          <tr><td><?= htmlspecialchars((string) $session['service_date']) ?></td><td><?= htmlspecialchars($session['title']) ?></td><td><?= htmlspecialchars($session['unit_name'] ?: 'Whole organization') ?></td><td><span class="badge badge-<?= $badgeClasses[$workflowStatus] ?? 'secondary' ?> workflow-status"><?= htmlspecialchars($workflowStatus) ?></span></td><td><?= (int) $session['marked_count'] ?></td><td><a class="btn btn-sm btn-primary" href="<?= htmlspecialchars(organization_attendance_url($selectedOrganizationId, ['session_id' => (int) $session['id']])) ?>">Open</a></td></tr>
         <?php endforeach; ?>
+        <?php if (!$sessions): ?><tr><td colspan="6" class="text-center text-muted py-4">No scoped attendance sessions yet.</td></tr><?php endif; ?>
+        </tbody>
+      </table></div>
     </div>
-
-    <div class="text-center mb-4">
-        <button type="submit" class="btn btn-success btn-lg" onclick="return confirm('Save attendance for all members?')">
-            <i class="fas fa-save"></i> Save Attendance
-        </button>
-        <a href="my_organization_leader.php" class="btn btn-secondary btn-lg">
-            <i class="fas fa-times"></i> Cancel
-        </a>
-    </div>
-</form>
-
-<script>
-function updateMemberCard(checkbox) {
-    const card = checkbox.closest('.member-card');
-    if (checkbox.checked) {
-        card.classList.add('present');
-        card.classList.remove('absent');
-    } else {
-        card.classList.remove('present');
-        card.classList.add('absent');
-    }
-    updateStats();
-}
-
-function updateStats() {
-    const checkboxes = document.querySelectorAll('input[type="checkbox"][name^="attendance"]');
-    const total = checkboxes.length;
-    let present = 0;
-    
-    checkboxes.forEach(cb => {
-        if (cb.checked) present++;
-    });
-    
-    const absent = total - present;
-    const rate = total > 0 ? ((present / total) * 100).toFixed(1) : 0;
-    
-    document.getElementById('total-count').textContent = total;
-    document.getElementById('present-count').textContent = present;
-    document.getElementById('absent-count').textContent = absent;
-    document.getElementById('attendance-rate').textContent = rate + '%';
-}
-
-function markAllPresent() {
-    const checkboxes = document.querySelectorAll('input[type="checkbox"][name^="attendance"]');
-    checkboxes.forEach(cb => {
-        cb.checked = true;
-        updateMemberCard(cb);
-    });
-}
-
-function markAllAbsent() {
-    const checkboxes = document.querySelectorAll('input[type="checkbox"][name^="attendance"]');
-    checkboxes.forEach(cb => {
-        cb.checked = false;
-        updateMemberCard(cb);
-    });
-}
-</script>
-
+  </div>
+</div>
 <?php
 $page_content = ob_get_clean();
-$page_title = 'Mark Attendance - ' . $org_name;
-include '../includes/layout.php';
-?>
+$page_title = 'Organization Attendance - ' . $selectedOrganization['name'];
+include __DIR__ . '/../includes/layout.php';

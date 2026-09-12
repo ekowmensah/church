@@ -1,4 +1,7 @@
 <?php
+header('Location: attendance_list.php?' . http_build_query($_GET));
+exit;
+
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
