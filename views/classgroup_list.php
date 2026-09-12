@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -13,7 +14,7 @@ if (!is_logged_in()) {
 $is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
                   (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
 
-if (!$is_super_admin && !has_permission('view_class_group_list')) {
+if (!$is_super_admin && !has_permission('view_classgroup_list')) {
     http_response_code(403);
     if (file_exists(__DIR__.'/errors/403.php')) {
         include __DIR__.'/errors/403.php';
@@ -26,22 +27,28 @@ if (!$is_super_admin && !has_permission('view_class_group_list')) {
 }
 
 // Set permission flags for UI elements
-$can_add = $is_super_admin || has_permission('create_classgroup');
-$can_edit = $is_super_admin || has_permission('edit_classgroup');
+$can_manage_schedule = $is_super_admin || has_permission('manage_bible_class_attendance_schedule');
+$can_add = $is_super_admin || ($can_manage_schedule && has_permission('create_classgroup'));
+$can_edit = $is_super_admin || ($can_manage_schedule && has_permission('edit_classgroup'));
 $can_delete = $is_super_admin || has_permission('delete_classgroup');
 $can_view = true; // Already validated above
 
 // Fetch all class groups
 $classgroups = $conn->query(
-    "SELECT class_group.*, church.name AS church_name, COUNT(class.id) AS class_count,
-            MAX(CASE WHEN review_item.resolved = 0 THEN 1 ELSE 0 END) AS needs_schedule_review
+    "SELECT class_group.*, church.name AS church_name,
+            COALESCE(class_totals.class_count, 0) AS class_count,
+            EXISTS (
+                SELECT 1 FROM class_group_schedule_review review_item
+                WHERE review_item.class_group_id = class_group.id
+                  AND review_item.issue_type = 'missing_meeting_day'
+                  AND review_item.resolved = 0
+            ) AS needs_schedule_review
        FROM class_groups class_group
        JOIN churches church ON church.id = class_group.church_id
-       LEFT JOIN bible_classes class ON class.class_group_id = class_group.id
-       LEFT JOIN class_group_schedule_review review_item
-              ON review_item.class_group_id = class_group.id
-             AND review_item.issue_type = 'missing_meeting_day'
-      GROUP BY class_group.id
+       LEFT JOIN (
+           SELECT class_group_id, COUNT(*) AS class_count
+           FROM bible_classes GROUP BY class_group_id
+       ) class_totals ON class_totals.class_group_id = class_group.id
       ORDER BY class_group.name"
 );
 $meetingDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -67,6 +74,10 @@ ob_start();
             <div class="alert alert-success">Class group updated successfully!</div>
         <?php elseif (isset($_GET['deleted'])): ?>
             <div class="alert alert-success">Class group deleted successfully!</div>
+        <?php elseif (isset($_GET['delete_blocked'])): ?>
+            <div class="alert alert-warning">Move all assigned Bible classes before deleting this group.</div>
+        <?php elseif (isset($_GET['delete_missing'])): ?>
+            <div class="alert alert-warning">The class group was not found.</div>
         <?php endif; ?>
         <div class="table-responsive">
             <table class="table table-bordered" id="classgroupTable" width="100%" cellspacing="0">
@@ -99,8 +110,12 @@ ob_start();
                             <?php if ($can_edit): ?>
                                 <a href="classgroup_edit.php?id=<?=$row['id']?>" class="btn btn-sm btn-info" title="Edit"><i class="fas fa-edit"></i></a>
                             <?php endif; ?>
-                            <?php if ($can_delete): ?>
-                                <a href="classgroup_delete.php?id=<?=$row['id']?>" class="btn btn-sm btn-danger" onclick="return confirm('Delete this class group?')" title="Delete"><i class="fas fa-trash"></i></a>
+                            <?php if ($can_delete && (int) $row['class_count'] === 0): ?>
+                                <form method="post" action="classgroup_delete.php" class="d-inline" onsubmit="return confirm('Delete this class group?')">
+                                    <?= csrf_input() ?>
+                                    <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
+                                    <button class="btn btn-sm btn-danger" title="Delete"><i class="fas fa-trash"></i></button>
+                                </form>
                             <?php endif; ?>
                         </td>
                         <?php endif; ?>

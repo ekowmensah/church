@@ -14,13 +14,16 @@ $churches = $conn->query('SELECT id, name FROM churches ORDER BY name');
 if (!is_logged_in()) {
     $error = 'Not logged in (session or login issue)';
 } elseif (!(isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1)) {
+    if (!has_permission('manage_bible_class_attendance_schedule')) {
+        $error = 'No permission to manage Bible class attendance schedules';
+    }
     // Determine if adding or editing
     $is_edit = (isset($_GET['id']) && is_numeric($_GET['id'])) || $editing;
-    if ($is_edit) {
+    if (!$error && $is_edit) {
         if (!has_permission('edit_classgroup')) {
             $error = 'No permission to edit class group';
         }
-    } else {
+    } elseif (!$error) {
         if (!has_permission('create_classgroup')) {
             $error = 'No permission to add class group';
         }
