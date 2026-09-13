@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 
 if (!is_logged_in() || (!(isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1) && !has_permission('manage_members'))) {
     http_response_code(403);
@@ -12,7 +13,7 @@ if ($id > 0) {
     $warnings = [];
     $tables = [
         'payments',
-        'attendance',
+        'attendance_records',
         'member_feedback',
         'member_organizations',
         'member_classes',
@@ -21,6 +22,14 @@ if ($id > 0) {
     try {
         $conn->begin_transaction();
         $conn->query("SET FOREIGN_KEY_CHECKS=0");
+        // Preserve the attendance row while removing actor attribution when this
+        // member marked attendance for somebody else.
+        $clearAttendanceActor = $conn->prepare(
+            'UPDATE attendance_records SET marked_by_member_id = NULL WHERE marked_by_member_id = ?'
+        );
+        $clearAttendanceActor->bind_param('i', $id);
+        $clearAttendanceActor->execute();
+        $clearAttendanceActor->close();
         foreach ($tables as $table) {
             try {
                 $conn->query("DELETE FROM $table WHERE member_id = $id");

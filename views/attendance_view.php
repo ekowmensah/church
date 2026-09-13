@@ -105,11 +105,16 @@ $search = trim($_GET['search'] ?? '');
 // Fetch attendance records with filters
 $sql = "SELECT m.id, m.crn, m.last_name, m.first_name, m.middle_name, m.gender,
         bc.name AS class_name, ar.status, ar.created_at, ar.is_draft,
-        u.name AS marked_by
+        COALESCE(
+            u.name,
+            NULLIF(TRIM(CONCAT_WS(' ', marker_member.first_name, marker_member.middle_name, marker_member.last_name)), ''),
+            'System'
+        ) AS marked_by
         FROM attendance_records ar
         JOIN members m ON ar.member_id = m.id
         LEFT JOIN bible_classes bc ON m.class_id = bc.id
         LEFT JOIN users u ON ar.marked_by = u.id
+        LEFT JOIN members marker_member ON ar.marked_by_member_id = marker_member.id
         WHERE ar.session_id = ?";
 $params = [$session_id];
 $types = 'i';
