@@ -12,7 +12,7 @@ if (!is_logged_in()) {
 require_once __DIR__.'/../helpers/permissions_v2.php';
 if (!has_permission('edit_attendance')) {
     http_response_code(403);
-    include '../views/errors/403.php';
+    include __DIR__ . '/errors/403.php';
     exit;
 }
 
@@ -744,5 +744,5 @@ ob_start();
 <?php
 $page_content = ob_get_clean();
 $page_title = $edit_id ? 'Edit Attendance Session' : 'Create Attendance Session';
-include '../includes/layout.php';
+include __DIR__ . '/../includes/layout.php';
 ?>

@@ -129,6 +129,15 @@ final class UnifiedAttendanceReportService {
                 $result = $this->conn->query('SELECT DISTINCT church_id FROM organizations WHERE id IN (' . implode(',', $scopes['organization_ids']) . ')');
                 while ($result && ($row = $result->fetch_assoc())) $churchIds[(int) $row['church_id']] = true;
             }
+            if ($scopes['unit_ids']) {
+                $result = $this->conn->query(
+                    'SELECT DISTINCT organization.church_id
+                       FROM organization_units unit
+                       JOIN organizations organization ON organization.id = unit.organization_id
+                      WHERE unit.id IN (' . implode(',', $scopes['unit_ids']) . ')'
+                );
+                while ($result && ($row = $result->fetch_assoc())) $churchIds[(int) $row['church_id']] = true;
+            }
         }
         if (!$churchIds) return [];
         $result = $this->conn->query('SELECT id, name FROM churches WHERE id IN (' . implode(',', array_keys($churchIds)) . ') ORDER BY name');
@@ -355,7 +364,7 @@ final class UnifiedAttendanceReportService {
 
         if ($memberId > 0) {
             $stmt = $this->conn->prepare(
-                "SELECT DISTINCT leader.unit_id, unit.organization_id
+                "SELECT DISTINCT leader.unit_id
                    FROM organization_unit_leaders leader
                    JOIN organization_units unit ON unit.id = leader.unit_id
                   WHERE leader.member_id = ? AND leader.status = 'active'
@@ -365,7 +374,6 @@ final class UnifiedAttendanceReportService {
             $stmt->execute();
             foreach ($stmt->get_result()->fetch_all(MYSQLI_ASSOC) as $row) {
                 $scopes['unit_ids'][] = (int) $row['unit_id'];
-                $scopes['organization_ids'][] = (int) $row['organization_id'];
             }
             $stmt->close();
         }
