@@ -52,6 +52,19 @@ try {
         throw new RuntimeException('This role is assigned to ' . $assignmentCount . ' member(s). Reassign them before deleting it.');
     }
 
+    $mappingStmt = $conn->prepare(
+        'SELECT COUNT(*) AS total FROM role_of_serving_access_mappings WHERE role_of_serving_id = ?'
+    );
+    $mappingStmt->bind_param('i', $id);
+    $mappingStmt->execute();
+    $mappingCount = (int) $mappingStmt->get_result()->fetch_assoc()['total'];
+    $mappingStmt->close();
+    if ($mappingCount > 0) {
+        throw new RuntimeException(
+            'This role has ' . $mappingCount . ' access mapping(s). Remove them from Role Access Mapping before deleting it.'
+        );
+    }
+
     $stmt = $conn->prepare('DELETE FROM roles_of_serving WHERE id = ?');
     $stmt->bind_param('i', $id);
     if (!$stmt->execute() || $stmt->affected_rows !== 1) {

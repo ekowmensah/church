@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -9,9 +10,10 @@ if (!is_logged_in()) {
     exit;
 }
 
-// Robust super admin bypass and permission check
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+// Super Administrator status follows role assignment, never a hard-coded user ID.
+$userListRoleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
+if (isset($_SESSION['role_id'])) $userListRoleIds[] = (int) $_SESSION['role_id'];
+$is_super_admin = in_array(1, $userListRoleIds, true);
 
 if (!$is_super_admin && !has_permission('view_user_list')) {
     http_response_code(403);
@@ -120,6 +122,7 @@ if ($params) {
 }
 ob_start();
 ?>
+<?php if (isset($_GET['saved']) && in_array($_GET['saved'], ['created', 'updated'], true)): ?><div class="alert alert-success">User access <?= htmlspecialchars($_GET['saved']) ?> successfully.</div><?php endif; ?>
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h1 class="h4 mb-0 text-gray-800"><i class="fas fa-users mr-2"></i>Users</h1>
     <?php if ($can_add): ?>
@@ -242,6 +245,7 @@ $(function(){
         if ($role_q) {
             while($r = $role_q->fetch_assoc()) $roles[] = $r['name'];
         }
+        $row_is_super_admin = in_array('Super Admin', $roles, true);
         // Fetch class leadership (robust to missing columns)
         $class_leadership = '';
         if ($member_id) {
@@ -308,7 +312,7 @@ $(function(){
             </td>
             <td><span class="badge badge-<?= $u['user_status']==='active'?'success':'secondary' ?>"><?= htmlspecialchars(ucfirst($u['user_status'])) ?></span></td>
             <td>
-                <?php if ($user_id == 1): ?>
+                <?php if ($row_is_super_admin): ?>
                     <a class="btn btn-sm btn-warning mr-1 disabled" title="Not allowed for Super Admin" tabindex="-1" aria-disabled="true"><i class="fas fa-edit"></i></a>
                     <a class="btn btn-outline-danger btn-sm mr-1 disabled" title="Not allowed for Super Admin" tabindex="-1" aria-disabled="true"><i class="fas fa-user-slash"></i></a>
                     <a class="btn btn-outline-success btn-sm mr-1 disabled" title="Not allowed for Super Admin" tabindex="-1" aria-disabled="true"><i class="fas fa-user-check"></i></a>
@@ -318,12 +322,12 @@ $(function(){
                         <a href="user_form.php?id=<?= $user_id ?>" class="btn btn-sm btn-warning mr-1" title="Edit"><i class="fas fa-edit"></i></a>
                     <?php endif; ?>
                     <?php if ($u['user_status'] === 'active' && $can_delete): ?>
-                    <a href="user_deactivate.php?id=<?= $user_id ?>" class="btn btn-outline-danger btn-sm mr-1" title="De-Activate" onclick="return confirm('Deactivate this user?');"><i class="fas fa-user-slash"></i></a>
+                    <form method="post" action="user_deactivate.php" class="d-inline" onsubmit="return confirm('Deactivate this user?');"><?= csrf_input() ?><input type="hidden" name="id" value="<?= $user_id ?>"><button class="btn btn-outline-danger btn-sm mr-1" title="De-Activate"><i class="fas fa-user-slash"></i></button></form>
                     <?php elseif ($u['user_status'] === 'inactive' && $can_edit): ?>
-                    <a href="user_activate.php?id=<?= $user_id ?>" class="btn btn-outline-success btn-sm mr-1" title="Activate" onclick="return confirm('Activate this user?');"><i class="fas fa-user-check"></i></a>
+                    <form method="post" action="user_activate.php" class="d-inline" onsubmit="return confirm('Activate this user?');"><?= csrf_input() ?><input type="hidden" name="id" value="<?= $user_id ?>"><button class="btn btn-outline-success btn-sm mr-1" title="Activate"><i class="fas fa-user-check"></i></button></form>
                     <?php endif; ?>
                     <?php if ($can_delete): ?>
-                    <a href="user_delete.php?id=<?= $user_id ?>" class="btn btn-sm btn-danger" title="Delete" onclick="return confirm('Are you sure you want to delete this user?');"><i class="fas fa-trash"></i></a>
+                    <form method="post" action="user_delete.php" class="d-inline" onsubmit="return confirm('Delete this back-office account? The member record will be retained.');"><?= csrf_input() ?><input type="hidden" name="id" value="<?= $user_id ?>"><button class="btn btn-sm btn-danger" title="Delete user access"><i class="fas fa-trash"></i></button></form>
                     <?php endif; ?>
                 <?php endif; ?>
             </td>

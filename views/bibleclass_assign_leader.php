@@ -23,6 +23,7 @@ if (!has_permission('view_bibleclass_list')) {
 
 $class_id = isset($_POST['class_id']) ? intval($_POST['class_id']) : 0;
 $leader_unique_id = isset($_POST['leader_user_id']) ? trim($_POST['leader_user_id']) : '';
+$leader_role = ($_POST['leader_role'] ?? 'primary') === 'assistant' ? 'assistant' : 'primary';
 
 if (!$class_id || !$leader_unique_id) {
     echo json_encode(['success' => false, 'error' => 'Missing data.']);
@@ -37,13 +38,14 @@ $leader_member_id = null;
 if (strpos($leader_unique_id, 'user_') === 0) {
     $leader_user_id = intval(substr($leader_unique_id, 5));
     
-    // Validate user exists and has Class Leader role
-    $role_check = $conn->prepare('SELECT u.id FROM users u INNER JOIN user_roles ur ON u.id = ur.user_id WHERE u.id = ? AND ur.role_id = 5');
-    $role_check->bind_param('i', $leader_user_id);
+    // Validate the access role that corresponds to this contextual assignment.
+    $required_role_name = $leader_role === 'assistant' ? 'Assistant Bible Class Leader' : 'Class Leader';
+    $role_check = $conn->prepare('SELECT u.id FROM users u INNER JOIN user_roles ur ON u.id = ur.user_id INNER JOIN roles r ON r.id = ur.role_id WHERE u.id = ? AND r.name = ? AND ur.is_active = 1');
+    $role_check->bind_param('is', $leader_user_id, $required_role_name);
     $role_check->execute();
     $role_check->store_result();
     if ($role_check->num_rows === 0) {
-        echo json_encode(['success' => false, 'error' => 'Selected user is not a Class Leader.']);
+        echo json_encode(['success' => false, 'error' => 'Selected user does not have the required ' . $required_role_name . ' access role.']);
         $role_check->close();
         exit;
     }
@@ -85,9 +87,9 @@ $assigned_by = $_SESSION['user_id'] ?? null;
 $conn->begin_transaction();
 
 try {
-    // 1. Deactivate any existing active leaders for this class
-    $deactivate = $conn->prepare('UPDATE bible_class_leaders SET status = "inactive" WHERE class_id = ? AND status = "active"');
-    $deactivate->bind_param('i', $class_id);
+    // Keep one primary and one or more assistant assignments independently.
+    $deactivate = $conn->prepare('UPDATE bible_class_leaders SET status = "inactive" WHERE class_id = ? AND leader_role = ? AND status = "active"');
+    $deactivate->bind_param('is', $class_id, $leader_role);
     $deactivate->execute();
     $deactivate->close();
     
@@ -101,8 +103,8 @@ try {
     // 3. Insert new leader assignment into bible_class_leaders table
     if ($has_member_id) {
         // New schema with member_id support
-        $insert = $conn->prepare('INSERT INTO bible_class_leaders (class_id, user_id, member_id, assigned_by, status, notes) VALUES (?, ?, ?, ?, "active", "Assigned via Bible Class List")');
-        $insert->bind_param('iiii', $class_id, $leader_user_id, $leader_member_id, $assigned_by);
+        $insert = $conn->prepare('INSERT INTO bible_class_leaders (class_id, user_id, member_id, leader_role, assigned_by, status, notes) VALUES (?, ?, ?, ?, ?, "active", "Assigned via Bible Class List")');
+        $insert->bind_param('iiisi', $class_id, $leader_user_id, $leader_member_id, $leader_role, $assigned_by);
     } else {
         // Legacy schema - only user_id
         if (!$leader_user_id) {
@@ -115,21 +117,23 @@ try {
     $insert->close();
     
     // 4. Update bible_classes.leader_id for backward compatibility (use user_id if available, otherwise null)
-    if ($leader_user_id) {
+    if ($leader_role === 'primary' && $leader_user_id) {
         $update = $conn->prepare('UPDATE bible_classes SET leader_id = ? WHERE id = ?');
         $update->bind_param('ii', $leader_user_id, $class_id);
-    } else {
+    } elseif ($leader_role === 'primary') {
         // No user account - set to NULL for now (could be enhanced to store member_id in future)
         $update = $conn->prepare('UPDATE bible_classes SET leader_id = NULL WHERE id = ?');
         $update->bind_param('i', $class_id);
     }
-    $update->execute();
-    $update->close();
+    if (isset($update)) {
+        $update->execute();
+        $update->close();
+    }
     
     // Commit transaction
     $conn->commit();
     
-    $message = $leader_user_id ? 'Class leader assigned successfully' : 'Class leader (member) assigned successfully';
+    $message = ucfirst($leader_role) . ' Bible Class leader assigned successfully';
     echo json_encode(['success' => true, 'message' => $message]);
     
 } catch (Exception $e) {

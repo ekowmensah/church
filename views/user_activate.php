@@ -1,25 +1,47 @@
 <?php
-require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
-if (!is_logged_in() || !(isset($_SESSION['role_id']) && ($_SESSION['role_id'] == 1 || has_permission('manage_users')))) {
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../helpers/auth.php';
+require_once __DIR__ . '/../helpers/permissions_v2.php';
+require_once __DIR__ . '/../helpers/csrf.php';
+
+$roleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
+if (isset($_SESSION['role_id'])) $roleIds[] = (int) $_SESSION['role_id'];
+$allowed = in_array(1, $roleIds, true) || has_permission('activate_user') || has_permission('edit_user');
+if (!is_logged_in() || !$allowed) {
     http_response_code(403);
-    exit('Forbidden');
+    exit('You do not have permission to activate users.');
 }
-if (!isset($_GET['id'])) {
-    http_response_code(400);
-    exit('Missing user id');
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(405);
+    exit('A valid form submission is required.');
 }
-$user_id = intval($_GET['id']);
-$user = $conn->query("SELECT * FROM users WHERE id = $user_id")->fetch_assoc();
-if (!$user) {
+$userId = (int) ($_POST['id'] ?? 0);
+$stmt = $conn->prepare(
+    "SELECT user_account.status, member.status AS member_status,
+            EXISTS(SELECT 1 FROM user_roles WHERE user_id = user_account.id AND is_active = 1) AS has_role
+       FROM users user_account
+       JOIN members member ON member.id = user_account.member_id
+      WHERE user_account.id = ? LIMIT 1"
+);
+$stmt->bind_param('i', $userId);
+$stmt->execute();
+$account = $stmt->get_result()->fetch_assoc();
+$stmt->close();
+if (!$account) {
     http_response_code(404);
-    exit('User not found');
+    exit('User account not found.');
 }
-if ($user['status'] !== 'inactive') {
-    http_response_code(400);
-    exit('User is not inactive');
+if ($account['member_status'] !== 'active') {
+    http_response_code(409);
+    exit('Activate the linked membership before activating back-office access.');
 }
-// Activate user
-$conn->query("UPDATE users SET status = 'active' WHERE id = $user_id");
+if (!(int) $account['has_role']) {
+    http_response_code(409);
+    exit('Assign mapped or manual access before activating this account.');
+}
+$stmt = $conn->prepare("UPDATE users SET status = 'active' WHERE id = ?");
+$stmt->bind_param('i', $userId);
+$stmt->execute();
+$stmt->close();
 header('Location: user_list.php?activated=1');
 exit;

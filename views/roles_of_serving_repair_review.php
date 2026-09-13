@@ -3,6 +3,7 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions.php';
 require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../services/RoleOfServingAccessService.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -84,6 +85,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $resolveStmt->bind_param('iii', $resolvedRoleId, $resolvedBy, $reviewId);
         $resolveStmt->execute();
         $resolveStmt->close();
+
+        $roleAccessService = new RoleOfServingAccessService($conn);
+        $roleAccessService->syncMember($memberId, $resolvedBy, 'Role assignment repair completed.');
 
         $conn->commit();
         $_SESSION['roles_of_serving_review_success'] = 'The member role was reassigned successfully.';

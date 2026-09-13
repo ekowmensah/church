@@ -23,6 +23,7 @@ if (!has_permission('view_organization_list')) {
 $org_id = isset($_POST['org_id']) ? intval($_POST['org_id']) : 0;
 $leader_unique_id = isset($_POST['leader_user_id']) ? trim($_POST['leader_user_id']) : '';
 $church_id = isset($_POST['church_id']) ? intval($_POST['church_id']) : 0;
+$leader_role = ($_POST['leader_role'] ?? 'primary') === 'assistant' ? 'assistant' : 'primary';
 
 if (!$org_id || !$leader_unique_id) {
     echo json_encode(['success' => false, 'error' => 'Missing data.']);
@@ -37,13 +38,13 @@ $leader_member_id = null;
 if (strpos($leader_unique_id, 'user_') === 0) {
     $leader_user_id = intval(substr($leader_unique_id, 5));
     
-    // Validate user exists and has Organizational Leader role
-    $role_check = $conn->prepare('SELECT u.id FROM users u INNER JOIN user_roles ur ON u.id = ur.user_id WHERE u.id = ? AND ur.role_id = 6');
-    $role_check->bind_param('i', $leader_user_id);
+    $required_role_name = $leader_role === 'assistant' ? 'Assistant Organizational Leader' : 'Organizational Leader';
+    $role_check = $conn->prepare('SELECT u.id FROM users u INNER JOIN user_roles ur ON u.id = ur.user_id INNER JOIN roles r ON r.id = ur.role_id WHERE u.id = ? AND r.name = ? AND ur.is_active = 1');
+    $role_check->bind_param('is', $leader_user_id, $required_role_name);
     $role_check->execute();
     $role_check->store_result();
     if ($role_check->num_rows === 0) {
-        echo json_encode(['success' => false, 'error' => 'Selected user is not an Organizational Leader.']);
+        echo json_encode(['success' => false, 'error' => 'Selected user does not have the required ' . $required_role_name . ' access role.']);
         $role_check->close();
         exit;
     }
@@ -140,9 +141,8 @@ if ($org_data['church_id'] && $church_id && $org_data['church_id'] != $church_id
 $conn->begin_transaction();
 
 try {
-    // 1. Deactivate existing active leaders for this organization
-    $deactivate = $conn->prepare('UPDATE organization_leaders SET status = "inactive" WHERE organization_id = ? AND status = "active"');
-    $deactivate->bind_param('i', $org_id);
+    $deactivate = $conn->prepare('UPDATE organization_leaders SET status = "inactive" WHERE organization_id = ? AND leader_role = ? AND status = "active"');
+    $deactivate->bind_param('is', $org_id, $leader_role);
     $deactivate->execute();
     $deactivate->close();
 
@@ -157,8 +157,8 @@ try {
     $assigned_by = $_SESSION['user_id'] ?? null;
     if ($has_member_id) {
         // New schema with member_id support
-        $insert = $conn->prepare('INSERT INTO organization_leaders (organization_id, user_id, member_id, assigned_by, status, notes) VALUES (?, ?, ?, ?, "active", "Assigned via Organization List")');
-        $insert->bind_param('iiii', $org_id, $leader_user_id, $leader_member_id, $assigned_by);
+        $insert = $conn->prepare('INSERT INTO organization_leaders (organization_id, user_id, member_id, leader_role, assigned_by, status, notes) VALUES (?, ?, ?, ?, ?, "active", "Assigned via Organization List")');
+        $insert->bind_param('iiisi', $org_id, $leader_user_id, $leader_member_id, $leader_role, $assigned_by);
     } else {
         // Legacy schema - only user_id
         if (!$leader_user_id) {
@@ -171,19 +171,21 @@ try {
     $insert->close();
 
     // 4. Update organizations.leader_id for backward compatibility (use user_id if available, otherwise null)
-    if ($leader_user_id) {
+    if ($leader_role === 'primary' && $leader_user_id) {
         $stmt = $conn->prepare('UPDATE organizations SET leader_id = ? WHERE id = ?');
         $stmt->bind_param('ii', $leader_user_id, $org_id);
-    } else {
+    } elseif ($leader_role === 'primary') {
         // No user account - set to NULL for now
         $stmt = $conn->prepare('UPDATE organizations SET leader_id = NULL WHERE id = ?');
         $stmt->bind_param('i', $org_id);
     }
-    $stmt->execute();
-    $stmt->close();
+    if (isset($stmt)) {
+        $stmt->execute();
+        $stmt->close();
+    }
 
     $conn->commit();
-    $message = $leader_user_id ? 'Organization leader assigned successfully' : 'Organization leader (member) assigned successfully';
+    $message = ucfirst($leader_role) . ' Organizational Leader assigned successfully';
     echo json_encode(['success' => true, 'message' => $message]);
 } catch (Exception $e) {
     $conn->rollback();

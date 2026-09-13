@@ -3,6 +3,7 @@ ob_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
 require_once __DIR__.'/../helpers/spouse_link_helper.php';
+require_once __DIR__.'/../services/RoleOfServingAccessService.php';
 
 function normalize_user_sync_email(string $email): ?string
 {
@@ -62,11 +63,13 @@ function sync_member_user_account(mysqli $conn, int $member_id, string $full_nam
     }
 
     if ($user_id > 0) {
-        $stmt = $conn->prepare('UPDATE users SET member_id = ?, church_id = ?, name = ?, email = ?, phone = ?, password_hash = ?, status = \'active\', photo = ? WHERE id = ?');
+        // Keep the official back-office email, password, and activation state
+        // separate from member-portal credentials and profile changes.
+        $stmt = $conn->prepare('UPDATE users SET member_id = ?, church_id = ?, name = ?, phone = ?, photo = ? WHERE id = ?');
         if (!$stmt) {
             throw new Exception($conn->error ?: 'Failed to prepare user update during member sync.');
         }
-        $stmt->bind_param('iisssssi', $member_id, $church_id, $full_name, $email, $phone, $password_hash, $photo, $user_id);
+        $stmt->bind_param('iisssi', $member_id, $church_id, $full_name, $phone, $photo, $user_id);
         if (!$stmt->execute()) {
             throw new Exception($stmt->error ?: 'Failed to update linked user account.');
         }
@@ -74,16 +77,9 @@ function sync_member_user_account(mysqli $conn, int $member_id, string $full_nam
         return;
     }
 
-    $user_status = 'active';
-    $stmt = $conn->prepare('INSERT INTO users (member_id, church_id, name, email, phone, password_hash, status, photo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-    if (!$stmt) {
-        throw new Exception($conn->error ?: 'Failed to prepare user insert during member sync.');
-    }
-    $stmt->bind_param('iissssss', $member_id, $church_id, $full_name, $email, $phone, $password_hash, $user_status, $photo);
-    if (!$stmt->execute()) {
-        throw new Exception($stmt->error ?: 'Failed to create linked user account.');
-    }
-    $stmt->close();
+    // Member registration creates member-portal access only. Back-office
+    // accounts are provisioned separately from an approved Role of Serving.
+    return;
 }
 
 // Self-registration: member finds self by registration_token, not by admin ID
@@ -289,6 +285,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
                 }
                 $role_stmt->close();
             }
+
+            $roleAccessService = new RoleOfServingAccessService($conn);
+            $roleAccessService->syncMember($member_id, null, 'Member completed registration and updated Roles of Serving.');
 
             $full_name = trim(preg_replace('/\s+/', ' ', $first_name . ' ' . $middle_name . ' ' . $last_name));
             $church_id = isset($member['church_id']) ? (int) $member['church_id'] : 0;

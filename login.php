@@ -33,20 +33,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } else {
         $email = trim($_POST['email'] ?? '');
-        $stmt = $conn->prepare('SELECT id, name, email, password_hash FROM users WHERE email = ? LIMIT 1');
+        $stmt = $conn->prepare(
+            'SELECT user_account.id, user_account.member_id, user_account.name,
+                    user_account.email, user_account.password_hash
+               FROM users user_account
+               JOIN members member ON member.id = user_account.member_id
+              WHERE user_account.email = ? AND user_account.status = "active" LIMIT 1'
+        );
         $stmt->bind_param('s', $email);
         $stmt->execute();
         $result = $stmt->get_result();
         if ($user = $result->fetch_assoc()) {
             if (password_verify($password, $user['password_hash'])) {
                 $_SESSION['user_id'] = $user['id'];
+                $_SESSION['member_id'] = (int) $user['member_id'];
                 $_SESSION['name'] = $user['name'];
                 $_SESSION['user_name'] = $user['name']; // For dashboard compatibility
                 $_SESSION['email'] = $user['email'];
                 // Robust super admin session flag - check if user has role_id = 1 (super admin role)
                 $_SESSION['is_super_admin'] = false;
                 // Fetch all roles for this user
-                $role_stmt = $conn->prepare('SELECT role_id FROM user_roles WHERE user_id = ? ORDER BY role_id ASC');
+                $role_stmt = $conn->prepare(
+                    'SELECT user_role.role_id
+                       FROM user_roles user_role
+                       JOIN roles access_role ON access_role.id = user_role.role_id
+                      WHERE user_role.user_id = ?
+                        AND user_role.is_active = 1 AND access_role.is_active = 1
+                        AND (user_role.expires_at IS NULL OR user_role.expires_at > NOW())
+                      ORDER BY user_role.is_primary DESC, user_role.role_id ASC'
+                );
                 $role_stmt->bind_param('i', $user['id']);
                 $role_stmt->execute();
                 $role_result = $role_stmt->get_result();
@@ -56,6 +71,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $role_stmt->close();
                 if (empty($role_ids)) {
+                    unset(
+                        $_SESSION['user_id'], $_SESSION['member_id'], $_SESSION['name'],
+                        $_SESSION['user_name'], $_SESSION['email'], $_SESSION['is_super_admin']
+                    );
                     require_once __DIR__.'/helpers/global_audit_log.php';
                     log_activity('login_failed', 'user', $user['id'], json_encode(['username'=>$email, 'ip'=>$_SERVER['REMOTE_ADDR']]));
                     $error = 'No roles assigned to this user. Please contact admin.';
@@ -75,7 +94,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         SELECT DISTINCT p.name 
                         FROM permissions p
                         JOIN role_permissions rp ON p.id = rp.permission_id
+                        JOIN roles r ON r.id = rp.role_id
                         WHERE rp.role_id IN (' . implode(',', array_fill(0, count($role_ids), '?')) . ')
+                          AND rp.is_active = 1 AND p.is_active = 1 AND r.is_active = 1
+                          AND (rp.expires_at IS NULL OR rp.expires_at > NOW())
                     ');
                     $perm_stmt->bind_param(str_repeat('i', count($role_ids)), ...$role_ids);
                     $perm_stmt->execute();

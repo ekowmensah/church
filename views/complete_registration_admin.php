@@ -7,6 +7,7 @@ require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
 require_once __DIR__.'/../helpers/leader_helpers.php';
 require_once __DIR__.'/../helpers/spouse_link_helper.php';
+require_once __DIR__.'/../services/RoleOfServingAccessService.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -97,11 +98,13 @@ function sync_member_user_account(mysqli $conn, int $member_id, string $full_nam
     }
 
     if ($user_id > 0) {
-        $stmt = $conn->prepare('UPDATE users SET member_id = ?, church_id = ?, name = ?, email = ?, phone = ?, password_hash = ?, status = \'active\', photo = ? WHERE id = ?');
+        // Profile synchronization must not replace the official back-office
+        // login email, password, or activation state with member credentials.
+        $stmt = $conn->prepare('UPDATE users SET member_id = ?, church_id = ?, name = ?, phone = ?, photo = ? WHERE id = ?');
         if (!$stmt) {
             throw new Exception($conn->error ?: 'Failed to prepare user update during member sync.');
         }
-        $stmt->bind_param('iisssssi', $member_id, $church_id, $full_name, $email, $phone, $password_hash, $photo, $user_id);
+        $stmt->bind_param('iisssi', $member_id, $church_id, $full_name, $phone, $photo, $user_id);
         if (!$stmt->execute()) {
             throw new Exception($stmt->error ?: 'Failed to update linked user account.');
         }
@@ -109,16 +112,9 @@ function sync_member_user_account(mysqli $conn, int $member_id, string $full_nam
         return;
     }
 
-    $user_status = 'active';
-    $stmt = $conn->prepare('INSERT INTO users (member_id, church_id, name, email, phone, password_hash, status, photo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-    if (!$stmt) {
-        throw new Exception($conn->error ?: 'Failed to prepare user insert during member sync.');
-    }
-    $stmt->bind_param('iissssss', $member_id, $church_id, $full_name, $email, $phone, $password_hash, $user_status, $photo);
-    if (!$stmt->execute()) {
-        throw new Exception($stmt->error ?: 'Failed to create linked user account.');
-    }
-    $stmt->close();
+    // An ordinary member record is not automatically a back-office user.
+    // Provision access explicitly from the user-access form after role review.
+    return;
 }
 
 function normalize_html_date(?string $dateValue): string
@@ -688,6 +684,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
                 }
                 $role_stmt->close();
             }
+
+            $roleAccessService = new RoleOfServingAccessService($conn);
+            $roleAccessService->syncMember(
+                $member_id,
+                isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null,
+                'Administrator updated member Roles of Serving.'
+            );
 
             $full_name = trim(preg_replace('/\s+/', ' ', $first_name . ' ' . $middle_name . ' ' . $last_name));
             $church_id = isset($member['church_id']) ? (int) $member['church_id'] : 0;

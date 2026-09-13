@@ -1,41 +1,47 @@
 <?php
-require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions_v2.php';
-if (!is_logged_in() || !has_permission('manage_users')) {
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../helpers/auth.php';
+require_once __DIR__ . '/../helpers/permissions_v2.php';
+require_once __DIR__ . '/../helpers/csrf.php';
+
+$roleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
+if (isset($_SESSION['role_id'])) $roleIds[] = (int) $_SESSION['role_id'];
+$allowed = in_array(1, $roleIds, true) || has_permission('delete_user');
+if (!is_logged_in() || !$allowed) {
     http_response_code(403);
-    exit('Forbidden');
+    exit('You do not have permission to delete user access.');
 }
-$user_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
-if (!$user_id) {
-    header('Location: user_list.php?error=invalid');
-    exit;
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(405);
+    exit('A valid form submission is required.');
 }
-// Prevent deleting self or super admin
-if ($_SESSION['user_id'] == $user_id) {
-    header('Location: user_list.php?error=self');
-    exit;
+$userId = (int) ($_POST['id'] ?? 0);
+if ($userId < 1 || $userId === (int) ($_SESSION['user_id'] ?? 0)) {
+    http_response_code(409);
+    exit('The current user account cannot be deleted.');
 }
-// Use transaction to ensure both user and roles are deleted together
-$conn->begin_transaction();
-try {
-    // First delete user roles
-    $stmt = $conn->prepare('DELETE FROM user_roles WHERE user_id = ?');
-    $stmt->bind_param('i', $user_id);
-    $stmt->execute();
-    $stmt->close();
-    
-    // Then delete the user
-    $stmt = $conn->prepare('DELETE FROM users WHERE id = ?');
-    $stmt->bind_param('i', $user_id);
-    $stmt->execute();
-    $stmt->close();
-    
-    $conn->commit();
-    header('Location: user_list.php?deleted=1');
-    exit;
-} catch (Exception $e) {
-    $conn->rollback();
-    header('Location: user_list.php?error=db');
-    exit;
+$stmt = $conn->prepare(
+    'SELECT EXISTS(SELECT 1 FROM user_roles WHERE user_id = ? AND role_id = 1 AND is_active = 1) AS is_super_admin'
+);
+$stmt->bind_param('i', $userId);
+$stmt->execute();
+$isTargetSuperAdmin = (bool) $stmt->get_result()->fetch_assoc()['is_super_admin'];
+$stmt->close();
+if ($isTargetSuperAdmin) {
+    http_response_code(409);
+    exit('Super Administrator accounts cannot be deleted here.');
 }
+
+// Database cascades remove role provenance and access-audit entries. The linked
+// member is retained because users.member_id points to members, not vice versa.
+$stmt = $conn->prepare('DELETE FROM users WHERE id = ?');
+$stmt->bind_param('i', $userId);
+$stmt->execute();
+$deleted = $stmt->affected_rows;
+$stmt->close();
+if ($deleted !== 1) {
+    http_response_code(404);
+    exit('User account not found.');
+}
+header('Location: user_list.php?deleted=1');
+exit;
