@@ -156,6 +156,60 @@ final class RoleOfServingAccessService {
         return $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
     }
 
+    public function findMembersForUserAccessByCrn(string $crn): array {
+        $crn = trim($crn);
+        if ($crn === '') return [];
+
+        $stmt = $this->conn->prepare(
+            "SELECT member.id, member.crn,
+                    TRIM(CONCAT_WS(' ', member.first_name, member.middle_name, member.last_name)) AS full_name,
+                    member.email, member.phone, member.status, member.church_id,
+                    church.name AS church_name, user_account.id AS existing_user_id,
+                    GROUP_CONCAT(DISTINCT serving_role.name ORDER BY serving_role.name SEPARATOR ', ') AS serving_roles
+               FROM members member
+               LEFT JOIN churches church ON church.id = member.church_id
+               LEFT JOIN users user_account ON user_account.member_id = member.id
+               LEFT JOIN member_roles_of_serving member_role ON member_role.member_id = member.id
+               LEFT JOIN roles_of_serving serving_role ON serving_role.id = member_role.role_id
+              WHERE member.crn = ?
+              GROUP BY member.id, member.crn, member.first_name, member.middle_name,
+                       member.last_name, member.email, member.phone, member.status,
+                       member.church_id, church.name, user_account.id
+              ORDER BY member.id"
+        );
+        $stmt->bind_param('s', $crn);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+
+        foreach ($rows as &$row) {
+            $row['id'] = (int) $row['id'];
+            $row['church_id'] = (int) $row['church_id'];
+            $row['existing_user_id'] = $row['existing_user_id'] === null
+                ? null
+                : (int) $row['existing_user_id'];
+            $row['serving_roles'] = trim((string) $row['serving_roles']);
+            $row['mapped_roles'] = $this->getMappedAccessRolesForMember((int) $row['id']);
+        }
+        unset($row);
+        return $rows;
+    }
+
+    public function getMemberAccessProfile(int $memberId): ?array {
+        if ($memberId < 1) return null;
+        $stmt = $this->conn->prepare('SELECT crn FROM members WHERE id = ? LIMIT 1');
+        $stmt->bind_param('i', $memberId);
+        $stmt->execute();
+        $crn = (string) ($stmt->get_result()->fetch_assoc()['crn'] ?? '');
+        $stmt->close();
+        if ($crn === '') return null;
+
+        foreach ($this->findMembersForUserAccessByCrn($crn) as $member) {
+            if ((int) $member['id'] === $memberId) return $member;
+        }
+        return null;
+    }
+
     public function getUserAccount(int $userId): ?array {
         $stmt = $this->conn->prepare(
             "SELECT user_account.*, member.crn, member.first_name, member.middle_name, member.last_name,
@@ -216,6 +270,19 @@ final class RoleOfServingAccessService {
         $member = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$member) throw new RuntimeException('Select an existing registered member.');
+        if ($userId === null) {
+            $stmt = $this->conn->prepare('SELECT id FROM users WHERE member_id = ? LIMIT 1');
+            $stmt->bind_param('i', $memberId);
+            $stmt->execute();
+            $existingUserId = (int) ($stmt->get_result()->fetch_assoc()['id'] ?? 0);
+            $stmt->close();
+            if ($existingUserId > 0) {
+                throw new RuntimeException('This member already has a back-office user account.');
+            }
+            if ($member['status'] !== 'active') {
+                throw new RuntimeException('Only an active member can receive a new back-office account.');
+            }
+        }
         if ($member['status'] !== 'active' && $status === 'active') {
             throw new RuntimeException('An inactive or pending member cannot have an active back-office account.');
         }
