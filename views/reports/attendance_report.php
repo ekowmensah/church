@@ -30,12 +30,17 @@ $service = UnifiedAttendanceReportService::fromSession($conn);
 $churches = $service->getAllowedChurches();
 $categories = $service->getCategories();
 $canExport = $reportIsSuperAdmin || has_permission('export_attendance_report');
+$canManageStatisticalEvents = $reportIsSuperAdmin || has_permission('manage_church_statistical_events');
+$canViewChurchStatistics = $service->canViewChurchStatistics();
 $preset = (string) ($_GET['period'] ?? 'this_month');
 $status = (string) ($_GET['status'] ?? 'present');
 $categoryId = isset($_GET['category_id']) && $_GET['category_id'] !== '' ? (int) $_GET['category_id'] : null;
 $selectedChurchId = isset($_GET['church_id']) ? (int) $_GET['church_id'] : 0;
 $selectedChurch = null;
 $report = ['summary' => [], 'breakdown' => [], 'totals' => ['male' => 0, 'female' => 0, 'unspecified' => 0, 'total' => 0]];
+$churchStatistics = ['rows' => [], 'totals' => ['male' => 0, 'female' => 0, 'unspecified' => 0, 'total' => 0]];
+$combinedTotals = ['male' => 0, 'female' => 0, 'unspecified' => 0, 'total' => 0];
+$includeChurchStatistics = false;
 $fromDate = '';
 $toDate = '';
 $error = '';
@@ -54,6 +59,16 @@ try {
     );
     $report = $service->buildReport($selectedChurchId, $fromDate, $toDate, $status, $categoryId);
     $status = $report['status'];
+    if ($canViewChurchStatistics) {
+        $churchStatistics = $service->buildChurchStatistics($selectedChurchId, $fromDate, $toDate);
+    }
+    // Lifecycle events are counts rather than attendance statuses. Include them
+    // in the unified sample-style total only on an unfiltered Present report.
+    $includeChurchStatistics = $canViewChurchStatistics && $status === 'present' && $categoryId === null;
+    foreach (array_keys($combinedTotals) as $field) {
+        $combinedTotals[$field] = (float) $report['totals'][$field]
+            + ($includeChurchStatistics ? (int) $churchStatistics['totals'][$field] : 0);
+    }
 } catch (Throwable $exception) {
     $error = $exception->getMessage();
 }
@@ -167,12 +182,12 @@ ob_start();
     <?php if (!$error): ?>
       <div class="row mb-3">
         <?php foreach (['male' => 'Male', 'female' => 'Female', 'unspecified' => 'Unspecified', 'total' => 'Total'] as $field => $label): ?>
-          <div class="col-lg-3 col-6 mb-2"><div class="metric-card"><div class="text-muted small text-uppercase"><?= $label ?></div><div class="value"><?= attendance_report_number($report['totals'][$field]) ?></div></div></div>
+          <div class="col-lg-3 col-6 mb-2"><div class="metric-card"><div class="text-muted small text-uppercase"><?= $label ?></div><div class="value"><?= attendance_report_number($combinedTotals[$field]) ?></div></div></div>
         <?php endforeach; ?>
       </div>
 
       <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 no-print">
-        <div class="text-muted small">Zero-count types are hidden. Weekly-average types divide each week's total by its distinct meeting days.</div>
+        <div class="text-muted small">Zero-count types are hidden. Weekly-average types divide each week's total by its distinct meeting days. Membership and pastoral events are included in the unfiltered Present report.</div>
         <?php if ($canExport): ?>
           <div class="btn-group mt-2 mt-md-0">
             <button type="button" class="btn btn-outline-secondary btn-sm" id="copyReport"><i class="far fa-copy mr-1"></i>Copy</button>
@@ -185,7 +200,7 @@ ob_start();
 
       <div class="card report-card">
         <div class="card-body p-0">
-          <?php if (!$report['summary']): ?>
+          <?php if (!$report['summary'] && !($includeChurchStatistics && $churchStatistics['rows'])): ?>
             <div class="empty-state"><i class="far fa-calendar-times fa-2x mb-2"></i><div>No approved attendance records match this period and filter.</div></div>
           <?php else: ?>
             <div class="table-responsive">
@@ -198,13 +213,21 @@ ob_start();
                     <tr><td class="breakdown-name">↳ <?= htmlspecialchars($detail['breakdown_name']) ?> <?php if ($detail['aggregation_method'] === 'weekly_average'): ?><span class="average-badge">weekly average</span><?php endif; ?></td><td class="text-right"><?= attendance_report_number($detail['male']) ?></td><td class="text-right"><?= attendance_report_number($detail['female']) ?></td><td class="text-right"><?= attendance_report_number($detail['unspecified']) ?></td><td class="text-right"><?= attendance_report_number($detail['total']) ?></td><td class="text-right"><?= number_format((int) $detail['sessions']) ?></td></tr>
                   <?php endforeach; ?>
                 <?php endforeach; ?>
+                <?php if ($includeChurchStatistics && $churchStatistics['rows']): ?>
+                  <tr class="main-row"><td colspan="6">Membership &amp; Pastoral Events</td></tr>
+                  <?php foreach ($churchStatistics['rows'] as $statistic): ?>
+                    <tr><td><?= htmlspecialchars($statistic['label']) ?></td><td class="text-right"><?= number_format($statistic['male']) ?></td><td class="text-right"><?= number_format($statistic['female']) ?></td><td class="text-right"><?= number_format($statistic['unspecified']) ?></td><td class="text-right"><?= number_format($statistic['total']) ?></td><td></td></tr>
+                  <?php endforeach; ?>
+                <?php endif; ?>
                 </tbody>
-                <tfoot><tr class="font-weight-bold"><td>Grand Total</td><td class="text-right"><?= attendance_report_number($report['totals']['male']) ?></td><td class="text-right"><?= attendance_report_number($report['totals']['female']) ?></td><td class="text-right"><?= attendance_report_number($report['totals']['unspecified']) ?></td><td class="text-right"><?= attendance_report_number($report['totals']['total']) ?></td><td></td></tr></tfoot>
+                <tfoot><tr class="font-weight-bold"><td>Grand Total</td><td class="text-right"><?= attendance_report_number($combinedTotals['male']) ?></td><td class="text-right"><?= attendance_report_number($combinedTotals['female']) ?></td><td class="text-right"><?= attendance_report_number($combinedTotals['unspecified']) ?></td><td class="text-right"><?= attendance_report_number($combinedTotals['total']) ?></td><td></td></tr></tfoot>
               </table>
             </div>
           <?php endif; ?>
         </div>
       </div>
+
+      <?php if ($canManageStatisticalEvents): ?><div class="text-right mt-3 no-print"><a class="btn btn-outline-primary btn-sm" href="../church_statistical_events.php"><i class="fas fa-clipboard-list mr-1"></i>Manage Naming &amp; Death</a></div><?php endif; ?>
     <?php endif; ?>
   </div>
 </div>
@@ -219,12 +242,16 @@ ob_start();
   if (period) { period.addEventListener('change', toggleDates); toggleDates(); }
   var copy = document.getElementById('copyReport');
   if (copy) copy.addEventListener('click', function () {
-    var table = document.getElementById('unifiedAttendanceTable');
-    if (!table) return;
-    var rows = Array.prototype.map.call(table.rows, function (row) {
-      return Array.prototype.map.call(row.cells, function (cell) { return cell.innerText.trim(); }).join('\t');
-    }).join('\n');
-    navigator.clipboard.writeText(rows).then(function () { copy.innerHTML = '<i class="fas fa-check mr-1"></i>Copied'; });
+    var tables = ['unifiedAttendanceTable', 'churchStatisticsTable']
+      .map(function (id) { return document.getElementById(id); })
+      .filter(Boolean);
+    if (!tables.length) return;
+    var sections = tables.map(function (table) {
+      return Array.prototype.map.call(table.rows, function (row) {
+        return Array.prototype.map.call(row.cells, function (cell) { return cell.innerText.trim(); }).join('\t');
+      }).join('\n');
+    });
+    navigator.clipboard.writeText(sections.join('\n\n')).then(function () { copy.innerHTML = '<i class="fas fa-check mr-1"></i>Copied'; });
   });
 })();
 </script>

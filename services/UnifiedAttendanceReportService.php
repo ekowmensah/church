@@ -157,6 +157,72 @@ final class UnifiedAttendanceReportService {
         return $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
     }
 
+    public function canViewChurchStatistics(): bool {
+        return $this->hasBroadChurchAccess();
+    }
+
+    public function buildChurchStatistics(
+        int $churchId,
+        string $fromDate,
+        string $toDate,
+        ?string $eventType = null
+    ): array {
+        if (!$this->canViewChurchStatistics()) {
+            throw new RuntimeException('Your reporting role is limited to assigned attendance scopes.');
+        }
+        $this->assertChurchAllowed($churchId);
+        $start = $this->parseDate($fromDate);
+        $end = $this->parseDate($toDate);
+        if ($start > $end) throw new InvalidArgumentException('The From date cannot be after the To date.');
+
+        $labels = [
+            'new_member' => 'New Members',
+            'visitor' => 'Visitors',
+            'naming' => 'Naming',
+            'baptism' => 'Baptism',
+            'confirmation' => 'Confirmation',
+            'death' => 'Death',
+            'transferred' => 'Transferred',
+        ];
+        if ($eventType !== null && !isset($labels[$eventType])) {
+            throw new InvalidArgumentException('Choose a valid statistical event type.');
+        }
+
+        $sql = "SELECT event_type,
+                       SUM(CASE WHEN gender = 'Male' THEN 1 ELSE 0 END) AS male,
+                       SUM(CASE WHEN gender = 'Female' THEN 1 ELSE 0 END) AS female,
+                       SUM(CASE WHEN gender NOT IN ('Male', 'Female') OR gender IS NULL THEN 1 ELSE 0 END) AS unspecified,
+                       COUNT(*) AS total
+                  FROM v_church_statistical_events
+                 WHERE church_id = ? AND event_date BETWEEN ? AND ?";
+        $params = [$churchId, $fromDate, $toDate];
+        $types = 'iss';
+        if ($eventType !== null) {
+            $sql .= ' AND event_type = ?';
+            $params[] = $eventType;
+            $types .= 's';
+        }
+        $sql .= " GROUP BY event_type
+                  ORDER BY FIELD(event_type, 'new_member', 'visitor', 'naming',
+                                 'baptism', 'confirmation', 'death', 'transferred')";
+        $stmt = $this->conn->prepare($sql);
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+
+        $totals = ['male' => 0, 'female' => 0, 'unspecified' => 0, 'total' => 0];
+        foreach ($rows as &$row) {
+            $row['label'] = $labels[$row['event_type']] ?? ucwords(str_replace('_', ' ', $row['event_type']));
+            foreach (array_keys($totals) as $field) {
+                $row[$field] = (int) $row[$field];
+                $totals[$field] += $row[$field];
+            }
+        }
+        unset($row);
+        return ['rows' => $rows, 'totals' => $totals, 'from_date' => $fromDate, 'to_date' => $toDate];
+    }
+
     public function buildReport(
         int $churchId,
         string $fromDate,
