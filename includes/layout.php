@@ -190,7 +190,7 @@
     <div class="wrapper">
         <!-- Header must come first for proper AdminLTE layout -->
         <?php
-        if (isset($_SESSION['member_id'])) {
+        if (!empty($_SESSION['member_id']) && empty($_SESSION['user_id'])) {
             include __DIR__.'/member_header.php';
         } else {
             include __DIR__.'/header.php';
@@ -199,7 +199,7 @@
         
         <!-- Sidebar comes after header -->
         <?php
-        if (isset($_SESSION['member_id'])) {
+        if (!empty($_SESSION['member_id']) && empty($_SESSION['user_id'])) {
             include __DIR__.'/member_sidebar.php';
         } else {
             include __DIR__.'/sidebar.php';

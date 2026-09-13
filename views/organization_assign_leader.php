@@ -3,6 +3,7 @@ session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 header('Content-Type: application/json');
 
@@ -14,9 +15,15 @@ if (!is_logged_in()) {
 }
 
 // Permission check
-if (!has_permission('view_organization_list')) {
+if (!is_super_admin() && !has_permission('edit_organization')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Forbidden']);
+    exit;
+}
+
+if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(419);
+    echo json_encode(['success' => false, 'error' => 'Your session token expired. Refresh the page and try again.']);
     exit;
 }
 
@@ -39,7 +46,7 @@ if (strpos($leader_unique_id, 'user_') === 0) {
     $leader_user_id = intval(substr($leader_unique_id, 5));
     
     $required_role_name = $leader_role === 'assistant' ? 'Assistant Organizational Leader' : 'Organizational Leader';
-    $role_check = $conn->prepare('SELECT u.id FROM users u INNER JOIN user_roles ur ON u.id = ur.user_id INNER JOIN roles r ON r.id = ur.role_id WHERE u.id = ? AND r.name = ? AND ur.is_active = 1');
+    $role_check = $conn->prepare('SELECT u.id FROM users u INNER JOIN user_roles ur ON u.id = ur.user_id INNER JOIN roles r ON r.id = ur.role_id WHERE u.id = ? AND r.name = ? AND u.status = "active" AND ur.is_active = 1 AND r.is_active = 1 AND (ur.expires_at IS NULL OR ur.expires_at > NOW())');
     $role_check->bind_param('is', $leader_user_id, $required_role_name);
     $role_check->execute();
     $role_check->store_result();
@@ -51,12 +58,12 @@ if (strpos($leader_unique_id, 'user_') === 0) {
     $role_check->close();
     
     // Validate organization membership - ensure user is a member of this organization
-    $member_check = $conn->prepare('
+    $member_check = $conn->prepare("
         SELECT u.id FROM users u 
         INNER JOIN members m ON u.member_id = m.id 
         INNER JOIN member_organizations mo ON m.id = mo.member_id 
-        WHERE u.id = ? AND mo.organization_id = ?
-    ');
+        WHERE u.id = ? AND mo.organization_id = ? AND m.status = 'active'
+    ");
     $member_check->bind_param('ii', $leader_user_id, $org_id);
     $member_check->execute();
     $member_check->store_result();
@@ -70,11 +77,11 @@ if (strpos($leader_unique_id, 'user_') === 0) {
     $leader_member_id = intval(substr($leader_unique_id, 7));
     
     // Validate member exists and belongs to this organization
-    $member_check = $conn->prepare('
+    $member_check = $conn->prepare("
         SELECT m.id FROM members m
         INNER JOIN member_organizations mo ON m.id = mo.member_id
-        WHERE m.id = ? AND mo.organization_id = ?
-    ');
+        WHERE m.id = ? AND mo.organization_id = ? AND m.status = 'active'
+    ");
     $member_check->bind_param('ii', $leader_member_id, $org_id);
     $member_check->execute();
     $member_check->store_result();

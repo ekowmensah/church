@@ -3,6 +3,7 @@ session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 // Set header FIRST before any output
 header('Content-Type: application/json');
@@ -15,9 +16,15 @@ if (!is_logged_in()) {
 }
 
 // Permission check
-if (!has_permission('view_bibleclass_list')) {
+if (!is_super_admin() && !has_permission('edit_bibleclass')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Forbidden']);
+    exit;
+}
+
+if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(419);
+    echo json_encode(['success' => false, 'error' => 'Your session token expired. Refresh the page and try again.']);
     exit;
 }
 
@@ -40,7 +47,7 @@ if (strpos($leader_unique_id, 'user_') === 0) {
     
     // Validate the access role that corresponds to this contextual assignment.
     $required_role_name = $leader_role === 'assistant' ? 'Assistant Bible Class Leader' : 'Class Leader';
-    $role_check = $conn->prepare('SELECT u.id FROM users u INNER JOIN user_roles ur ON u.id = ur.user_id INNER JOIN roles r ON r.id = ur.role_id WHERE u.id = ? AND r.name = ? AND ur.is_active = 1');
+    $role_check = $conn->prepare('SELECT u.id FROM users u INNER JOIN user_roles ur ON u.id = ur.user_id INNER JOIN roles r ON r.id = ur.role_id WHERE u.id = ? AND r.name = ? AND u.status = "active" AND ur.is_active = 1 AND r.is_active = 1 AND (ur.expires_at IS NULL OR ur.expires_at > NOW())');
     $role_check->bind_param('is', $leader_user_id, $required_role_name);
     $role_check->execute();
     $role_check->store_result();
@@ -54,7 +61,7 @@ if (strpos($leader_unique_id, 'user_') === 0) {
     $leader_member_id = intval(substr($leader_unique_id, 7));
     
     // Validate member exists and belongs to this Bible class
-    $member_check = $conn->prepare('SELECT id FROM members WHERE id = ? AND class_id = ?');
+    $member_check = $conn->prepare('SELECT id FROM members WHERE id = ? AND class_id = ? AND status = "active"');
     $member_check->bind_param('ii', $leader_member_id, $class_id);
     $member_check->execute();
     $member_check->store_result();

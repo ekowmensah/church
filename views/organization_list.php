@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 function organization_list_logo_url(?string $relativePath): ?string {
     if (!$relativePath || !preg_match('#^organizations/org_[A-Za-z0-9_]+\.(?:jpg|png|webp)$#', $relativePath)) {
@@ -17,8 +18,7 @@ if (!is_logged_in()) {
 }
 
 // Robust super admin bypass and permission check
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 
 if (!$is_super_admin && !has_permission('view_organization_list')) {
     http_response_code(403);
@@ -46,11 +46,20 @@ $result = $conn->query("
            u.email as leader_user_email,
            CONCAT(m.first_name, ' ', m.last_name) as leader_member_name,
            m.email as leader_member_email,
-           m.id as leader_member_id
+           m.id as leader_member_id,
+           (SELECT GROUP_CONCAT(DISTINCT COALESCE(assistant_user.name,
+                    TRIM(CONCAT_WS(' ', assistant_member.first_name, assistant_member.last_name)))
+                    ORDER BY COALESCE(assistant_user.name, assistant_member.first_name) SEPARATOR ', ')
+              FROM organization_leaders assistant_assignment
+              LEFT JOIN users assistant_user ON assistant_user.id = assistant_assignment.user_id
+              LEFT JOIN members assistant_member ON assistant_member.id = assistant_assignment.member_id
+             WHERE assistant_assignment.organization_id = o.id
+               AND assistant_assignment.status = 'active'
+               AND assistant_assignment.leader_role = 'assistant') as assistant_leader_names
     FROM organizations o 
     LEFT JOIN churches c ON o.church_id = c.id 
     LEFT JOIN users u ON o.leader_id = u.id
-    LEFT JOIN organization_leaders ol ON o.id = ol.organization_id AND ol.status = 'active'
+    LEFT JOIN organization_leaders ol ON o.id = ol.organization_id AND ol.status = 'active' AND ol.leader_role = 'primary'
     LEFT JOIN members m ON ol.member_id = m.id
     ORDER BY o.name ASC
 ");
@@ -141,6 +150,16 @@ $(function(){
                         <i class="fas fa-user-times"></i>
                     </button>
                   <?php endif; ?>
+                  <?php if (!empty($row['assistant_leader_names'])): ?>
+                    <small class="d-block text-muted mt-1">
+                      <strong>Assistant:</strong> <?= htmlspecialchars($row['assistant_leader_names']) ?>
+                      <button class="btn btn-sm btn-link text-danger remove-leader-btn p-0 ml-1"
+                          data-org-id="<?= $row['id'] ?>" data-leader-role="assistant"
+                          data-toggle="tooltip" title="Remove Assistant Leader">
+                          <i class="fas fa-user-times"></i>
+                      </button>
+                    </small>
+                  <?php endif; ?>
                 </td>
                 <td class="organization-action-btns text-nowrap">
                   <?php if ($can_view_groups): ?>
@@ -165,10 +184,10 @@ $(function(){
 </div>
 <?php
 ob_start();
-include 'organization_assign_leader_modal.php';
+include __DIR__ . '/organization_assign_leader_modal.php';
 $modal_html = ob_get_clean();
 $page_content = ob_get_clean();
-include '../includes/layout.php';
+include __DIR__ . '/../includes/layout.php';
 ?>
 
 <script>
@@ -189,7 +208,8 @@ $(function() {
                 return {
                     q: params.term,
                     org_id: orgId,
-                    church_id: churchId
+                    church_id: churchId,
+                    leader_role: $('#org-leader-role').val()
                 };
             },
             processResults: function(data) {
@@ -205,6 +225,7 @@ $(function() {
         var churchId = $(this).data('church-id');
         $('#modal-org-id').val(orgId);
         $('#modal-church-id').val(churchId);
+        $('#org-leader-role').val($(this).data('leader-role') || 'primary');
         $('#org-leader-user-id').val(null).trigger('change');
         $('#assignOrgLeaderModal').modal('show');
     });
@@ -228,8 +249,9 @@ $(function() {
     // Remove Leader button click
     $('.remove-leader-btn').on('click', function() {
         var orgId = $(this).data('org-id');
-        if (confirm('Remove leader from this organization?')) {
-            $.post('organization_remove_leader.php', {org_id: orgId}, function(resp) {
+        var leaderRole = $(this).data('leader-role') || 'primary';
+        if (confirm('Remove the ' + leaderRole + ' leader from this organization?')) {
+            $.post('organization_remove_leader.php', {org_id: orgId, leader_role: leaderRole, csrf_token: <?= json_encode(csrf_token()) ?>}, function(resp) {
                 if (resp.success) {
                     location.reload();
                 } else {

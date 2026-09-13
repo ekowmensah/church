@@ -13,17 +13,15 @@ if (!is_logged_in()) {
     exit;
 }
 
-// Canonical permission check with robust super admin bypass
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+// Canonical permission check with role-based super admin bypass.
+$is_super_admin = is_super_admin();
 if (!$is_super_admin && !has_permission('access_ajax_users_by_church')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Permission denied']);
     exit;
 }
 
-// Returns users with the Class Leader role (role_id=5) for a given church
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
+// Returns eligible user accounts and class members for a contextual assignment.
 function output_error($msg) {
     echo json_encode(['error' => $msg]);
     exit;
@@ -35,9 +33,8 @@ if (!isset($conn) || !$conn) {
 $q = isset($_GET['q']) ? trim($_GET['q']) : '';
 $church_id = isset($_GET['church_id']) ? intval($_GET['church_id']) : 0;
 $class_id = isset($_GET['class_id']) ? intval($_GET['class_id']) : 0;
-
-// role_id for Class Leader
-$class_leader_role_id = 5;
+$leader_role = ($_GET['leader_role'] ?? 'primary') === 'assistant' ? 'assistant' : 'primary';
+$required_role_name = $leader_role === 'assistant' ? 'Assistant Bible Class Leader' : 'Class Leader';
 
 // Check if users table has church_id column
 $has_church_id = false;
@@ -53,11 +50,14 @@ $sql = "(SELECT CONCAT('user_', u.id) as unique_id, u.id as user_id, NULL as mem
          u.name, u.email, 'Class Leader (User)' as source_type
          FROM users u
          INNER JOIN user_roles ur ON u.id = ur.user_id
+         INNER JOIN roles r ON r.id = ur.role_id
          LEFT JOIN members m ON u.member_id = m.id
-         WHERE ur.role_id = ?";
+         WHERE r.name = ? AND ur.is_active = 1 AND r.is_active = 1
+           AND u.status = 'active'
+           AND (ur.expires_at IS NULL OR ur.expires_at > NOW())";
 
-$params = [$class_leader_role_id];
-$types = 'i';
+$params = [$required_role_name];
+$types = 's';
 
 if ($church_id && $has_church_id) {
     $sql .= " AND u.church_id = ?";
@@ -85,7 +85,7 @@ if ($class_id) {
              CONCAT(m.first_name, ' ', m.last_name) as name, 
              m.email, 'Bible Class Member' as source_type
              FROM members m
-             WHERE m.class_id = ?";
+             WHERE m.class_id = ? AND m.status = 'active'";
     
     $params[] = $class_id;
     $types .= 'i';

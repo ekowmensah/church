@@ -9,12 +9,20 @@
       </div>
       <form id="assignOrgLeaderForm" method="post">
         <div class="modal-body">
+          <?= csrf_input() ?>
           <input type="hidden" name="org_id" id="modal-org-id">
           <input type="hidden" name="church_id" id="modal-church-id">
           <div class="form-group">
+            <label for="org-leader-role">Assignment Type</label>
+            <select class="form-control" id="org-leader-role" name="leader_role">
+              <option value="primary">Primary Leader</option>
+              <option value="assistant">Assistant Leader</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label for="org-leader-user-id">Select Leader</label>
             <select name="leader_user_id" id="org-leader-user-id" class="form-control" style="width:100%"></select>
-            <small class="form-text text-muted">Only users with the Organizational Leader role are shown. Search by name, username, or email.</small>
+            <small class="form-text text-muted">User accounts must have the matching primary or assistant access role. Organization members without an account may also be assigned contextually.</small>
           </div>
         </div>
         <div class="modal-footer">

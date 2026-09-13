@@ -1,35 +1,66 @@
 <?php
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
-// Authentication check
-if (!is_logged_in()) {
-    header('Location: ' . BASE_URL . '/login.php');
-    exit;
-}
-
-// Permission check
-if (!has_permission('view_organization_list')) {
-    http_response_code(403);
-    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
-    exit;
-}
-?>
-require_once __DIR__.'/../config/config.php';
 header('Content-Type: application/json');
 
-$org_id = isset($_POST['org_id']) ? intval($_POST['org_id']) : 0;
-if (!$org_id) {
+if (!is_logged_in()) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => 'Authentication required.']);
+    exit;
+}
+
+if (!is_super_admin() && !has_permission('edit_organization')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Permission denied.']);
+    exit;
+}
+
+if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(419);
+    echo json_encode(['success' => false, 'error' => 'Your session token expired. Refresh the page and try again.']);
+    exit;
+}
+
+$organizationId = (int) ($_POST['org_id'] ?? 0);
+$leaderRole = ($_POST['leader_role'] ?? 'primary') === 'assistant' ? 'assistant' : 'primary';
+if ($organizationId < 1) {
+    http_response_code(422);
     echo json_encode(['success' => false, 'error' => 'Missing organization ID.']);
     exit;
 }
-$stmt = $conn->prepare('UPDATE organizations SET leader_id = NULL WHERE id = ?');
-$stmt->bind_param('i', $org_id);
-if ($stmt->execute()) {
-    echo json_encode(['success' => true]);
-} else {
-    echo json_encode(['success' => false, 'error' => 'Database error.']);
+
+$conn->begin_transaction();
+try {
+    $stmt = $conn->prepare(
+        'UPDATE organization_leaders
+            SET status = "inactive"
+          WHERE organization_id = ? AND leader_role = ? AND status = "active"'
+    );
+    $stmt->bind_param('is', $organizationId, $leaderRole);
+    $stmt->execute();
+    $stmt->close();
+
+    if ($leaderRole === 'primary') {
+        $stmt = $conn->prepare('UPDATE organizations SET leader_id = NULL WHERE id = ?');
+        $stmt->bind_param('i', $organizationId);
+        $stmt->execute();
+        $stmt->close();
+    }
+
+    $conn->commit();
+    echo json_encode([
+        'success' => true,
+        'message' => ucfirst($leaderRole) . ' organizational leader removed successfully.',
+    ]);
+} catch (Throwable $exception) {
+    $conn->rollback();
+    http_response_code(500);
+    echo json_encode(['success' => false, 'error' => 'Database error: ' . $exception->getMessage()]);
 }
-$stmt->close();

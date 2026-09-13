@@ -13,15 +13,15 @@ if (!is_logged_in()) {
     exit;
 }
 
-// Canonical permission check with robust super admin bypass
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+// Canonical permission check with role-based super admin bypass.
+$is_super_admin = is_super_admin();
 if (!$is_super_admin && !has_permission('access_ajax_users_by_organization')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Permission denied']);
     exit;
 }
 
-// Returns users with the Organizational Leader role (role_id=6) for a given church/organization
+// Returns eligible user accounts and organization members for a contextual assignment.
 function output_error($msg) {
     echo json_encode(['error' => $msg]);
     exit;
@@ -35,9 +35,8 @@ try {
     $q = isset($_GET['q']) ? trim($_GET['q']) : '';
     $church_id = isset($_GET['church_id']) ? intval($_GET['church_id']) : 0;
     $org_id = isset($_GET['org_id']) ? intval($_GET['org_id']) : 0;
-
-    // role_id for Organizational Leader
-    $org_leader_role_id = 6;
+    $leader_role = ($_GET['leader_role'] ?? 'primary') === 'assistant' ? 'assistant' : 'primary';
+    $required_role_name = $leader_role === 'assistant' ? 'Assistant Organizational Leader' : 'Organizational Leader';
 
     // Check if users table has church_id column
     $has_church_id = false;
@@ -53,12 +52,15 @@ try {
              u.name, u.email, 'Organizational Leader (User)' as source_type
              FROM users u
              INNER JOIN user_roles ur ON u.id = ur.user_id
+             INNER JOIN roles r ON r.id = ur.role_id
              INNER JOIN members m ON u.member_id = m.id
              INNER JOIN member_organizations mo ON m.id = mo.member_id
-             WHERE ur.role_id = ?";
+             WHERE r.name = ? AND ur.is_active = 1 AND r.is_active = 1
+               AND u.status = 'active'
+               AND (ur.expires_at IS NULL OR ur.expires_at > NOW())";
     
-    $params = [$org_leader_role_id];
-    $types = 'i';
+    $params = [$required_role_name];
+    $types = 's';
 
     // Filter by specific organization membership
     if ($org_id) {
@@ -91,7 +93,7 @@ try {
                  m.email, 'Organization Member' as source_type
                  FROM members m
                  INNER JOIN member_organizations mo ON m.id = mo.member_id
-                 WHERE mo.organization_id = ?";
+                 WHERE mo.organization_id = ? AND m.status = 'active'";
         
         $params[] = $org_id;
         $types .= 'i';

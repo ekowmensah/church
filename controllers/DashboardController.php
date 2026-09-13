@@ -10,11 +10,15 @@ class DashboardController {
             header('Location: login.php');
             exit;
         }
-        // Allow access if user has either 'access_dashboard' OR 'access_admin_panel'
-        if (has_permission('access_dashboard') || has_permission('access_admin_panel')) {
+        // A linked member ID gives a back-office user contextual scope; it does
+        // not turn that authenticated user into a member-portal session.
+        if (!empty($_SESSION['user_id'])) {
             include __DIR__.'/../views/user_dashboard.php';
-        } else {
+        } elseif (!empty($_SESSION['member_id'])) {
             include __DIR__.'/../views/member_dashboard.php';
+        } else {
+            header('Location: ' . BASE_URL . '/login.php');
+            exit;
         }
     }
 }

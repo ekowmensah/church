@@ -23,7 +23,11 @@ final class AttendanceScopeService {
                 }
             }
 
-            $stmt = $this->conn->prepare('SELECT role_id FROM user_roles WHERE user_id = ?');
+            $stmt = $this->conn->prepare(
+                'SELECT role_id FROM user_roles
+                  WHERE user_id = ? AND is_active = 1
+                    AND (expires_at IS NULL OR expires_at > NOW())'
+            );
             $stmt->bind_param('i', $this->userId);
             $stmt->execute();
             $result = $stmt->get_result();
@@ -93,8 +97,9 @@ final class AttendanceScopeService {
         if ($this->userId !== null || $this->memberId !== null) {
             $stmt = $this->conn->prepare(
                 "SELECT organization.id AS organization_id, organization.name AS organization_name,
-                        organization.church_id, 1 AS can_review,
-                        NULL AS unit_id, NULL AS unit_name, NULL AS leader_role
+                        organization.church_id,
+                        CASE WHEN leader.leader_role = 'primary' THEN 1 ELSE 0 END AS can_review,
+                        NULL AS unit_id, NULL AS unit_name, leader.leader_role
                    FROM organization_leaders leader
                    JOIN organizations organization ON organization.id = leader.organization_id
                   WHERE leader.status = 'active'
@@ -165,7 +170,7 @@ final class AttendanceScopeService {
         }
         return $this->isAdministrator()
             || in_array(4, $this->roleIds, true)
-            || $this->leadsOrganization((int) ($session['scope_id'] ?? 0));
+            || $this->leadsOrganization((int) ($session['scope_id'] ?? 0), true);
     }
 
     public function getEligibleMembers(array $session, string $search = ''): array {
@@ -541,18 +546,19 @@ final class AttendanceScopeService {
         $stmt->close();
     }
 
-    private function leadsOrganization(int $organizationId): bool {
+    private function leadsOrganization(int $organizationId, bool $primaryOnly = false): bool {
         if ($organizationId < 1 || ($this->userId === null && $this->memberId === null)) {
             return false;
         }
         $stmt = $this->conn->prepare(
             "SELECT 1 FROM organization_leaders
               WHERE organization_id = ? AND status = 'active'
+                AND (? = 0 OR leader_role = 'primary')
                 AND ((? IS NOT NULL AND user_id = ?)
                   OR (? IS NOT NULL AND member_id = ?)) LIMIT 1"
         );
         $stmt->bind_param(
-            'iiiii', $organizationId, $this->userId, $this->userId,
+            'iiiiii', $organizationId, $primaryOnly, $this->userId, $this->userId,
             $this->memberId, $this->memberId
         );
         $stmt->execute();

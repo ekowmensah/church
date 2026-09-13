@@ -103,8 +103,11 @@ function dashboard_status_tone($status)
 $class_ids = get_user_class_ids();
 $org_ids = get_user_organization_ids();
 $force_main = isset($_GET['force_main']);
+$is_super_admin = function_exists('is_super_admin') ? is_super_admin() : (
+    ((int) ($_SESSION['user_id'] ?? 0) === 3) || ((int) ($_SESSION['role_id'] ?? 0) === 1)
+);
 
-if (!$force_main) {
+if (!$force_main && !$is_super_admin) {
     if ($org_ids !== null) {
         dashboard_redirect('my_organization_leader.php');
     }
@@ -113,10 +116,6 @@ if (!$force_main) {
         dashboard_redirect('my_bible_class_leader.php');
     }
 }
-
-$is_super_admin = function_exists('is_super_admin') ? is_super_admin() : (
-    ((int) ($_SESSION['user_id'] ?? 0) === 3) || ((int) ($_SESSION['role_id'] ?? 0) === 1)
-);
 
 if (!$is_super_admin && !has_permission('view_dashboard')) {
     http_response_code(403);

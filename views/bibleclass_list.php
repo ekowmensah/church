@@ -3,6 +3,7 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -11,8 +12,7 @@ if (!is_logged_in()) {
 }
 
 // Robust super admin bypass and permission check
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 
 if (!$is_super_admin && !has_permission('view_bibleclass_list')) {
     http_response_code(403);
@@ -43,13 +43,22 @@ $bibleclass_sql = "
            CONCAT(m.first_name, ' ', m.last_name) as leader_member_name,
            m.email as leader_member_email,
            m.id as leader_member_id,
+           (SELECT GROUP_CONCAT(DISTINCT COALESCE(assistant_user.name,
+                    TRIM(CONCAT_WS(' ', assistant_member.first_name, assistant_member.last_name)))
+                    ORDER BY COALESCE(assistant_user.name, assistant_member.first_name) SEPARATOR ', ')
+              FROM bible_class_leaders assistant_assignment
+              LEFT JOIN users assistant_user ON assistant_user.id = assistant_assignment.user_id
+              LEFT JOIN members assistant_member ON assistant_member.id = assistant_assignment.member_id
+             WHERE assistant_assignment.class_id = bc.id
+               AND assistant_assignment.status = 'active'
+               AND assistant_assignment.leader_role = 'assistant') as assistant_leader_names,
            c.name as church_name,
            COALESCE(bcm.active_member_count, 0) as active_member_count,
            " . ($capacity_rules_available ? "COALESCE(bcr.max_members, 25)" : "25") . " as max_members,
            " . ($capacity_rules_available ? "COALESCE(bcr.enforce_limit, 1)" : "1") . " as enforce_limit
     FROM bible_classes bc 
     LEFT JOIN users u ON bc.leader_id = u.id 
-    LEFT JOIN bible_class_leaders bcl ON bc.id = bcl.class_id AND bcl.status = 'active'
+    LEFT JOIN bible_class_leaders bcl ON bc.id = bcl.class_id AND bcl.status = 'active' AND bcl.leader_role = 'primary'
     LEFT JOIN members m ON bcl.member_id = m.id
     LEFT JOIN churches c ON bc.church_id = c.id
     " . ($capacity_rules_available ? "LEFT JOIN bible_class_rules bcr ON bcr.class_id = bc.id" : "") . "
@@ -161,6 +170,15 @@ ob_start();
         <i class="fas fa-user-times"></i>
     </button>
 <?php endif; ?>
+    <?php if (!empty($row['assistant_leader_names'])): ?>
+        <small class="d-block text-muted mt-1">
+            <strong>Assistant:</strong> <?= htmlspecialchars($row['assistant_leader_names']) ?>
+            <button class="btn btn-sm btn-link text-danger remove-leader-btn p-0 ml-1"
+                data-class-id="<?= $row['id'] ?>" data-leader-role="assistant" title="Remove Assistant Leader">
+                <i class="fas fa-user-times"></i>
+            </button>
+        </small>
+    <?php endif; ?>
 </td>
                         <td><?=htmlspecialchars($row['church_name'] ?? '')?></td>
                         <?php if ($can_edit || $can_delete): ?>
@@ -196,11 +214,19 @@ ob_start();
       </div>
       <form id="assignLeaderForm" method="post">
         <div class="modal-body">
+          <?= csrf_input() ?>
           <input type="hidden" name="class_id" id="modal-class-id">
+          <div class="form-group">
+            <label for="bible-leader-role">Assignment Type</label>
+            <select class="form-control" id="bible-leader-role" name="leader_role">
+              <option value="primary">Primary Leader</option>
+              <option value="assistant">Assistant Leader</option>
+            </select>
+          </div>
           <div class="form-group">
             <label for="leader-user-id">Select User</label>
             <select class="form-control" id="leader-user-id" name="leader_user_id" style="width:100%" required></select>
-            <small class="form-text text-muted">Only users with the Class Leader role in this church are shown. Search by name, username, or email.</small>
+            <small class="form-text text-muted">User accounts must have the matching primary or assistant access role. Class members without an account may also be assigned contextually.</small>
           </div>
         </div>
         <div class="modal-footer">
@@ -233,8 +259,9 @@ $(document).ready(function() {
     // Remove Leader button click
     $('.remove-leader-btn').on('click', function() {
         var classId = $(this).data('class-id');
-        if (confirm('Remove leader from this class?')) {
-            $.post('bibleclass_remove_leader.php', {class_id: classId}, function(resp) {
+        var leaderRole = $(this).data('leader-role') || 'primary';
+        if (confirm('Remove the ' + leaderRole + ' leader from this class?')) {
+            $.post('bibleclass_remove_leader.php', {class_id: classId, leader_role: leaderRole, csrf_token: <?= json_encode(csrf_token()) ?>}, function(resp) {
                 if (resp.success) {
                     location.reload();
                 } else {
@@ -255,6 +282,7 @@ $(document).ready(function() {
             var classId = $(this).data('class-id');
             var churchId = $(this).data('church-id');
             $('#modal-class-id').val(classId);
+            $('#bible-leader-role').val($(this).data('leader-role') || 'primary');
             // Init Select2 for member search
             $('#leader-user-id').val(null).trigger('change');
             $('#leader-user-id').select2({
@@ -270,7 +298,8 @@ $(document).ready(function() {
                         return {
                             q: params.term,
                             church_id: churchId,
-                            class_id: classId
+                            class_id: classId,
+                            leader_role: $('#bible-leader-role').val()
                         };
                     },
                     processResults: function(data) {
@@ -309,4 +338,4 @@ $(document).ready(function() {
 </script>
 <?php
 $page_content = ob_get_clean();
-include '../includes/layout.php';
+include __DIR__ . '/../includes/layout.php';

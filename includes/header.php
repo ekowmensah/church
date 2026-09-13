@@ -75,10 +75,10 @@ if (isset($_SESSION['user_id'])) {
         </li>
         <!-- Menu Footer-->
         <li class="user-footer">
-          <?php if (isset($_SESSION['member_id'])): ?>
-            <a href="<?php echo BASE_URL; ?>/views/member_profile.php" class="btn btn-default btn-flat">Profile</a>
-          <?php elseif (isset($_SESSION['user_id'])): ?>
+          <?php if (isset($_SESSION['user_id'])): ?>
             <a href="<?php echo BASE_URL; ?>/views/profile.php" class="btn btn-default btn-flat">Profile</a>
+          <?php elseif (isset($_SESSION['member_id'])): ?>
+            <a href="<?php echo BASE_URL; ?>/views/member_profile.php" class="btn btn-default btn-flat">Profile</a>
           <?php endif; ?>
           <a href="<?php echo BASE_URL; ?>/logout.php" class="btn btn-default btn-flat float-right">Sign out</a>
         </li>

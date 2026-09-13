@@ -16,7 +16,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $result = $stmt->get_result();
         if ($member = $result->fetch_assoc()) {
             if (isset($member['password_hash']) && password_verify($password, $member['password_hash'])) {
+                session_regenerate_id(true);
                 $_SESSION['member_id'] = $member['id'];
+                $_SESSION['portal_mode'] = 'member';
+                unset(
+                    $_SESSION['user_id'], $_SESSION['role_id'], $_SESSION['role_ids'],
+                    $_SESSION['permissions'], $_SESSION['is_super_admin'], $_SESSION['email'],
+                    $_SESSION['name'], $_SESSION['user_name']
+                );
                 $_SESSION['crn'] = $member['crn'];
                 $_SESSION['member_name'] = $member['first_name'].' '.$member['last_name'];
                 $_SESSION['role'] = 'member';
@@ -45,8 +52,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $result = $stmt->get_result();
         if ($user = $result->fetch_assoc()) {
             if (password_verify($password, $user['password_hash'])) {
+                session_regenerate_id(true);
+                unset(
+                    $_SESSION['crn'], $_SESSION['member_name'], $_SESSION['role'],
+                    $_SESSION['login_success'], $_SESSION['login_fullname']
+                );
                 $_SESSION['user_id'] = $user['id'];
                 $_SESSION['member_id'] = (int) $user['member_id'];
+                $_SESSION['portal_mode'] = 'user';
                 $_SESSION['name'] = $user['name'];
                 $_SESSION['user_name'] = $user['name']; // For dashboard compatibility
                 $_SESSION['email'] = $user['email'];
@@ -73,7 +86,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (empty($role_ids)) {
                     unset(
                         $_SESSION['user_id'], $_SESSION['member_id'], $_SESSION['name'],
-                        $_SESSION['user_name'], $_SESSION['email'], $_SESSION['is_super_admin']
+                        $_SESSION['user_name'], $_SESSION['email'], $_SESSION['is_super_admin'],
+                        $_SESSION['portal_mode'], $_SESSION['role_id'], $_SESSION['role_ids'],
+                        $_SESSION['permissions']
                     );
                     require_once __DIR__.'/helpers/global_audit_log.php';
                     log_activity('login_failed', 'user', $user['id'], json_encode(['username'=>$email, 'ip'=>$_SERVER['REMOTE_ADDR']]));

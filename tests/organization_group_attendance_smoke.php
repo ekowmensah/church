@@ -20,6 +20,7 @@ $fixture = $conn->query(
        JOIN organization_leaders organization_leader
          ON organization_leader.organization_id = unit.organization_id
         AND organization_leader.status = 'active'
+        AND organization_leader.leader_role = 'primary'
        LEFT JOIN users leader_user ON leader_user.id = organization_leader.user_id
       WHERE unit_leader.status = 'active'
         AND (unit_leader.effective_to IS NULL OR unit_leader.effective_to >= CURDATE())
