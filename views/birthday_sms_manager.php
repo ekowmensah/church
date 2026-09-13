@@ -4,6 +4,7 @@ ob_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -12,8 +13,7 @@ if (!is_logged_in()) {
 }
 
 // Robust super admin bypass and permission check
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 
 // Check permissions - allow super admin or users with send_sms permission
 if (!$is_super_admin && !has_permission('send_sms')) {
@@ -217,6 +217,7 @@ Freeman Methodist Church, Kwesimintsim.</div>
 </div>
 
 <script>
+const birthdayCsrfToken = <?= json_encode(csrf_token()) ?>;
 $(document).ready(function() {
     // Load birthday members
     $('#loadBirthdayMembers').click(function() {
@@ -351,6 +352,7 @@ function sendIndividualSMS(memberId, memberName) {
         method: 'POST',
         data: { 
             action: 'send_birthday_sms',
+            csrf_token: birthdayCsrfToken,
             member_id: memberId 
         },
         dataType: 'json',
@@ -376,7 +378,7 @@ function sendAllBirthdaySMS() {
     $.ajax({
         url: '<?= BASE_URL ?>/ajax_birthday_sms.php',
         method: 'POST',
-        data: { action: 'send_birthday_sms' },
+        data: { action: 'send_birthday_sms', csrf_token: birthdayCsrfToken },
         dataType: 'json',
         success: function(response) {
             hideLoadingModal();
@@ -411,6 +413,7 @@ function sendTestSMS() {
         method: 'POST',
         data: { 
             action: 'test_birthday_sms',
+            csrf_token: birthdayCsrfToken,
             phone: phone,
             name: name
         },

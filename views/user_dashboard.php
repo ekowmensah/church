@@ -3,6 +3,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/auth.php';
 require_once __DIR__ . '/../helpers/permissions_v2.php';
 require_once __DIR__ . '/../helpers/role_based_filter.php';
+require_once __DIR__ . '/../services/BirthdayDirectoryService.php';
 
 global $conn;
 if (!isset($conn) && isset($GLOBALS['conn'])) {
@@ -133,6 +134,8 @@ $display_name = trim((string) ($_SESSION['user_name'] ?? ($_SESSION['name'] ?? '
 if ($display_name === '') {
     $display_name = 'User';
 }
+$current_hour = (int) date('G');
+$time_greeting = $current_hour < 12 ? 'Good morning' : ($current_hour < 17 ? 'Good afternoon' : 'Good evening');
 
 $role_rows = function_exists('get_user_roles') ? get_user_roles() : [];
 $role_names = [];
@@ -159,6 +162,15 @@ foreach ($role_names as $role_name) {
         $is_cashier = true;
         break;
     }
+}
+
+$can_view_birthdays = $is_super_admin || has_permission('view_birthdays');
+$birthday_summary = ['yesterday' => 0, 'today' => 0, 'tomorrow' => 0, 'month' => 0];
+$today_birthdays = [];
+if ($can_view_birthdays) {
+    $birthday_service = BirthdayDirectoryService::fromSession($conn);
+    $birthday_summary = $birthday_service->getSummary();
+    $today_birthdays = $birthday_service->getMembers('today', null, 5);
 }
 
 $reversal_filter = "(reversal_approved_at IS NULL OR reversal_undone_at IS NOT NULL)";
@@ -500,6 +512,9 @@ if ($is_super_admin || has_permission('view_event_list')) {
 }
 if ($is_super_admin || has_permission('view_health_list')) {
     $dashboard_actions[] = ['label' => 'Health Records', 'icon' => 'fas fa-heartbeat', 'href' => BASE_URL . '/views/health_list.php', 'tone' => 'danger'];
+}
+if ($can_view_birthdays) {
+    $dashboard_actions[] = ['label' => 'Birthdays', 'icon' => 'fas fa-birthday-cake', 'href' => BASE_URL . '/views/birthday_directory.php', 'tone' => 'warning'];
 }
 if ($is_super_admin || has_permission('view_sms_bulk') || has_permission('send_bulk_sms')) {
     $dashboard_actions[] = ['label' => 'Bulk SMS', 'icon' => 'fas fa-paper-plane', 'href' => BASE_URL . '/views/sms_bulk.php', 'tone' => 'warning'];
@@ -953,7 +968,7 @@ ob_start();
                     <span><?= $is_cashier ? 'Cash Collection Dashboard' : 'Church Operations Dashboard' ?></span>
                 </div>
                 <h1 class="dashboard-title">
-                    <?= $is_cashier ? 'Welcome back, ' . htmlspecialchars($display_name) : 'Welcome back, ' . htmlspecialchars($display_name) ?>
+                    <?= htmlspecialchars($time_greeting . ', ' . $display_name) ?>
                 </h1>
                 <p class="dashboard-subtitle">
                     <?= $is_cashier
@@ -1061,6 +1076,47 @@ ob_start();
                             </div>
                         </a>
                     <?php endforeach; ?>
+                </div>
+            </div>
+        </section>
+    <?php endif; ?>
+
+    <?php if ($can_view_birthdays): ?>
+        <section class="dashboard-panel mb-4">
+            <div class="dashboard-panel-header">
+                <div>
+                    <h3><i class="fas fa-birthday-cake text-warning mr-2"></i>Birthday Summary</h3>
+                    <p>Only active members within your authorized scope are included.</p>
+                </div>
+                <a class="btn btn-sm btn-outline-primary" href="<?= BASE_URL ?>/views/birthday_directory.php">View Directory</a>
+            </div>
+            <div class="dashboard-panel-body">
+                <div class="row">
+                    <div class="col-xl-5 mb-3 mb-xl-0">
+                        <div class="dashboard-mini-grid">
+                            <div class="dashboard-mini-card"><span class="label">Yesterday</span><span class="value"><?= number_format($birthday_summary['yesterday']) ?></span></div>
+                            <div class="dashboard-mini-card"><span class="label">Today</span><span class="value"><?= number_format($birthday_summary['today']) ?></span></div>
+                            <div class="dashboard-mini-card"><span class="label">Tomorrow</span><span class="value"><?= number_format($birthday_summary['tomorrow']) ?></span></div>
+                            <div class="dashboard-mini-card"><span class="label">This Month</span><span class="value"><?= number_format($birthday_summary['month']) ?></span></div>
+                        </div>
+                    </div>
+                    <div class="col-xl-7">
+                        <?php if ($today_birthdays): ?>
+                            <div class="dashboard-list">
+                                <?php foreach ($today_birthdays as $birthday_member): ?>
+                                    <div class="dashboard-list-item">
+                                        <div>
+                                            <strong><?= htmlspecialchars($birthday_member['full_name']) ?></strong>
+                                            <small><?= htmlspecialchars((string) ($birthday_member['class_name'] ?: 'No Bible Class')) ?> &middot; <?= htmlspecialchars((string) ($birthday_member['organizations'] ?: 'No organization')) ?></small>
+                                        </div>
+                                        <span class="dashboard-pill warning"><?= (int) $birthday_member['current_age'] ?> years</span>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="dashboard-empty">No members in your scope are celebrating a birthday today.</div>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
         </section>

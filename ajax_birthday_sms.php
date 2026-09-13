@@ -9,8 +9,10 @@
 session_start();
 require_once 'config/config.php';
 require_once 'helpers/auth.php';
-require_once 'helpers/permissions.php';
+require_once 'helpers/permissions_v2.php';
+require_once 'helpers/csrf.php';
 require_once 'includes/sms.php';
+require_once 'services/BirthdayDirectoryService.php';
 
 // Check authentication and permissions
 if (!is_logged_in()) {
@@ -20,8 +22,7 @@ if (!is_logged_in()) {
 }
 
 // Robust super admin bypass and permission check
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 
 // Check if user has SMS permissions
 if (!$is_super_admin && !has_permission('send_sms')) {
@@ -34,6 +35,12 @@ header('Content-Type: application/json');
 
 try {
     $action = $_POST['action'] ?? $_GET['action'] ?? '';
+    if (in_array($action, ['send_birthday_sms', 'test_birthday_sms'], true)
+        && !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        http_response_code(419);
+        echo json_encode(['status' => 'error', 'message' => 'Your form expired. Refresh and try again.']);
+        exit;
+    }
     
     switch ($action) {
         case 'get_birthday_members':
@@ -73,40 +80,19 @@ try {
  */
 function get_birthday_members_today() {
     global $conn;
-    
-    $today = date('m-d');
-    
-    $query = "
-        SELECT 
-            id,
-            first_name,
-            last_name,
-            phone,
-            dob,
-            church_id,
-            CONCAT(first_name, ' ', last_name) as full_name,
-            DATE_FORMAT(dob, '%M %e') as birthday_formatted
-        FROM members 
-        WHERE 
-            dob IS NOT NULL 
-            AND dob != '0000-00-00' 
-            AND dob != '' 
-            AND DATE_FORMAT(dob, '%m-%d') = ?
-            AND phone IS NOT NULL 
-            AND phone != ''
-            AND phone != '0'
-        ORDER BY first_name, last_name
-    ";
-    
-    $stmt = $conn->prepare($query);
-    $stmt->bind_param('s', $today);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    
-    $members = [];
-    while ($row = $result->fetch_assoc()) {
-        $members[] = $row;
+    $service = BirthdayDirectoryService::fromSession($conn);
+    $members = array_values(array_filter(
+        $service->getMembers('today'),
+        static fn(array $member): bool => trim((string) $member['phone']) !== ''
+            && trim((string) $member['phone']) !== '0'
+    ));
+    foreach ($members as &$member) {
+        $parts = preg_split('/\s+/', trim((string) $member['full_name']));
+        $member['first_name'] = (string) ($parts[0] ?? 'Member');
+        $member['last_name'] = count($parts) > 1 ? (string) end($parts) : '';
+        $member['birthday_formatted'] = date('F j', strtotime($member['dob']));
     }
+    unset($member);
     
     return [
         'status' => 'success',
@@ -122,6 +108,11 @@ function get_birthday_members_today() {
  */
 function send_birthday_sms_to_member($member_id) {
     global $conn;
+
+    $allowedIds = array_map('intval', array_column(get_birthday_members_today()['members'], 'id'));
+    if (!in_array((int) $member_id, $allowedIds, true)) {
+        return ['status' => 'error', 'message' => 'This member is outside your birthday scope or is not celebrating today.'];
+    }
     
     // Get member details
     $stmt = $conn->prepare("
