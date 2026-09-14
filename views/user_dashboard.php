@@ -230,29 +230,25 @@ $event_scope_no_alias = $is_super_admin
     : ($deny_unscoped ? ' AND 1 = 0' : " AND church_id = {$current_user_church_id}");
 
 $active_members = $pending_members = $adherents = $junior_members = 0;
-$full_members = $catechumens = $members_without_payments = 0;
+$full_members = $catechumens = $distant_members = $invalid_members = 0;
+$unclassified_members = $status_review_members = $members_without_payments = 0;
 if ($can_view_membership_dashboard) {
     $active_members = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM members WHERE status = 'active'{$member_scope_no_alias}");
     $pending_members = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM members WHERE status = 'pending'{$member_scope_no_alias}");
     $adherents = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM members WHERE membership_status = 'Adherent' AND status = 'active'{$member_scope_no_alias}");
-    $junior_members = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM sunday_school WHERE 1 = 1{$member_scope_no_alias}");
-    $full_members = (int) dashboard_scalar(
+    $junior_members = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM sunday_school WHERE transferred_to_member_id IS NULL{$member_scope_no_alias}")
+        + (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM members WHERE membership_status = 'Junior Member' AND status = 'active'{$member_scope_no_alias}");
+    $full_members = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM members WHERE membership_status = 'Full Member' AND LOWER(COALESCE(baptized, '')) = 'yes' AND LOWER(COALESCE(confirmed, '')) = 'yes' AND status = 'active'{$member_scope_no_alias}");
+    $catechumens = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM members WHERE membership_status = 'Catechumen' AND LOWER(COALESCE(baptized, '')) = 'yes' AND LOWER(COALESCE(confirmed, '')) <> 'yes' AND status = 'active'{$member_scope_no_alias}");
+    $distant_members = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM members WHERE membership_status = 'Distant Member' AND status = 'active'{$member_scope_no_alias}");
+    $invalid_members = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM members WHERE membership_status = 'Invalid' AND status = 'active'{$member_scope_no_alias}");
+    $unclassified_members = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM members WHERE membership_status IS NULL AND status = 'active'{$member_scope_no_alias}");
+    $status_review_members = (int) dashboard_scalar(
         $conn,
-        "SELECT COUNT(*) AS total
-         FROM members
-         WHERE LOWER(COALESCE(confirmed, '')) = 'yes'
-           AND LOWER(COALESCE(baptized, '')) = 'yes'
-           AND (membership_status IS NULL OR membership_status != 'Adherent')
-           AND status = 'active'{$member_scope_no_alias}"
-    );
-    $catechumens = (int) dashboard_scalar(
-        $conn,
-        "SELECT COUNT(*) AS total
-         FROM members
-         WHERE (LOWER(COALESCE(confirmed, '')) = 'yes' OR LOWER(COALESCE(baptized, '')) = 'yes')
-           AND NOT (LOWER(COALESCE(confirmed, '')) = 'yes' AND LOWER(COALESCE(baptized, '')) = 'yes')
-           AND (membership_status IS NULL OR membership_status != 'Adherent')
-           AND status = 'active'{$member_scope_no_alias}"
+        "SELECT COUNT(DISTINCT m.id) AS total
+           FROM membership_status_integrity_review review
+           JOIN members m ON m.id = review.member_id
+          WHERE review.resolved = 0 AND m.status = 'active'{$member_scope_alias}"
     );
     $members_without_payments = (int) dashboard_scalar(
         $conn,
@@ -266,8 +262,8 @@ if ($can_view_membership_dashboard) {
     );
 }
 
-$community_size = $active_members + $junior_members;
-$classified_members = $full_members + $catechumens + $adherents + $junior_members;
+$community_size = $full_members + $catechumens + $adherents + $junior_members;
+$classified_members = $community_size + $distant_members + $invalid_members;
 
 $payment_total = $payments_today = $payments_this_week = $payments_this_month = 0.0;
 $payment_count = 0;
@@ -342,6 +338,8 @@ $membership_mix = [
     ['label' => 'Catechumens', 'value' => $catechumens],
     ['label' => 'Adherents', 'value' => $adherents],
     ['label' => 'Junior Members', 'value' => $junior_members],
+    ['label' => 'Distant Members', 'value' => $distant_members],
+    ['label' => 'Invalid Members', 'value' => $invalid_members],
 ];
 
 $payment_modes = [];
@@ -1123,7 +1121,7 @@ ob_start();
             <article class="dashboard-stat-card primary">
                 <div class="dashboard-stat-label">Community Size</div>
                 <div class="dashboard-stat-value"><?= number_format($community_size) ?></div>
-                <div class="dashboard-stat-meta"><?= number_format($active_members) ?> active members and <?= number_format($junior_members) ?> junior members</div>
+                <div class="dashboard-stat-meta">Full, catechumen, adherent and junior members</div>
             </article>
             <?php endif; ?>
             <?php if ($can_view_payment_dashboard): ?>
@@ -1386,7 +1384,7 @@ ob_start();
                             <div class="dashboard-mini-card">
                                 <span class="label">Catechumens</span>
                                 <span class="value"><?= number_format($catechumens) ?></span>
-                                <span class="meta">Partially confirmed or baptized</span>
+                                <span class="meta">Baptized and awaiting confirmation</span>
                             </div>
                             <div class="dashboard-mini-card">
                                 <span class="label">Adherents</span>
@@ -1394,14 +1392,34 @@ ob_start();
                                 <span class="meta">Active adherent records</span>
                             </div>
                             <div class="dashboard-mini-card">
-                                <span class="label">Pending</span>
-                                <span class="value"><?= number_format($pending_members) ?></span>
-                                <span class="meta"><?= number_format($members_without_payments) ?> active members with no payments</span>
+                                <span class="label">Junior Members</span>
+                                <span class="value"><?= number_format($junior_members) ?></span>
+                                <span class="meta">Sunday School community</span>
+                            </div>
+                            <div class="dashboard-mini-card">
+                                <span class="label">Distant Members</span>
+                                <span class="value"><?= number_format($distant_members) ?></span>
+                                <span class="meta">Active but worshipping at a distance</span>
+                            </div>
+                            <div class="dashboard-mini-card">
+                                <span class="label">Invalid Members</span>
+                                <span class="value"><?= number_format($invalid_members) ?></span>
+                                <span class="meta">Excluded from community total</span>
+                            </div>
+                            <div class="dashboard-mini-card">
+                                <span class="label">Unclassified</span>
+                                <span class="value"><?= number_format($unclassified_members) ?></span>
+                                <span class="meta"><?= number_format($pending_members) ?> pending registrations</span>
+                            </div>
+                            <div class="dashboard-mini-card">
+                                <span class="label">Needs Review</span>
+                                <span class="value"><?= number_format($status_review_members) ?></span>
+                                <span class="meta">Unclassified or conflicting evidence</span>
                             </div>
                         </div>
                         <div class="dashboard-highlight mt-3">
                             <div class="dashboard-highlight-card">
-                                <h5>Members Classified by Current Rules</h5>
+                                <h5>Members with an Approved Status</h5>
                                 <div class="dashboard-highlight-value"><?= number_format($classified_members) ?></div>
                             </div>
                             <?php if ($can_view_payment_dashboard): ?><div class="dashboard-highlight-card">
@@ -1735,7 +1753,9 @@ document.addEventListener('DOMContentLoaded', function () {
                         'rgba(15, 118, 110, 0.88)',
                         'rgba(37, 99, 235, 0.82)',
                         'rgba(217, 119, 6, 0.82)',
-                        'rgba(225, 29, 72, 0.80)'
+                        'rgba(225, 29, 72, 0.80)',
+                        'rgba(124, 58, 237, 0.80)',
+                        'rgba(71, 85, 105, 0.82)'
                     ],
                     borderWidth: 0
                 }]

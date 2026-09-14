@@ -4,6 +4,8 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../services/RegistrationDuplicateService.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -38,6 +40,8 @@ $can_view = true; // Already validated above
 
 $error = '';
 $success = '';
+$duplicate_matches = [];
+$duplicateService = RegistrationDuplicateService::fromSession($conn);
 $member = [
     'first_name'=>'','middle_name'=>'','last_name'=>'','crn'=>'','phone'=>'','email'=>'','class_id'=>'','church_id'=>''
 ];
@@ -64,6 +68,9 @@ $churches = $conn->query("SELECT id, name FROM churches ORDER BY name ASC");
 $users = $conn->query("SELECT id, name FROM users ORDER BY name ASC");
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $error = 'Your session token expired. Refresh the page and try again.';
+    }
     $first_name = trim($_POST['first_name'] ?? '');
     $middle_name = trim($_POST['middle_name'] ?? '');
     $last_name = trim($_POST['last_name'] ?? '');
@@ -73,11 +80,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $class_id = intval($_POST['class_id'] ?? 0);
     $church_id = intval($_POST['church_id'] ?? 0);
     // Validate required fields
-    if (!$first_name || !$last_name || !$crn || !$phone || !$class_id || !$church_id) {
+    if ($error) {
+        // Preserve the CSRF error.
+    } elseif (!$first_name || !$last_name || !$crn || !$phone || !$class_id || !$church_id) {
         $error = 'Please fill in all required fields.';
     } else {
         $registration_token = bin2hex(random_bytes(16));
-        if ($editing) {
+        $current_member_id = $editing ? (int) $id : 0;
+        $crn_stmt = $conn->prepare('SELECT id FROM members WHERE crn = ? AND (? = 0 OR id <> ?) LIMIT 1');
+        $crn_stmt->bind_param('sii', $crn, $current_member_id, $current_member_id);
+        $crn_stmt->execute();
+        if ($crn_stmt->get_result()->fetch_assoc()) {
+            $error = 'That CRN is already assigned to another member.';
+        }
+        $crn_stmt->close();
+
+        if ($error) {
+            // Exact registration numbers are never eligible for duplicate override.
+        } elseif ($editing) {
             $member_status = (string) ($member['status'] ?? '');
             $current_class_id = (int) ($member['class_id'] ?? 0);
             $is_moving_active_member = ($member_status === 'active' && $current_class_id !== $class_id);
@@ -91,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (!$error) {
                 $stmt = $conn->prepare('UPDATE members SET first_name=?, middle_name=?, last_name=?, crn=?, phone=?, email=?, class_id=?, church_id=? WHERE id=?');
-                $stmt->bind_param('sssssssii', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $id);
+                $stmt->bind_param('ssssssiii', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $id);
                 $ok = $stmt->execute();
                 if ($ok && $stmt->affected_rows >= 0) {
                     $success = 'Member updated. (Notification would be sent here)';
@@ -106,10 +126,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$capacity['allowed']) {
                 $error = 'Member creation blocked: ' . bible_class_capacity_error_message();
             } else {
-                $stmt = $conn->prepare('INSERT INTO members (first_name, middle_name, last_name, crn, phone, email, class_id, church_id, registration_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                $stmt->bind_param('ssssssiss', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $registration_token);
+                try {
+                    $duplicate_matches = $duplicateService->findMatches([
+                        'first_name' => $first_name, 'middle_name' => $middle_name,
+                        'last_name' => $last_name, 'phone' => $phone, 'email' => $email,
+                    ], 'member', null, $church_id);
+                } catch (Throwable $e) {
+                    $error = $e->getMessage();
+                }
+                $duplicateReason = trim((string) ($_POST['duplicate_reason'] ?? ''));
+                if ($duplicate_matches && (!isset($_POST['continue_duplicate']) || $duplicateReason === '')) {
+                    $error = 'Possible duplicate found. Review the matches below. To create a separate member, confirm and enter a reason.';
+                }
+                if (!$error) {
+                $stmt = $conn->prepare("INSERT INTO members (first_name, middle_name, last_name, crn, phone, email, class_id, church_id, registration_token, status, deactivated_at, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '')");
+                $stmt->bind_param('ssssssiis', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $registration_token);
                 $ok = $stmt->execute();
                 if ($ok && $stmt->affected_rows > 0) {
+                    $newMemberId = (int) $stmt->insert_id;
+                    if ($duplicate_matches) {
+                        $duplicateService->recordMatches(
+                            'member', $newMemberId, $church_id, $duplicate_matches,
+                            'registration', $duplicateReason
+                        );
+                    }
                     $registration_link = rtrim(BASE_URL, '/') . '/views/complete_registration.php?token=' . urlencode($registration_token);
                     $success = 'Member added successfully!<br>Registration link: <a href="' . $registration_link . '" target="_blank">' . htmlspecialchars($registration_link) . '</a>';
                     // Send registration SMS if phone is provided
@@ -148,6 +188,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $error = 'Database error. Please try again.';
                 }
+                }
             }
         }
     }
@@ -168,6 +209,7 @@ ob_start();
                 <h6 class="m-0 font-weight-bold text-primary">Member Details</h6>
             </div>
             <div class="card-body">
+                <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
                 <?php if ($success): ?>
                     <div class="alert alert-success"> <?= $success ?> </div>
                     <script>
@@ -179,6 +221,7 @@ ob_start();
                 <?php endif; ?>
                 <?php if (!$success): ?>
                 <form method="post" autocomplete="off">
+                    <?= csrf_input() ?>
                     <div class="form-row">
                         <div class="form-group col-md-4">
                             <label for="first_name">First Name <span class="text-danger">*</span></label>
@@ -231,6 +274,15 @@ ob_start();
                         <input type="text" class="form-control" id="crn" placeholder="CRN will appear here" value="<?=htmlspecialchars($member['crn'])?>" readonly required tabindex="-1" autocomplete="off" style="background:#f9f9f9;">
                         <input type="hidden" name="crn" id="crn_hidden" value="<?=htmlspecialchars($member['crn'])?>">
                     </div>
+                    <?php if ($duplicate_matches): ?>
+                    <div class="alert alert-warning"><strong>Possible duplicate found:</strong><ul class="mb-0">
+                    <?php foreach ($duplicate_matches as $match): ?><li><?= htmlspecialchars($match['display_name']) ?> — <?= htmlspecialchars($match['identifier']) ?> (<?= htmlspecialchars(implode(', ', $match['match_rules'])) ?>)</li><?php endforeach; ?>
+                    </ul></div>
+                    <div class="card border-warning mb-3"><div class="card-body py-3">
+                        <div class="custom-control custom-checkbox"><input type="checkbox" class="custom-control-input" id="continue_duplicate" name="continue_duplicate" value="1" <?= isset($_POST['continue_duplicate']) ? 'checked' : '' ?>><label class="custom-control-label" for="continue_duplicate">Continue and create a separate member</label></div>
+                        <label for="duplicate_reason" class="mt-2">Reason <span class="text-danger">*</span></label><textarea class="form-control" id="duplicate_reason" name="duplicate_reason" maxlength="500"><?= htmlspecialchars($_POST['duplicate_reason'] ?? '') ?></textarea>
+                    </div></div>
+                    <?php endif; ?>
                     <button type="submit" class="btn btn-primary"><?php echo $editing ? 'Update' : 'Save & Send Registration Link'; ?></button>
                 </form>
                 <?php endif; ?>

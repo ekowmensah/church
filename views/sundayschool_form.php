@@ -3,6 +3,8 @@ session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../services/RegistrationDuplicateService.php';
 
 // Authentication check
 if (!is_logged_in()) {
@@ -21,6 +23,8 @@ $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 $editing = $id > 0;
 $error = '';
 $success = '';
+$duplicate_matches = [];
+$duplicateService = RegistrationDuplicateService::fromSession($conn);
 $record = [
     'srn'=>'','photo'=>'','last_name'=>'','middle_name'=>'','first_name'=>'','other_name'=>'','dob'=>'','gender'=>'','dayborn'=>'','contact'=>'','gps_address'=>'','residential_address'=>'','organization'=>'','school_attend'=>'','father_name'=>'','father_contact'=>'','father_occupation'=>'','mother_name'=>'','mother_contact'=>'','mother_occupation'=>'','church_id'=>'','class_id'=>'116','father_member_id'=>'','mother_member_id'=>'','father_is_member'=>'','mother_is_member'=>'','baptized'=>'','baptism_date'=>'','school_location'=>'','education_level'=>''
 ];
@@ -38,6 +42,9 @@ if ($editing) {
     $stmt->close();
 }
 if ($_SERVER['REQUEST_METHOD']==='POST') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $error = 'Your form session expired. Refresh the page and try again.';
+    }
     foreach($record as $k=>$v) if(isset($_POST[$k])) {
     if (is_array($_POST[$k])) {
         // For multi-select fields (like organization), store as comma-separated string
@@ -91,8 +98,49 @@ if (!isset($record['other_name'])) $record['other_name'] = '';
         }
         $stmt->close();
     }
+    if (!$error) {
+        if (empty($record['church_id']) || empty($record['last_name']) || empty($record['first_name'])
+            || empty($record['dob']) || empty($record['contact'])) {
+            $error = 'Complete the required church, name, date of birth, and contact fields.';
+        }
+    }
+    if (!$error && !empty($record['srn'])) {
+        $srn_stmt = $conn->prepare(
+            'SELECT id FROM sunday_school WHERE srn = ? AND (? = 0 OR id <> ?) LIMIT 1'
+        );
+        $current_id = $editing ? $id : 0;
+        $srn_stmt->bind_param('sii', $record['srn'], $current_id, $current_id);
+        $srn_stmt->execute();
+        if ($srn_stmt->get_result()->fetch_assoc()) {
+            $error = 'That SRN is already assigned to another Sunday School record.';
+        }
+        $srn_stmt->close();
+    }
+    $continue_duplicate = isset($_POST['continue_duplicate']);
+    $duplicate_reason = trim((string) ($_POST['duplicate_reason'] ?? ''));
+    if (!$error) {
+        try {
+            $duplicate_matches = $duplicateService->findMatches(
+                [
+                    'first_name' => $record['first_name'],
+                    'middle_name' => $record['middle_name'],
+                    'last_name' => $record['last_name'],
+                    'dob' => $record['dob'],
+                    'contact' => $record['contact'],
+                ],
+                'sunday_school',
+                $editing ? $id : null,
+                (int) $record['church_id']
+            );
+            if ($duplicate_matches && (!$continue_duplicate || $duplicate_reason === '')) {
+                $error = 'Possible duplicate found. Review the records below, or explain why this is a separate person before continuing.';
+            }
+        } catch (Throwable $e) {
+            $error = $e->getMessage();
+        }
+    }
     // Handle photo upload
-    if (!empty($_FILES['photo']['name'])) {
+    if (!$error && !empty($_FILES['photo']['name'])) {
         $target_dir = __DIR__.'/../uploads/sundayschool/';
         if (!is_dir($target_dir)) mkdir($target_dir,0777,true);
         $filename = uniqid('ss_').basename($_FILES['photo']['name']);
@@ -108,15 +156,15 @@ if (!isset($record['other_name'])) $record['other_name'] = '';
             if ($record[$f]==='' || $record[$f]==='0' || $record[$f]===0) $record[$f] = null;
         }
         if (!$error) {
-        if ($editing) {
+        $conn->begin_transaction();
+        try {
+          if ($editing) {
             $stmt = $conn->prepare('UPDATE sunday_school SET srn=?, photo=?, last_name=?, middle_name=?, first_name=?, dob=?, gender=?, dayborn=?, contact=?, gps_address=?, residential_address=?, organization=?, school_attend=?, father_name=?, father_contact=?, father_occupation=?, mother_name=?, mother_contact=?, mother_occupation=?, church_id=?, class_id=?, father_member_id=?, mother_member_id=?, father_is_member=?, mother_is_member=?, baptized=?, baptism_date=?, school_location=?, education_level=? WHERE id=?');
             // Type string: 19 strings (s) + 4 integers (i) + 6 strings (s) + 1 integer (i) = 30 total
             $stmt->bind_param('sssssssssssssssssssiiiissssssi', $record['srn'],$record['photo'],$record['last_name'],$record['middle_name'],$record['first_name'],$record['dob'],$record['gender'],$record['dayborn'],$record['contact'],$record['gps_address'],$record['residential_address'],$record['organization'],$record['school_attend'],$record['father_name'],$record['father_contact'],$record['father_occupation'],$record['mother_name'],$record['mother_contact'],$record['mother_occupation'],$record['church_id'],$record['class_id'],$record['father_member_id'],$record['mother_member_id'],$record['father_is_member'],$record['mother_is_member'],$record['baptized'],$record['baptism_date'],$record['school_location'],$record['education_level'],$id);
             $stmt->execute();
             $stmt->close();
-            $success = 'Record updated.';
-            header('Location: sundayschool_list.php');
-            exit;
+            $source_id = $id;
         } else {
             $stmt = $conn->prepare('INSERT INTO sunday_school (srn, photo, last_name, middle_name, first_name, dob, gender, dayborn, contact, gps_address, residential_address, organization, school_attend, father_name, father_contact, father_occupation, mother_name, mother_contact, mother_occupation, church_id, class_id, father_member_id, mother_member_id, father_is_member, mother_is_member, baptized, baptism_date, school_location, education_level) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
            // $stmt->bind_param('sssssssssssssssssssiiiiissssss',
@@ -152,11 +200,22 @@ if (!isset($record['other_name'])) $record['other_name'] = '';
                 $record['education_level']
             );
             $stmt->execute();
+            $source_id = (int) $stmt->insert_id;
             $stmt->close();
-            $success = 'Record added.';
+        }
+        if ($duplicate_matches) {
+            $duplicateService->recordMatches(
+                'sunday_school', $source_id, (int) $record['church_id'],
+                $duplicate_matches, $editing ? 'edit' : 'registration', $duplicate_reason
+            );
+        }
+        $conn->commit();
+        $success = $editing ? 'Record updated.' : 'Record added.';
             header('Location: sundayschool_list.php');
             exit;
-            $record = array_map(function(){return '';}, $record);
+        } catch (Throwable $e) {
+            $conn->rollback();
+            $error = $e->getMessage();
         }
     }
 }
@@ -204,10 +263,11 @@ ob_start();
         </div>
         <div class="card-body p-4" style="background: #fafdff; border-radius: 0 0 18px 18px;">
 
-            <?php if($error): ?><div class="alert alert-danger"><?=$error?></div><?php endif; ?>
+            <?php if($error): ?><div class="alert alert-danger"><?=htmlspecialchars($error)?></div><?php endif; ?>
             <?php if($success): ?><div class="alert alert-success"><?=$success?></div><?php endif; ?>
             
 <form method="post" enctype="multipart/form-data" autocomplete="off" style="margin-bottom:0;">
+                <?= csrf_input() ?>
                 <div class="ss-section mb-4" style="background: #f4f8fb; border-radius: 10px; box-shadow: 0 1px 6px rgba(0,0,0,0.04); padding: 22px 18px 16px 18px;">
 
                     <div class="ss-section-title" style="font-size: 1.2rem; color: #0d6efd;"><i class="fa-solid fa-user-graduate ss-icon"></i> Personal Information <span class="text-danger">*</span></div>
@@ -741,25 +801,7 @@ $(function(){
           self.removeClass('is-valid').addClass('is-invalid');
           return;
         }
-        if(valid && val.length>=10 && val!==lastVal){
-          // AJAX duplicate check
-          $.get('views/ajax_check_phone_duplicate.php', {phone: val, id: $(idSelector).val()||''}, function(resp){
-            if(resp && typeof resp.exists !== 'undefined') {
-              if(resp.exists){
-                feedback.text('Phone already exists.');
-                self.removeClass('is-valid').addClass('is-invalid');
-              } else {
-                self.removeClass('is-invalid').addClass('is-valid');
-              }
-            } else {
-              self.removeClass('is-valid is-invalid');
-              feedback.text('Could not validate phone. Try again.');
-            }
-          },'json').fail(function(){
-            self.removeClass('is-valid is-invalid');
-            feedback.text('Could not validate phone (AJAX error).');
-          });
-        } else if(valid && val.length>=10) {
+        if(valid && val.length>=10) {
           self.removeClass('is-invalid').addClass('is-valid');
         } else if(!val.length) {
           self.removeClass('is-valid is-invalid');
@@ -920,6 +962,27 @@ $('#church_id').on('change', function() {
 });
 
 </script>
+
+                <?php if ($duplicate_matches): ?>
+                <div class="alert alert-warning mt-4">
+                    <strong>Possible duplicate<?= count($duplicate_matches) === 1 ? '' : 's' ?>:</strong>
+                    <ul class="mb-2 mt-2">
+                    <?php foreach ($duplicate_matches as $match): ?>
+                        <li>
+                            <?= htmlspecialchars($match['display_name']) ?>
+                            (<?= htmlspecialchars($match['identifier'] ?: ucfirst(str_replace('_', ' ', $match['source_type'])) . ' #' . $match['source_id']) ?>)
+                            &mdash; matched by <?= htmlspecialchars(implode(', ', $match['match_rules'])) ?>
+                        </li>
+                    <?php endforeach; ?>
+                    </ul>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="continue_duplicate" id="continue_duplicate" value="1" <?= isset($_POST['continue_duplicate']) ? 'checked' : '' ?>>
+                        <label class="form-check-label" for="continue_duplicate">Continue anyway; this is a separate registration.</label>
+                    </div>
+                    <label class="mt-2" for="duplicate_reason">Reason for continuing</label>
+                    <textarea class="form-control" name="duplicate_reason" id="duplicate_reason" maxlength="500"><?= htmlspecialchars($_POST['duplicate_reason'] ?? '') ?></textarea>
+                </div>
+                <?php endif; ?>
 
                 <div class="form-group mt-4">
                     <button class="btn btn-success btn-lg" type="submit"><i class="fa fa-save"></i> Save</button>

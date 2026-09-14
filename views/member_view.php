@@ -474,16 +474,12 @@ ob_start();
                         <p class="mb-2">
                             <i class="fas fa-certificate mr-2"></i><strong>Membership:</strong>
                             <?php
-                            $is_confirmed = (strtolower($member['confirmed'] ?? '') === 'yes');
-                            $is_baptized = (strtolower($member['baptized'] ?? '') === 'yes');
-                            
-                            if ($is_confirmed && $is_baptized) {
-                                echo '<span class="membership-status status-full"><i class="fas fa-check-circle"></i> Full Member</span>';
-                            } elseif ($is_confirmed || $is_baptized) {
-                                echo '<span class="membership-status status-catechumen"><i class="fas fa-clock"></i> Catechumen</span>';
-                            } else {
-                                echo '<span class="membership-status status-none"><i class="fas fa-minus-circle"></i> No Status</span>';
-                            }
+                            $membership_label = trim((string) ($member['membership_status'] ?? '')) ?: 'Unclassified';
+                            $membership_class = $membership_label === 'Full Member'
+                                ? 'status-full'
+                                : ($membership_label === 'Catechumen' ? 'status-catechumen' : 'status-none');
+                            echo '<span class="membership-status ' . $membership_class . '"><i class="fas fa-id-badge"></i> '
+                                . htmlspecialchars($membership_label) . '</span>';
                             ?>
                         </p>
                         <p class="mb-2"><i class="fas fa-calendar mr-2"></i><strong>Joined:</strong> <?= htmlspecialchars($format_member_date($member['created_at'] ?? null)) ?></p>

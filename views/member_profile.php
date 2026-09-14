@@ -195,12 +195,9 @@ $has_transfer_details = $transfer_from_other_chapel
 
 $is_confirmed = strtolower((string) ($member['confirmed'] ?? '')) === 'yes';
 $is_baptized = strtolower((string) ($member['baptized'] ?? '')) === 'yes';
-$computed_membership = ($is_confirmed && $is_baptized)
-    ? 'Full Member'
-    : (($is_confirmed || $is_baptized) ? 'Catechumen' : 'No Status');
 $membership_status_label = trim((string) ($member['membership_status'] ?? '')) !== ''
     ? (string) $member['membership_status']
-    : $computed_membership;
+    : 'Unclassified';
 
 $incoming_spouse_requests = spouse_link_get_pending_incoming($conn, $member_id);
 $outgoing_spouse_requests = spouse_link_get_pending_outgoing($conn, $member_id);

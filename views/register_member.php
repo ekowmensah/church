@@ -922,7 +922,9 @@ ob_start();
                                     <option value="Full Member">Full Member</option>
                                     <option value="Catechumen">Catechumen</option>
                                     <option value="Adherent">Adherent</option>
-                                    <option value="Juvenile">Juvenile</option>
+                                    <option value="Junior Member">Junior Member</option>
+                                    <option value="Distant Member">Distant Member</option>
+                                    <option value="Invalid">Invalid</option>
                                 </select>
                             </div>
                         </div>

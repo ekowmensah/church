@@ -38,8 +38,9 @@ $allowed_sort_fields = ['crn', 'last_name', 'first_name', 'phone', 'church_name'
 $sort_field = isset($_GET['sort']) && in_array($_GET['sort'], $allowed_sort_fields) ? $_GET['sort'] : 'last_name';
 $sort_direction = isset($_GET['order']) && $_GET['order'] === 'desc' ? 'DESC' : 'ASC';
 
-// Build WHERE clause with filters - EXCLUDE adherents (moved before export)
-$where_conditions = ["m.status = 'active'", "(m.membership_status IS NULL OR m.membership_status != 'Adherent')"];
+// Build WHERE clause with filters. Membership categories remain visible here;
+// access is controlled by the scoped role filters below.
+$where_conditions = ["m.status = 'active'"];
 $params = [];
 $param_types = "";
 
@@ -85,16 +86,26 @@ if (!empty($_GET['day_born'])) {
 if (!empty($_GET['status_filter'])) {
     switch ($_GET['status_filter']) {
         case 'full_member':
-            $where_conditions[] = "LOWER(m.confirmed) = 'yes' AND LOWER(m.baptized) = 'yes'";
+            $where_conditions[] = "m.membership_status = 'Full Member'";
             break;
         case 'catechumen':
-            $where_conditions[] = "(LOWER(m.confirmed) = 'yes' OR LOWER(m.baptized) = 'yes') AND NOT (LOWER(m.confirmed) = 'yes' AND LOWER(m.baptized) = 'yes')";
+            $where_conditions[] = "m.membership_status = 'Catechumen'";
             break;
-        case 'no_status':
-            $where_conditions[] = "(m.confirmed IS NULL OR m.confirmed = '' OR LOWER(m.confirmed) != 'yes') AND (m.baptized IS NULL OR m.baptized = '' OR LOWER(m.baptized) != 'yes')";
+        case 'adherent':
+            $where_conditions[] = "m.membership_status = 'Adherent'";
             break;
-        case 'juvenile':
+        case 'junior_member':
             // This will be handled in the UNION part for Sunday school members
+            $where_conditions[] = "m.membership_status = 'Junior Member'";
+            break;
+        case 'distant_member':
+            $where_conditions[] = "m.membership_status = 'Distant Member'";
+            break;
+        case 'invalid':
+            $where_conditions[] = "m.membership_status = 'Invalid'";
+            break;
+        case 'unclassified':
+            $where_conditions[] = "m.membership_status IS NULL";
             break;
     }
 }
@@ -137,7 +148,7 @@ if (!empty($ss_role_filter['sql'])) {
 $where_clause = implode(' AND ', $where_conditions);
 
 // Build Sunday School WHERE clause with similar filters
-$ss_where_conditions = [];
+$ss_where_conditions = ['s.transferred_to_member_id IS NULL'];
 $ss_params = [];
 $ss_param_types = "";
 
@@ -181,7 +192,7 @@ if (!empty($_GET['day_born'])) {
 
 // Status filter - only include Sunday School if juvenile is selected or no status filter
 $include_sunday_school = true;
-if (!empty($_GET['status_filter']) && $_GET['status_filter'] !== 'juvenile') {
+if (!empty($_GET['status_filter']) && $_GET['status_filter'] !== 'junior_member') {
     $include_sunday_school = false;
 }
 
@@ -245,21 +256,9 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv' && $can_export) {
     
     while ($row = $export_result->fetch_assoc()) {
         // Determine status based on member type
-        if ($row['member_type'] === 'sunday_school') {
-            $status = 'Juvenile';
-        } else {
-            // Regular members - determine status based on confirmed and baptized
-            $is_confirmed = (strtolower($row['confirmed']) === 'yes');
-            $is_baptized = (strtolower($row['baptized']) === 'yes');
-            
-            if ($is_confirmed && $is_baptized) {
-                $status = 'Full Member';
-            } elseif ($is_confirmed || $is_baptized) {
-                $status = 'Catechumen';
-            } else {
-                $status = 'Catechumen';
-            }
-        }
+        $status = $row['member_type'] === 'sunday_school'
+            ? 'Junior Member'
+            : ($row['membership_status'] ?: 'Unclassified');
         
         // Get total payments for this member
         $payment_sql = "SELECT SUM(amount) as total FROM payments 
@@ -328,11 +327,7 @@ $sql = "
             m.id, m.crn, m.last_name, m.first_name, m.middle_name, m.phone, m.gender, 
             m.day_born, m.photo, m.membership_status, m.status, m.confirmed, m.baptized,
             c.name as church_name, cl.name as class_name, 'member' as member_type,
-            CASE 
-                WHEN LOWER(m.confirmed) = 'yes' AND LOWER(m.baptized) = 'yes' THEN 'Full Member'
-                WHEN LOWER(m.confirmed) = 'yes' OR LOWER(m.baptized) = 'yes' THEN 'Catechumen'
-                ELSE 'No Status'
-            END as computed_status
+            COALESCE(NULLIF(m.membership_status, ''), 'Unclassified') as computed_status
         FROM members m
         LEFT JOIN churches c ON m.church_id = c.id
         LEFT JOIN bible_classes cl ON m.class_id = cl.id
@@ -344,7 +339,7 @@ $sql = "
             s.id, s.srn as crn, s.last_name, s.first_name, s.middle_name, s.contact as phone, s.gender,
             s.dayborn as day_born, s.photo, NULL as membership_status, 'active' as status, 
             'no' as confirmed, 'no' as baptized, c.name as church_name, cl.name as class_name, 'sunday_school' as member_type,
-            'Juvenile' as computed_status
+            'Junior Member' as computed_status
         FROM sunday_school s
         LEFT JOIN churches c ON s.church_id = c.id
         LEFT JOIN bible_classes cl ON s.class_id = cl.id
@@ -1043,8 +1038,11 @@ ob_start();
                             <option value="">All Members</option>
                             <option value="full_member" <?= (isset($_GET['status_filter']) && $_GET['status_filter'] == 'full_member') ? 'selected' : '' ?>>Full Members</option>
                             <option value="catechumen" <?= (isset($_GET['status_filter']) && $_GET['status_filter'] == 'catechumen') ? 'selected' : '' ?>>Catechumens</option>
-                            <option value="no_status" <?= (isset($_GET['status_filter']) && $_GET['status_filter'] == 'no_status') ? 'selected' : '' ?>>No Status</option>
-                            <option value="juvenile" <?= (isset($_GET['status_filter']) && $_GET['status_filter'] == 'juvenile') ? 'selected' : '' ?>>Juveniles</option>
+                            <option value="adherent" <?= (isset($_GET['status_filter']) && $_GET['status_filter'] == 'adherent') ? 'selected' : '' ?>>Adherents</option>
+                            <option value="junior_member" <?= (isset($_GET['status_filter']) && $_GET['status_filter'] == 'junior_member') ? 'selected' : '' ?>>Junior Members</option>
+                            <option value="distant_member" <?= (isset($_GET['status_filter']) && $_GET['status_filter'] == 'distant_member') ? 'selected' : '' ?>>Distant Members</option>
+                            <option value="invalid" <?= (isset($_GET['status_filter']) && $_GET['status_filter'] == 'invalid') ? 'selected' : '' ?>>Invalid Members</option>
+                            <option value="unclassified" <?= (isset($_GET['status_filter']) && $_GET['status_filter'] == 'unclassified') ? 'selected' : '' ?>>Unclassified</option>
                         </select>
                     </div>
                     <div class="col-md-2 mb-3">
@@ -1135,30 +1133,21 @@ ob_start();
                             </td>
                             <td>
                                 <?php
-                                // Determine membership status based on member type and confirmed/baptized status
+                                // Display the governed status; Sunday School is the Junior Member register.
                                 if ($member['member_type'] === 'sunday_school') {
-                                    // Sunday school members always show as Juvenile
-                                    $status = 'Juvenile';
+                                    $status = 'Junior Member';
                                     $status_class = 'info';
                                     $show_info = false;
                                 } else {
-                                    // Regular members - determine status based on confirmed and baptized
                                     $is_confirmed = (strtolower($member['confirmed']) === 'yes');
                                     $is_baptized = (strtolower($member['baptized']) === 'yes');
-                                    
-                                    if ($is_confirmed && $is_baptized) {
-                                        $status = 'Full Member';
-                                        $status_class = 'success';
-                                        $show_info = false;
-                                    } elseif ($is_confirmed || $is_baptized) {
-                                        $status = 'Catechumen';
-                                        $status_class = 'warning';
-                                        $show_info = true;
-                                    } else {
-                                        $status = 'No Status';
-                                        $status_class = 'secondary';
-                                        $show_info = true;
-                                    }
+                                    $status = $member['computed_status'];
+                                    $status_class = [
+                                        'Full Member' => 'success', 'Catechumen' => 'warning',
+                                        'Adherent' => 'danger', 'Junior Member' => 'info',
+                                        'Distant Member' => 'primary', 'Invalid' => 'dark',
+                                    ][$status] ?? 'secondary';
+                                    $show_info = $status === 'Unclassified';
                                 }
                                 
                                 // Prepare missing requirements for modal

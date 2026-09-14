@@ -35,6 +35,28 @@ if (!$input || !isset($input['member_ids']) || !isset($input['defaults'])) {
 
 $member_ids = $input['member_ids'];
 $defaults = $input['defaults'];
+$allowed_membership_statuses = [
+    'Full Member', 'Catechumen', 'Adherent',
+    'Junior Member', 'Distant Member', 'Invalid'
+];
+$requested_membership_status = (string) ($defaults['membership_status'] ?? 'Full Member');
+if (!in_array($requested_membership_status, $allowed_membership_statuses, true)) {
+    http_response_code(422);
+    echo json_encode(['success' => false, 'message' => 'Choose a valid membership status.']);
+    exit;
+}
+$default_baptized = strtolower((string) ($defaults['baptized'] ?? 'Yes')) === 'yes';
+$default_confirmed = strtolower((string) ($defaults['confirmed'] ?? 'Yes')) === 'yes';
+if ($requested_membership_status === 'Full Member' && (!$default_baptized || !$default_confirmed)) {
+    http_response_code(422);
+    echo json_encode(['success' => false, 'message' => 'Full Member requires baptism and confirmation.']);
+    exit;
+}
+if ($requested_membership_status === 'Catechumen' && (!$default_baptized || $default_confirmed)) {
+    http_response_code(422);
+    echo json_encode(['success' => false, 'message' => 'Catechumen requires baptism without confirmation.']);
+    exit;
+}
 
 if (empty($member_ids) || !is_array($member_ids)) {
     echo json_encode(['success' => false, 'message' => 'No members selected']);

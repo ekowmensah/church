@@ -2,6 +2,8 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../services/RegistrationDuplicateService.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -34,20 +36,34 @@ if (!$is_super_admin && !has_permission($required_permission)) {
 $can_add = $is_super_admin || has_permission('create_visitor');
 $can_edit = $is_super_admin || has_permission('edit_visitor');
 $can_view = true; // Already validated above
+$duplicateService = RegistrationDuplicateService::fromSession($conn);
 
 $errors = [];
+$duplicate_matches = [];
 $name = $phone = $email = $address = $visit_date = $invited_by = $purpose = '';
 $gender = $home_town = $region = $occupation = $marital_status = $want_member = '';
 $church_id = '';
 $members = [];
 $churches = [];
-$cres = $conn->query("SELECT id, name FROM churches ORDER BY name");
+$church_scope = (int) ($_SESSION['church_id'] ?? 0);
+if (!$is_super_admin && $church_scope <= 0 && isset($_SESSION['user_id'])) {
+    $scope_stmt = $conn->prepare('SELECT church_id FROM users WHERE id = ? LIMIT 1');
+    $scope_stmt->bind_param('i', $_SESSION['user_id']);
+    $scope_stmt->execute();
+    $church_scope = (int) ($scope_stmt->get_result()->fetch_assoc()['church_id'] ?? 0);
+    $scope_stmt->close();
+}
+$cres = $is_super_admin
+    ? $conn->query("SELECT id, name FROM churches ORDER BY name")
+    : $conn->query("SELECT id, name FROM churches WHERE id = {$church_scope} ORDER BY name");
 if ($cres && $cres->num_rows > 0) {
     while ($c = $cres->fetch_assoc()) {
         $churches[] = $c;
     }
 }
-$mres = $conn->query("SELECT id, crn, CONCAT(last_name, ' ', first_name, ' ', middle_name) as name FROM members WHERE status='active' ORDER BY last_name, first_name");
+$mres = $is_super_admin
+    ? $conn->query("SELECT id, crn, CONCAT(last_name, ' ', first_name, ' ', middle_name) as name FROM members WHERE status='active' AND is_archived = 0 ORDER BY last_name, first_name")
+    : $conn->query("SELECT id, crn, CONCAT(last_name, ' ', first_name, ' ', middle_name) as name FROM members WHERE status='active' AND is_archived = 0 AND church_id = {$church_scope} ORDER BY last_name, first_name");
 if ($mres && $mres->num_rows > 0) {
     while ($m = $mres->fetch_assoc()) {
         $members[] = $m;
@@ -65,9 +81,13 @@ $genders = ['Male', 'Female'];
 
 // If editing, fetch visitor data
 if ($editing) {
-    $result = $conn->query("SELECT * FROM visitors WHERE id = $id LIMIT 1");
-    if ($result && $result->num_rows > 0) {
-        $v = $result->fetch_assoc();
+    try {
+        $v = $duplicateService->getVisitor($id);
+    } catch (Throwable $e) {
+        $v = null;
+        $errors[] = $e->getMessage();
+    }
+    if ($v) {
         $church_id = $v['church_id'] ?? '';
         $name = $v['name'];
         $phone = $v['phone'];
@@ -89,6 +109,9 @@ if ($editing) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Your form session expired. Refresh the page and try again.';
+    }
     $church_id = trim($_POST['church_id'] ?? '');
     $name = trim($_POST['name'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
@@ -122,37 +145,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     // Optionally require gender, marital_status, want_member
 
-    // Check for duplicate phone number (normalize and trim)
-    $phone_trimmed = preg_replace('/\D+/', '', $phone); // remove non-digits for comparison
-    if ($phone_trimmed !== '') {
-        $dup_sql = $editing ? "SELECT id FROM visitors WHERE REPLACE(phone, ' ', '') = ? AND id != ? LIMIT 1" : "SELECT id FROM visitors WHERE REPLACE(phone, ' ', '') = ? LIMIT 1";
-        $dup_stmt = $conn->prepare($dup_sql);
-        if ($dup_stmt) {
-            if ($editing) {
-                $dup_stmt->bind_param('si', $phone_trimmed, $id);
-            } else {
-                $dup_stmt->bind_param('s', $phone_trimmed);
+    $continue_duplicate = isset($_POST['continue_duplicate']);
+    $duplicate_reason = trim((string) ($_POST['duplicate_reason'] ?? ''));
+    if (empty($errors)) {
+        try {
+            $duplicate_matches = $duplicateService->findMatches(
+                ['name' => $name, 'phone' => $phone, 'email' => $email],
+                'visitor',
+                $editing ? $id : null,
+                (int) $church_id
+            );
+            if ($duplicate_matches && (!$continue_duplicate || $duplicate_reason === '')) {
+                $errors[] = 'Possible duplicate found. Review the records below, or explain why this is a separate person before continuing.';
             }
-            $dup_stmt->execute();
-            $dup_stmt->store_result();
-            if ($dup_stmt->num_rows > 0) {
-                $errors[] = 'A visitor with this phone number already exists.';
-            }
-            $dup_stmt->close();
-        } else {
-            error_log('Duplicate phone check prepare failed: ' . $conn->error);
+        } catch (Throwable $e) {
+            $errors[] = $e->getMessage();
         }
     }
 
     if (empty($errors)) {
-        if ($editing) {
-            $stmt = $conn->prepare("UPDATE visitors SET church_id=?, name=?, phone=?, email=?, address=?, purpose=?, gender=?, home_town=?, region=?, occupation=?, marital_status=?, want_member=?, visit_date=?, invited_by=? WHERE id=?");
-            $stmt->bind_param('issssssssssssii', $church_id, $name, $phone, $email, $address, $purpose, $gender, $home_town, $region, $occupation, $marital_status, $want_member, $visit_date, $invited_by, $id);
-            $stmt->execute();
-        } else {
-            $stmt = $conn->prepare("INSERT INTO visitors (church_id, name, phone, email, address, purpose, gender, home_town, region, occupation, marital_status, want_member, visit_date, invited_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param('issssssssssssi', $church_id, $name, $phone, $email, $address, $purpose, $gender, $home_town, $region, $occupation, $marital_status, $want_member, $visit_date, $invited_by);
-            $stmt->execute();
+        $conn->begin_transaction();
+        try {
+            if ($editing) {
+                $stmt = $conn->prepare("UPDATE visitors SET church_id=?, name=?, phone=?, email=?, address=?, purpose=?, gender=?, home_town=?, region=?, occupation=?, marital_status=?, want_member=?, visit_date=?, invited_by=? WHERE id=?");
+                $stmt->bind_param('issssssssssssii', $church_id, $name, $phone, $email, $address, $purpose, $gender, $home_town, $region, $occupation, $marital_status, $want_member, $visit_date, $invited_by, $id);
+                $stmt->execute();
+                $source_id = $id;
+            } else {
+                $stmt = $conn->prepare("INSERT INTO visitors (church_id, name, phone, email, address, purpose, gender, home_town, region, occupation, marital_status, want_member, visit_date, invited_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt->bind_param('issssssssssssi', $church_id, $name, $phone, $email, $address, $purpose, $gender, $home_town, $region, $occupation, $marital_status, $want_member, $visit_date, $invited_by);
+                $stmt->execute();
+                $source_id = (int) $stmt->insert_id;
+            }
+            $stmt->close();
+            if ($duplicate_matches) {
+                $duplicateService->recordMatches(
+                    'visitor', $source_id, (int) $church_id, $duplicate_matches,
+                    $editing ? 'edit' : 'registration', $duplicate_reason
+                );
+            }
+            $conn->commit();
+        } catch (Throwable $e) {
+            $conn->rollback();
+            $errors[] = $e->getMessage();
+        }
+        if (empty($errors)) {
+          if (!$editing) {
             // Send welcome SMS if phone is not empty
             if (!empty($phone)) {
                 require_once __DIR__.'/../includes/sms.php';
@@ -169,9 +207,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     error_log($err);
                 }
             }
+          }
+          header('Location: visitor_list.php');
+          exit;
         }
-        header('Location: visitor_list.php');
-        exit;
     }
 }
 
@@ -193,6 +232,7 @@ ob_start();
             </div>
           <?php endif; ?>
           <form method="post" autocomplete="off">
+            <?= csrf_input() ?>
             <div class="form-group">
               <label for="church_id">Church <span class="text-danger">*</span></label>
               <select class="form-control" name="church_id" id="church_id" required>
@@ -293,6 +333,26 @@ ob_start();
               <label for="purpose">Purpose</label>
               <textarea class="form-control" name="purpose" id="purpose" rows="2" required><?= htmlspecialchars($purpose) ?></textarea>
             </div>
+            <?php if ($duplicate_matches): ?>
+              <div class="alert alert-warning">
+                <strong>Possible duplicate<?= count($duplicate_matches) === 1 ? '' : 's' ?>:</strong>
+                <ul class="mb-2 mt-2">
+                  <?php foreach ($duplicate_matches as $match): ?>
+                    <li>
+                      <?= htmlspecialchars($match['display_name']) ?>
+                      (<?= htmlspecialchars($match['identifier'] ?: ucfirst(str_replace('_', ' ', $match['source_type'])) . ' #' . $match['source_id']) ?>)
+                      &mdash; matched by <?= htmlspecialchars(implode(', ', $match['match_rules'])) ?>
+                    </li>
+                  <?php endforeach; ?>
+                </ul>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="continue_duplicate" id="continue_duplicate" value="1" <?= isset($_POST['continue_duplicate']) ? 'checked' : '' ?>>
+                  <label class="form-check-label" for="continue_duplicate">Continue anyway; this is a separate registration.</label>
+                </div>
+                <label for="duplicate_reason" class="mt-2">Reason for continuing</label>
+                <textarea class="form-control" name="duplicate_reason" id="duplicate_reason" maxlength="500"><?= htmlspecialchars($_POST['duplicate_reason'] ?? '') ?></textarea>
+              </div>
+            <?php endif; ?>
             <div class="d-flex justify-content-between">
               <a href="visitor_list.php" class="btn btn-secondary">Cancel</a>
               <button type="submit" class="btn btn-primary"><?php echo $editing ? 'Update' : 'Add'; ?> Visitor</button>

@@ -4,6 +4,8 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../services/RegistrationDuplicateService.php';
 
 $error = '';
 $success = '';
@@ -16,21 +18,28 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-if (!(isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1)) {
-    if (!has_permission('manage_members')) {
-        die('No permission to manage members.');
-    }
+if (!(isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1)
+    && !has_permission('convert_visitor') && !has_permission('convert_visitor_to_member')) {
+    http_response_code(403);
+    die('You do not have permission to convert visitors.');
 }
+$duplicateService = RegistrationDuplicateService::fromSession($conn);
+$duplicate_matches = [];
 
 // For convert visitor: if visitor_id is passed, fetch visitor and pre-fill
 if (isset($_GET['visitor_id']) && is_numeric($_GET['visitor_id'])) {
     $visitor_id = intval($_GET['visitor_id']);
-    $stmt = $conn->prepare('SELECT * FROM visitors WHERE id = ? LIMIT 1');
-    $stmt->bind_param('i', $visitor_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $visitor = $result->fetch_assoc();
+    try {
+        $visitor = $duplicateService->getVisitor($visitor_id);
+    } catch (Throwable $e) {
+        $visitor = null;
+        $error = $e->getMessage();
+    }
     if ($visitor) {
+        if (($visitor['conversion_status'] ?? 'visitor') === 'registered') {
+            header('Location: visitor_list.php?info=' . urlencode('This visitor is already registered.'));
+            exit;
+        }
         // Pre-fill member fields from visitor
         // Robustly handle old visitor records with only 'name', no first/middle/last/class_id/church_id
         $first = $middle = $last = '';
@@ -80,244 +89,82 @@ $churches = $conn->query("SELECT id, name FROM churches ORDER BY name ASC");
 // Classes loaded dynamically by church selection
 $users = $conn->query("SELECT id, name FROM users ORDER BY name ASC");
 
-// Check if this is an AJAX request
-$isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest';
+$isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH'])
+    && strtolower((string) $_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $response = ['success' => false, 'message' => '', 'redirect' => '', 'redirect_text' => ''];
+    $first_name = trim((string) ($_POST['first_name'] ?? ''));
+    $middle_name = trim((string) ($_POST['middle_name'] ?? ''));
+    $last_name = trim((string) ($_POST['last_name'] ?? ''));
+    $crn = trim((string) ($_POST['crn'] ?? ''));
+    $phone = trim((string) ($_POST['phone'] ?? ''));
+    $email = trim((string) ($_POST['email'] ?? ''));
+    $class_id = (int) ($_POST['class_id'] ?? 0);
+    $church_id = (int) ($_POST['church_id'] ?? 0);
+    $visitor_id = (int) ($_POST['visitor_id'] ?? 0);
+    $member = compact('first_name', 'middle_name', 'last_name', 'crn', 'phone', 'email', 'class_id', 'church_id');
+
     try {
-        // Prepare response array
-        $response = [
-            'success' => false,
-            'message' => '',
-            'redirect' => '',
-            'redirect_text' => ''
-        ];
-        
-        $first_name = trim($_POST['first_name'] ?? '');
-        $middle_name = trim($_POST['middle_name'] ?? '');
-        $last_name = trim($_POST['last_name'] ?? '');
-        $crn = trim($_POST['crn'] ?? '');
-        $phone = trim($_POST['phone'] ?? '');
-        $email = trim($_POST['email'] ?? '');
-        $class_id = intval($_POST['class_id'] ?? 0);
-        $church_id = intval($_POST['church_id'] ?? 0);
-        $visitor_id = isset($_POST['visitor_id']) ? intval($_POST['visitor_id']) : 0;
-        
-        // Validate required fields
-        if (!$first_name || !$last_name || !$crn || !$phone || !$class_id || !$church_id) {
-            $error = 'Please fill in all required fields.';
-        if ($isAjax) {
-            $response['success'] = false;
-            $response['message'] = $error;
-            header('Content-Type: application/json');
-            echo json_encode($response);
-            exit;
+        if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+            throw new RuntimeException('Your session token expired. Refresh the page and try again.');
         }
-    } else if ($visitor_id) {
-        // Convert visitor to member
-        // Check for existing member with same phone or email
-        $stmt = $conn->prepare('SELECT id FROM members WHERE phone = ? OR (email != "" AND email = ?) LIMIT 1');
-        $stmt->bind_param('ss', $phone, $email);
-        $stmt->execute();
-        $stmt->store_result();
-        if ($stmt->num_rows > 0) {
-            $error = 'A member with this phone or email already exists.';
-        } else {
-            $capacity = bible_class_validate_capacity($conn, $class_id);
-            if (!$capacity['allowed']) {
-                $error = 'Member creation blocked: ' . bible_class_capacity_error_message();
-            }
-        }
-        if (!$error) {
-            // Generate registration token
-            $registration_token = bin2hex(random_bytes(16));
-            // Insert new member
-            $stmt = $conn->prepare('INSERT INTO members (first_name, middle_name, last_name, crn, phone, email, class_id, church_id, registration_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-            $stmt->bind_param('ssssssiss', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $registration_token);
-            if ($stmt->execute()) {
-                // Delete visitor
-                $del = $conn->prepare('DELETE FROM visitors WHERE id = ?');
-                $del->bind_param('i', $visitor_id);
-                $del->execute();
-                $registration_link = BASE_URL . '/views/complete_registration.php?token=' . urlencode($registration_token);
-                $successMessage = 'Visitor converted to member! Registration link has been sent.';
-                $response['success'] = true;
-                $response['message'] = $successMessage . '<br>Registration link: <a href="' . $registration_link . '" target="_blank">' . htmlspecialchars($registration_link) . '</a>';
-                $response['redirect'] = 'member_list.php';
-                $response['redirect_text'] = 'View Members';
-                
-                // Send registration SMS if phone is provided
-                if (!empty($phone)) {
-                    require_once __DIR__.'/../includes/sms.php';
-                    require_once __DIR__.'/../includes/sms_templates.php';
-                    
-                    try {
-                        // Hardcoded SMS message (no template lookup)
-                        $msg = "Hi, $first_name, you have been converted to be a member. Follow the link to complete your registration: $registration_link";
-                        error_log("Attempting to send SMS to $phone (convert visitor, hardcoded)");
-                        $smsResult = send_sms($phone, $msg);
-                        error_log('SMS API Response (convert visitor, hardcoded): ' . print_r($smsResult, true));
-                        $logResult = log_sms($phone, $msg, null, 'registration', null, [
-                            'member_name' => $first_name,
-                            'link' => $registration_link,
-                            'phone' => $phone,
-                            'template' => 'registration_link (hardcoded)'
-                        ]);
-                        error_log('SMS Log Result (convert visitor, hardcoded): ' . print_r($logResult, true));
-                        $smsSent = isset($smsResult['status']) && $smsResult['status'] === 'success';
-                        $smsError = $smsResult['message'] ?? 'Unknown error';
-                        error_log('SMS Send Status (convert visitor, hardcoded): ' . ($smsSent ? 'Success' : 'Failed - ' . $smsError));
-                        if ($isAjax) {
-                            $response['sms_sent'] = $smsSent;
-                            $response['sms_error'] = $smsSent ? null : $smsError;
-                            // Update success message based on SMS status
-                            if ($smsSent) {
-                                $successMessage = 'Visitor converted to member! Registration link has been sent via SMS.';
-                                $response['message'] = $successMessage . '<br>Registration link: <a href="' . $registration_link . '" target="_blank">' . htmlspecialchars($registration_link) . '</a>';
-                            } else {
-                                $successMessage = 'Visitor converted to member, but failed to send SMS: ' . $smsError;
-                                $response['message'] = $successMessage . '<br>Please send this registration link manually: <a href="' . $registration_link . '" target="_blank">' . htmlspecialchars($registration_link) . '</a>';
-                            }
-                        }
-                    } catch (Exception $e) {
-                        $errorMsg = 'SMS sending exception: ' . $e->getMessage();
-                        error_log($errorMsg);
-                        
-                        if ($isAjax) {
-                            $response['sms_sent'] = false;
-                            $response['sms_error'] = $e->getMessage();
-                            $response['message'] = 'Visitor converted to member, but an error occurred while sending SMS: ' . $e->getMessage();
-                        }
-                    }
+        $result = $duplicateService->convertVisitor(
+            array_merge($member, ['visitor_id' => $visitor_id]),
+            isset($_POST['continue_duplicate']) && $_POST['continue_duplicate'] === '1',
+            (string) ($_POST['duplicate_reason'] ?? '')
+        );
+        $registration_link = rtrim(BASE_URL, '/') . '/views/complete_registration.php?token=' . urlencode($result['registration_token']);
+        $successMessage = 'Visitor converted and retained as Registered in the visitor history.';
+
+        if ($phone !== '') {
+            try {
+                require_once __DIR__ . '/../includes/sms.php';
+                $message = "Hi {$first_name}, you have been registered as a member. Complete your registration: {$registration_link}";
+                $smsResult = send_sms($phone, $message);
+                log_sms($phone, $message, null, 'registration', null, [
+                    'member_name' => $first_name,
+                    'link' => $registration_link,
+                    'phone' => $phone,
+                    'template' => 'visitor_conversion_registration_link',
+                ]);
+                if (($smsResult['status'] ?? '') !== 'success') {
+                    $successMessage .= ' The SMS could not be confirmed; send the registration link manually.';
                 }
-            } else {
-                $error = is_bible_class_capacity_error($stmt->error)
-                    ? ('Member creation blocked: ' . bible_class_capacity_error_message())
-                    : 'Database error. Please try again.';
-            }
-        }
-    } else if ($editing) {
-        $member_status = (string) ($member['status'] ?? '');
-        $current_class_id = (int) ($member['class_id'] ?? 0);
-        if ($member_status === 'active' && $current_class_id !== $class_id) {
-            $capacity = bible_class_validate_capacity($conn, $class_id, $id);
-            if (!$capacity['allowed']) {
-                $error = 'Member update blocked: ' . bible_class_capacity_error_message();
+            } catch (Throwable $smsError) {
+                error_log('Visitor conversion SMS failed: ' . $smsError->getMessage());
+                $successMessage .= ' The SMS failed; send the registration link manually.';
             }
         }
 
-        if (!$error) {
-            $stmt = $conn->prepare('UPDATE members SET first_name=?, middle_name=?, last_name=?, crn=?, phone=?, email=?, class_id=?, church_id=? WHERE id=?');
-            $stmt->bind_param('sssssssii', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $id);
-            $stmt->execute();
-            if ($stmt->affected_rows >= 0) {
-                $success = 'Member updated. (Notification would be sent here)';
-            } else if (is_bible_class_capacity_error($stmt->error)) {
-                $error = 'Member update blocked: ' . bible_class_capacity_error_message();
-            } else {
-                $error = 'Database error. Please try again.';
-            }
+        $success = $successMessage . '<br>Registration link: <a href="' . htmlspecialchars($registration_link) . '" target="_blank">'
+            . htmlspecialchars($registration_link) . '</a>';
+        $response = [
+            'success' => true,
+            'message' => $success,
+            'redirect' => 'visitor_list.php',
+            'redirect_text' => 'View Visitors',
+        ];
+    } catch (PossibleDuplicateException $e) {
+        $duplicate_matches = $e->getMatches();
+        $matchItems = [];
+        foreach ($duplicate_matches as $match) {
+            $matchItems[] = htmlspecialchars($match['display_name']) . ' ('
+                . htmlspecialchars($match['identifier']) . ', '
+                . htmlspecialchars(implode(', ', $match['match_rules'])) . ')';
         }
-    } else {
-        // Fallback: normal add member (should not occur from convert_visitor)
-        $capacity = bible_class_validate_capacity($conn, $class_id);
-        if (!$capacity['allowed']) {
-            $error = 'Member creation blocked: ' . bible_class_capacity_error_message();
-        } else {
-            $stmt = $conn->prepare('INSERT INTO members (first_name, middle_name, last_name, crn, phone, email, class_id, church_id, registration_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-            $registration_token = bin2hex(random_bytes(16));
-            $stmt->bind_param('ssssssiss', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $registration_token);
-            $stmt->execute();
-            if ($stmt->affected_rows > 0) {
-                $registration_link = BASE_URL . '/views/complete_registration.php?token=' . urlencode($registration_token);
-                $success = 'Member added successfully!<br>Registration link: <a href="' . $registration_link . '" target="_blank">' . htmlspecialchars($registration_link) . '</a>';
-                // Send registration SMS if phone is provided
-                if (!empty($phone)) {
-                    require_once __DIR__.'/../includes/sms.php';
-                    require_once __DIR__.'/../includes/sms_templates.php';
-                    try {
-                        $tpl = get_sms_template('registration_link', $conn);
-                        if ($tpl) {
-                            $msg = fill_sms_template($tpl['body'], [
-                                'name' => $first_name,
-                                'link' => $registration_link
-                            ]);
-                            error_log("Attempting to send SMS to $phone (member add)");
-                            $smsResult = send_sms($phone, $msg);
-                            error_log('SMS API Response (member add): ' . print_r($smsResult, true));
-                            $logResult = log_sms($phone, $msg, null, 'registration', null, [
-                                'member_name' => $first_name,
-                                'link' => $registration_link,
-                                'phone' => $phone,
-                                'template' => 'registration_link'
-                            ]);
-                            error_log('SMS Log Result (member add): ' . print_r($logResult, true));
-                            $smsSent = isset($smsResult['status']) && $smsResult['status'] === 'success';
-                            $smsError = $smsResult['message'] ?? 'Unknown error';
-                            error_log('SMS Send Status (member add): ' . ($smsSent ? 'Success' : 'Failed - ' . $smsError));
-                            if ($isAjax) {
-                                $response['sms_sent'] = $smsSent;
-                                $response['sms_error'] = $smsSent ? null : $smsError;
-                                if ($smsSent) {
-                                    $success = 'Member added successfully! Registration link has been sent via SMS.<br>Registration link: <a href="' . $registration_link . '" target="_blank">' . htmlspecialchars($registration_link) . '</a>';
-                                    $response['message'] = $success;
-                                } else {
-                                    $success = 'Member added, but failed to send SMS: ' . $smsError . '<br>Please send this registration link manually: <a href="' . $registration_link . '" target="_blank">' . htmlspecialchars($registration_link) . '</a>';
-                                    $response['message'] = $success;
-                                }
-                            }
-                        } else {
-                            $errorMsg = 'Failed to load SMS template: registration_link';
-                            error_log($errorMsg);
-                            if ($isAjax) {
-                                $response['sms_sent'] = false;
-                                $response['sms_error'] = $errorMsg;
-                                $response['message'] = 'Member added, but failed to load SMS template. Please send the registration link manually.';
-                            }
-                        }
-                    } catch (Exception $e) {
-                        $errorMsg = 'SMS sending exception (member add): ' . $e->getMessage();
-                        error_log($errorMsg);
-                        if ($isAjax) {
-                            $response['sms_sent'] = false;
-                            $response['sms_error'] = $e->getMessage();
-                            $response['message'] = 'Member added, but an error occurred while sending SMS: ' . $e->getMessage();
-                        }
-                    }
-                }
-            } else if (is_bible_class_capacity_error($stmt->error)) {
-                $error = 'Member creation blocked: ' . bible_class_capacity_error_message();
-            } else {
-                $error = 'Database error. Please try again.';
-            }
-        }
+        $error = $e->getMessage() . '<br><strong>Matches:</strong> ' . implode('; ', $matchItems)
+            . '<br>Confirm “Continue after review” and enter a reason only if these are legitimately separate records.';
+        $response['message'] = $error;
+    } catch (Throwable $e) {
+        $error = htmlspecialchars($e->getMessage());
+        $response['message'] = $error;
     }
-        $member = compact('first_name','middle_name','last_name','crn','phone','email','class_id','church_id');
-        
-        // If this is an AJAX request, return JSON response
-        if ($isAjax) {
-            header('Content-Type: application/json');
-            echo json_encode($response);
-            exit;
-        }
-        
-        // For non-AJAX requests, set the success/error messages
-        if (isset($successMessage)) {
-            $success = $successMessage;
-        }
-    } catch (Exception $e) {
-        error_log('Error in convert_visitor: ' . $e->getMessage());
-        if ($isAjax) {
-            $response = [
-                'success' => false,
-                'message' => 'An error occurred: ' . $e->getMessage()
-            ];
-            header('Content-Type: application/json');
-            echo json_encode($response);
-            exit;
-        } else {
-            $error = 'An error occurred. Please try again.';
-        }
+
+    if ($isAjax) {
+        header('Content-Type: application/json');
+        echo json_encode($response);
+        exit;
     }
 }
 
@@ -377,6 +224,7 @@ ob_start();
                 <?php endif; ?>
                 <?php if (!$success): ?>
                 <form id="memberForm" method="post" autocomplete="off">
+                    <?= csrf_input() ?>
                     <?php if (isset($visitor_id) && isset($visitor) && $visitor): ?>
                         <input type="hidden" name="visitor_id" value="<?=htmlspecialchars($visitor_id)?>">
                     <?php endif; ?>
@@ -460,6 +308,16 @@ ob_start();
                         <label for="crn">CRN <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" id="crn" placeholder="CRN will appear here" value="<?=htmlspecialchars($member['crn'])?>" readonly required tabindex="-1" autocomplete="off" style="background:#f9f9f9;">
                         <input type="hidden" name="crn" id="crn_hidden" value="<?=htmlspecialchars($member['crn'])?>">
+                    </div>
+                    <div class="card border-warning mb-3">
+                        <div class="card-body py-3">
+                            <div class="custom-control custom-checkbox">
+                                <input type="checkbox" class="custom-control-input" id="continue_duplicate" name="continue_duplicate" value="1" <?= isset($_POST['continue_duplicate']) ? 'checked' : '' ?>>
+                                <label class="custom-control-label" for="continue_duplicate">Continue after reviewing a possible duplicate warning</label>
+                            </div>
+                            <label for="duplicate_reason" class="mt-2">Reason for keeping separate records</label>
+                            <textarea class="form-control" id="duplicate_reason" name="duplicate_reason" maxlength="500" placeholder="Required only when continuing after a duplicate warning"><?= htmlspecialchars($_POST['duplicate_reason'] ?? '') ?></textarea>
+                        </div>
                     </div>
                     <button type="submit" class="btn btn-primary" id="submitBtn">
                         <?php echo $editing ? 'Update' : 'Save & Send Registration Link'; ?>

@@ -83,8 +83,9 @@ function bcb_member_status_code($membershipStatus) {
     if ($s === 'full member') return 'FM';
     if ($s === 'catechumen') return 'CAT';
     if ($s === 'adherent') return 'AD';
-    if ($s === 'juvenile') return 'JUV';
-    if ($s === 'invalid distant member') return 'IDM';
+    if ($s === 'junior member') return 'JM';
+    if ($s === 'distant member') return 'DM';
+    if ($s === 'invalid') return 'INV';
     return '--';
 }
 

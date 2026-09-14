@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -25,34 +25,64 @@ if (!$is_super_admin && !has_permission('view_membership_status_report')) {
     exit;
 }
 
-// Set permission flags for UI elements
-$can_view = true; // Already validated above
 $can_export = $is_super_admin || has_permission('export_membership_status_report');
-
-//require_once __DIR__.'/../../../includes/admin_auth.php';
-require_once __DIR__.'/../../../config/config.php';
 ob_start();
 
 $conn = $GLOBALS['conn'];
-$status_options = ['Full Member', 'Cathcumen'];
-$selected_status = isset($_GET['membership_status']) ? $_GET['membership_status'] : '';
+$status_options = ['Full Member', 'Catechumen', 'Adherent', 'Junior Member', 'Distant Member', 'Invalid', 'Unclassified'];
+$selected_status = (string) ($_GET['membership_status'] ?? '');
+if ($selected_status !== '' && !in_array($selected_status, $status_options, true)) $selected_status = '';
 
-$sql = "SELECT m.crn, m.last_name, m.first_name, m.baptized, m.confirmed, m.gender, m.phone, m.dob, m.home_town FROM members m WHERE m.status = 'active'";
-$sql .= " ORDER BY m.last_name, m.first_name";
-$result = $conn->query($sql);
-$members = [];
-if ($result) {
-    while ($row = $result->fetch_assoc()) {
-        $is_full = (strtolower($row['baptized']) === 'yes' && strtolower($row['confirmed']) === 'yes');
-        $row['membership_status'] = $is_full ? 'Full Member' : 'Cathcumen';
-        $members[] = $row;
+$member_where = ["m.status = 'active'", 'm.is_archived = 0'];
+$sunday_where = ['s.transferred_to_member_id IS NULL'];
+$params = [];
+$types = '';
+if (!$is_super_admin) {
+    $scope_stmt = $conn->prepare('SELECT church_id FROM users WHERE id = ? LIMIT 1');
+    $scope_stmt->bind_param('i', $_SESSION['user_id']);
+    $scope_stmt->execute();
+    $church_id = (int) ($scope_stmt->get_result()->fetch_assoc()['church_id'] ?? 0);
+    $scope_stmt->close();
+    $member_where[] = 'm.church_id = ?';
+    $sunday_where[] = 's.church_id = ?';
+    $types .= 'ii';
+    $params[] = $church_id;
+    $params[] = $church_id;
+}
+
+$include_sunday_school = $selected_status === '' || $selected_status === 'Junior Member';
+if ($selected_status === 'Unclassified') {
+    $member_where[] = 'm.membership_status IS NULL';
+} elseif ($selected_status !== '') {
+    $member_where[] = 'm.membership_status = ' . "'" . $conn->real_escape_string($selected_status) . "'";
+}
+
+$member_sql = "SELECT m.crn, m.last_name, m.first_name, m.baptized, m.confirmed,
+                      m.gender, m.phone, m.dob, m.home_town,
+                      COALESCE(NULLIF(m.membership_status, ''), 'Unclassified') AS membership_status,
+                      IF(EXISTS (
+                          SELECT 1 FROM membership_status_integrity_review review
+                           WHERE review.member_id = m.id AND review.resolved = 0
+                      ), 'Needs review', '') AS review_status
+                 FROM members m WHERE " . implode(' AND ', $member_where);
+$sunday_sql = "SELECT s.srn AS crn, s.last_name, s.first_name, 'No' AS baptized,
+                      'No' AS confirmed, s.gender, s.contact AS phone, s.dob,
+                      '' AS home_town, 'Junior Member' AS membership_status,
+                      '' AS review_status
+                 FROM sunday_school s WHERE " . implode(' AND ', $sunday_where);
+$sql = "SELECT * FROM ({$member_sql}" . ($include_sunday_school ? " UNION ALL {$sunday_sql}" : '') . ") status_rows
+        ORDER BY membership_status, last_name, first_name";
+$stmt = $conn->prepare($sql);
+if ($types !== '') {
+    if (!$include_sunday_school) {
+        $types = substr($types, 0, 1);
+        $params = [reset($params)];
     }
+    $stmt->bind_param($types, ...$params);
 }
-if ($selected_status !== '' && in_array($selected_status, $status_options)) {
-    $members = array_filter($members, function($m) use ($selected_status) {
-        return $m['membership_status'] === $selected_status;
-    });
-}
+$stmt->execute();
+$members = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$stmt->close();
 ?>
 <div class="container mt-4">
     <a href="../../reports.php" class="btn btn-secondary mb-3"><i class="fas fa-arrow-left mr-1"></i>Back to Reports</a>
@@ -84,6 +114,7 @@ if ($selected_status !== '' && in_array($selected_status, $status_options)) {
                     <th>CRN</th>
                     <th>Full Name</th>
                     <th>Membership Status</th>
+                    <th>Integrity Review</th>
                     <th>Baptized</th>
                     <th>Confirmed</th>
                     <th>Gender</th>
@@ -94,7 +125,7 @@ if ($selected_status !== '' && in_array($selected_status, $status_options)) {
             </thead>
             <tbody>
                 <?php if (empty($members)): ?>
-                    <tr><td colspan="10" class="text-center">No members found.</td></tr>
+                    <tr><td colspan="11" class="text-center">No members found.</td></tr>
                 <?php else: ?>
                     <?php $i=1; foreach ($members as $member): ?>
                         <tr>
@@ -102,6 +133,7 @@ if ($selected_status !== '' && in_array($selected_status, $status_options)) {
                             <td><?php echo htmlspecialchars($member['crn']); ?></td>
                             <td><?php echo htmlspecialchars($member['last_name'] . ', ' . $member['first_name']); ?></td>
                             <td><?php echo htmlspecialchars($member['membership_status']); ?></td>
+                            <td><?php echo htmlspecialchars($member['review_status'] ?: '-'); ?></td>
                             <td><?php echo htmlspecialchars($member['baptized'] ?: 'No'); ?></td>
                             <td><?php echo htmlspecialchars($member['confirmed'] ?: 'No'); ?></td>
                             <td><?php echo htmlspecialchars($member['gender'] ?: '-'); ?></td>

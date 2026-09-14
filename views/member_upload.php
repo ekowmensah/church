@@ -2,6 +2,9 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../helpers/bible_class_capacity.php';
+require_once __DIR__.'/../services/RegistrationDuplicateService.php';
 
 // Only allow logged-in users with correct permission
 if (!is_logged_in()) {
@@ -17,10 +20,14 @@ if (!$can_upload) {
 $success = '';
 $error = '';
 $upload_errors = [];
+$duplicateService = RegistrationDuplicateService::fromSession($conn);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['members_file'])) {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $error = 'Your form session expired. Refresh the page and try again.';
+    }
     $file = $_FILES['members_file'];
-    if ($file['error'] === UPLOAD_ERR_OK) {
+    if (!$error && $file['error'] === UPLOAD_ERR_OK) {
         $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
         if ($ext !== 'csv') {
             $error = 'Only CSV files are allowed.';
@@ -65,6 +72,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['members_file'])) {
                         continue;
                     }
                     $class_id = $class['id'];
+                    $capacity = bible_class_validate_capacity($conn, (int) $class_id);
+                    if (!$capacity['allowed']) {
+                        $upload_errors[] = "Row $row_num: " . bible_class_capacity_error_message();
+                        continue;
+                    }
+                    try {
+                        $matches = $duplicateService->findMatches([
+                            'first_name' => $first_name, 'middle_name' => $middle_name,
+                            'last_name' => $last_name, 'dob' => $dob, 'phone' => $phone,
+                        ], 'member', null, (int) $church_id);
+                    } catch (Throwable $e) {
+                        $upload_errors[] = "Row $row_num: " . $e->getMessage();
+                        continue;
+                    }
+                    if ($matches) {
+                        $upload_errors[] = "Row $row_num: Possible duplicate found; review and add this person individually if it is a separate registration.";
+                        continue;
+                    }
                     // Get next sequential number for this church/class
                     $stmt3 = $conn->prepare('SELECT COUNT(*) as cnt FROM members WHERE class_id = ? AND church_id = ?');
                     $stmt3->bind_param('ii', $class_id, $church_id);
@@ -75,10 +100,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['members_file'])) {
                     $seq = str_pad($count_existing + 1, 2, '0', STR_PAD_LEFT);
                     // Compose CRN
                     $crn = $church_code . '-' . $class_code . $seq . '-' . $circuit_code;
+                    $candidate_seq = $count_existing + 1;
+                    do {
+                        $seq = str_pad($candidate_seq++, 2, '0', STR_PAD_LEFT);
+                        $crn = $church_code . '-' . $class_code . $seq . '-' . $circuit_code;
+                        $crn_stmt = $conn->prepare('SELECT id FROM members WHERE crn = ? LIMIT 1');
+                        $crn_stmt->bind_param('s', $crn);
+                        $crn_stmt->execute();
+                        $crn_exists = (bool) $crn_stmt->get_result()->fetch_assoc();
+                        $crn_stmt->close();
+                    } while ($crn_exists);
                     // Insert member
-                    $stmt = $conn->prepare('INSERT INTO members (crn, first_name, middle_name, last_name, gender, dob, phone, class_id, church_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $stmt = $conn->prepare("INSERT INTO members (crn, first_name, middle_name, last_name, gender, dob, phone, class_id, church_id, status, deactivated_at, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '')");
                     $status = 'pending';
-                    $stmt->bind_param('ssssssssss', $crn, $first_name, $middle_name, $last_name, $gender, $dob, $phone, $class_id, $church_id, $status);
+                    $stmt->bind_param('sssssssiis', $crn, $first_name, $middle_name, $last_name, $gender, $dob, $phone, $class_id, $church_id, $status);
                     $stmt->execute();
                     $stmt->close();
                     $count++;
@@ -87,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['members_file'])) {
             }
             fclose($csv);
         }
-    } else {
+    } elseif (!$error) {
         $error = 'File upload error.';
     }
 }
@@ -119,6 +154,7 @@ ob_start();
                 </div>
             <?php endif; ?>
             <form method="post" enctype="multipart/form-data">
+                <?= csrf_input() ?>
                 <div class="form-group">
                     <label for="members_file">Select CSV File</label>
                     <input type="file" class="form-control" name="members_file" id="members_file" accept=".csv" required>

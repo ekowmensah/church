@@ -127,7 +127,7 @@ ob_start();
                 <span class="badge badge-info"><i class="fa fa-church"></i> <?= htmlspecialchars($child['church_name']) ?></span>
                 <span class="badge badge-secondary"><i class="fa fa-users"></i> <?= htmlspecialchars($child['class_name']) ?></span>
               </div>
-              <?php if(empty($child['transferred_at'])): ?>
+              <?php if(empty($child['transferred_at']) && (has_permission('transfer_sundayschool') || (int) ($_SESSION['role_id'] ?? 0) === 1)): ?>
               <a href="sundayschool_transfer.php?id=<?= $child['id'] ?>" class="btn btn-success btn-block mb-2"><i class="fa fa-exchange-alt"></i> Transfer to Member</a>
               <?php endif; ?>
               <a href="sundayschool_form.php?id=<?= $child['id'] ?>" class="btn btn-warning btn-block mb-2"><i class="fa fa-edit"></i> Edit</a>

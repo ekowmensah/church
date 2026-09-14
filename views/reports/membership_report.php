@@ -274,7 +274,7 @@ while ($row = $growth_res->fetch_assoc()) {
       <select name="membership_status" class="form-control">
         <option value="">All</option>
         <option value="full"<?= isset($_GET['membership_status']) && $_GET['membership_status']=='full' ? ' selected' : '' ?>>Full Member</option>
-        <option value="cathcumen"<?= isset($_GET['membership_status']) && $_GET['membership_status']=='cathcumen' ? ' selected' : '' ?>>Cathcumen</option>
+        <option value="catechumen"<?= isset($_GET['membership_status']) && $_GET['membership_status']=='catechumen' ? ' selected' : '' ?>>Catechumen</option>
       </select>
     </div>
     <div class="form-group col-md-2">

@@ -4,6 +4,8 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../services/RegistrationDuplicateService.php';
 
 // Authentication check
 if (!is_logged_in()) {
@@ -12,7 +14,8 @@ if (!is_logged_in()) {
 }
 
 // Permission check
-if (!has_permission('view_sundayschool_list')) {
+$is_super_admin = (int) ($_SESSION['role_id'] ?? 0) === 1 || !empty($_SESSION['is_super_admin']);
+if (!$is_super_admin && !has_permission('transfer_sundayschool')) {
     http_response_code(403);
     echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
     exit;
@@ -39,6 +42,15 @@ if (!empty($child['transferred_at'])) {
     exit;
 }
 
+$duplicateService = RegistrationDuplicateService::fromSession($conn);
+try {
+    // An empty candidate still performs the service's church-scope check.
+    $duplicateService->findMatches([], 'sunday_school', $id, (int) $child['church_id']);
+} catch (Throwable $e) {
+    http_response_code(403);
+    exit('This Sunday School record is outside your authorized church.');
+}
+
 // Prepare form defaults
 $member = [
     'first_name' => $child['first_name'],
@@ -59,8 +71,12 @@ $member = [
 
 $error = '';
 $success = '';
+$duplicate_matches = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $error = 'Your form session expired. Refresh the page and try again.';
+    }
     // Validate required fields
     $member['first_name'] = trim($_POST['first_name'] ?? '');
     $member['middle_name'] = trim($_POST['middle_name'] ?? '');
@@ -73,8 +89,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $member['crn'] = trim($_POST['crn'] ?? '');
     $member['email'] = trim($_POST['email'] ?? '');
 
+    if (!$error && (!$member['first_name'] || !$member['last_name'] || !$member['dob']
+        || !$member['phone'] || !$member['class_id'] || !$member['church_id'])) {
+        $error = 'Complete all required transfer fields.';
+    }
+    if (!$error && (int) $member['church_id'] !== (int) $child['church_id']) {
+        $error = 'A Sunday School child can only be transferred within the recorded church.';
+    }
+    if (!$error && $member['email'] !== '' && !filter_var($member['email'], FILTER_VALIDATE_EMAIL)) {
+        $error = 'Enter a valid email address.';
+    }
+    if (!$error) {
+        $class_stmt = $conn->prepare('SELECT id FROM bible_classes WHERE id = ? AND church_id = ? LIMIT 1');
+        $class_stmt->bind_param('ii', $member['class_id'], $member['church_id']);
+        $class_stmt->execute();
+        if (!$class_stmt->get_result()->fetch_assoc()) {
+            $error = 'Choose a Bible Class belonging to the child church.';
+        }
+        $class_stmt->close();
+    }
+
     // Auto-generate CRN if blank (use same logic as get_next_crn.php)
-    if ($member['crn'] === '' && $member['class_id'] && $member['church_id']) {
+    if (!$error && $member['crn'] === '' && $member['class_id'] && $member['church_id']) {
         // Get class code
         $stmt = $conn->prepare('SELECT code FROM bible_classes WHERE id = ? AND church_id = ? LIMIT 1');
         $stmt->bind_param('ii', $member['class_id'], $member['church_id']);
@@ -120,14 +156,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $member['address'] = trim($_POST['residential_address'] ?? '');
     $member['gps_address'] = trim($_POST['gps_address'] ?? '');
 
-    // Check for duplicate CRN/phone
-    $stmt = $conn->prepare('SELECT id FROM members WHERE crn = ? OR phone = ? OR (email IS NOT NULL AND email != "" AND email = ?) LIMIT 1');
-    $stmt->bind_param('sss', $member['crn'], $member['phone'], $member['email']);
-    $stmt->execute();
-    $stmt->store_result();
-    if ($stmt->num_rows > 0) {
-        $error = 'A member with this CRN or phone already exists.';
-    } else {
+    // CRNs are exact identifiers and cannot be overridden.
+    if (!$error) {
+        $stmt = $conn->prepare('SELECT id FROM members WHERE crn = ? LIMIT 1');
+        $stmt->bind_param('s', $member['crn']);
+        $stmt->execute();
+        if ($stmt->get_result()->fetch_assoc()) {
+            $error = 'That CRN is already assigned to a member.';
+        }
+        $stmt->close();
+    }
+    $duplicate_reason = trim((string) ($_POST['duplicate_reason'] ?? ''));
+    if (!$error) {
+        try {
+            $duplicate_matches = $duplicateService->findMatches(
+                $member, 'sunday_school', $id, (int) $member['church_id']
+            );
+            if ($duplicate_matches && (!isset($_POST['continue_duplicate']) || $duplicate_reason === '')) {
+                $error = 'Possible duplicate found. Review the records below, or explain why this transfer is a separate registration.';
+            }
+        } catch (Throwable $e) {
+            $error = $e->getMessage();
+        }
+    }
+    if (!$error) {
         $capacity = bible_class_validate_capacity($conn, (int) $member['class_id']);
         if (!$capacity['allowed']) {
             $error = 'Transfer blocked: ' . bible_class_capacity_error_message();
@@ -156,27 +208,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $member['photo'] = basename($final_dst);
             }
         }
-        // Insert new member
-        $stmt = $conn->prepare('INSERT INTO members (first_name, middle_name, last_name, dob, phone, class_id, church_id, photo, crn, status, email, address, gps_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        $stmt->bind_param('sssssiissssss', $member['first_name'], $member['middle_name'], $member['last_name'], $member['dob'], $member['phone'], $member['class_id'], $member['church_id'], $member['photo'], $member['crn'], $member['status'], $member['email'], $member['address'], $member['gps_address']);
-        if ($stmt->execute()) {
-            $new_member_id = $stmt->insert_id;
+        // Insert and link atomically so a child is never half-transferred.
+        $conn->begin_transaction();
+        try {
+            $stmt = $conn->prepare("INSERT INTO members (first_name, middle_name, last_name, dob, phone, class_id, church_id, photo, crn, status, email, address, gps_address, deactivated_at, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '')");
+            $stmt->bind_param('sssssiissssss', $member['first_name'], $member['middle_name'], $member['last_name'], $member['dob'], $member['phone'], $member['class_id'], $member['church_id'], $member['photo'], $member['crn'], $member['status'], $member['email'], $member['address'], $member['gps_address']);
+            $stmt->execute();
+            $new_member_id = (int) $stmt->insert_id;
+            $stmt->close();
             // Mark Sunday School child as transferred
             $stmt2 = $conn->prepare('UPDATE sunday_school SET transferred_at = NOW(), transferred_to_member_id = ? WHERE id = ?');
             $stmt2->bind_param('ii', $new_member_id, $id);
             $stmt2->execute();
+            $stmt2->close();
+            if ($duplicate_matches) {
+                $duplicateService->recordMatches(
+                    'member', $new_member_id, (int) $member['church_id'],
+                    $duplicate_matches, 'conversion', $duplicate_reason
+                );
+            }
+            $conn->commit();
             // Send SMS notification
-            require_once __DIR__.'/../includes/sms.php';
-            $msg = 'You have been transferred to full membership. Your CRN is: ' . $member['crn'];
-            send_sms($member['phone'], $msg);
+            try {
+                require_once __DIR__.'/../includes/sms.php';
+                $msg = 'You have been transferred to full membership. Your CRN is: ' . $member['crn'];
+                send_sms($member['phone'], $msg);
+            } catch (Throwable $smsError) {
+                error_log('Sunday School transfer SMS failed: ' . $smsError->getMessage());
+            }
             // Optionally, log the transfer
             $success = 'Transfer successful!';
             header('Location: member_view.php?id='.$new_member_id);
             exit;
-        } else {
-            $error = is_bible_class_capacity_error($stmt->error)
+        } catch (Throwable $e) {
+            $conn->rollback();
+            $error = is_bible_class_capacity_error($e->getMessage())
                 ? ('Transfer blocked: ' . bible_class_capacity_error_message())
-                : 'Failed to create member.';
+                : $e->getMessage();
         }
     }
 }
@@ -195,6 +263,7 @@ ob_start();
                 <?php if($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
                 <?php if($success): ?><div class="alert alert-success"><?= htmlspecialchars($success) ?></div><?php endif; ?>
                 <form method="post">
+                    <?= csrf_input() ?>
                     <div class="form-row">
                         <div class="form-group col-md-4">
                             <label>First Name</label>
@@ -257,6 +326,22 @@ ob_start();
                             <input type="text" name="residential_address" class="form-control" value="<?= htmlspecialchars($member['address']) ?>">
                         </div>
                     </div>
+                    <?php if ($duplicate_matches): ?>
+                    <div class="alert alert-warning">
+                        <strong>Possible duplicate<?= count($duplicate_matches) === 1 ? '' : 's' ?>:</strong>
+                        <ul class="mb-2 mt-2">
+                        <?php foreach ($duplicate_matches as $match): ?>
+                            <li><?= htmlspecialchars($match['display_name']) ?> (<?= htmlspecialchars($match['identifier']) ?>) &mdash; matched by <?= htmlspecialchars(implode(', ', $match['match_rules'])) ?></li>
+                        <?php endforeach; ?>
+                        </ul>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="continue_duplicate" id="continue_duplicate" value="1" <?= isset($_POST['continue_duplicate']) ? 'checked' : '' ?>>
+                            <label class="form-check-label" for="continue_duplicate">Continue transfer as a separate member record.</label>
+                        </div>
+                        <label for="duplicate_reason" class="mt-2">Reason for continuing</label>
+                        <textarea class="form-control" id="duplicate_reason" name="duplicate_reason" maxlength="500"><?= htmlspecialchars($_POST['duplicate_reason'] ?? '') ?></textarea>
+                    </div>
+                    <?php endif; ?>
                     <button type="submit" class="btn btn-success"><i class="fa fa-exchange-alt"></i> Transfer to Member</button>
                     <a href="sundayschool_view.php?id=<?= $id ?>" class="btn btn-secondary">Cancel</a>
                 </form>
