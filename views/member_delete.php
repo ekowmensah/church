@@ -1,94 +1,52 @@
 <?php
-// Archive (soft-delete) member to deleted_members, never delete from members table
-require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../helpers/auth.php';
+require_once __DIR__ . '/../helpers/permissions_v2.php';
+require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../services/MemberLifecycleService.php';
 
-// Permission check
-if (!is_logged_in() || (!(isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1) && !has_permission('delete_member'))) {
+if (!is_logged_in() || ((int) ($_SESSION['role_id'] ?? 0) !== 1 && !has_permission('delete_member'))) {
     http_response_code(403);
-    die('You do not have permission to delete members.');
+    die('You do not have permission to archive members.');
+}
+$id = (int) ($_POST['id'] ?? $_GET['id'] ?? 0);
+$lifecycleService = MemberLifecycleService::fromSession($conn);
+try {
+    $member = $lifecycleService->getScopedMember($id);
+} catch (Throwable $e) {
+    $member = null;
+}
+if (!$member) {
+    header('Location: member_list.php?error=' . urlencode('Member not found or already archived.'));
+    exit;
 }
 
-$id = isset($_GET['id']) ? intval($_GET['id']) : 0;
-$referer = $_SERVER['HTTP_REFERER'] ?? '';
-if ($id > 0) {
-    // Only allow archiving of members with status 'pending' or 'de-activated'
-    $reg_check = $conn->query("SELECT status FROM members WHERE id = $id");
-    $reg_row = $reg_check ? $reg_check->fetch_assoc() : null;
-    if (!$reg_row || !in_array($reg_row['status'], ['pending','de-activated'])) {
-        // Abort: cannot archive active/registered member
-        $referer = $_SERVER['HTTP_REFERER'] ?? '';
-        $msg = urlencode('Only pending or de-activated members can be deleted.');
-        if (strpos($referer, 'register_member.php') !== false) {
-            header('Location: register_member.php?error=' . $msg);
-        } else {
-            header('Location: member_list.php?error=' . $msg);
-        }
+$error = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    try {
+        if (!csrf_is_valid($_POST['csrf_token'] ?? null)) throw new RuntimeException('Invalid session token.');
+        $lifecycleService->archiveMember($id, (string) ($_POST['reason'] ?? ''));
+        header('Location: deleted_members_list.php?info=' . urlencode('Member archived; related history was preserved.'));
         exit;
+    } catch (Throwable $e) {
+        $error = $e->getMessage();
     }
-    // Archive member to deleted_members, but NEVER delete from members table
-    $member = $conn->query("SELECT * FROM members WHERE id = $id")->fetch_assoc();
-    if ($member) {
-        $archive_cols = [];
-        $archive_result = $conn->query('SHOW COLUMNS FROM deleted_members');
-        if ($archive_result) {
-            while ($archive_col = $archive_result->fetch_assoc()) {
-                $archive_cols[strtolower($archive_col['Field'])] = true;
-            }
-        }
-
-        $insert_cols = [];
-        $insert_vals = [];
-        foreach ($member as $col => $value) {
-            $normalized_col = strtolower($col);
-            if ($normalized_col === 'deleted_at' || !isset($archive_cols[$normalized_col])) {
-                continue;
-            }
-            $insert_cols[] = '`' . str_replace('`', '``', $col) . '`';
-            $insert_vals[] = $value === null ? 'NULL' : "'" . $conn->real_escape_string((string) $value) . "'";
-        }
-
-        if (empty($insert_cols)) {
-            $insert_cols[] = '`id`';
-            $insert_vals[] = (int) $member['id'];
-            $insert_cols[] = '`status`';
-            $insert_vals[] = $member['status'] === null ? 'NULL' : "'" . $conn->real_escape_string((string) $member['status']) . "'";
-        }
-
-        $insert_cols[] = '`deleted_at`';
-        $insert_vals[] = 'NOW()';
-
-        $cols_sql = implode(',', $insert_cols);
-        $vals_sql = implode(',', $insert_vals);
-        $ins = $conn->query("INSERT INTO deleted_members ($cols_sql) VALUES ($vals_sql)");
-        if ($ins) {
-            // Also set member status to 'deleted' in members table
-            $update = $conn->query("UPDATE members SET status = 'deleted' WHERE id = $id");
-            if (!$update) {
-                $msg = urlencode('Member archived but failed to update status to deleted: ' . $conn->error);
-                header('Location: member_list.php?error=' . $msg);
-                exit;
-            }
-            $msg = urlencode('Member archived to deleted_members and deleted.');
-            if (strpos($referer, 'register_member.php') !== false) {
-                header('Location: register_member.php?info=' . $msg);
-            } else {
-                header('Location: member_list.php?info=' . $msg);
-            }
-            exit;
-        } else {
-            $msg = urlencode('Could not archive member to deleted_members.');
-            header('Location: member_list.php?error=' . $msg);
-            exit;
-        }
-    }
-} // End if ($id > 0)
-
-// No trailing code should ever run after above.
-
-/*
-BEST PRACTICES:
-- All tables referencing members (payments, attendance, etc) should use ON DELETE RESTRICT or ON DELETE SET NULL (never ON DELETE CASCADE) to avoid accidental data loss.
-- Always filter out status='deleted' in member list queries unless you want to audit deleted members.
-- If you want to allow restore, add a 'restore' action to set status back to 'pending' or 'active'.
-*/
+}
+$fullName = trim(implode(' ', array_filter([$member['first_name'], $member['middle_name'], $member['last_name']])));
+ob_start();
+?>
+<div class="row justify-content-center"><div class="col-lg-7"><div class="card shadow mb-4">
+<div class="card-header bg-danger text-white"><h6 class="m-0 font-weight-bold">Archive Member</h6></div>
+<div class="card-body">
+<?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+<p>Archive <strong><?= htmlspecialchars($fullName) ?></strong> (<?= htmlspecialchars($member['crn']) ?>)? Payments, attendance, and other history will remain intact.</p>
+<?php if ($member['status'] === 'active'): ?><div class="alert alert-warning">Deactivate this active member before archiving.</div><?php endif; ?>
+<form method="post"><?= csrf_input() ?><input type="hidden" name="id" value="<?= $id ?>">
+<div class="form-group"><label for="reason">Archive reason <span class="text-danger">*</span></label>
+<textarea id="reason" name="reason" class="form-control" maxlength="500" required><?= htmlspecialchars($_POST['reason'] ?? '') ?></textarea></div>
+<button class="btn btn-danger" type="submit" <?= $member['status'] === 'active' ? 'disabled' : '' ?>><i class="fas fa-archive"></i> Archive</button>
+<a class="btn btn-secondary" href="member_list.php">Cancel</a></form>
+</div></div></div></div>
+<?php
+$page_content = ob_get_clean();
+include __DIR__ . '/../includes/layout.php';

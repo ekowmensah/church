@@ -55,7 +55,7 @@ if (!$capacity['allowed']) {
     exit;
 }
 
-$update = $conn->prepare("UPDATE members SET status = 'active', deactivated_at = NULL WHERE id = ?");
+$update = $conn->prepare("UPDATE members SET status = 'active', deactivated_at = NULL WHERE id = ? AND is_archived = 0");
 $update->bind_param('i', $member_id);
 
 if ($update->execute()) {

@@ -3,6 +3,7 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -40,6 +41,12 @@ if (!empty($_SESSION['flash_success'])) {
     unset($_SESSION['flash_error']);
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    $_SESSION['flash_error'] = 'Your session token expired. Refresh the page and try again.';
+    header('Location: pending_member_list.php');
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_action'])) {
     $action = $_POST['bulk_action'];
     $member_ids = $_POST['member_ids'] ?? [];
@@ -51,8 +58,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_action'])) {
         switch ($action) {
             case 'activate':
                 if ($can_activate) {
-                    $fetch_stmt = $conn->prepare("SELECT id, class_id, status, deactivated_at FROM members WHERE id = ? LIMIT 1");
-                    $activate_stmt = $conn->prepare("UPDATE members SET status = 'active', deactivated_at = NULL WHERE id = ? AND status IN ('pending', 'de-activated')");
+                    $fetch_stmt = $conn->prepare("SELECT id, class_id, status, deactivated_at FROM members WHERE id = ? AND is_archived = 0 LIMIT 1");
+                    $activate_stmt = $conn->prepare("UPDATE members SET status = 'active', deactivated_at = NULL WHERE id = ? AND is_archived = 0 AND status IN ('pending', 'de-activated')");
 
                     if (!$fetch_stmt || !$activate_stmt) {
                         $message = 'Error preparing activation statements.';
@@ -133,15 +140,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_action'])) {
                 
             case 'delete':
                 if ($can_delete) {
-                    $stmt = $conn->prepare("DELETE FROM members WHERE id IN ($placeholders)");
-                    $stmt->bind_param(str_repeat('i', count($ids)), ...$ids);
-                    if ($stmt->execute()) {
-                        $message = count($ids) . ' member(s) deleted successfully.';
-                        $message_type = 'success';
-                    } else {
-                        $message = 'Error deleting members.';
-                        $message_type = 'danger';
-                    }
+                    $message = 'Bulk deletion is disabled. Archive each member separately so a reason is recorded.';
+                    $message_type = 'warning';
                 }
                 break;
         }
@@ -160,7 +160,7 @@ $query = "
     FROM members m 
     LEFT JOIN bible_classes c ON m.class_id = c.id 
     LEFT JOIN churches ch ON m.church_id = ch.id 
-    WHERE m.status IN ('pending', 'de-activated') 
+    WHERE m.status IN ('pending', 'de-activated') AND m.is_archived = 0
     ORDER BY m.status DESC, m.created_at DESC
 ";
 
@@ -219,6 +219,7 @@ ob_start();
             <!-- Bulk Actions -->
             <?php if ($can_activate || $can_delete): ?>
             <form method="POST" id="bulkActionForm">
+                <?= csrf_input() ?>
                 <div class="row mb-3">
                     <div class="col-md-6">
                         <div class="input-group">
@@ -352,8 +353,7 @@ ob_start();
                                         <?php if ($can_delete): ?>
                                             <a href="member_delete.php?id=<?= $row['id'] ?>" 
                                                class="btn btn-danger btn-sm" 
-                                               title="Delete Member"
-                                               onclick="return confirm('Are you sure you want to delete this member? This action cannot be undone.')">
+                                               title="Archive member with a recorded reason">
                                                 <i class="fas fa-trash"></i>
                                             </a>
                                         <?php endif; ?>

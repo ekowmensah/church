@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__.'/../includes/member_auth.php';
 require_once __DIR__.'/../helpers/spouse_link_helper.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../services/MemberLifecycleService.php';
 if (file_exists(__DIR__.'/../helpers/permissions_v2.php')) {
     require_once __DIR__.'/../helpers/permissions_v2.php';
 }
@@ -27,8 +29,12 @@ $stmt->bind_param('i', $member_id);
 $stmt->execute();
 $member = $stmt->get_result()->fetch_assoc();
 
-// Fetch organizations
-$orgs = $conn->query('SELECT * FROM organizations ORDER BY name ASC')->fetch_all(MYSQLI_ASSOC);
+// Fetch organizations available to this member's church.
+$org_stmt = $conn->prepare('SELECT * FROM organizations WHERE church_id = ? OR church_id IS NULL ORDER BY name ASC');
+$org_stmt->bind_param('i', $member['church_id']);
+$org_stmt->execute();
+$orgs = $org_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$org_stmt->close();
 $member_orgs = [];
 $res = $conn->query('SELECT organization_id FROM member_organizations WHERE member_id = '.$member_id);
 while ($row = $res->fetch_assoc()) $member_orgs[] = $row['organization_id'];
@@ -54,178 +60,23 @@ if ($spouse_crn_value !== '') {
     $spouse_initial_label = $spouse_name_value;
 }
 
-function bind_member_profile_edit_params(mysqli_stmt $stmt, string $types, array &$values): bool
-{
-    $refs = [];
-    $refs[] = $types;
-    foreach ($values as $idx => $_) {
-        $refs[] = &$values[$idx];
-    }
-    return (bool) call_user_func_array([$stmt, 'bind_param'], $refs);
-}
-
-$success = $error = '';
+$success = isset($_GET['submitted']) ? 'Your profile changes are awaiting administrator approval.' : '';
+$error = '';
+$lifecycle_service = MemberLifecycleService::fromSession($conn);
+$pending_profile_request = $lifecycle_service->getPendingRequestForMember($member_id);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $password = $_POST['password'] ?? '';
-    $update_password = false;
-    $password_hash = $member['password_hash'] ?? '';
-    if (!empty($password)) {
-        $password_hash = password_hash($password, PASSWORD_DEFAULT);
-        $update_password = true;
-    }
-    // Gather all fields
-    $sms_notifications_enabled = isset($_POST['sms_notifications_enabled']) ? 1 : 0;
-    $first_name = trim($_POST['first_name'] ?? '');
-    $middle_name = trim($_POST['middle_name'] ?? '');
-    $last_name = trim($_POST['last_name'] ?? '');
-    $gender = $_POST['gender'] ?? '';
-    $dob = $_POST['dob'] ?? '';
-    $day_born = $dob ? date('l', strtotime($dob)) : '';
-    $place_of_birth = trim($_POST['place_of_birth'] ?? '');
-    $address = trim($_POST['address'] ?? '');
-    $gps_address = trim($_POST['gps_address'] ?? '');
-    $marital_status = $_POST['marital_status'] ?? '';
-    $marriage_type = trim((string) ($_POST['marriage_type'] ?? ''));
-    $spouse_crn = trim((string) ($_POST['spouse_crn'] ?? ''));
-    $spouse_name = trim((string) ($_POST['spouse_name'] ?? ''));
-    $home_town = trim($_POST['home_town'] ?? '');
-    $region = trim($_POST['region'] ?? '');
-    $phone = trim($_POST['phone'] ?? '');
-    $telephone = trim($_POST['telephone'] ?? '');
-    $email = trim($_POST['email'] ?? '');
-    $employment_status = $_POST['employment_status'] ?? '';
-    $profession = trim($_POST['profession'] ?? '');
-    $organizations = $_POST['organizations'] ?? [];
-    $emergency_contacts_post = $_POST['emergency_contacts'] ?? [];
-    // Always start with the current DB value
-    $photo = $member['photo'] ?? '';
-    $photo_data = $_POST['photo_data'] ?? '';
-    if ($photo_data && strpos($photo_data, 'data:image') === 0) {
-        $img_parts = explode(',', $photo_data);
-        if (count($img_parts) === 2) {
-            $img_base64 = base64_decode($img_parts[1]);
-            $filename = uniqid('member_').'.png';
-            $dest = __DIR__.'/../uploads/members/'.$filename;
-            file_put_contents($dest, $img_base64);
-            $photo = $filename;
+    try {
+        if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+            throw new RuntimeException('Your session token expired. Refresh the page and try again.');
         }
-    } else if (isset($_FILES['photo']) && isset($_FILES['photo']['tmp_name']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK && is_uploaded_file($_FILES['photo']['tmp_name'])) {
-        $ext = pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION);
-        $filename = uniqid('member_').'.'.$ext;
-        $dest_dir = __DIR__.'/../uploads/members/';
-        if (!is_dir($dest_dir)) {
-            mkdir($dest_dir, 0777, true);
-        }
-        $dest = $dest_dir . $filename;
-        if (move_uploaded_file($_FILES['photo']['tmp_name'], $dest)) {
-            $photo = $filename;
-        }
-    }
-    $allowed_marriage_types = ['Customary', 'Ordinance', 'Blessing', 'Court Registration'];
-    if ($marital_status !== 'Married') {
-        $marriage_type = '';
-        $spouse_crn = '';
-        $spouse_name = '';
-    } elseif (!in_array($marriage_type, $allowed_marriage_types, true)) {
-        $marriage_type = '';
-    }
-
-    $spouse_name_value = $spouse_name;
-    $spouse_crn_value = $spouse_crn;
-    $marriage_type_value = $marriage_type;
-    $marital_status_value = $marital_status;
-    if ($spouse_crn_value !== '') {
-        $spouse_initial_value = $spouse_crn_value;
-        $spouse_initial_label = $spouse_name_value !== '' ? ($spouse_name_value . ' (' . $spouse_crn_value . ')') : $spouse_crn_value;
-    } elseif ($spouse_name_value !== '') {
-        $spouse_initial_value = $spouse_name_value;
-        $spouse_initial_label = $spouse_name_value;
-    } else {
-        $spouse_initial_value = '';
-        $spouse_initial_label = '';
-    }
-
-    // If no new photo is uploaded or captured, $photo remains as the DB value
-    $valid_contacts = array_filter($emergency_contacts_post, function($c) {
-        return !empty($c['name']) && !empty($c['mobile']) && !empty($c['relationship']);
-    });
-    if (!$first_name || !$last_name || !$gender || !$dob || !$place_of_birth || !$home_town || !$region || !$phone || count($valid_contacts) === 0 || !$employment_status || ($marital_status === 'Married' && $marriage_type === '')) {
-        $error = 'Please fill in all required fields (at least one emergency contact).';
-    } else {
-        $update_pairs = [
-            ['first_name', $first_name],
-            ['middle_name', $middle_name],
-            ['last_name', $last_name],
-            ['gender', $gender],
-            ['dob', $dob],
-            ['day_born', $day_born],
-            ['place_of_birth', $place_of_birth],
-            ['address', $address],
-            ['gps_address', $gps_address],
-            ['marital_status', $marital_status],
-            ['spouse_crn', $spouse_crn],
-            ['spouse_name', $spouse_name],
-            ['marriage_type', $marriage_type],
-            ['home_town', $home_town],
-            ['region', $region],
-            ['phone', $phone],
-            ['telephone', $telephone],
-            ['email', $email],
-            ['employment_status', $employment_status],
-            ['profession', $profession],
-            ['photo', $photo],
-        ];
-        if ($update_password) {
-            $update_pairs[] = ['password_hash', $password_hash];
-        }
-
-        $set_sql = [];
-        $update_values = [];
-        foreach ($update_pairs as [$column, $value]) {
-            $set_sql[] = $column . ' = ?';
-            $update_values[] = $value;
-        }
-        $update_sql = 'UPDATE members SET ' . implode(', ', $set_sql) . ' WHERE id = ?';
-        $stmt = $conn->prepare($update_sql);
-        $types = str_repeat('s', count($update_values)) . 'i';
-        $update_values[] = $member_id;
-        bind_member_profile_edit_params($stmt, $types, $update_values);
-
-        if ($stmt->execute()) {
-            // Update SMS notifications opt-in/out
-            $stmt_sms = $conn->prepare('UPDATE members SET sms_notifications_enabled = ? WHERE id = ?');
-            $stmt_sms->bind_param('ii', $sms_notifications_enabled, $member_id);
-            $stmt_sms->execute();
-            // Emergency Contacts: Remove all old, insert all new
-            $conn->query("DELETE FROM member_emergency_contacts WHERE member_id = $member_id");
-            if (!empty($valid_contacts)) {
-                $ec_stmt = $conn->prepare("INSERT INTO member_emergency_contacts (member_id, name, mobile, relationship) VALUES (?, ?, ?, ?)");
-                foreach ($valid_contacts as $c) {
-                    $ec_stmt->bind_param('isss', $member_id, $c['name'], $c['mobile'], $c['relationship']);
-                    $ec_stmt->execute();
-                }
-                $ec_stmt->close();
-            }
-            // Organizations: Remove all old, insert all new
-            $conn->query("DELETE FROM member_organizations WHERE member_id = $member_id");
-            if (!empty($organizations)) {
-                $org_stmt = $conn->prepare("INSERT INTO member_organizations (member_id, organization_id) VALUES (?, ?)");
-                foreach ($organizations as $org_id) {
-                    $org_stmt->bind_param('ii', $member_id, $org_id);
-                    $org_stmt->execute();
-                }
-                $org_stmt->close();
-            }
-            if ($marital_status === 'Married' && $spouse_crn !== '') {
-                spouse_link_create_request_by_crn($conn, (int) $member_id, (string) $spouse_crn);
-            }
-            header('Location: ' . BASE_URL . '/views/member_profile.php');
-            exit;
-        } else {
-            $error = 'Failed to update profile.';
-        }
+        $lifecycle_service->requestProfileChange($member_id, $_POST, $_FILES);
+        header('Location: member_profile_edit.php?submitted=1');
+        exit;
+    } catch (Throwable $e) {
+        $error = $e->getMessage();
     }
 }
+
 
 ob_start();
 ?>
@@ -244,7 +95,16 @@ ob_start();
                 <?php elseif ($success): ?>
                     <div class="alert alert-success mb-4"> <?= htmlspecialchars($success) ?> </div>
                 <?php endif; ?>
+                <?php if ($pending_profile_request): ?>
+                    <div class="alert alert-info mb-4">
+                        <i class="fas fa-clock mr-1"></i>
+                        A profile update submitted on
+                        <?= htmlspecialchars(date('j M Y, g:i a', strtotime($pending_profile_request['created_at']))) ?>
+                        is awaiting review. Submit another update after it is approved or rejected.
+                    </div>
+                <?php endif; ?>
                 <form method="post" enctype="multipart/form-data" autocomplete="off">
+                    <?= csrf_input() ?>
                     <div class="form-row">
                         <div class="form-group col-md-4">
                             <label>CRN</label>
@@ -275,7 +135,7 @@ ob_start();
                         <div class="form-group col-md-4">
                             <label for="password">Change Password</label>
                             <div class="input-group">
-                                <input type="password" class="form-control" name="password" id="password" minlength="6" autocomplete="new-password" placeholder="Leave blank to keep current">
+                                <input type="password" class="form-control" name="password" id="password" minlength="8" autocomplete="new-password" placeholder="Leave blank to keep current">
                                 <div class="input-group-append">
                                     <span class="input-group-text toggle-password" style="cursor:pointer;"><i class="fa fa-eye"></i></span>
                                 </div>

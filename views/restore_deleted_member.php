@@ -1,31 +1,25 @@
 <?php
-require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../helpers/auth.php';
+require_once __DIR__ . '/../helpers/permissions_v2.php';
+require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../services/MemberLifecycleService.php';
 
-if (!is_logged_in() || (!(isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1) && !has_permission('manage_members'))) {
+if (!is_logged_in() || ((int) ($_SESSION['role_id'] ?? 0) !== 1 && !has_permission('restore_deleted_member'))) {
     http_response_code(403);
-    die('You do not have permission to restore members.');
+    die('You do not have permission to restore archived members.');
 }
-
-$id = isset($_GET['id']) ? intval($_GET['id']) : 0;
-if ($id > 0) {
-    // Fetch deleted member
-    $member = $conn->query("SELECT * FROM deleted_members WHERE id = $id")->fetch_assoc();
-    if ($member) {
-        // Restore: update status in members to 'pending' (not de-activated)
-        $update = $conn->query("UPDATE members SET status = 'pending' WHERE id = $id");
-        if ($update) {
-            // Remove from deleted_members so they no longer show as deleted
-            $conn->query("DELETE FROM deleted_members WHERE id = $id");
-            $msg = urlencode('Member restored as pending.');
-            header('Location: deleted_members_list.php?restored=1&info=' . $msg);
-            exit;
-        } else {
-            $msg = urlencode('Failed to restore member: ' . $conn->error);
-            header('Location: deleted_members_list.php?error=' . $msg);
-            exit;
-        }
-    }
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    header('Location: deleted_members_list.php?error=' . urlencode('Use the restore form with a valid session token.'));
+    exit;
 }
-header('Location: deleted_members_list.php?error=Invalid+member+ID');
+try {
+    MemberLifecycleService::fromSession($conn)->restoreMember(
+        (int) ($_POST['id'] ?? 0),
+        (string) ($_POST['reason'] ?? '')
+    );
+    header('Location: deleted_members_list.php?info=' . urlencode('Member restored as pending; the reason was recorded.'));
+} catch (Throwable $e) {
+    header('Location: deleted_members_list.php?error=' . urlencode($e->getMessage()));
+}
 exit;

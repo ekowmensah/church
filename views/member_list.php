@@ -892,7 +892,7 @@ ob_start();
                                     <i class="fas fa-user-tag mr-2"></i>Adherents
                                 </a>
                                 <a class="dropdown-item" href="deleted_members_list.php">
-                                    <i class="fas fa-trash-alt mr-2"></i>Deleted Members
+                                    <i class="fas fa-archive mr-2"></i>Archived Members
                                 </a>
                             </div>
                         </div>

@@ -47,7 +47,7 @@ $date_from = isset($_GET['date_from']) ? $_GET['date_from'] : '';
 $date_to = isset($_GET['date_to']) ? $_GET['date_to'] : '';
 
 // Build WHERE clause for filtering
-$where_conditions = ["status = 'pending'"];
+$where_conditions = ["status = 'pending'", "is_archived = 0"];
 $params = [];
 $types = '';
 
@@ -129,7 +129,7 @@ $church_stats = $conn->query("
     SELECT c.name as church_name, COUNT(m.id) as count 
     FROM members m 
     LEFT JOIN churches c ON m.church_id = c.id 
-    WHERE m.status = 'pending' 
+    WHERE m.status = 'pending' AND m.is_archived = 0
     GROUP BY m.church_id, c.name 
     ORDER BY count DESC
 ");
@@ -139,7 +139,7 @@ $stats['by_church'] = $church_stats->fetch_all(MYSQLI_ASSOC);
 $completed_stats = $conn->query("
     SELECT COUNT(*) as count 
     FROM members 
-    WHERE status = 'active' AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+    WHERE status = 'active' AND is_archived = 0 AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
 ");
 $stats['recently_completed'] = $completed_stats->fetch_assoc()['count'];
 
@@ -426,8 +426,7 @@ ob_start();
                                     <i class="fas fa-paper-plane"></i>
                                 </button>
                                 <a href="member_delete.php?id=<?= urlencode($pm['id']) ?>" 
-                                   class="btn btn-sm btn-danger" title="Delete"
-                                   onclick="return confirm('Are you sure you want to delete this pending member?');">
+                                   class="btn btn-sm btn-danger" title="Archive with a recorded reason">
                                     <i class="fas fa-trash"></i>
                                 </a>
                             </div>
