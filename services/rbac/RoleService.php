@@ -485,45 +485,63 @@ class RoleService {
      * @return bool
      */
     public function grantPermission($roleId, $permissionId, $grantedBy, $options = []) {
-        // Check if already granted
+        // Look up both active and inactive rows. The database enforces one row
+        // per role/permission pair, so a revoked grant must be reactivated.
         $stmt = $this->conn->prepare("
-            SELECT id FROM role_permissions 
-            WHERE role_id = ? AND permission_id = ? AND is_active = 1
+            SELECT id, is_active FROM role_permissions
+            WHERE role_id = ? AND permission_id = ?
         ");
         $stmt->bind_param('ii', $roleId, $permissionId);
         $stmt->execute();
         $result = $stmt->get_result();
-        
-        if ($result->num_rows > 0) {
+        $existingGrant = $result->fetch_assoc();
+
+        if ($existingGrant && (int) $existingGrant['is_active'] === 1) {
             throw new Exception('Permission already granted to this role');
         }
         
         $this->conn->begin_transaction();
         
         try {
-            $stmt = $this->conn->prepare("
-                INSERT INTO role_permissions (
-                    role_id, 
-                    permission_id, 
-                    granted_by,
-                    expires_at,
-                    conditions,
-                    is_active
-                ) VALUES (?, ?, ?, ?, ?, 1)
-            ");
-            
             $expiresAt = $options['expires_at'] ?? null;
             $conditions = isset($options['conditions']) ? json_encode($options['conditions']) : null;
-            
-            $stmt->bind_param(
-                'iiiss',
-                $roleId,
-                $permissionId,
-                $grantedBy,
-                $expiresAt,
-                $conditions
-            );
-            
+
+            if ($existingGrant) {
+                $stmt = $this->conn->prepare("
+                    UPDATE role_permissions
+                    SET granted_by = ?, granted_at = NOW(), expires_at = ?,
+                        conditions = ?, is_active = 1
+                    WHERE id = ?
+                ");
+                $existingGrantId = (int) $existingGrant['id'];
+                $stmt->bind_param(
+                    'issi',
+                    $grantedBy,
+                    $expiresAt,
+                    $conditions,
+                    $existingGrantId
+                );
+            } else {
+                $stmt = $this->conn->prepare("
+                    INSERT INTO role_permissions (
+                        role_id,
+                        permission_id,
+                        granted_by,
+                        expires_at,
+                        conditions,
+                        is_active
+                    ) VALUES (?, ?, ?, ?, ?, 1)
+                ");
+                $stmt->bind_param(
+                    'iiiss',
+                    $roleId,
+                    $permissionId,
+                    $grantedBy,
+                    $expiresAt,
+                    $conditions
+                );
+            }
+
             $stmt->execute();
             
             // Log audit

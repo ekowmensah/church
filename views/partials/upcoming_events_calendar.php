@@ -1,11 +1,17 @@
 <?php
 // Show upcoming events as a calendar/list for member dashboard
 require_once __DIR__.'/../../config/config.php';
+require_once __DIR__.'/../../services/EventManagementService.php';
 $today = date('Y-m-d');
 $events = [];
-$sql = "SELECT id, name, event_date, event_time, location, photo FROM events WHERE event_date >= ? ORDER BY event_date ASC LIMIT 10";
+$event_service = EventManagementService::fromSession($conn);
+$event_church_id = (int) ($event_service->getChurchId() ?? 0);
+$sql = "SELECT id, name, event_date, event_time, location, photo FROM events WHERE status = 'active' AND event_date >= ?";
+if (!$event_service->isSuperAdmin()) $sql .= ' AND church_id = ?';
+$sql .= ' ORDER BY event_date ASC LIMIT 10';
 $stmt = $conn->prepare($sql);
-$stmt->bind_param('s', $today);
+if ($event_service->isSuperAdmin()) $stmt->bind_param('s', $today);
+else $stmt->bind_param('si', $today, $event_church_id);
 $stmt->execute();
 $res = $stmt->get_result();
 while ($row = $res->fetch_assoc()) $events[] = $row;

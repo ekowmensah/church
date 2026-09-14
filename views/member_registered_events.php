@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../includes/member_auth.php';
+require_once __DIR__.'/../services/EventManagementService.php';
 
 if (!isset($_SESSION['member_id'])) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -9,9 +10,16 @@ if (!isset($_SESSION['member_id'])) {
 }
 
 $member_id = intval($_SESSION['member_id']);
-$sql = "SELECT e.*, er.registered_at FROM event_registrations er LEFT JOIN events e ON er.event_id = e.id WHERE er.member_id = ? ORDER BY e.event_date DESC, e.event_time DESC";
+$event_service = EventManagementService::fromSession($conn);
+$church_id = (int) ($event_service->getChurchId() ?? 0);
+$sql = "SELECT e.*, er.registered_at, er.registration_status
+          FROM event_registrations er
+          JOIN events e ON er.event_id = e.id
+         WHERE er.member_id = ? AND e.church_id = ? AND e.status = 'active'
+           AND er.registration_status IN ('registered', 'attended', 'no_show')
+         ORDER BY e.event_date DESC, e.event_time DESC";
 $stmt = $conn->prepare($sql);
-$stmt->bind_param('i', $member_id);
+$stmt->bind_param('ii', $member_id, $church_id);
 $stmt->execute();
 $res = $stmt->get_result();
 

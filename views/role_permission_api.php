@@ -47,19 +47,34 @@ if ($method === 'POST') {
         echo json_encode(['success' => false, 'error' => 'Missing role_id']);
         exit;
     }
-    $perms = isset($_POST['permissions']) ? $_POST['permissions'] : [];
-    if (!is_array($perms)) $perms = [];
+    $perms = isset($_POST['permissions']) && is_array($_POST['permissions'])
+        ? array_values(array_unique(array_filter(array_map('intval', $_POST['permissions']), function ($id) {
+            return $id > 0;
+        })))
+        : [];
 
-    // Remove all current permissions
-    $conn->query("DELETE FROM role_permissions WHERE role_id = $role_id");
-    if (!empty($perms)) {
-        $values = array_map(function($pid) use ($role_id) {
-            return "($role_id, " . intval($pid) . ")";
-        }, $perms);
-        $sql = "INSERT INTO role_permissions (role_id, permission_id) VALUES " . implode(',', $values);
-        $conn->query($sql);
+    $conn->begin_transaction();
+    try {
+        $delete = $conn->prepare('DELETE FROM role_permissions WHERE role_id = ?');
+        $delete->bind_param('i', $role_id);
+        $delete->execute();
+
+        if (!empty($perms)) {
+            $insert = $conn->prepare('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)');
+            foreach ($perms as $permission_id) {
+                $insert->bind_param('ii', $role_id, $permission_id);
+                $insert->execute();
+            }
+        }
+
+        $conn->commit();
+        echo json_encode(['success' => true]);
+    } catch (Throwable $e) {
+        $conn->rollback();
+        error_log('ROLE PERMISSION SAVE ERROR: ' . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Unable to save role permissions']);
     }
-    echo json_encode(['success' => true]);
     exit;
 }
 

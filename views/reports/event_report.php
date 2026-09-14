@@ -2,6 +2,7 @@
 require_once __DIR__.'/../../config/config.php';
 require_once __DIR__.'/../../helpers/auth.php';
 require_once __DIR__.'/../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../services/EventManagementService.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -10,8 +11,8 @@ if (!is_logged_in()) {
 }
 
 // Robust super admin bypass and permission check
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$event_service = EventManagementService::fromSession($conn);
+$is_super_admin = $event_service->isSuperAdmin();
 
 if (!$is_super_admin && !has_permission('view_event_report')) {
     http_response_code(403);
@@ -27,7 +28,7 @@ if (!$is_super_admin && !has_permission('view_event_report')) {
 
 // Set permission flags for UI elements
 $can_view = true; // Already validated above
-$can_export = $is_super_admin || has_permission('export_event_report');
+$can_export = $is_super_admin || has_permission('export_event');
 
 $page_title = 'Event Report';
 ob_start();
@@ -39,13 +40,19 @@ $types = $conn->query("SELECT id, name FROM event_types ORDER BY name");
 $where = "WHERE 1=1";
 $params = [];
 $bind_types = '';
+if (!$is_super_admin) {
+    $event_church_id = $event_service->getChurchId();
+    $where .= " AND e.church_id = ?";
+    $params[] = (int) ($event_church_id ?? 0);
+    $bind_types .= 'i';
+}
 if (!empty($_GET['type_id'])) {
     $where .= " AND e.event_type_id = ?";
     $params[] = intval($_GET['type_id']);
     $bind_types .= 'i';
 }
-if (!empty($_GET['status'])) {
-    $where .= " AND r.status = ?";
+if (in_array($_GET['status'] ?? '', ['registered', 'attended', 'no_show', 'cancelled'], true)) {
+    $where .= " AND r.registration_status = ?";
     $params[] = $_GET['status'];
     $bind_types .= 's';
 }
@@ -100,7 +107,8 @@ while ($row = $trend_res->fetch_assoc()) {
         <option value="">All</option>
         <option value="registered"<?= (isset($_GET['status']) && $_GET['status']==='registered') ? ' selected' : '' ?>>Registered</option>
         <option value="attended"<?= (isset($_GET['status']) && $_GET['status']==='attended') ? ' selected' : '' ?>>Attended</option>
-        <option value="no-show"<?= (isset($_GET['status']) && $_GET['status']==='no-show') ? ' selected' : '' ?>>No-Show</option>
+        <option value="no_show"<?= (isset($_GET['status']) && $_GET['status']==='no_show') ? ' selected' : '' ?>>No-Show</option>
+        <option value="cancelled"<?= (isset($_GET['status']) && $_GET['status']==='cancelled') ? ' selected' : '' ?>>Cancelled</option>
       </select>
     </div>
     <div class="form-group col-md-2">
@@ -152,7 +160,7 @@ while ($row = $trend_res->fetch_assoc()) {
               <td><?=htmlspecialchars($row['event_type'])?></td>
               <td><?=htmlspecialchars($row['crn'])?></td>
               <td><?=htmlspecialchars(trim($row['last_name'].' '.$row['first_name'].' '.$row['middle_name']))?></td>
-              <td><?=htmlspecialchars(ucfirst($row['status']))?></td>
+              <td><?=htmlspecialchars(ucwords(str_replace('_', ' ', $row['registration_status'])))?></td>
             </tr>
             <?php endwhile; endif; ?>
           </tbody>
@@ -180,9 +188,7 @@ while ($row = $trend_res->fetch_assoc()) {
 $(document).ready(function() {
     $('#eventTable').DataTable({
         dom: 'Bfrtip',
-        buttons: [
-            'copy', 'csv', 'excel', 'pdf', 'print'
-        ]
+        buttons: <?= $can_export ? "['copy', 'csv', 'excel', 'pdf', 'print']" : '[]' ?>
     });
     var ctx = document.getElementById('trendChart').getContext('2d');
     var trendChart = new Chart(ctx, {

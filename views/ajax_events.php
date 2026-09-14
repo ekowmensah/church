@@ -3,6 +3,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../services/EventManagementService.php';
 
 header('Content-Type: application/json');
 
@@ -26,23 +27,36 @@ if (!$is_admin && !$is_member && !has_permission('access_ajax_events')) {
 $events = [];
 // Get current member ID if logged in as member
 $current_member_id = $_SESSION['member_id'] ?? null;
+$event_service = EventManagementService::fromSession($conn);
+$event_church_id = $event_service->getChurchId();
 
 // Enhanced query to include registration status for members
 if ($current_member_id) {
     $sql = "SELECT e.id, e.name, e.event_date, e.event_time, e.location, e.description, e.photo,
-                   MAX(CASE WHEN er.member_id = ? THEN 1 ELSE 0 END) as is_registered
+                   MAX(CASE WHEN er.member_id = ? AND er.registration_status IN ('registered', 'attended') THEN 1 ELSE 0 END) as is_registered
             FROM events e 
             LEFT JOIN event_registrations er ON e.id = er.event_id AND er.member_id = ?
-            WHERE e.event_date IS NOT NULL 
+            WHERE e.event_date IS NOT NULL AND e.status = 'active' AND e.church_id = ?
             GROUP BY e.id
             ORDER BY e.event_date, e.event_time";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param('ii', $current_member_id, $current_member_id);
+    $member_church_id = (int) ($event_church_id ?? 0);
+    $stmt->bind_param('iii', $current_member_id, $current_member_id, $member_church_id);
     $stmt->execute();
     $res = $stmt->get_result();
 } else {
     // Admin or other users - basic query
-    $res = $conn->query("SELECT id, name, event_date, event_time, location, description, photo FROM events WHERE event_date IS NOT NULL ORDER BY event_date, event_time");
+    if ($event_service->isSuperAdmin()) {
+        $res = $conn->query("SELECT id, name, event_date, event_time, location, description, photo FROM events WHERE event_date IS NOT NULL AND status = 'active' ORDER BY event_date, event_time");
+    } elseif ($event_church_id) {
+        $stmt = $conn->prepare("SELECT id, name, event_date, event_time, location, description, photo FROM events WHERE event_date IS NOT NULL AND status = 'active' AND church_id = ? ORDER BY event_date, event_time");
+        $stmt->bind_param('i', $event_church_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+    } else {
+        echo json_encode([]);
+        exit;
+    }
 }
 if ($conn->connect_errno) {
     http_response_code(500);

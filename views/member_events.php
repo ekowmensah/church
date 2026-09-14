@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../includes/member_auth.php';
+require_once __DIR__.'/../services/EventManagementService.php';
 
 if (!isset($_SESSION['member_id'])) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -10,16 +11,18 @@ if (!isset($_SESSION['member_id'])) {
 
 $page_title = 'Church Events';
 $member_id = $_SESSION['member_id'];
+$event_service = EventManagementService::fromSession($conn);
+$church_id = (int) ($event_service->getChurchId() ?? 0);
 
 // Fetch upcoming events with enhanced data
 $today = date('Y-m-d');
 $sql = "SELECT e.*, et.name AS type_name,
-               COUNT(er.id) as registration_count,
-               MAX(CASE WHEN er.member_id = ? THEN 1 ELSE 0 END) as is_registered
+               SUM(er.registration_status IN ('registered', 'attended')) as registration_count,
+               MAX(CASE WHEN er.member_id = ? AND er.registration_status IN ('registered', 'attended') THEN 1 ELSE 0 END) as is_registered
         FROM events e 
         LEFT JOIN event_types et ON e.event_type_id = et.id 
         LEFT JOIN event_registrations er ON e.id = er.event_id
-        WHERE e.event_date >= ? 
+        WHERE e.church_id = ? AND e.status = 'active' AND e.event_date >= ?
         GROUP BY e.id
         ORDER BY e.event_date ASC, e.event_time ASC";
 
@@ -46,7 +49,7 @@ if (!$stmt) {
     die('Database error: ' . $conn->error);
 }
 
-$stmt->bind_param('is', $member_id, $today);
+$stmt->bind_param('iis', $member_id, $church_id, $today);
 $stmt->execute();
 $events = $stmt->get_result();
 

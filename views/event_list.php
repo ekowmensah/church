@@ -1,144 +1,93 @@
 <?php
-require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../helpers/auth.php';
+require_once __DIR__ . '/../helpers/permissions_v2.php';
+require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../services/EventManagementService.php';
 
-// Only allow logged-in users
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
 
-// Robust super admin bypass and permission check
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
-
-if (!$is_super_admin && !has_permission('view_event_list')) {
+$eventService = EventManagementService::fromSession($conn);
+$isSuperAdmin = $eventService->isSuperAdmin();
+if (!$isSuperAdmin && !has_permission('view_event_list')) {
     http_response_code(403);
-    if (file_exists(__DIR__.'/errors/403.php')) {
-        include __DIR__.'/errors/403.php';
-    } else if (file_exists(dirname(__DIR__).'/views/errors/403.php')) {
-        include dirname(__DIR__).'/views/errors/403.php';
-    } else {
-        echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
-    }
+    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access events.</p></div>';
     exit;
 }
 
-// Set permission flags for UI elements
-$can_add = $is_super_admin || has_permission('create_event');
-$can_edit = $is_super_admin || has_permission('edit_event');
-$can_delete = $is_super_admin || has_permission('delete_event');
-$can_view = true; // Already validated above
+$canAdd = $isSuperAdmin || has_permission('create_event');
+$canEdit = $isSuperAdmin || has_permission('edit_event');
+$canCancel = $isSuperAdmin || has_permission('delete_event');
+$canManageRegistrations = $isSuperAdmin || has_permission('manage_event_registrations');
+$message = '';
+$error = '';
 
-// Fetch events with type name
-$sql = "SELECT e.*, et.name AS type_name FROM events e LEFT JOIN event_types et ON e.event_type_id = et.id ORDER BY e.event_date DESC, e.event_time DESC";
-$events = $conn->query($sql);
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $error = 'Your session token expired. Refresh the page and try again.';
+    } elseif (!$canCancel) {
+        $error = 'You do not have permission to change event status.';
+    } else {
+        try {
+            $action = (string) ($_POST['action'] ?? '');
+            $eventId = max(0, (int) ($_POST['event_id'] ?? 0));
+            if ($eventId <= 0 || !in_array($action, ['cancel', 'restore'], true)) {
+                throw new RuntimeException('Choose a valid event action.');
+            }
+            $eventService->setEventStatus(
+                $eventId,
+                $action === 'cancel' ? 'cancelled' : 'active',
+                (string) ($_POST['cancellation_reason'] ?? '')
+            );
+            $message = $action === 'cancel'
+                ? 'Event cancelled. Its details and registrations were retained.'
+                : 'Event restored.';
+        } catch (Throwable $e) {
+            $error = $e->getMessage();
+        }
+    }
+}
+
+$events = $eventService->listEvents(true);
 ob_start();
 ?>
-<div class="container mt-4">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2 class="mb-0"><i class="fas fa-calendar-alt mr-2"></i>Events</h2>
-    <?php if ($can_add): ?>
-    <a href="event_form.php" class="btn btn-primary"><i class="fas fa-plus mr-1"></i>Add Event</a>
-    <?php endif; ?>
+<div class="container-fluid mt-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+    <div><h2 class="mb-1"><i class="fas fa-calendar-alt mr-2"></i>Events</h2><small class="text-muted">Church-scoped events with retained cancellation and registration history.</small></div>
+    <div><?php if ($canManageRegistrations): ?><a href="event_registration_list.php" class="btn btn-outline-primary mr-2"><i class="fas fa-user-check mr-1"></i>Registrations</a><?php endif; ?><?php if ($canAdd): ?><a href="event_form.php" class="btn btn-primary"><i class="fas fa-plus mr-1"></i>Add Event</a><?php endif; ?></div>
   </div>
-  <div class="card card-body shadow-sm">
-    <div class="table-responsive">
-      <table class="table table-bordered table-hover">
-        <thead class="thead-light">
-          <tr>
-            <th>ID</th>
-            <th>Photo</th>
-            <th>Name</th>
-            <th>Type</th>
-            <th>Date</th>
-            <th>Time</th>
-            <th>Location</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php if ($events && $events->num_rows > 0): while($e = $events->fetch_assoc()): ?>
-            <tr>
-              <td><?= htmlspecialchars($e['id']) ?></td>
-              <td>
-                <?php if (!empty($e['photo']) && file_exists(__DIR__.'/../uploads/events/' . $e['photo'])): ?>
-                  <a href="#" class="event-photo-preview" data-img="<?= BASE_URL . '/uploads/events/' . rawurlencode($e['photo']) ?>">
-                    <img src="<?= BASE_URL . '/uploads/events/' . rawurlencode($e['photo']) ?>" alt="Event Photo" style="height:48px;width:48px;object-fit:cover;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
-                  </a>
-                <?php else: ?>
-                  <span class="text-muted">-</span>
-                <?php endif; ?>
-              </td>
-              <td><?= htmlspecialchars($e['name']) ?></td>
-              <td><?= htmlspecialchars($e['type_name'] ?? '-') ?></td>
-              <td><?= htmlspecialchars($e['event_date']) ?></td>
-              <td><?= htmlspecialchars($e['event_time']) ?></td>
-              <td><?= htmlspecialchars($e['location']) ?></td>
-              <td>
-                <?php if ($can_edit): ?>
-                <a href="event_form.php?id=<?= $e['id'] ?>" class="btn btn-sm btn-warning" title="Edit"><i class="fas fa-edit"></i></a>
-                <?php endif; ?>
-                <?php if ($can_delete): ?>
-                <a href="event_delete.php?id=<?= $e['id'] ?>" class="btn btn-sm btn-danger" title="Delete" onclick="return confirm('Delete this event?');"><i class="fas fa-trash"></i></a>
-                <?php endif; ?>
-              </td>
-            </tr>
-            <?php if (!empty($e['gallery'])):
-              $gallery_imgs = json_decode($e['gallery'], true) ?: [];
-              if ($gallery_imgs): ?>
-            <tr>
-              <td></td>
-              <td colspan="7">
-                <div class="d-flex flex-wrap align-items-center">
-                  <?php foreach ($gallery_imgs as $img):
-                    $img_path = __DIR__.'/../uploads/events/gallery/' . $img;
-                    if (file_exists($img_path)): ?>
-                    <img src="<?= BASE_URL . '/uploads/events/gallery/' . rawurlencode($img) ?>" alt="Gallery Image" style="height:44px;width:44px;object-fit:cover;border-radius:6px;margin-right:6px;margin-bottom:6px;">
-                  <?php endif; endforeach; ?>
-                </div>
-              </td>
-            </tr>
-            <?php endif; endif; ?>
-          <?php endwhile; else: ?>
-            <tr><td colspan="7" class="text-center">No events found.</td></tr>
+  <?php if ($message): ?><div class="alert alert-success"><?= htmlspecialchars($message) ?></div><?php endif; ?>
+  <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+  <div class="card card-body shadow-sm"><div class="table-responsive"><table class="table table-bordered table-hover">
+    <thead class="thead-light"><tr><th>Event</th><?php if ($isSuperAdmin): ?><th>Church</th><?php endif; ?><th>Type</th><th>Date &amp; time</th><th>Location</th><th>Registration</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody>
+    <?php if ($events): foreach ($events as $event): ?>
+      <tr class="<?= $event['status'] === 'cancelled' ? 'table-secondary' : '' ?>">
+        <td><div class="d-flex align-items-center"><?php if (!empty($event['photo']) && file_exists(__DIR__ . '/../uploads/events/' . $event['photo'])): ?><img class="mr-2 rounded" style="width:48px;height:48px;object-fit:cover" src="<?= BASE_URL . '/uploads/events/' . rawurlencode($event['photo']) ?>" alt=""><?php endif; ?><div><strong><?= htmlspecialchars($event['name']) ?></strong><br><small class="text-muted"><?= htmlspecialchars(mb_substr((string) $event['description'], 0, 90)) ?></small></div></div></td>
+        <?php if ($isSuperAdmin): ?><td><?= htmlspecialchars((string) ($event['church_id'] ?: 'Unassigned')) ?></td><?php endif; ?>
+        <td><?= htmlspecialchars($event['type_name'] ?? '-') ?></td>
+        <td><?= htmlspecialchars($event['event_date']) ?><br><small><?= htmlspecialchars(substr($event['event_time'], 0, 5)) ?></small></td>
+        <td><?= htmlspecialchars($event['location']) ?></td>
+        <td><strong><?= number_format((int) $event['active_registrations']) ?></strong> active<?php if ($event['registration_capacity']): ?> / <?= number_format((int) $event['registration_capacity']) ?><?php endif; ?><br><small class="text-muted"><?= $event['registration_enabled'] ? 'Open' : 'Closed' ?></small></td>
+        <td><span class="badge badge-<?= $event['status'] === 'active' ? 'success' : 'secondary' ?>"><?= htmlspecialchars(ucfirst($event['status'])) ?></span><?php if ($event['status'] === 'cancelled' && $event['cancellation_reason']): ?><br><small><?= htmlspecialchars($event['cancellation_reason']) ?></small><?php endif; ?></td>
+        <td class="text-nowrap">
+          <?php if ($canManageRegistrations): ?><a href="event_registration_view.php?event_id=<?= (int) $event['id'] ?>" class="btn btn-sm btn-info" title="Registrations"><i class="fas fa-users"></i></a><?php endif; ?>
+          <?php if ($canEdit): ?><a href="event_form.php?id=<?= (int) $event['id'] ?>" class="btn btn-sm btn-warning" title="Edit"><i class="fas fa-edit"></i></a><?php endif; ?>
+          <?php if ($canCancel): ?>
+            <?php if ($event['status'] === 'active'): ?><button type="button" class="btn btn-sm btn-danger" data-toggle="modal" data-target="#cancelEventModal" data-event-id="<?= (int) $event['id'] ?>" data-event-name="<?= htmlspecialchars($event['name'], ENT_QUOTES) ?>" title="Cancel"><i class="fas fa-ban"></i></button>
+            <?php else: ?><form method="post" class="d-inline"><?= csrf_input() ?><input type="hidden" name="action" value="restore"><input type="hidden" name="event_id" value="<?= (int) $event['id'] ?>"><button class="btn btn-sm btn-success" onclick="return confirm('Restore this event?')" title="Restore"><i class="fas fa-undo"></i></button></form><?php endif; ?>
           <?php endif; ?>
-        </tbody>
-      </table>
-    </div>
-  </div>
+        </td>
+      </tr>
+    <?php endforeach; else: ?><tr><td colspan="<?= $isSuperAdmin ? 8 : 7 ?>" class="text-center text-muted">No events are available in your church.</td></tr><?php endif; ?>
+    </tbody>
+  </table></div></div>
 </div>
+<?php if ($canCancel): ?><div class="modal fade" id="cancelEventModal" tabindex="-1"><div class="modal-dialog"><form method="post" class="modal-content"><?= csrf_input() ?><input type="hidden" name="action" value="cancel"><input type="hidden" name="event_id" id="cancelEventId"><div class="modal-header"><h5 class="modal-title">Cancel event</h5><button type="button" class="close" data-dismiss="modal">&times;</button></div><div class="modal-body"><p id="cancelEventPrompt"></p><label>Cancellation reason</label><textarea class="form-control" name="cancellation_reason" maxlength="500" required></textarea></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal">Keep Event</button><button class="btn btn-danger">Cancel Event</button></div></form></div></div>
+<script>$('#cancelEventModal').on('show.bs.modal',function(event){var button=$(event.relatedTarget);$('#cancelEventId').val(button.data('event-id'));$('#cancelEventPrompt').text('Cancel '+button.data('event-name')+' while retaining its history?');});</script><?php endif; ?>
 <?php
 $page_content = ob_get_clean();
-include '../includes/layout.php';
-?>
-<!-- Event Photo Preview Modal -->
-<div class="modal fade" id="photoPreviewModal" tabindex="-1" role="dialog" aria-labelledby="photoPreviewModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered" role="document">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="photoPreviewModalLabel">Event Photo</h5>
-        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-          <span aria-hidden="true">&times;</span>
-        </button>
-      </div>
-      <div class="modal-body text-center">
-        <img src="" id="photoPreviewImg" alt="Event Photo" style="max-width:100%;max-height:70vh;border-radius:10px;box-shadow:0 2px 16px rgba(0,0,0,0.08);">
-      </div>
-    </div>
-  </div>
-</div>
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    var modal = $('#photoPreviewModal');
-    var img = $('#photoPreviewImg');
-    $(document).on('click', '.event-photo-preview', function(e) {
-      e.preventDefault();
-      var src = $(this).data('img');
-      img.attr('src', src);
-      modal.modal('show');
-    });
-    modal.on('hidden.bs.modal', function(){ img.attr('src',''); });
-  });
-</script>
+include __DIR__ . '/../includes/layout.php';
