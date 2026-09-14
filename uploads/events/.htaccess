@@ -1,0 +1,9 @@
+Options -Indexes
+
+<FilesMatch "\.(?:php[0-9]?|phtml|phar|cgi|pl|py|sh|asp|aspx|jsp)$">
+    Require all denied
+</FilesMatch>
+
+<FilesMatch "\.(log|bak)$">
+    Require all denied
+</FilesMatch>
