@@ -5,6 +5,7 @@ require_once __DIR__ . '/../helpers/auth.php';
 require_once __DIR__ . '/../helpers/permissions_v2.php';
 require_once __DIR__ . '/../helpers/csrf.php';
 require_once __DIR__ . '/../services/RoleOfServingAccessService.php';
+require_once __DIR__ . '/../services/UserOnboardingService.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -22,6 +23,10 @@ if (!$isSuperAdmin && !has_permission($requiredPermission)) {
     include __DIR__ . '/errors/403.php';
     exit;
 }
+$canSendOnboarding = !$editing
+    && ($isSuperAdmin || has_permission('send_user_onboarding_sms'));
+$sendOnboarding = $canSendOnboarding
+    && ($_SERVER['REQUEST_METHOD'] !== 'POST' || isset($_POST['send_onboarding_sms']));
 
 $accessService = new RoleOfServingAccessService($conn);
 $account = $editing ? $accessService->getUserAccount((int) $userId) : null;
@@ -61,7 +66,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $selectedManualRoles,
             isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null
         );
-        header('Location: user_list.php?saved=' . ($outcome['created'] ? 'created' : 'updated'));
+        $onboardingStatus = 'not_requested';
+        if ($outcome['created'] && $sendOnboarding) {
+            try {
+                $delivery = (new UserOnboardingService($conn))->sendAccountCreated(
+                    (int) $outcome['user_id'],
+                    $password,
+                    isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null
+                );
+                $onboardingStatus = (string) ($delivery['status'] ?? 'failed');
+            } catch (Throwable $notificationException) {
+                error_log('The user account was created, but onboarding notification processing failed.');
+                $onboardingStatus = 'failed';
+            }
+        }
+        header(
+            'Location: user_list.php?saved=' . ($outcome['created'] ? 'created' : 'updated')
+            . '&onboarding=' . rawurlencode($onboardingStatus)
+        );
         exit;
     } catch (Throwable $exception) {
         $error = $exception->getMessage();
@@ -103,7 +125,8 @@ ob_start();
           <?php endif; ?>
         </div>
         <div class="form-row"><div class="form-group col-md-7"><label for="email">Official Church Email</label><input type="email" class="form-control" id="email" name="email" value="<?= htmlspecialchars($officialEmail) ?>" placeholder="name@myfreeman.org" required></div><div class="form-group col-md-5"><label for="status">Account Status</label><select class="form-control" id="status" name="status"><option value="active" <?= $status === 'active' ? 'selected' : '' ?>>Active</option><option value="inactive" <?= $status === 'inactive' ? 'selected' : '' ?>>Inactive</option></select></div></div>
-        <div class="form-group"><label for="password"><?= $editing ? 'New Password (optional)' : 'Temporary Password' ?></label><input type="password" class="form-control" id="password" name="password" minlength="8" autocomplete="new-password" <?= $editing ? '' : 'required' ?>><small class="form-text text-muted"><?= $editing ? 'Leave blank to retain the current password.' : 'Minimum eight characters. Communicate it securely and require the user to change it.' ?></small></div>
+        <div class="form-group"><label for="password"><?= $editing ? 'New Password (optional)' : 'Temporary Password' ?></label><input type="password" class="form-control" id="password" name="password" minlength="8" autocomplete="new-password" <?= $editing ? '' : 'required' ?>><small class="form-text text-muted"><?= $editing ? 'If changed, the user must replace this temporary password at their next login.' : 'Minimum eight characters. The user must replace it at first login.' ?></small></div>
+        <?php if ($canSendOnboarding): ?><div class="custom-control custom-checkbox mb-2"><input type="checkbox" class="custom-control-input" id="send_onboarding_sms" name="send_onboarding_sms" value="1" <?= $sendOnboarding ? 'checked' : '' ?>><label class="custom-control-label" for="send_onboarding_sms">Send onboarding SMS after creating the account</label><small class="form-text text-muted">Includes the user’s assigned role, official email, temporary password, and login link. The audit stores only delivery status and the destination’s last four digits.</small></div><?php endif; ?>
       </div></div></div>
 
       <div class="col-lg-5 mb-3"><div class="card user-access-card mb-3"><div class="card-header bg-white font-weight-bold">Member Identity Preview</div><div class="card-body"><div><strong>Name:</strong> <span id="previewName"><?= htmlspecialchars($selectedMember['full_name'] ?? ($account['name'] ?? '-')) ?></span></div><div><strong>Contact:</strong> <span id="previewPhone"><?= htmlspecialchars($selectedMember['phone'] ?? ($account['member_phone'] ?? '-')) ?></span></div><div><strong>Church:</strong> <span id="previewChurch"><?= htmlspecialchars($selectedMember['church_name'] ?? ($account['church_name'] ?? '-')) ?></span></div><div class="mt-2"><strong>Roles of Serving:</strong><div id="previewServing"><?= htmlspecialchars($selectedMember['serving_roles'] ?? 'None assigned') ?></div></div></div></div>

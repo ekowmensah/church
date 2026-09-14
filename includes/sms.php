@@ -96,97 +96,38 @@ function send_arkesel_sms($recipients, $message, $sender, $config) {
         CURLOPT_POSTFIELDS => json_encode($payload),
         CURLOPT_HTTPHEADER => $headers,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HEADER => true,
+        CURLOPT_HEADER => false,
         CURLOPT_TIMEOUT => 30,
         CURLOPT_SSL_VERIFYPEER => true,
-        CURLOPT_SSL_VERIFYHOST => 2,
-        CURLOPT_VERBOSE => true
+        CURLOPT_SSL_VERIFYHOST => 2
     ]);
-    
-    $verbose = fopen('php://temp', 'w+');
-    curl_setopt($ch, CURLOPT_STDERR, $verbose);
-    
+
     $response = curl_exec($ch);
     $curl_error = curl_error($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-    $response_headers = $header_size ? substr($response, 0, $header_size) : '';
-    $body = $header_size ? substr($response, $header_size) : $response;
-    
-    // Get verbose output
-    rewind($verbose);
-    $verbose_log = stream_get_contents($verbose);
-    fclose($verbose);
-    
-    // Log everything
-    $debug = [
-        'time' => date('Y-m-d H:i:s'),
-        'url' => $url,
-        'payload' => $payload,
-        'request_headers' => $headers,
-        'http_status' => $http_code,
-        'response_headers' => $response_headers,
-        'response_body' => $body,
-        'curl_error' => $curl_error,
-        'curl_info' => [
-            'total_time' => curl_getinfo($ch, CURLINFO_TOTAL_TIME),
-            'connect_time' => curl_getinfo($ch, CURLINFO_CONNECT_TIME),
-            'namelookup_time' => curl_getinfo($ch, CURLINFO_NAMELOOKUP_TIME),
-            'pretransfer_time' => curl_getinfo($ch, CURLINFO_PRETRANSFER_TIME),
-            'starttransfer_time' => curl_getinfo($ch, CURLINFO_STARTTRANSFER_TIME),
-            'redirect_time' => curl_getinfo($ch, CURLINFO_REDIRECT_TIME),
-            'redirect_count' => curl_getinfo($ch, CURLINFO_REDIRECT_COUNT),
-            'size_upload' => curl_getinfo($ch, CURLINFO_SIZE_UPLOAD),
-            'size_download' => curl_getinfo($ch, CURLINFO_SIZE_DOWNLOAD),
-            'speed_download' => curl_getinfo($ch, CURLINFO_SPEED_DOWNLOAD),
-            'speed_upload' => curl_getinfo($ch, CURLINFO_SPEED_UPLOAD),
-            'download_content_length' => curl_getinfo($ch, CURLINFO_CONTENT_LENGTH_DOWNLOAD),
-            'upload_content_length' => curl_getinfo($ch, CURLINFO_CONTENT_LENGTH_UPLOAD),
-            'content_type' => curl_getinfo($ch, CURLINFO_CONTENT_TYPE)
-        ],
-        'verbose_log' => $verbose_log
-    ];
-    
     curl_close($ch);
-    
-    // Ensure debug directory exists
-    $debug_dir = __DIR__.'/../logs';
-    if (!is_dir($debug_dir)) {
-        @mkdir($debug_dir, 0755, true);
-    }
-    
-    // Log to file with better error handling
-    $log_file = $debug_dir.'/sms_debug_'.date('Y-m-d').'.log';
-    try {
-        $log_entry = json_encode($debug, JSON_PRETTY_PRINT)."\n";
-        file_put_contents($log_file, $log_entry, FILE_APPEND);
-    } catch (Exception $e) {
-        error_log("Failed to write SMS debug log: ".$e->getMessage());
-    }
-    
+
     // Handle errors
     if ($curl_error) {
-        error_log("cURL Error: $curl_error");
-        return ['status' => 'error', 'message' => 'cURL Error: ' . $curl_error, 'debug' => $debug];
+        error_log('Arkesel SMS transport failed.');
+        return ['status' => 'error', 'message' => 'SMS provider connection failed.'];
     }
     
     if ($http_code !== 200) {
-        $error_msg = "HTTP Error: $http_code";
-        error_log($error_msg);
-        return ['status' => 'error', 'message' => $error_msg, 'http_code' => $http_code, 'debug' => $debug];
+        error_log("Arkesel SMS returned HTTP $http_code.");
+        return ['status' => 'error', 'message' => 'SMS provider rejected the request.', 'http_code' => $http_code];
     }
     
-    if (empty($body)) {
+    if (empty($response)) {
         $error_msg = 'Empty response from Arkesel API';
         error_log($error_msg);
-        return ['status' => 'error', 'message' => $error_msg, 'debug' => $debug];
+        return ['status' => 'error', 'message' => $error_msg];
     }
     
-    $json = json_decode($body, true);
+    $json = json_decode($response, true);
     if ($json === null) {
-        $error_msg = 'Invalid JSON response from Arkesel API: ' . $body;
-        error_log($error_msg);
-        return ['status' => 'error', 'message' => 'Invalid JSON response from API', 'raw_response' => $body, 'debug' => $debug];
+        error_log('Arkesel SMS returned an invalid response.');
+        return ['status' => 'error', 'message' => 'Invalid response from SMS provider.'];
     }
     
     // Standardize response format for Arkesel
@@ -201,11 +142,6 @@ function send_arkesel_sms($recipients, $message, $sender, $config) {
                 $json['message'] = $json['data']['message'];
             }
         }
-    }
-    
-    // Add debug info if in development
-    if (defined('ENVIRONMENT') && ENVIRONMENT === 'development') {
-        $json['_debug'] = $debug;
     }
     
     return $json;
@@ -238,81 +174,38 @@ function send_hubtel_sms($recipients, $message, $sender, $config) {
         CURLOPT_HTTPGET => true,
         CURLOPT_HTTPHEADER => $headers,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HEADER => true,
+        CURLOPT_HEADER => false,
         CURLOPT_TIMEOUT => 30,
         CURLOPT_SSL_VERIFYPEER => true,
-        CURLOPT_SSL_VERIFYHOST => 2,
-        CURLOPT_VERBOSE => true
+        CURLOPT_SSL_VERIFYHOST => 2
     ]);
-    
-    $verbose = fopen('php://temp', 'w+');
-    curl_setopt($ch, CURLOPT_STDERR, $verbose);
-    
+
     $response = curl_exec($ch);
     $curl_error = curl_error($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-    $response_headers = $header_size ? substr($response, 0, $header_size) : '';
-    $body = $header_size ? substr($response, $header_size) : $response;
-    
-    // Get verbose output
-    rewind($verbose);
-    $verbose_log = stream_get_contents($verbose);
-    fclose($verbose);
-    
-    // Log everything
-    $debug = [
-        'time' => date('Y-m-d H:i:s'),
-        'provider' => 'hubtel',
-        'url' => $url,
-        'params' => $params,
-        'request_headers' => $headers,
-        'http_status' => $http_code,
-        'response_headers' => $response_headers,
-        'response_body' => $body,
-        'curl_error' => $curl_error,
-        'verbose_log' => $verbose_log
-    ];
-    
     curl_close($ch);
-    
-    // Log debug info
-    $debug_dir = __DIR__.'/../logs';
-    if (!is_dir($debug_dir)) {
-        @mkdir($debug_dir, 0755, true);
-    }
-    
-    $log_file = $debug_dir.'/hubtel_sms_debug.log';
-    try {
-        $log_entry = json_encode($debug, JSON_PRETTY_PRINT)."\n";
-        file_put_contents($log_file, $log_entry, FILE_APPEND);
-    } catch (Exception $e) {
-        error_log("Failed to write Hubtel SMS debug log: ".$e->getMessage());
-    }
-    
+
     // Handle errors
     if ($curl_error) {
-        error_log("Hubtel SMS cURL Error: $curl_error");
-        return ['status' => 'error', 'message' => 'cURL Error: ' . $curl_error, 'debug' => $debug];
+        error_log('Hubtel SMS transport failed.');
+        return ['status' => 'error', 'message' => 'SMS provider connection failed.'];
     }
     
     if ($http_code !== 200 && $http_code !== 201) {
-        $error_msg = "Hubtel SMS HTTP Error: $http_code";
-        error_log($error_msg);
-        return ['status' => 'error', 'message' => $error_msg, 'http_code' => $http_code, 'debug' => $debug];
+        error_log("Hubtel SMS returned HTTP $http_code.");
+        return ['status' => 'error', 'message' => 'SMS provider rejected the request.', 'http_code' => $http_code];
     }
     
-    if (empty($body)) {
+    if (empty($response)) {
         $error_msg = 'Empty response from Hubtel SMS API';
         error_log($error_msg);
-        return ['status' => 'error', 'message' => $error_msg, 'debug' => $debug];
+        return ['status' => 'error', 'message' => $error_msg];
     }
     
-    $json = json_decode($body, true);
+    $json = json_decode($response, true);
     if ($json === null) {
-        $error_msg = 'Invalid JSON response from Hubtel SMS API: ' . $body;
-        error_log($error_msg);
-        return ['status' => 'error', 'message' => 'Invalid JSON response from API', 'raw_response' => $body, 'debug' => $debug];
+        error_log('Hubtel SMS returned an invalid response.');
+        return ['status' => 'error', 'message' => 'Invalid response from SMS provider.'];
     }
     
     // Standardize response format for Hubtel
@@ -325,11 +218,6 @@ function send_hubtel_sms($recipients, $message, $sender, $config) {
             $json['status'] = 'error';
             $json['message'] = $json['statusDescription'] ?? 'SMS sending failed';
         }
-    }
-    
-    // Add debug info if in development
-    if (defined('ENVIRONMENT') && ENVIRONMENT === 'development') {
-        $json['_debug'] = $debug;
     }
     
     return $json;
@@ -353,20 +241,6 @@ function log_sms($phone, $message, $payment_id = null, $type = 'general', $sende
     $template_name = $type === 'template' ? $type : null;
     $stmt->bind_param('sssssss', $phone, $message, $template_name, $type, $status, $actual_provider, $response);
     $stmt->execute();
-    
-    // Log to file
-    $log = [
-        'time' => date('Y-m-d H:i:s'),
-        'recipients' => $phone,
-        'message' => $message,
-        'processed_message' => $processed_message,
-        'template_data' => $template_data,
-        'sender' => $sender,
-        'provider' => $actual_provider,
-        'status' => $status,
-        'result' => $result
-    ];
-    file_put_contents(__DIR__.'/../sms_debug.log', json_encode($log, JSON_PRETTY_PRINT)."\n", FILE_APPEND);
     
     return $result;
 }

@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__.'/config/config.php';
+require_once __DIR__.'/helpers/csrf.php';
 $token = $_GET['token'] ?? '';
 $error = $success = '';
+$reset = null;
 if (!$token || !preg_match('/^[a-f0-9]{64}$/', $token)) {
     $error = 'Invalid or missing reset token.';
 } else {
@@ -14,13 +16,19 @@ if (!$token || !preg_match('/^[a-f0-9]{64}$/', $token)) {
     } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = $_POST['password'] ?? '';
         $confirm = $_POST['confirm'] ?? '';
-        if (!$password || strlen($password) < 6) {
-            $error = 'Password must be at least 6 characters.';
+        if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+            $error = 'Your form expired. Refresh the page and try again.';
+        } elseif (!$password || strlen($password) < 8) {
+            $error = 'Password must be at least 8 characters.';
         } elseif ($password !== $confirm) {
             $error = 'Passwords do not match.';
         } else {
             $hash = password_hash($password, PASSWORD_DEFAULT);
-            $stmt2 = $conn->prepare('UPDATE users SET password_hash = ? WHERE id = ?');
+            $stmt2 = $conn->prepare(
+                'UPDATE users
+                    SET password_hash = ?, must_change_password = 0, password_changed_at = NOW()
+                  WHERE id = ?'
+            );
             $stmt2->bind_param('si', $hash, $reset['user_id']);
             $stmt2->execute();
             $conn->query("UPDATE password_resets SET used = 1 WHERE id = ".$reset['id']);
@@ -68,8 +76,9 @@ if (!$token || !preg_match('/^[a-f0-9]{64}$/', $token)) {
       <?php endif; ?>
       <?php if (!$success && (!$error || ($error && $reset))): ?>
       <form method="post" autocomplete="off">
+        <?= csrf_input() ?>
         <div class="input-group mb-3">
-          <input type="password" class="form-control" name="password" placeholder="New Password" required minlength="6">
+          <input type="password" class="form-control" name="password" placeholder="New Password" required minlength="8">
           <div class="input-group-append">
             <div class="input-group-text">
               <span class="fas fa-lock"></span>
@@ -77,7 +86,7 @@ if (!$token || !preg_match('/^[a-f0-9]{64}$/', $token)) {
           </div>
         </div>
         <div class="input-group mb-3">
-          <input type="password" class="form-control" name="confirm" placeholder="Confirm Password" required minlength="6">
+          <input type="password" class="form-control" name="confirm" placeholder="Confirm Password" required minlength="8">
           <div class="input-group-append">
             <div class="input-group-text">
               <span class="fas fa-lock"></span>

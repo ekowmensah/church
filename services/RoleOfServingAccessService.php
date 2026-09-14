@@ -301,8 +301,10 @@ final class RoleOfServingAccessService {
         try {
             if ($userId === null) {
                 $stmt = $this->conn->prepare(
-                    "INSERT INTO users (member_id, church_id, name, email, phone, password_hash, status)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)"
+                    "INSERT INTO users
+                        (member_id, church_id, name, email, phone, password_hash,
+                         must_change_password, password_changed_at, status)
+                     VALUES (?, ?, ?, ?, ?, ?, 1, NULL, ?)"
                 );
                 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
                 $stmt->bind_param(
@@ -323,7 +325,7 @@ final class RoleOfServingAccessService {
                 $types = 'issss';
                 if ($password !== '') {
                     if (strlen($password) < 8) throw new RuntimeException('The new password must contain at least eight characters.');
-                    $sql .= ', password_hash = ?';
+                    $sql .= ', password_hash = ?, must_change_password = 1, password_changed_at = NULL';
                     $params[] = password_hash($password, PASSWORD_DEFAULT);
                     $types .= 's';
                 }

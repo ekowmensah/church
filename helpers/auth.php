@@ -14,6 +14,21 @@ function require_login() {
     }
 }
 
+function enforce_required_password_change() {
+    if (!isset($_SESSION['user_id']) || (int) $_SESSION['user_id'] <= 0
+        || (int) ($_SESSION['must_change_password'] ?? 0) !== 1) {
+        return;
+    }
+
+    $currentScript = basename((string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+    if (in_array($currentScript, ['change_user_password.php', 'logout.php'], true)) {
+        return;
+    }
+
+    header('Location: ' . BASE_URL . '/views/change_user_password.php');
+    exit;
+}
+
 function get_logged_in_user() {
     if (!is_logged_in()) return null;
     return [
@@ -23,5 +38,7 @@ function get_logged_in_user() {
         'email' => $_SESSION['email']
     ];
 }
+
+enforce_required_password_change();
 
 ?>

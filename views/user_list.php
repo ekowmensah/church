@@ -123,6 +123,7 @@ if ($params) {
 ob_start();
 ?>
 <?php if (isset($_GET['saved']) && in_array($_GET['saved'], ['created', 'updated'], true)): ?><div class="alert alert-success">User access <?= htmlspecialchars($_GET['saved']) ?> successfully.</div><?php endif; ?>
+<?php if (($_GET['onboarding'] ?? '') === 'sent'): ?><div class="alert alert-success">The onboarding SMS was accepted by the provider. The user must change the temporary password at first login.</div><?php elseif (($_GET['onboarding'] ?? '') === 'failed'): ?><div class="alert alert-warning">The account was saved, but the onboarding SMS was not delivered. Review the SMS configuration or delivery audit before retrying.</div><?php elseif (($_GET['onboarding'] ?? '') === 'skipped'): ?><div class="alert alert-info">The account was saved, but onboarding SMS delivery was skipped (for example, for an inactive account or missing contact number).</div><?php endif; ?>
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h1 class="h4 mb-0 text-gray-800"><i class="fas fa-users mr-2"></i>Users</h1>
     <?php if ($can_add): ?>

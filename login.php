@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 unset(
                     $_SESSION['user_id'], $_SESSION['role_id'], $_SESSION['role_ids'],
                     $_SESSION['permissions'], $_SESSION['is_super_admin'], $_SESSION['email'],
-                    $_SESSION['name'], $_SESSION['user_name']
+                    $_SESSION['name'], $_SESSION['user_name'], $_SESSION['must_change_password']
                 );
                 $_SESSION['crn'] = $member['crn'];
                 $_SESSION['member_name'] = $member['first_name'].' '.$member['last_name'];
@@ -42,7 +42,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $email = trim($_POST['email'] ?? '');
         $stmt = $conn->prepare(
             'SELECT user_account.id, user_account.member_id, user_account.name,
-                    user_account.email, user_account.password_hash
+                    user_account.email, user_account.password_hash,
+                    user_account.must_change_password
                FROM users user_account
                JOIN members member ON member.id = user_account.member_id
               WHERE user_account.email = ? AND user_account.status = "active" LIMIT 1'
@@ -63,6 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['name'] = $user['name'];
                 $_SESSION['user_name'] = $user['name']; // For dashboard compatibility
                 $_SESSION['email'] = $user['email'];
+                $_SESSION['must_change_password'] = (int) $user['must_change_password'];
                 // Robust super admin session flag - check if user has role_id = 1 (super admin role)
                 $_SESSION['is_super_admin'] = false;
                 // Fetch all roles for this user
@@ -88,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $_SESSION['user_id'], $_SESSION['member_id'], $_SESSION['name'],
                         $_SESSION['user_name'], $_SESSION['email'], $_SESSION['is_super_admin'],
                         $_SESSION['portal_mode'], $_SESSION['role_id'], $_SESSION['role_ids'],
-                        $_SESSION['permissions']
+                        $_SESSION['permissions'], $_SESSION['must_change_password']
                     );
                     require_once __DIR__.'/helpers/global_audit_log.php';
                     log_activity('login_failed', 'user', $user['id'], json_encode(['username'=>$email, 'ip'=>$_SERVER['REMOTE_ADDR']]));
@@ -129,7 +131,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (in_array(1, $role_ids)) {
                         $_SESSION['role_id'] = 1;
                     }
-                    header('Location: ' . BASE_URL . '/index.php');
+                    $destination = (int) $user['must_change_password'] === 1
+                        ? '/views/change_user_password.php'
+                        : '/index.php';
+                    header('Location: ' . BASE_URL . $destination);
                     exit;
                 }
             } else {
