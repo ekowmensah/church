@@ -76,7 +76,7 @@ $sql = "SELECT
     pt.name AS payment_type,
     COUNT(p.id) AS payment_count,
     SUM(p.amount) AS total_amount
-FROM payments p
+FROM v_posted_payments p
     LEFT JOIN members m ON p.member_id = m.id
     LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 $where

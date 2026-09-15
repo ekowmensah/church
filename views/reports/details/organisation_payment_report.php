@@ -77,7 +77,7 @@ $where_sql = count($where) ? 'WHERE ' . implode(' AND ', $where) : '';
 $total_sql = "SELECT SUM(p.amount) AS total_amount FROM members m
 LEFT JOIN member_organizations mo ON m.id = mo.member_id
 LEFT JOIN organizations org ON mo.organization_id = org.id
-INNER JOIN payments p ON m.id = p.member_id
+INNER JOIN v_posted_payments p ON m.id = p.member_id
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 LEFT JOIN bible_classes bc ON m.class_id = bc.id
 $where_sql";
@@ -92,7 +92,7 @@ $sql = "SELECT m.crn, m.last_name, m.first_name, bc.name AS class_name, m.gender
 FROM members m
 LEFT JOIN member_organizations mo ON m.id = mo.member_id
 LEFT JOIN organizations org ON mo.organization_id = org.id
-INNER JOIN payments p ON m.id = p.member_id
+INNER JOIN v_posted_payments p ON m.id = p.member_id
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 LEFT JOIN bible_classes bc ON m.class_id = bc.id
 $where_sql
@@ -109,7 +109,7 @@ if ($result) {
 $count_sql = "SELECT COUNT(*) AS total_count FROM members m
 LEFT JOIN member_organizations mo ON m.id = mo.member_id
 LEFT JOIN organizations org ON mo.organization_id = org.id
-INNER JOIN payments p ON m.id = p.member_id
+INNER JOIN v_posted_payments p ON m.id = p.member_id
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 LEFT JOIN bible_classes bc ON m.class_id = bc.id
 $where_sql";

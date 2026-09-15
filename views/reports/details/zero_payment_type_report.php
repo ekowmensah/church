@@ -54,7 +54,7 @@ $where_sql = count($where) ? 'WHERE ' . implode(' AND ', $where) : '';
 $pt_filter = $selected_payment_type ? "AND pt.id = $selected_payment_type" : '';
 $sql = "SELECT pt.name AS payment_type, m.last_name, m.first_name, m.crn FROM members m
 CROSS JOIN payment_types pt
-LEFT JOIN payments p ON m.id = p.member_id AND pt.id = p.payment_type_id
+LEFT JOIN v_posted_payments p ON m.id = p.member_id AND pt.id = p.payment_type_id
 $where_sql
 AND p.id IS NULL
 $pt_filter
@@ -68,7 +68,7 @@ if ($result) {
     }
 }
 $count_sql = "SELECT COUNT(*) AS total_count FROM members m
-LEFT JOIN payments p ON m.id = p.member_id
+LEFT JOIN v_posted_payments p ON m.id = p.member_id
 $where_sql
 AND p.id IS NULL";
 $count_result = $conn->query($count_sql);

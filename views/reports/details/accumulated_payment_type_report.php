@@ -58,7 +58,7 @@ if ($end_date) {
     $where[] = "p.payment_date <= '" . $conn->real_escape_string($end_date) . "'";
 }
 $where_sql = count($where) ? 'WHERE ' . implode(' AND ', $where) : '';
-$sql = "SELECT pt.name AS payment_type, SUM(p.amount) AS total_amount, COUNT(DISTINCT p.member_id) AS member_count FROM payments p
+$sql = "SELECT pt.name AS payment_type, SUM(p.amount) AS total_amount, COUNT(DISTINCT p.member_id) AS member_count FROM v_posted_payments p
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 $where_sql
 GROUP BY pt.id
@@ -71,7 +71,7 @@ if ($result) {
         $rows[] = $row;
     }
 }
-$count_sql = "SELECT COUNT(DISTINCT pt.id) AS total_count FROM payments p
+$count_sql = "SELECT COUNT(DISTINCT pt.id) AS total_count FROM v_posted_payments p
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 $where_sql";
 $count_result = $conn->query($count_sql);
@@ -81,7 +81,7 @@ if ($count_result && ($row = $count_result->fetch_assoc())) {
 }
 $total_pages = ceil($total_count / $per_page);
 // Total for all
-$total_all_sql = "SELECT SUM(p.amount) AS total_amount FROM payments p
+$total_all_sql = "SELECT SUM(p.amount) AS total_amount FROM v_posted_payments p
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 $where_sql";
 $total_all_result = $conn->query($total_all_sql);

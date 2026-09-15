@@ -12,11 +12,17 @@ if (!is_logged_in()) {
     exit;
 }
 
-// Robust super admin bypass and permission check
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+// Match the page-level role resolution: installations may store multiple role
+// IDs without populating the legacy single role_id session field.
+$role_ids = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
+if (isset($_SESSION['role_id'])) $role_ids[] = (int) $_SESSION['role_id'];
+$is_super_admin = !empty($_SESSION['is_super_admin'])
+    || (int) ($_SESSION['user_id'] ?? 0) === 3
+    || in_array(1, $role_ids, true);
 
-if (!$is_super_admin && !has_permission('access_ajax_get_person_by_id')) {
+if (!$is_super_admin
+    && !has_permission('access_ajax_get_person_by_id')
+    && !has_permission('create_payment')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Permission denied']);
     exit;
@@ -35,7 +41,7 @@ try {
     }
     
     // 1. Try to find in members by CRN
-    $stmt = $conn->prepare("SELECT m.id, m.crn, m.first_name, m.last_name, m.gender, DATE_FORMAT(m.dob, '%Y-%m-%d') as dob, m.status, m.church_id, m.phone, m.photo, bc.name as class_name FROM members m LEFT JOIN bible_classes bc ON m.class_id = bc.id WHERE m.crn = ? LIMIT 1");
+    $stmt = $conn->prepare("SELECT m.id, m.crn, m.first_name, m.last_name, m.gender, DATE_FORMAT(m.dob, '%Y-%m-%d') as dob, m.status, m.church_id, m.phone, m.photo, bc.name as class_name FROM members m LEFT JOIN bible_classes bc ON m.class_id = bc.id WHERE m.crn = ? AND m.status = 'active' AND m.is_archived = 0 LIMIT 1");
     if (!$stmt) throw new Exception('Member query prepare failed: ' . $conn->error);
     $stmt->bind_param('s', $id);
     if (!$stmt->execute()) throw new Exception('Member query execute failed: ' . $stmt->error);
@@ -60,7 +66,7 @@ try {
     $stmt->close();
 
     // 2. Try to find in sunday_school by SRN
-    $stmt2 = $conn->prepare("SELECT id, srn, first_name, last_name, middle_name, dob, gender, contact, school_attend, father_name, father_contact, mother_name, mother_contact, church_id, class_id, father_member_id, mother_member_id, father_is_member, mother_is_member FROM sunday_school WHERE srn = ? LIMIT 1");
+    $stmt2 = $conn->prepare("SELECT id, srn, first_name, last_name, middle_name, dob, gender, contact, school_attend, father_name, father_contact, mother_name, mother_contact, church_id, class_id, father_member_id, mother_member_id, father_is_member, mother_is_member FROM sunday_school WHERE srn = ? AND transferred_to_member_id IS NULL LIMIT 1");
     if (!$stmt2) throw new Exception('Sunday School query prepare failed: ' . $conn->error);
     $stmt2->bind_param('s', $id);
     if (!$stmt2->execute()) throw new Exception('Sunday School query execute failed: ' . $stmt2->error);

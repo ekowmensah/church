@@ -78,7 +78,7 @@ $sql = "SELECT
     AVG(p.amount) AS avg_amount,
     MIN(p.amount) AS min_amount,
     MAX(p.amount) AS max_amount
-FROM payments p
+FROM v_posted_payments p
     LEFT JOIN members m ON p.member_id = m.id
 $where
 GROUP BY month

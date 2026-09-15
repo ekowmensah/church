@@ -38,16 +38,36 @@ $classes = $conn->query("SELECT id, name FROM bible_classes ORDER BY name");
 $types = $conn->query("SELECT id, name FROM payment_types ORDER BY name");
 
 // Handle filters
+$preset = trim((string) ($_GET['date_preset'] ?? ''));
+if ($preset !== '') {
+    $today = new DateTimeImmutable('today');
+    $ranges = [
+        'today' => [$today, $today],
+        'yesterday' => [$today->modify('-1 day'), $today->modify('-1 day')],
+        'this_week' => [$today->modify('monday this week'), $today],
+        'last_week' => [$today->modify('monday last week'), $today->modify('sunday last week')],
+        'this_month' => [$today->modify('first day of this month'), $today],
+        'last_month' => [$today->modify('first day of last month'), $today->modify('last day of last month')],
+        'this_year' => [$today->setDate((int)$today->format('Y'), 1, 1), $today],
+        'last_year' => [$today->setDate((int)$today->format('Y') - 1, 1, 1), $today->setDate((int)$today->format('Y') - 1, 12, 31)],
+    ];
+    if (isset($ranges[$preset])) {
+        $_GET['from_date'] = $ranges[$preset][0]->format('Y-m-d');
+        $_GET['to_date'] = $ranges[$preset][1]->format('Y-m-d');
+    } elseif ($preset === 'overall') {
+        $_GET['from_date'] = $_GET['to_date'] = '';
+    }
+}
 $where = "WHERE 1=1";
 $params = [];
 $bind_types = '';
 if (!empty($_GET['church_id'])) {
-    $where .= " AND m.church_id = ?";
+    $where .= " AND COALESCE(m.church_id, ss.church_id, p.church_id) = ?";
     $params[] = intval($_GET['church_id']);
     $bind_types .= 'i';
 }
 if (!empty($_GET['class_id'])) {
-    $where .= " AND m.class_id = ?";
+    $where .= " AND COALESCE(m.class_id, ss.class_id) = ?";
     $params[] = intval($_GET['class_id']);
     $bind_types .= 'i';
 }
@@ -67,14 +87,14 @@ if (!empty($_GET['from_date'])) {
     $bind_types .= 's';
 }
 if (!empty($_GET['to_date'])) {
-    $where .= " AND p.payment_date <= ?";
+    $where .= " AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY)";
     $params[] = $_GET['to_date'];
     $bind_types .= 's';
 }
 $sql = "SELECT p.*, pt.name AS payment_type, 
     m.crn, m.last_name, m.first_name, m.middle_name, m.class_id, bc.name AS class_name, m.church_id, ch.name AS church_name, 
     ss.srn, ss.first_name AS ss_first_name, ss.last_name AS ss_last_name, ss.middle_name AS ss_middle_name, ss.class_id AS ss_class_id, ss.church_id AS ss_church_id
-FROM payments p 
+FROM v_posted_payments p
     LEFT JOIN payment_types pt ON p.payment_type_id = pt.id 
     LEFT JOIN members m ON p.member_id = m.id 
     LEFT JOIN bible_classes bc ON m.class_id = bc.id 
@@ -89,7 +109,11 @@ $stmt->execute();
 $payments = $stmt->get_result();
 
 // For payment trend chart: sum per month
-$trend_sql = "SELECT DATE_FORMAT(p.payment_date, '%Y-%m') AS ym, SUM(p.amount) AS total FROM payments p LEFT JOIN members m ON p.member_id = m.id $where GROUP BY ym ORDER BY ym";
+$trend_sql = "SELECT DATE_FORMAT(p.payment_date, '%Y-%m') AS ym, SUM(p.amount) AS total
+              FROM v_posted_payments p
+              LEFT JOIN members m ON p.member_id = m.id
+              LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
+              $where GROUP BY ym ORDER BY ym";
 $trend_stmt = $conn->prepare($trend_sql);
 if ($params) {
     $trend_stmt->bind_param($bind_types, ...$params);
@@ -106,6 +130,15 @@ while ($row = $trend_res->fetch_assoc()) {
 <div class="container-fluid mt-4">
   <h2 class="mb-4">Payment Report</h2>
   <form class="form-row mb-3" method="get">
+    <div class="form-group col-md-2">
+      <label>Date preset</label>
+      <select name="date_preset" class="form-control" onchange="this.form.submit()">
+        <option value="">Custom dates</option>
+        <?php foreach (['today'=>'Today','yesterday'=>'Yesterday','this_week'=>'This week','last_week'=>'Last week','this_month'=>'This month','last_month'=>'Last month','this_year'=>'This year','last_year'=>'Last year','overall'=>'Overall'] as $value=>$label): ?>
+          <option value="<?= $value ?>" <?= $preset === $value ? 'selected' : '' ?>><?= $label ?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
     <div class="form-group col-md-2">
       <label>Church</label>
       <select name="church_id" class="form-control">

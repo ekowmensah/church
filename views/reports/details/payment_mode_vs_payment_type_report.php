@@ -150,7 +150,7 @@ $sql = "
         COALESCE(pt.name, 'Unspecified') AS payment_type_name,
         COUNT(p.id) AS payment_count,
         COALESCE(SUM(p.amount), 0) AS total_amount
-    FROM payments p
+    FROM v_posted_payments p
     LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
     LEFT JOIN members m ON p.member_id = m.id
     LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id

@@ -58,7 +58,7 @@ try {
     // 0. Get list of all cashiers for filter dropdown (super admin only)
     if ($is_super_admin) {
         $sql = "SELECT DISTINCT u.id, u.name FROM users u 
-                INNER JOIN payments p ON u.id = p.recorded_by 
+                INNER JOIN v_posted_payments p ON u.id = p.recorded_by
                 WHERE DATE(p.payment_date) = ? 
                 ORDER BY u.name";
         $stmt = $conn->prepare($sql);
@@ -73,15 +73,15 @@ try {
     
     // 1. Get overall totals
     if ($filter_by_user) {
-        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM payments WHERE DATE(payment_date) = ? AND recorded_by = ?";
+        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM v_posted_payments WHERE DATE(payment_date) = ? AND recorded_by = ?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param('si', $date, $current_user_id);
     } elseif ($filter_cashier) {
-        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM payments WHERE DATE(payment_date) = ? AND recorded_by = ?";
+        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM v_posted_payments WHERE DATE(payment_date) = ? AND recorded_by = ?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param('si', $date, $filter_cashier);
     } else {
-        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM payments WHERE DATE(payment_date) = ?";
+        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM v_posted_payments WHERE DATE(payment_date) = ?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param('s', $date);
     }
@@ -111,7 +111,7 @@ try {
                 COUNT(DISTINCT p.mode) AS modes_used,
                 COUNT(DISTINCT p.payment_type_id) AS payment_types_used,
                 CASE WHEN p.recorded_by IS NULL THEN 1 ELSE 0 END AS is_self_service
-            FROM payments p
+            FROM v_posted_payments p
             LEFT JOIN users u ON p.recorded_by = u.id
             WHERE DATE(p.payment_date) = ?
             GROUP BY COALESCE(u.id, 0), COALESCE(u.name, 'By Member'), COALESCE(u.email, 'Self-Service Payment'), is_self_service
@@ -138,7 +138,7 @@ try {
                 AVG(p.amount) AS avg_amount,
                 MIN(p.amount) AS min_amount,
                 MAX(p.amount) AS max_amount
-            FROM payments p
+            FROM v_posted_payments p
             JOIN payment_types pt ON p.payment_type_id = pt.id
             WHERE DATE(p.payment_date) = ? AND p.recorded_by = ?
             GROUP BY pt.id, pt.name
@@ -156,7 +156,7 @@ try {
                 AVG(p.amount) AS avg_amount,
                 MIN(p.amount) AS min_amount,
                 MAX(p.amount) AS max_amount
-            FROM payments p
+            FROM v_posted_payments p
             JOIN payment_types pt ON p.payment_type_id = pt.id
             WHERE DATE(p.payment_date) = ? AND p.recorded_by = ?
             GROUP BY pt.id, pt.name
@@ -174,7 +174,7 @@ try {
                 AVG(p.amount) AS avg_amount,
                 MIN(p.amount) AS min_amount,
                 MAX(p.amount) AS max_amount
-            FROM payments p
+            FROM v_posted_payments p
             JOIN payment_types pt ON p.payment_type_id = pt.id
             WHERE DATE(p.payment_date) = ?
             GROUP BY pt.id, pt.name
@@ -198,7 +198,7 @@ try {
                 COUNT(p.id) AS payment_count,
                 SUM(p.amount) AS total_amount,
                 AVG(p.amount) AS avg_amount
-            FROM payments p
+            FROM v_posted_payments p
             WHERE DATE(p.payment_date) = ? AND p.recorded_by = ?
             GROUP BY p.mode
             ORDER BY total_amount DESC
@@ -212,7 +212,7 @@ try {
                 COUNT(p.id) AS payment_count,
                 SUM(p.amount) AS total_amount,
                 AVG(p.amount) AS avg_amount
-            FROM payments p
+            FROM v_posted_payments p
             WHERE DATE(p.payment_date) = ? AND p.recorded_by = ?
             GROUP BY p.mode
             ORDER BY total_amount DESC
@@ -226,7 +226,7 @@ try {
                 COUNT(p.id) AS payment_count,
                 SUM(p.amount) AS total_amount,
                 AVG(p.amount) AS avg_amount
-            FROM payments p
+            FROM v_posted_payments p
             WHERE DATE(p.payment_date) = ?
             GROUP BY p.mode
             ORDER BY total_amount DESC
@@ -250,7 +250,7 @@ try {
                 pt.name AS payment_type,
                 COUNT(p.id) AS payment_count,
                 SUM(p.amount) AS total_amount
-            FROM payments p
+            FROM v_posted_payments p
             LEFT JOIN users u ON p.recorded_by = u.id
             JOIN payment_types pt ON p.payment_type_id = pt.id
             WHERE DATE(p.payment_date) = ?
@@ -276,7 +276,7 @@ try {
                 p.mode,
                 COUNT(p.id) AS payment_count,
                 SUM(p.amount) AS total_amount
-            FROM payments p
+            FROM v_posted_payments p
             LEFT JOIN users u ON p.recorded_by = u.id
             WHERE DATE(p.payment_date) = ?
             GROUP BY COALESCE(u.id, 0), COALESCE(u.name, 'By Member'), p.mode
@@ -307,7 +307,7 @@ try {
                 COALESCE(m.last_name, ss.last_name, '') AS payer_last_name,
                 COALESCE(m.crn, ss.srn, 'N/A') AS payer_id,
                 COALESCE(u.name, 'By Member') AS recorded_by_name
-            FROM payments p
+            FROM v_posted_payments p
             LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
             LEFT JOIN members m ON p.member_id = m.id
             LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
@@ -331,7 +331,7 @@ try {
                 COALESCE(m.last_name, ss.last_name, '') AS payer_last_name,
                 COALESCE(m.crn, ss.srn, 'N/A') AS payer_id,
                 COALESCE(u.name, 'By Member') AS recorded_by_name
-            FROM payments p
+            FROM v_posted_payments p
             LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
             LEFT JOIN members m ON p.member_id = m.id
             LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
@@ -355,7 +355,7 @@ try {
                 COALESCE(m.last_name, ss.last_name, '') AS payer_last_name,
                 COALESCE(m.crn, ss.srn, 'N/A') AS payer_id,
                 COALESCE(u.name, 'By Member') AS recorded_by_name
-            FROM payments p
+            FROM v_posted_payments p
             LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
             LEFT JOIN members m ON p.member_id = m.id
             LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id

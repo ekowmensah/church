@@ -5,6 +5,7 @@ require_once __DIR__ . '/../helpers/permissions_v2.php';
 require_once __DIR__ . '/../helpers/role_based_filter.php';
 require_once __DIR__ . '/../services/BirthdayDirectoryService.php';
 require_once __DIR__ . '/../services/DashboardPaymentSummaryService.php';
+require_once __DIR__ . '/../services/DashboardPeriodSummaryService.php';
 
 global $conn;
 if (!isset($conn) && isset($GLOBALS['conn'])) {
@@ -229,6 +230,20 @@ $event_scope_no_alias = $is_super_admin
     ? ''
     : ($deny_unscoped ? ' AND 1 = 0' : " AND church_id = {$current_user_church_id}");
 
+$dashboard_period_summary = (new DashboardPeriodSummaryService(
+    $conn,
+    $current_user_id,
+    $is_super_admin,
+    $is_cashier,
+    $current_user_church_id ?: null,
+    $class_ids,
+    $org_ids
+))->summarize(
+    $can_view_payment_dashboard,
+    $can_view_attendance_dashboard,
+    $can_view_health_dashboard
+);
+
 $active_members = $pending_members = $adherents = $junior_members = 0;
 $full_members = $catechumens = $distant_members = $invalid_members = 0;
 $unclassified_members = $status_review_members = $members_without_payments = 0;
@@ -254,7 +269,7 @@ if ($can_view_membership_dashboard) {
         $conn,
         "SELECT COUNT(*) AS total
          FROM members m
-         LEFT JOIN payments p
+         LEFT JOIN v_posted_payments p
            ON p.member_id = m.id
            AND {$reversal_filter}
            AND {$successful_payment_filter_alias}
@@ -268,11 +283,11 @@ $classified_members = $community_size + $distant_members + $invalid_members;
 $payment_total = $payments_today = $payments_this_week = $payments_this_month = 0.0;
 $payment_count = 0;
 if ($can_view_payment_dashboard) {
-    $payment_total = (float) dashboard_scalar($conn, "SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE {$reversal_filter} AND {$successful_payment_filter}{$payment_scope_no_alias}");
-    $payment_count = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM payments WHERE {$reversal_filter} AND {$successful_payment_filter}{$payment_scope_no_alias}");
-    $payments_today = (float) dashboard_scalar($conn, "SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE DATE(payment_date) = CURDATE() AND {$reversal_filter} AND {$successful_payment_filter}{$payment_scope_no_alias}");
-    $payments_this_week = (float) dashboard_scalar($conn, "SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1) AND {$reversal_filter} AND {$successful_payment_filter}{$payment_scope_no_alias}");
-    $payments_this_month = (float) dashboard_scalar($conn, "SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE()) AND {$reversal_filter} AND {$successful_payment_filter}{$payment_scope_no_alias}");
+    $payment_total = (float) ($dashboard_period_summary['payments']['overall'] ?? 0);
+    $payment_count = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM v_posted_payments WHERE 1=1{$payment_scope_no_alias}");
+    $payments_today = (float) ($dashboard_period_summary['payments']['today'] ?? 0);
+    $payments_this_week = (float) ($dashboard_period_summary['payments']['this_week'] ?? 0);
+    $payments_this_month = (float) ($dashboard_period_summary['payments']['this_month'] ?? 0);
 }
 $average_payment = $payment_count > 0 ? ($payment_total / $payment_count) : 0;
 
@@ -323,8 +338,8 @@ if ($can_view_attendance_dashboard) {
 
 $health_records = $health_this_month = 0;
 if ($can_view_health_dashboard) {
-    $health_records = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM health_records WHERE 1 = 1{$health_scope}");
-    $health_this_month = (int) dashboard_scalar($conn, "SELECT COUNT(*) AS total FROM health_records WHERE YEAR(recorded_at) = YEAR(CURDATE()) AND MONTH(recorded_at) = MONTH(CURDATE()){$health_scope}");
+    $health_records = (int) ($dashboard_period_summary['health']['overall'] ?? 0);
+    $health_this_month = (int) ($dashboard_period_summary['health']['this_month'] ?? 0);
 }
 
 $upcoming_events = $events_this_month = 0;
@@ -350,7 +365,7 @@ if ($can_view_payment_dashboard) {
             COALESCE(NULLIF(mode, ''), 'Unspecified') AS label,
             COUNT(*) AS entry_count,
             COALESCE(SUM(amount), 0) AS total_amount
-         FROM payments
+         FROM v_posted_payments
          WHERE {$reversal_filter} AND {$successful_payment_filter}{$payment_scope_no_alias}
          GROUP BY COALESCE(NULLIF(mode, ''), 'Unspecified')
          ORDER BY total_amount DESC"
@@ -390,7 +405,7 @@ if ($can_view_payment_dashboard) {
                 NULLIF(CONCAT_WS(' ', ss.last_name, ss.first_name), ''),
                 'Unknown payer'
             ) AS payer_name
-         FROM payments p
+         FROM v_posted_payments p
          LEFT JOIN members m ON m.id = p.member_id
          LEFT JOIN sunday_school ss ON ss.id = p.sundayschool_id
          LEFT JOIN payment_types pt ON pt.id = p.payment_type_id
@@ -444,7 +459,7 @@ $member_growth_rows = $can_view_membership_dashboard ? dashboard_rows(
 $payment_growth_rows = $can_view_payment_dashboard ? dashboard_rows(
     $conn,
     "SELECT DATE_FORMAT(payment_date, '%Y-%m') AS bucket, COALESCE(SUM(amount), 0) AS total_amount
-     FROM payments
+     FROM v_posted_payments
      WHERE payment_date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 5 MONTH), '%Y-%m-01')
        AND {$reversal_filter} AND {$successful_payment_filter}{$payment_scope_no_alias}
      GROUP BY DATE_FORMAT(payment_date, '%Y-%m')
@@ -497,27 +512,27 @@ $cashier_month_values = array_fill(0, count($trend_labels), 0);
 if ($is_cashier && $can_view_payment_dashboard && $current_user_id > 0) {
     $cashier_payment_count = (int) dashboard_scalar(
         $conn,
-        "SELECT COUNT(*) AS total FROM payments WHERE {$reversal_filter} AND {$successful_payment_filter}{$cashier_filter_no_alias}"
+        "SELECT COUNT(*) AS total FROM v_posted_payments WHERE {$reversal_filter} AND {$successful_payment_filter}{$cashier_filter_no_alias}"
     );
     $cashier_total_amount = (float) dashboard_scalar(
         $conn,
-        "SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE {$reversal_filter} AND {$successful_payment_filter}{$cashier_filter_no_alias}"
+        "SELECT COALESCE(SUM(amount), 0) AS total FROM v_posted_payments WHERE {$reversal_filter} AND {$successful_payment_filter}{$cashier_filter_no_alias}"
     );
     $cashier_today_count = (int) dashboard_scalar(
         $conn,
-        "SELECT COUNT(*) AS total FROM payments WHERE DATE(payment_date) = CURDATE() AND {$reversal_filter} AND {$successful_payment_filter}{$cashier_filter_no_alias}"
+        "SELECT COUNT(*) AS total FROM v_posted_payments WHERE DATE(payment_date) = CURDATE() AND {$reversal_filter} AND {$successful_payment_filter}{$cashier_filter_no_alias}"
     );
     $cashier_today_amount = (float) dashboard_scalar(
         $conn,
-        "SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE DATE(payment_date) = CURDATE() AND {$reversal_filter} AND {$successful_payment_filter}{$cashier_filter_no_alias}"
+        "SELECT COALESCE(SUM(amount), 0) AS total FROM v_posted_payments WHERE DATE(payment_date) = CURDATE() AND {$reversal_filter} AND {$successful_payment_filter}{$cashier_filter_no_alias}"
     );
     $cashier_week_count = (int) dashboard_scalar(
         $conn,
-        "SELECT COUNT(*) AS total FROM payments WHERE YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1) AND {$reversal_filter} AND {$successful_payment_filter}{$cashier_filter_no_alias}"
+        "SELECT COUNT(*) AS total FROM v_posted_payments WHERE YEARWEEK(payment_date, 1) = YEARWEEK(CURDATE(), 1) AND {$reversal_filter} AND {$successful_payment_filter}{$cashier_filter_no_alias}"
     );
     $cashier_month_count = (int) dashboard_scalar(
         $conn,
-        "SELECT COUNT(*) AS total FROM payments WHERE YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE()) AND {$reversal_filter} AND {$successful_payment_filter}{$cashier_filter_no_alias}"
+        "SELECT COUNT(*) AS total FROM v_posted_payments WHERE YEAR(payment_date) = YEAR(CURDATE()) AND MONTH(payment_date) = MONTH(CURDATE()) AND {$reversal_filter} AND {$successful_payment_filter}{$cashier_filter_no_alias}"
     );
     $cashier_average_ticket = $cashier_payment_count > 0 ? ($cashier_total_amount / $cashier_payment_count) : 0;
 
@@ -527,7 +542,7 @@ if ($is_cashier && $can_view_payment_dashboard && $current_user_id > 0) {
             COALESCE(NULLIF(p.mode, ''), 'Unspecified') AS label,
             COUNT(*) AS entry_count,
             COALESCE(SUM(p.amount), 0) AS total_amount
-         FROM payments p
+         FROM v_posted_payments p
          WHERE {$reversal_filter} AND {$successful_payment_filter_alias}{$cashier_filter}
          GROUP BY COALESCE(NULLIF(p.mode, ''), 'Unspecified')
          ORDER BY total_amount DESC"
@@ -545,7 +560,7 @@ if ($is_cashier && $can_view_payment_dashboard && $current_user_id > 0) {
                 NULLIF(CONCAT_WS(' ', ss.last_name, ss.first_name), ''),
                 'Unknown payer'
             ) AS payer_name
-         FROM payments p
+         FROM v_posted_payments p
          LEFT JOIN members m ON m.id = p.member_id
          LEFT JOIN sunday_school ss ON ss.id = p.sundayschool_id
          LEFT JOIN payment_types pt ON pt.id = p.payment_type_id
@@ -557,7 +572,7 @@ if ($is_cashier && $can_view_payment_dashboard && $current_user_id > 0) {
     $cashier_month_rows = dashboard_rows(
         $conn,
         "SELECT DATE_FORMAT(payment_date, '%Y-%m') AS bucket, COALESCE(SUM(amount), 0) AS total_amount
-         FROM payments
+         FROM v_posted_payments
          WHERE payment_date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 5 MONTH), '%Y-%m-01')
            AND {$reversal_filter} AND {$successful_payment_filter}{$cashier_filter_no_alias}
          GROUP BY DATE_FORMAT(payment_date, '%Y-%m')
@@ -1575,6 +1590,37 @@ ob_start();
     <?php endif; ?>
 
     <?php if ($can_view_attendance_dashboard || $can_view_payment_dashboard || $can_view_health_dashboard): ?>
+    <div class="row"><div class="col-12 mb-4">
+        <section class="dashboard-panel">
+            <div class="dashboard-panel-header">
+                <div>
+                    <h3>Operational Period Summary</h3>
+                    <p>Today through overall totals, restricted to your authorized assignments.</p>
+                </div>
+            </div>
+            <div class="dashboard-panel-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="thead-light"><tr><th>Period</th>
+                            <?php if ($can_view_payment_dashboard): ?><th class="text-right">Posted Payments</th><?php endif; ?>
+                            <?php if ($can_view_attendance_dashboard): ?><th class="text-right">Present Attendance</th><?php endif; ?>
+                            <?php if ($can_view_health_dashboard): ?><th class="text-right">Health Records</th><?php endif; ?>
+                        </tr></thead>
+                        <tbody>
+                        <?php foreach ($dashboard_period_summary['periods'] as $periodKey => $period): ?>
+                            <tr><th><?= htmlspecialchars($period['label']) ?></th>
+                                <?php if ($can_view_payment_dashboard): ?><td class="text-right font-weight-bold"><?= htmlspecialchars(dashboard_currency($dashboard_period_summary['payments'][$periodKey] ?? 0)) ?></td><?php endif; ?>
+                                <?php if ($can_view_attendance_dashboard): ?><td class="text-right"><?= number_format((int) ($dashboard_period_summary['attendance'][$periodKey] ?? 0)) ?></td><?php endif; ?>
+                                <?php if ($can_view_health_dashboard): ?><td class="text-right"><?= number_format((int) ($dashboard_period_summary['health'][$periodKey] ?? 0)) ?></td><?php endif; ?>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="px-3 py-2 small text-muted border-top">Payments include posted transactions only. Attendance counts approved, non-draft Present records.</div>
+            </div>
+        </section>
+    </div></div>
     <div class="row">
         <?php if ($can_view_attendance_dashboard): ?><div class="col-xl-6 mb-4">
             <section class="dashboard-panel">

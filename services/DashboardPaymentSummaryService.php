@@ -49,7 +49,7 @@ final class DashboardPaymentSummaryService {
                     COUNT(p.id) AS entry_count,
                     COALESCE(SUM(p.amount), 0) AS total_amount
                FROM payment_types payment_type
-               LEFT JOIN payments p ON {$join}
+               LEFT JOIN v_posted_payments p ON {$join}
               WHERE payment_type.active = 1
               GROUP BY payment_type.id, payment_type.name
               ORDER BY total_amount DESC, payment_type.name ASC"

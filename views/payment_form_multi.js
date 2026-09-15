@@ -1,509 +1,232 @@
-// payment_form_multi.js: Robust, modern rewrite for bulk payment UI
-$(function(){
-    // --- State ---
-    let payments = [];
-    let member = null;
-    let allowBulkSubmit = false;
+(function ($) {
+    'use strict';
 
-    // --- Utility: Render payments table ---
-    function renderPayments() {
-        const $tbody = $('#bulkPaymentsTable tbody');
-        $tbody.empty();
-        let total = 0;
-        payments.forEach((p, idx) => {
-            total += parseFloat(p.amount) || 0;
-            $tbody.append(`
-                <tr>
-                    <td>${idx+1}</td>
-                    <td><select class="form-control form-control-sm bulk-type-input" data-idx="${idx}">${$('#bulk_payment_type_id').html()}</select></td>
-                    <td><input type="number" min="0" step="0.01" class="form-control form-control-sm bulk-amount-input" data-idx="${idx}" value="${p.amount}" style="width:100px;text-align:right"></td>
-                    <td>
-                        <select class="form-control form-control-sm bulk-mode-input" data-idx="${idx}" style="width:110px">
-                            <option value="">-- Select --</option>
-                            <option value="Cash"${p.mode==='Cash'?' selected':''}>Cash</option>
-                            <option value="Cheque"${p.mode==='Cheque'?' selected':''}>Cheque</option>
-                        </select>
-                    </td>
-                    <td><input type="date" class="form-control form-control-sm bulk-date-input" data-idx="${idx}" value="${p.date}" style="width:135px"></td>
-                    <td>
-                        <select class="form-control form-control-sm bulk-period-input" data-idx="${idx}" style="width:120px">
-                            ${$('#bulk_payment_period').html()}
-                        </select>
-                    </td>
-                    <td><input type="text" class="form-control form-control-sm bulk-desc-input" data-idx="${idx}" value="${p.desc||''}" data-autodesc="${p._autodesc||''}" style="width:140px"></td>
-                    <td><button type="button" class="btn btn-link text-danger btn-sm remove-payment-row" data-idx="${idx}"><i class="fa fa-trash"></i></button></td>
-                </tr>`);
-            // Set type and period selection after rendering and trigger change for autofill
-            $tbody.find(`.bulk-type-input[data-idx="${idx}"]`).val(p.type_id).trigger('change');
-            $tbody.find(`.bulk-period-input[data-idx="${idx}"]`).val(p.period).trigger('change');
-            $tbody.find(`.bulk-date-input[data-idx="${idx}"]`).trigger('change');
+    var config = window.paymentFormConfig || {};
+    var payer = null;
+    var payerType = null;
+    var payments = [];
+    var lastAutoDescription = '';
+    var descriptionWasEdited = false;
+
+    function escapeHtml(value) {
+        return $('<div>').text(value == null ? '' : String(value)).html();
+    }
+
+    function money(value) {
+        return 'GH\u20b5' + Number(value || 0).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
         });
-        $('#bulkPaymentsTotal').text('₵'+total.toFixed(2));
-        if (payments.length === 0) {
-            $('#bulkPaymentsTable, #bulkPaymentsFooter').hide();
-            $('#submitBulkPaymentsBtn').prop('disabled', true);
-        } else {
-            $('#bulkPaymentsTable, #bulkPaymentsFooter').show();
-            $('#submitBulkPaymentsBtn').prop('disabled', false);
-        }
     }
 
-    // Utility: Generate auto-description for bulk payment row
-    function getBulkAutoDescription(typeText, periodText) {
-        if (typeText && typeText !== '-- Select --' && periodText && periodText !== '-- Select Period --') {
-            return 'Payment for ' + periodText + ' ' + typeText;
-        }
-        return '';
+    function setFeedback(message, level) {
+        $('#bulk-payment-feedback').html(
+            '<div class="alert alert-' + (level || 'danger') + '">' + escapeHtml(message) + '</div>'
+        );
     }
 
-    // --- Add payment to bulk list ---
-    function addToBulk() {
-        const typeId = $('#bulk_payment_type_id').val();
-        const typeText = $('#bulk_payment_type_id option:selected').text();
-        const amount = $('#bulk_amount').val();
-        const mode = $('#bulk_mode').val();
-        const date = $('#bulk_payment_date').val();
-        const period = $('#bulk_payment_period').val();
-        const periodText = $('#bulk_payment_period option:selected').text();
-        const desc = $('#bulk_description').val();
-        if (!typeId || !amount || !mode || !date || !period) {
-            alert('Please fill all required fields.');
-            return;
-        }
-        payments.push({ type_id: typeId, type_text: typeText, amount, mode, date, period, period_text: periodText, desc });
-        renderPayments();
-        // Clear fields
+    function resetLineForm() {
         $('#bulk_payment_type_id').val('');
         $('#bulk_amount').val('');
-        $('#bulk_mode').val('');
-        $('#bulk_payment_period').val('');
         $('#bulk_description').val('');
+        lastAutoDescription = '';
+        descriptionWasEdited = false;
+        $('#bulk_bank_name, #bulk_cheque_number').val('');
+        $('input[name="payment_method"][value="Cash"]').prop('checked', true).trigger('change');
+        $('#payment-method-options label').removeClass('active');
+        $('input[name="payment_method"][value="Cash"]').closest('label').addClass('active');
     }
 
-    // --- Remove payment row ---
-    $(document).on('click', '.remove-payment-row', function(){
-        const idx = $(this).data('idx');
-        payments.splice(idx, 1);
-        renderPayments();
-    });
-
-    // --- Inline edits ---
-    $(document).on('input change blur', '.bulk-amount-input', function(){
-        const idx = $(this).data('idx');
-        const val = parseFloat($(this).val());
-        if (!isNaN(val) && val >= 0) {
-            payments[idx].amount = val.toFixed(2);
-            // Update total only
-            let total = 0;
-            payments.forEach(p => { total += parseFloat(p.amount) || 0; });
-            $('#bulkPaymentsTotal').text('₵'+total.toFixed(2));
-        }
-    });
-    $(document).on('change', '.bulk-mode-input', function(){
-        const idx = $(this).data('idx');
-        payments[idx].mode = $(this).val();
-    });
-    $(document).on('change blur', '.bulk-date-input', function(){
-        const idx = $(this).data('idx');
-        payments[idx].date = $(this).val();
-    });
-    $(document).on('change', '.bulk-period-input', function(){
-        const idx = $(this).data('idx');
-        payments[idx].period = $(this).val();
-        payments[idx].period_text = $(this).find('option:selected').text();
-    });
-    $(document).on('input change blur', '.bulk-desc-input', function(){
-        const idx = $(this).data('idx');
-        payments[idx].desc = $(this).val();
-    });
-
-    // Auto-populate desc on type/period change for each row
-    $(document).on('change', '.bulk-type-input, .bulk-period-input', function(){
-        const idx = $(this).data('idx');
-        const p = payments[idx];
-        // Only auto-update if desc is empty or matches previous auto-desc
-        const $desc = $(`.bulk-desc-input[data-idx="${idx}"]`);
-        const prevAuto = p._autodesc || '';
-        const currentDesc = $desc.val();
-        const typeText = $(`.bulk-type-input[data-idx="${idx}"] option:selected`).text();
-        const periodText = $(`.bulk-period-input[data-idx="${idx}"] option:selected`).text();
-        const autoDesc = getBulkAutoDescription(typeText, periodText);
-        if (!currentDesc || currentDesc === prevAuto) {
-            $desc.val(autoDesc);
-            payments[idx].desc = autoDesc;
-        }
-        // Track the auto-desc for this row
-        payments[idx]._autodesc = autoDesc;
-    });
-    // When user manually edits desc, stop auto-replacing
-    $(document).on('input', '.bulk-desc-input', function(){
-        const idx = $(this).data('idx');
-        payments[idx].desc = $(this).val();
-    });
-
-    // Ensure payment type change updates payment object
-    $(document).on('change', '.bulk-type-input', function() {
-        const idx = $(this).data('idx');
-        payments[idx].type_id = $(this).val();
-        payments[idx].type_text = $(this).find('option:selected').text();
-    });
-
-    // --- Enable Add to Bulk Button ---
-    function enableAddToBulkBtn() {
-        const $btn = $('#addToBulkBtn');
-        $btn.prop('disabled', false).show();
-    }
-    $('a[data-toggle="tab"][href="#bulkPanel"], #bulk-tab').on('shown.bs.tab click', enableAddToBulkBtn);
-    $(document).off('click.addToBulk').on('click.addToBulk', '#addToBulkBtn', function(e){
-        e.preventDefault();
-        addToBulk();
-    });
-
-    // --- Modal confirmation for bulk submit ---
-    $('#submitBulkPaymentsBtn').off('click').on('click', function(e) {
-        e.preventDefault();
-        if (payments.length === 0) {
-            $('#bulk-payment-feedback').html('<div class="alert alert-danger">No payments to submit.</div>');
-            return;
-        }
-        let total = 0;
-        let html = '';
-        payments.forEach((p, i) => {
-            total += parseFloat(p.amount) || 0;
-            html += `<tr><td>${i+1}</td><td>${p.type_text}</td><td>₵${parseFloat(p.amount).toLocaleString(undefined,{minimumFractionDigits:2})}</td><td>${p.mode}</td><td>${p.date}</td><td>${p.desc||''}</td></tr>`;
-        });
-        $('#bulkConfirmTable tbody').html(html);
-        $('#bulkConfirmTotal').text('₵' + total.toLocaleString(undefined,{minimumFractionDigits:2}));
-        $('#bulkPaymentConfirmModal').modal('show');
-    });
-    $('#confirmBulkPaymentBtn').off('click').on('click', function(){
-        if ($(this).prop('disabled')) return;
-        $(this).prop('disabled', true).text('Processing...');
-        allowBulkSubmit = true;
-        $('#bulkPaymentEntryForm').trigger('submit');
-        $('#bulkPaymentConfirmModal').modal('hide');
-        setTimeout(()=>{
-            $('#confirmBulkPaymentBtn').prop('disabled', false).html('<i class="fas fa-check-circle mr-1"></i>Confirm & Submit');
-        }, 2000);
-    });
-
-    // --- AJAX submit for bulk payments ---
-    $('#bulkPaymentEntryForm').on('submit', function(e){
-        if (!allowBulkSubmit) {
-            e.preventDefault();
-            return false;
-        }
-        allowBulkSubmit = false;
-        $('#submitBulkPaymentsBtn').prop('disabled', true).text('Processing...');
-
-        // Always use arrays for member_ids/sundayschool_ids to match backend validation
-        let isSRN = member && (member.person_type === 'sundayschool' || member.sundayschool_id);
-        let postData = {
-            member_ids: [],
-            sundayschool_ids: [],
-            amounts: {},
-            church_id: member?.church_id || '',
-            payment_date: payments[0]?.date || ''
-        };
-        // --- Build descriptions, modes, periods, and period descriptions objects for backend ---
-        let descriptions = {};
-        let modes = {};
-        let periods = {};
-        let period_descriptions = {};
-        if (isSRN) {
-            let sid = member.sundayschool_id || member.id;
-            postData.sundayschool_ids = [sid];
-            postData.amounts['ss_' + sid] = {};
-            descriptions['ss_' + sid] = {};
-            modes['ss_' + sid] = {};
-            periods['ss_' + sid] = {};
-            period_descriptions['ss_' + sid] = {};
-            payments.forEach(function(p) {
-                postData.amounts['ss_' + sid][p.type_id] = p.amount;
-                descriptions['ss_' + sid][p.type_id] = p.desc || '';
-                modes['ss_' + sid][p.type_id] = p.mode || 'Cash';
-                periods['ss_' + sid][p.type_id] = p.period || '';
-                period_descriptions['ss_' + sid][p.type_id] = p.period_text || '';
-            });
-        } else {
-            postData.member_ids = [member.id];
-            postData.amounts[member.id] = {};
-            descriptions[member.id] = {};
-            modes[member.id] = {};
-            periods[member.id] = {};
-            period_descriptions[member.id] = {};
-            payments.forEach(function(p) {
-                postData.amounts[member.id][p.type_id] = p.amount;
-                descriptions[member.id][p.type_id] = p.desc || '';
-                modes[member.id][p.type_id] = p.mode || 'Cash';
-                periods[member.id][p.type_id] = p.period || '';
-                period_descriptions[member.id][p.type_id] = p.period_text || '';
-            });
-        }
-        postData.descriptions = descriptions;
-        postData.modes = modes;
-        postData.periods = periods;
-        postData.period_descriptions = period_descriptions;
-
-
-        $.ajax({
-            url: 'ajax_bulk_payment.php',
-            type: 'POST',
-            data: JSON.stringify(postData),
-            contentType: 'application/json',
-            dataType: 'json',
-            success: function(resp){
-                let typeMap = {};
-                $('#bulk_payment_type_id option').each(function(){
-                    if ($(this).val()) typeMap[$(this).val()] = $(this).text();
-                });
-                if (resp.success) {
-                    $('#bulk-payment-feedback').html('<div class="alert alert-success">Payments recorded successfully!</div>');
-                    window.location.href = 'payment_list.php';
-                } else {
-                    let msg = resp.msg || 'Error saving payments.';
-                    if (resp.failed && Array.isArray(resp.failed)) {
-                        msg += '\n\nFailed payments:';
-                        resp.failed.forEach(function(f){
-                            let typeName = typeMap[f.type_id] || ('Type ID ' + f.type_id);
-                            let reason = f.reason.replace(/type ID (\d+)/i, typeName);
-                            msg += `\n- ${typeName}: ${reason}`;
-                        });
-                    }
-                    alert(msg);
-                    $('#bulk-payment-feedback').html('<div class="alert alert-danger">'+msg.replace(/\n/g,'<br>')+'</div>');
-                }
-            },
-            error: function(xhr, status, err){
-                let msg = 'Network/server error.';
-                if (xhr && xhr.responseText) {
-                    try {
-                        let resp = JSON.parse(xhr.responseText);
-                        msg = resp.msg || msg;
-                    } catch(e) {}
-                }
-                alert(msg);
-                $('#bulk-payment-feedback').html('<div class="alert alert-danger">'+msg+'</div>');
-            },
-            complete: function(){
-                $('#submitBulkPaymentsBtn').prop('disabled', false).text('Submit All Payments');
-            }
-        });
-    });
-
-    // --- Expose setBulkMember for PHP integration ---
-    window.setBulkMember = function(m, type) {
-        member = m;
-        // Patch: ensure correct person_type and sundayschool_id for Sunday School students
-        if (type === 'sundayschool' || m.srn) {
-            member.person_type = 'sundayschool';
-            member.sundayschool_id = m.id;
-        } else {
-            member.person_type = 'member';
-            member.sundayschool_id = null;
-        }
-        payments = [];
-        renderPayments();
-        $('#bulk-payment-panel').show();
-        enableAddToBulkBtn();
-    };
-});
-
-    // Submit all payments
-    // Payment confirmation modal logic
-    if (!$('#paymentConfirmModal').length) {
-        $('body').append(`
-        <div class="modal fade" id="paymentConfirmModal" tabindex="-1" role="dialog" aria-labelledby="paymentConfirmModalLabel" aria-hidden="true">
-          <div class="modal-dialog modal-dialog-centered" role="document">
-            <div class="modal-content">
-              <div class="modal-header">
-                <h5 class="modal-title" id="paymentConfirmModalLabel">Confirm Payment</h5>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                  <span aria-hidden="true">&times;</span>
-                </button>
-              </div>
-              <div class="modal-body">
-                Are you sure you want to submit this payment? This action cannot be undone.
-              </div>
-              <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" id="confirmSubmitPaymentBtn">Yes, Submit Payment</button>
-              </div>
-            </div>
-          </div>
-        </div>`);
-    }
-
-    var submitHandler = function() {
-        var data = {
-            member_id: member.id,
-            payments: payments
-        };
-        $('#submitBulkPaymentsBtn').prop('disabled', true).text('Processing...');
-        $.ajax({
-            url: 'ajax_bulk_payments_single_member.php',
-            type: 'POST',
-            data: JSON.stringify(data),
-            contentType: 'application/json',
-            dataType: 'json',
-            success: function(resp){
-                // Build a map of type_id to name from the select options
-                let typeMap = {};
-                $('#bulk_payment_type_id option').each(function(){
-                    if ($(this).val()) typeMap[$(this).val()] = $(this).text();
-                });
-                if (resp.success) {
-                    $('#bulk-payment-feedback').html('<div class="alert alert-success">Payments recorded successfully!</div>');
-setTimeout(function(){
-    window.location.href = 'payment_list.php';
-}, 1200);
-                } else {
-                    let msg = resp.msg || 'Error saving payments.';
-                    if (resp.failed && Array.isArray(resp.failed)) {
-                        msg += '\n\nFailed payments:';
-                        resp.failed.forEach(function(f){
-                            let typeName = typeMap[f.type_id] || ('Type ID ' + f.type_id);
-                            let reason = f.reason.replace(/type ID (\d+)/i, typeName);
-                            msg += `\n- ${typeName}: ${reason}`;
-                        });
-                    }
-                    alert(msg);
-                    $('#bulk-payment-feedback').html('<div class="alert alert-danger">'+msg.replace(/\n/g,'<br>')+'</div>');
-                }
-            },
-            error: function(xhr, status, err){
-                let msg = 'Network/server error.';
-                if (xhr && xhr.responseText) {
-                    try {
-                        let resp = JSON.parse(xhr.responseText);
-                        msg = resp.msg || msg;
-                    } catch(e) {}
-                }
-                alert(msg);
-                $('#bulk-payment-feedback').html('<div class="alert alert-danger">'+msg+'</div>');
-            },
-            complete: function(){
-                $('#submitBulkPaymentsBtn').prop('disabled', false).text('Submit All Payments');
-            }
-        });
-        $('#paymentConfirmModal').modal('hide');
-    };
-
-    // --- Bulk Payment Confirmation Modal Logic ---
-    allowBulkSubmit = false; // Only assign, do not redeclare
-    $('#submitBulkPaymentsBtn').off('click').on('click', function(e) {
-        console.log('[DEBUG] Submit All Payments button clicked');
-        e.preventDefault();
-        var $rows = $('#bulkPaymentsTable tbody tr');
-        console.log('[DEBUG] Number of bulk payment rows:', $rows.length);
-        if ($rows.length === 0) {
-            $('#bulk-payment-feedback').html('<div class="alert alert-danger">No payments to submit.</div>');
-            return;
-        }
+    function renderPayments() {
+        var body = $('#bulkPaymentsTable tbody').empty();
         var total = 0;
-        var html = '';
-        $rows.each(function(i, row){
-            var $tds = $(row).find('td');
-            var type = $tds.eq(1).text();
-            var amount = parseFloat($tds.eq(2).text().replace(/[^\d.]/g, '')) || 0;
-            var mode = $tds.eq(3).text();
-            var date = $tds.eq(4).text();
-            var desc = $tds.eq(5).text();
-            total += amount;
-            html += `<tr><td>${i+1}</td><td>${type}</td><td>₵${amount.toLocaleString(undefined,{minimumFractionDigits:2})}</td><td>${mode}</td><td>${date}</td><td>${desc}</td></tr>`;
+        payments.forEach(function (payment, index) {
+            total += payment.amount;
+            var details = payment.mode === 'Cheque'
+                ? escapeHtml(payment.bank_name) + '<br><small class="text-muted">No. ' + escapeHtml(payment.cheque_number) + '</small>'
+                : '<span class="text-muted">&mdash;</span>';
+            body.append(
+                '<tr>' +
+                    '<td>' + (index + 1) + '</td>' +
+                    '<td>' + escapeHtml(payment.type_text) + '</td>' +
+                    '<td class="text-right">' + money(payment.amount) + '</td>' +
+                    '<td><span class="badge badge-' + (payment.mode === 'Cheque' ? 'primary' : 'success') + '">' + payment.mode + '</span></td>' +
+                    '<td>' + details + '</td>' +
+                    '<td>' + escapeHtml(payment.period_text) + '</td>' +
+                    '<td>' + escapeHtml(payment.desc || '') + '</td>' +
+                    '<td><button type="button" class="btn btn-sm btn-outline-danger remove-payment" data-index="' + index + '" aria-label="Remove payment"><i class="fas fa-times"></i></button></td>' +
+                '</tr>'
+            );
         });
-        $('#bulkConfirmTable tbody').html(html);
-        $('#bulkConfirmTotal').text('₵' + total.toLocaleString(undefined,{minimumFractionDigits:2}));
-        console.log('[DEBUG] Showing bulk payment confirmation modal');
-        $('#bulkPaymentConfirmModal').modal('show');
-    });
-    $('#confirmBulkPaymentBtn').off('click').on('click', function(){
-        if ($(this).prop('disabled')) return;
-        $(this).prop('disabled', true).text('Processing...');
-        allowBulkSubmit = true;
-        $('#bulkPaymentEntryForm').trigger('submit');
-        $('#bulkPaymentConfirmModal').modal('hide');
-        setTimeout(()=>{
-            $('#confirmBulkPaymentBtn').prop('disabled', false).html('<i class="fas fa-check-circle mr-1"></i>Confirm & Submit');
-        }, 2000);
-    });
-    // Prevent default form submit, only allow after confirm, and run AJAX here
-    $('#bulkPaymentEntryForm').on('submit', function(e){
-        if (!allowBulkSubmit) {
-            e.preventDefault();
-            return false;
-        }
-        allowBulkSubmit = false;
-        // AJAX logic (was submitHandler)
-        var data = {};
-        if (member && (member.person_type === 'sundayschool' || member.sundayschool_id)) {
-            data.sundayschool_id = member.sundayschool_id || member.id;
-        } else {
-            data.member_id = member.id;
-        }
-        data.payments = payments;
-        $('#submitBulkPaymentsBtn').prop('disabled', true).text('Processing...');
-        $.ajax({
-            url: 'ajax_bulk_payments_single_member.php',
-            type: 'POST',
-            data: JSON.stringify(data),
-            contentType: 'application/json',
-            dataType: 'json',
-            success: function(resp){
-                let typeMap = {};
-                $('#bulk_payment_type_id option').each(function(){
-                    if ($(this).val()) typeMap[$(this).val()] = $(this).text();
-                });
-                if (resp.success) {
-                    $('#bulk-payment-feedback').html('<div class="alert alert-success">Payments recorded successfully!</div>');
-setTimeout(function(){
-    window.location.href = 'payment_list.php';
-}, 1200);
-                } else {
-                    let msg = resp.msg || 'Error saving payments.';
-                    if (resp.failed && Array.isArray(resp.failed)) {
-                        msg += '\n\nFailed payments:';
-                        resp.failed.forEach(function(f){
-                            let typeName = typeMap[f.type_id] || ('Type ID ' + f.type_id);
-                            let reason = f.reason.replace(/type ID (\d+)/i, typeName);
-                            msg += `\n- ${typeName}: ${reason}`;
-                        });
-                    }
-                    alert(msg);
-                    $('#bulk-payment-feedback').html('<div class="alert alert-danger">'+msg.replace(/\n/g,'<br>')+'</div>');
-                }
-            },
-            error: function(xhr, status, err){
-                let msg = 'Network/server error.';
-                if (xhr && xhr.responseText) {
-                    try {
-                        let resp = JSON.parse(xhr.responseText);
-                        msg = resp.msg || msg;
-                    } catch(e) {}
-                }
-                alert(msg);
-                $('#bulk-payment-feedback').html('<div class="alert alert-danger">'+msg+'</div>');
-            },
-            complete: function(){
-                $('#submitBulkPaymentsBtn').prop('disabled', false).text('Submit All Payments');
-            }
-        });
-    });
+        $('#bulkPaymentsTotal').text(money(total));
+        $('#submitBulkPaymentsBtn').prop('disabled', payments.length === 0 || !payer);
+    }
 
-    // When member is found, store for bulk
-    window.setBulkMember = function(m, type) {
-        member = m;
-        // Patch: ensure correct person_type and sundayschool_id for Sunday School students
-        if (type === 'sundayschool' || m.srn) {
-            member.person_type = 'sundayschool';
-            member.sundayschool_id = m.id;
-        } else {
-            member.person_type = 'member';
-            member.sundayschool_id = null;
-        }
+    function payerSummary(data, type) {
+        var isMember = type === 'member';
+        var reg = isMember ? data.crn : data.srn;
+        var phone = isMember ? data.phone : data.contact;
+        var className = isMember ? data.class_name : (data.class_name || data.class_id);
+        var photo = isMember && data.photo
+            ? '<img class="payer-photo mr-3" src="../uploads/members/' + encodeURIComponent(String(data.photo).replace(/^.*[\\/]/, '')) + '" alt="Member photo">'
+            : '<div class="payer-photo bg-light d-flex align-items-center justify-content-center mr-3"><i class="fas fa-user fa-2x text-muted"></i></div>';
+        return '<div class="card border-success"><div class="card-body d-flex align-items-center">' + photo +
+            '<div class="flex-grow-1"><div class="d-flex align-items-center mb-2"><strong class="text-success mr-2">Payer found</strong>' +
+            '<span class="badge badge-' + (isMember ? 'primary' : 'warning') + '">' + (isMember ? 'Member' : 'Sunday School') + '</span></div>' +
+            '<div class="payment-summary-grid">' +
+            '<div><div class="payment-summary-label">' + (isMember ? 'CRN' : 'SRN') + '</div><div class="payment-summary-value">' + escapeHtml(reg || '-') + '</div></div>' +
+            '<div><div class="payment-summary-label">Name</div><div class="payment-summary-value">' + escapeHtml((data.first_name || '') + ' ' + (data.last_name || '')) + '</div></div>' +
+            '<div><div class="payment-summary-label">Phone</div><div class="payment-summary-value">' + escapeHtml(phone || '-') + '</div></div>' +
+            '<div><div class="payment-summary-label">Class</div><div class="payment-summary-value">' + escapeHtml(className || '-') + '</div></div>' +
+            '</div></div></div></div>';
+    }
+
+    window.setBulkMember = function (data, type) {
+        payer = data;
+        payerType = type;
         payments = [];
         renderPayments();
-        // Show bulk panel and enable Add to Bulk button
-        $('#bulk-payment-panel').show();
-        enableAddToBulkBtn();
     };
+
+    $(function () {
+        // The layout creates a stacking context for the content wrapper, while
+        // Bootstrap appends its backdrop directly to body. Keeping the modal at
+        // body level guarantees it remains above the backdrop and clickable.
+        $('#bulkPaymentConfirmModal').appendTo(document.body);
+
+        $('#searchMemberForm').on('submit', function (event) {
+            event.preventDefault();
+            var registrationNumber = $.trim($('#crn').val());
+            if (!registrationNumber) {
+                $('#crn-feedback').removeClass('text-success').addClass('text-danger').text('Enter a CRN or SRN.');
+                return;
+            }
+            $('#findMemberBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i>Searching');
+            $('#crn-feedback').removeClass('text-danger').addClass('text-muted').text('Searching...');
+            $.getJSON('ajax_get_person_by_id.php', { id: registrationNumber })
+                .done(function (response) {
+                    if (!response.success) {
+                        payer = null;
+                        payerType = null;
+                        payments = [];
+                        renderPayments();
+                        $('#member-summary, #payment-panels').addClass('d-none');
+                        $('#crn-feedback').removeClass('text-muted').addClass('text-danger').text(response.msg || response.error || 'Payer not found.');
+                        return;
+                    }
+                    window.setBulkMember(response.data, response.type);
+                    $('#member-summary').html(payerSummary(response.data, response.type)).removeClass('d-none');
+                    $('#payment-panels').removeClass('d-none');
+                    $('#crn-feedback').removeClass('text-danger text-muted').addClass('text-success').text('Payer selected.');
+                })
+                .fail(function () {
+                    $('#crn-feedback').removeClass('text-muted').addClass('text-danger').text('The payer lookup failed. Please try again.');
+                })
+                .always(function () {
+                    $('#findMemberBtn').prop('disabled', false).html('<i class="fas fa-search mr-1"></i>Find payer');
+                });
+        });
+
+        $('input[name="payment_method"]').on('change', function () {
+            var mode = $('input[name="payment_method"]:checked').val() || 'Cash';
+            $('#bulk_mode').val(mode);
+            $('#bulk_cheque_fields').toggleClass('d-none', mode !== 'Cheque');
+        });
+
+        $('#bulk_description').on('input', function () {
+            var current = $.trim($(this).val());
+            descriptionWasEdited = current !== '' && current !== lastAutoDescription;
+            if (current === '') descriptionWasEdited = false;
+        });
+
+        $('#bulk_payment_type_id, #bulk_payment_period').on('change', function () {
+            var typeText = $('#bulk_payment_type_id option:selected').text();
+            var periodText = $('#bulk_payment_period option:selected').text();
+            if (!$('#bulk_payment_type_id').val() || descriptionWasEdited) return;
+            lastAutoDescription = 'Payment for ' + periodText + ' ' + typeText;
+            $('#bulk_description').val(lastAutoDescription);
+        });
+
+        $('#addToBulkBtn').on('click', function () {
+            if (!payer) return setFeedback('Find and select a payer first.');
+            var typeId = Number($('#bulk_payment_type_id').val());
+            var amount = Number($('#bulk_amount').val());
+            var mode = $('#bulk_mode').val();
+            var period = $('#bulk_payment_period').val();
+            var bank = $.trim($('#bulk_bank_name').val());
+            var cheque = $.trim($('#bulk_cheque_number').val());
+            if (!typeId || !(amount > 0) || !period) return setFeedback('Select a payment type, enter a valid amount, and choose the reporting period.');
+            if (mode === 'Cheque' && (!bank || !cheque)) return setFeedback('Bank name and cheque number are required for cheque payments.');
+            if (payments.length >= 30) return setFeedback('A manual batch can contain at most 30 payment lines.');
+            payments.push({
+                type_id: typeId,
+                type_text: $('#bulk_payment_type_id option:selected').text(),
+                amount: amount,
+                mode: mode,
+                period: period,
+                period_text: $('#bulk_payment_period option:selected').text(),
+                desc: $.trim($('#bulk_description').val()),
+                bank_name: mode === 'Cheque' ? bank : '',
+                cheque_number: mode === 'Cheque' ? cheque : ''
+            });
+            $('#bulk-payment-feedback').empty();
+            renderPayments();
+            resetLineForm();
+        });
+
+        $('#bulkPaymentsTable').on('click', '.remove-payment', function () {
+            payments.splice(Number($(this).data('index')), 1);
+            renderPayments();
+        });
+
+        $('#submitBulkPaymentsBtn').on('click', function () {
+            if (!payer || payments.length === 0) return;
+            var hasCheque = payments.some(function (payment) { return payment.mode === 'Cheque'; });
+            var total = 0;
+            var body = $('#bulkConfirmTable tbody').empty();
+            payments.forEach(function (payment, index) {
+                total += payment.amount;
+                var details = payment.mode === 'Cheque' ? payment.bank_name + ' / ' + payment.cheque_number : '-';
+                body.append('<tr><td>' + (index + 1) + '</td><td>' + escapeHtml(payment.type_text) + '</td><td>' + money(payment.amount) + '</td><td>' + payment.mode + '</td><td>' + escapeHtml(details) + '</td><td>' + escapeHtml(payment.period_text) + '</td></tr>');
+            });
+            $('#bulkConfirmTotal').text(money(total));
+            $('#chequeConfirmationPanel').toggleClass('d-none', !hasCheque);
+            $('#cheque_entry_confirmed').prop('checked', false);
+            $('#bulkPaymentConfirmModal').modal('show');
+        });
+
+        $('#confirmBulkPaymentBtn').on('click', function () {
+            var hasCheque = payments.some(function (payment) { return payment.mode === 'Cheque'; });
+            if (hasCheque && !$('#cheque_entry_confirmed').prop('checked')) {
+                return setFeedback('Complete the cheque recorder checklist before submission.');
+            }
+            var request = {
+                member_id: payerType === 'member' ? Number(payer.id) : 0,
+                sundayschool_id: payerType === 'sundayschool' ? Number(payer.id) : 0,
+                payments: payments,
+                cheque_entry_confirmed: hasCheque && $('#cheque_entry_confirmed').prop('checked'),
+                csrf_token: config.csrfToken
+            };
+            var button = $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i>Saving');
+            $.ajax({
+                url: config.submitUrl,
+                method: 'POST',
+                data: JSON.stringify(request),
+                contentType: 'application/json',
+                dataType: 'json'
+            }).done(function (response) {
+                if (!response.success) return setFeedback(response.msg || 'The payment batch could not be saved.');
+                $('#bulkPaymentConfirmModal').modal('hide');
+                setFeedback(response.msg + ' Batch: ' + response.batch_reference, 'success');
+                payments = [];
+                renderPayments();
+                window.setTimeout(function () { window.location.href = config.listUrl; }, 1400);
+            }).fail(function (xhr) {
+                var response = xhr.responseJSON || {};
+                setFeedback(response.msg || 'The payment batch could not be saved.');
+            }).always(function () {
+                button.prop('disabled', false).html('<i class="fas fa-check-circle mr-1"></i>Confirm and submit');
+            });
+        });
+    });
+})(jQuery);

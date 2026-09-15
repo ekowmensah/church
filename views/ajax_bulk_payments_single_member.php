@@ -1,197 +1,122 @@
 <?php
-// Accepts JSON POST: { member_id: int, payments: [{type_id, amount, mode, date, desc}] }
-//if (session_status() === PHP_SESSION_NONE) session_start();
-session_start();
-require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions_v2.php';
+
+if (session_status() === PHP_SESSION_NONE) session_start();
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../helpers/auth.php';
+require_once __DIR__ . '/../helpers/permissions_v2.php';
+require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../services/PaymentEntryService.php';
 
 header('Content-Type: application/json');
 
-// Only allow logged-in users
 if (!is_logged_in()) {
     http_response_code(401);
-    echo json_encode(['success' => false, 'error' => 'Authentication required']);
+    echo json_encode(['success' => false, 'msg' => 'Authentication required.']);
     exit;
 }
 
-// Canonical permission check with robust super admin bypass
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
-if (!$is_super_admin && !has_permission('access_ajax_bulk_payments_single_member')) {
+$roleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
+if (isset($_SESSION['role_id'])) $roleIds[] = (int) $_SESSION['role_id'];
+$isSuperAdmin = !empty($_SESSION['is_super_admin'])
+    || (int) ($_SESSION['user_id'] ?? 0) === 3
+    || in_array(1, $roleIds, true);
+if (!$isSuperAdmin && !has_permission('create_payment')) {
     http_response_code(403);
-    echo json_encode(['success' => false, 'error' => 'Permission denied']);
+    echo json_encode(['success' => false, 'msg' => 'Permission denied.']);
     exit;
 }
 
 $input = json_decode(file_get_contents('php://input'), true);
-$member_id = intval($input['member_id'] ?? 0);
-$sundayschool_id = intval($input['sundayschool_id'] ?? 0);
-$payments = $input['payments'] ?? [];
-if ((!$member_id && !$sundayschool_id) || !is_array($payments) || count($payments) === 0) {
-    echo json_encode(['success'=>false, 'msg'=>'Invalid data.']);
+if (!is_array($input)) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'msg' => 'Invalid JSON request.']);
     exit;
 }
-$errors = [];
-$failed = [];
-foreach ($payments as $p) {
-    $type_id = intval($p['type_id'] ?? 0);
-    $amount = floatval($p['amount'] ?? 0);
-    $mode = isset($p['mode']) ? trim($p['mode']) : 'Cash';
-// Validate mode against allowed options
-$allowed_modes = ['Cash', 'Cheque', 'Transfer', 'POS', 'Online', 'Offline', 'Other'];
-if (!in_array($mode, $allowed_modes)) {
-    $mode = 'Cash';
+if (!csrf_is_valid($input['csrf_token'] ?? null)) {
+    http_response_code(419);
+    echo json_encode(['success' => false, 'msg' => 'Security token expired. Refresh the page and try again.']);
+    exit;
 }
-    // Handle payment date - if only date is provided, append current time
-    $date = $p['date'] ?? date('Y-m-d H:i:s');
-    if ($date && strlen($date) == 10) { // If date is in Y-m-d format (10 chars), append current time
-        $date .= ' ' . date('H:i:s');
-    }
-    
-    // Handle payment period - default to first day of current month if not provided
-    $period = $p['period'] ?? date('Y-m-01');
-    $period_description = $p['period_text'] ?? '';
-    
 
-    $desc = trim($p['desc'] ?? '');
-    $cheque_number = trim($p['cheque_number'] ?? '');
-    if (!$type_id || !$amount || !$mode || !$date || !$period) {
-        $msg = 'Missing fields for payment type ID '.$type_id;
-        $errors[] = $msg;
-        $failed[] = ['type_id'=>$type_id, 'reason'=>$msg];
-        continue;
-    }
-    // Validate type_id exists in payment_types and get the type name
-    $check = $conn->prepare('SELECT id, name FROM payment_types WHERE id=?');
-    $check->bind_param('i', $type_id);
-    $check->execute();
-    $check_result = $check->get_result();
-    $payment_type_data = $check_result->fetch_assoc();
-    if (!$payment_type_data) {
-        $msg = 'Invalid payment type selected (type ID '.$type_id.')';
-        $errors[] = $msg;
-        $failed[] = ['type_id'=>$type_id, 'reason'=>$msg];
-        $check->close();
-        continue;
-    }
-    $payment_type_name = $payment_type_data['name'];
-    $check->close();
-    // For member payments, use user_id if available, otherwise use 0
-    $user_id = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
-    
-    // Get church_id for the payment
-    $church_id = 1; // Default fallback
-    if ($member_id) {
-        // Get church_id from member record
-        $church_stmt = $conn->prepare('SELECT church_id FROM members WHERE id = ?');
-        $church_stmt->bind_param('i', $member_id);
-        $church_stmt->execute();
-        $church_result = $church_stmt->get_result()->fetch_assoc();
-        $church_id = $church_result['church_id'] ?? 1;
-        $church_stmt->close();
-        
+try {
+    $service = new PaymentEntryService($conn, (int) $_SESSION['user_id'], $isSuperAdmin);
+    $result = $service->recordForPerson(
+        (int) ($input['member_id'] ?? 0),
+        (int) ($input['sundayschool_id'] ?? 0),
+        (array) ($input['payments'] ?? []),
+        !empty($input['cheque_entry_confirmed'])
+    );
 
-        $stmt = $conn->prepare('INSERT INTO payments (member_id, payment_type_id, amount, mode, cheque_number, payment_date, payment_period, payment_period_description, description, recorded_by, church_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        $stmt->bind_param('iidssssssii', $member_id, $type_id, $amount, $mode, $cheque_number, $date, $period, $period_description, $desc, $user_id, $church_id);
-    } else if ($sundayschool_id) {
-        // Get church_id from sunday school record
-        $church_stmt = $conn->prepare('SELECT church_id FROM sunday_school WHERE id = ?');
-        $church_stmt->bind_param('i', $sundayschool_id);
-        $church_stmt->execute();
-        $church_result = $church_stmt->get_result()->fetch_assoc();
-        $church_id = $church_result['church_id'] ?? 1;
-        $church_stmt->close();
-        
-
-        $stmt = $conn->prepare('INSERT INTO payments (sundayschool_id, payment_type_id, amount, mode, cheque_number, payment_date, payment_period, payment_period_description, description, recorded_by, church_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        $stmt->bind_param('iidssssssii', $sundayschool_id, $type_id, $amount, $mode, $cheque_number, $date, $period, $period_description, $desc, $user_id, $church_id);
-    } else {
-        $errors[] = 'No valid member or Sunday School child specified.';
-        $failed[] = ['type_id'=>$type_id, 'reason'=>'No valid member or Sunday School child specified.'];
-        continue;
-    }
-    if (!$stmt->execute()) {
-        $msg = 'DB error for type '.$type_id;
-        if (defined('DEBUG') && DEBUG) {
-            $msg .= ': '.$stmt->error;
-        }
-        $errors[] = $msg;
-        $failed[] = ['type_id'=>$type_id, 'reason'=>$msg];
-        $stmt->close();
-        continue;
-    }
-    $stmt->close();
-    $payment_id = $conn->insert_id;
-    
-    // Send SMS immediately for all payment types (harvest and non-harvest)
-    require_once __DIR__.'/../includes/payment_sms_template.php';
-    require_once __DIR__.'/../includes/sms.php';
-    
-    // Get member or sunday school details
-    if ($member_id) {
-        $person_stmt = $conn->prepare('SELECT first_name, last_name, phone FROM members WHERE id = ?');
-        $person_stmt->bind_param('i', $member_id);
-        $person_stmt->execute();
-        $person_data = $person_stmt->get_result()->fetch_assoc();
-        $person_stmt->close();
-    } else if ($sundayschool_id) {
-        $person_stmt = $conn->prepare('SELECT first_name, last_name, contact as phone FROM sunday_school WHERE id = ?');
-        $person_stmt->bind_param('i', $sundayschool_id);
-        $person_stmt->execute();
-        $person_data = $person_stmt->get_result()->fetch_assoc();
-        $person_stmt->close();
-    } else {
-        $person_data = null;
-    }
-    
-    if ($person_data && !empty($person_data['phone'])) {
-        // Get church name
-        $church_stmt = $conn->prepare('SELECT name FROM churches WHERE id = ?');
-        $church_stmt->bind_param('i', $church_id);
-        $church_stmt->execute();
-        $church_data = $church_stmt->get_result()->fetch_assoc();
-        $church_stmt->close();
-        
-        $person_name = trim($person_data['first_name'] . ' ' . $person_data['last_name']);
-        $church_name = $church_data['name'] ?? 'Freeman Methodist Church - KM';
-        
-        if ($type_id == 4) {
-            $yearly_total = get_member_yearly_harvest_total($conn, $member_id);
-            $sms_message = get_harvest_payment_sms_message(
-                $person_name,
-                $amount,
-                $church_name,
-                $desc,
-                $yearly_total
+    $smsSent = false;
+    try {
+        if (!empty($result['payment_ids'])) {
+            require_once __DIR__ . '/../includes/payment_sms_template.php';
+            require_once __DIR__ . '/../includes/sms.php';
+            $lookup = $conn->prepare(
+            "SELECT payment.id, payment.member_id, payment.amount, payment.mode,
+                    payment.payment_date, payment.payment_period_description,
+                    payment.description, payment.payment_type_id,
+                    type.name AS payment_type, church.name AS church_name,
+                    COALESCE(member.first_name, child.first_name) AS first_name,
+                    COALESCE(member.last_name, child.last_name) AS last_name,
+                    COALESCE(member.phone, child.contact) AS phone
+               FROM payments payment
+               LEFT JOIN members member ON member.id = payment.member_id
+               LEFT JOIN sunday_school child ON child.id = payment.sundayschool_id
+               LEFT JOIN payment_types type ON type.id = payment.payment_type_id
+               LEFT JOIN churches church ON church.id = payment.church_id
+              WHERE payment.id = ?"
             );
-            $sms_type = 'harvest_payment';
-        } else {
-            // Use period_description if available, else fallback to date
-            $period_text = !empty($period_description) ? $period_description : date('F Y', strtotime($date));
-            $sms_message = get_payment_sms_message($person_name, $amount, $payment_type_name, $period_text, $desc);
-            $sms_type = 'payment';
+            foreach ($result['payment_ids'] as $paymentId) {
+                $lookup->bind_param('i', $paymentId);
+                $lookup->execute();
+                $payment = $lookup->get_result()->fetch_assoc();
+                if (!$payment || $payment['mode'] !== 'Cash' || trim((string) $payment['phone']) === '') continue;
+                $name = trim($payment['first_name'] . ' ' . $payment['last_name']);
+                if ((int) $payment['payment_type_id'] === 4 && (int) $payment['member_id'] > 0) {
+                    $message = get_harvest_payment_sms_message(
+                        $name, (float) $payment['amount'],
+                        $payment['church_name'] ?: 'Freeman Methodist Church',
+                        (string) $payment['description'],
+                        get_member_yearly_harvest_total($conn, (int) $payment['member_id'])
+                    );
+                    $smsType = 'harvest_payment';
+                } else {
+                    $message = get_payment_sms_message(
+                        $name, (float) $payment['amount'],
+                        $payment['payment_type'] ?: 'Payment',
+                        $payment['payment_period_description'] ?: date('F Y', strtotime($payment['payment_date'])),
+                        (string) $payment['description']
+                    );
+                    $smsType = 'payment';
+                }
+                $delivery = log_sms((string) $payment['phone'], $message, (int) $payment['id'], $smsType);
+                $smsSent = $smsSent || (($delivery['status'] ?? '') === 'success');
+            }
+            $lookup->close();
         }
-        // Send SMS
-        $sms_result = log_sms($person_data['phone'], $sms_message, $payment_id, $sms_type);
-        error_log('Payment SMS sent to ' . $person_data['phone'] . ': ' . json_encode($sms_result));
+    } catch (Throwable $smsException) {
+        // The committed financial transaction must not be reported as failed
+        // merely because the optional receipt notification was unavailable.
+        error_log('Payment saved but receipt SMS failed: ' . $smsException->getMessage());
     }
-    // (No queueing, all SMS are sent immediately)
 
+    echo json_encode([
+        'success' => true,
+        'msg' => $result['cheque_count'] > 0
+            ? 'Payment lines saved. Cheques remain pending until authorized verification.'
+            : 'Payments recorded.',
+        'batch_reference' => $result['batch_reference'],
+        'payment_ids' => $result['payment_ids'],
+        'cash_count' => $result['cash_count'],
+        'cheque_count' => $result['cheque_count'],
+        'sms_sent' => $smsSent,
+    ]);
+} catch (InvalidArgumentException|RuntimeException $e) {
+    http_response_code(422);
+    echo json_encode(['success' => false, 'msg' => $e->getMessage()]);
+} catch (Throwable $e) {
+    error_log('Payment entry failed: ' . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['success' => false, 'msg' => 'The payment could not be recorded.']);
 }
-
-// Initialize SMS variables to avoid undefined variable warnings
-if (!isset($sms_sent)) $sms_sent = false;
-if (!isset($sms_error)) $sms_error = null;
-if (!isset($sms_debug)) $sms_debug = null;
-
-$response = [
-    'success' => count($errors)===0,
-    'msg' => count($errors) ? implode('; ',$errors) : 'Payments recorded.',
-    'sms_sent' => $sms_sent,
-    'sms_error' => $sms_error,
-    'debug' => $sms_debug
-];
-if (!empty($failed)) {
-    $response['failed'] = $failed;
-}
-echo json_encode($response);

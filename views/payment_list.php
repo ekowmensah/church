@@ -486,9 +486,11 @@ $payment_types_count = [];
 while ($row = $payments->fetch_assoc()) {
     $payments_array[] = $row;
     
-    // Only count non-reversed payments in totals
+    // Only posted, non-reversed payments contribute to the statement totals.
     $is_reversed = !empty($row['reversal_approved_at']) && empty($row['reversal_undone_at']);
-    if (!$is_reversed) {
+    $is_unposted_cheque = in_array(strtolower(trim((string) ($row['mode'] ?? ''))), ['cheque', 'check'], true)
+        && ($row['cheque_verification_status'] ?? 'pending') !== 'verified';
+    if (!$is_reversed && !$is_unposted_cheque) {
         $total_amount += $row['amount'];
         $payment_count++;
         
@@ -1030,6 +1032,9 @@ ob_start();
                 <span class="ml-2" style="background-color: #ffe6e6; padding: 4px 8px; border-radius: 4px;">
                     <i class="fas fa-ban text-danger"></i> Red = Reversed
                 </span>
+                <span class="ml-2" style="background-color: #fff3cd; padding: 4px 8px; border-radius: 4px;">
+                    <i class="fas fa-money-check-alt text-warning"></i> Pending cheque = Not yet posted
+                </span>
             </div>
         </div>
     </div>
@@ -1191,6 +1196,14 @@ ob_start();
                                     <i class="fas fa-<?= $badge_info['icon'] ?>"></i>
                                     <?= $badge_info['label'] ?>
                                 </span>
+                                <?php if (in_array($mode, ['cheque', 'check'], true)): ?>
+                                    <br><small class="text-muted"><?= htmlspecialchars(trim(($row['bank_name'] ?? '') . ' ' . ($row['cheque_number'] ?? ''))) ?></small>
+                                    <?php
+                                    $chequeStatus = $row['cheque_verification_status'] ?? 'pending';
+                                    $chequeBadge = $chequeStatus === 'verified' ? 'success' : ($chequeStatus === 'rejected' ? 'danger' : 'warning');
+                                    ?>
+                                    <br><span class="badge badge-<?= $chequeBadge ?> mt-1"><?= htmlspecialchars(ucfirst(str_replace('_', ' ', $chequeStatus))) ?></span>
+                                <?php endif; ?>
                             </td>
                             <td class="text-end">
                                 <?php 

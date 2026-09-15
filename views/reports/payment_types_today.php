@@ -43,7 +43,7 @@ $current_user_id = $_SESSION['user_id'] ?? 0;
 // Super admin sees all payments, regular users see only their own payments
 if ($is_super_admin) {
     $sql = "SELECT pt.name AS payment_type, COUNT(p.id) AS total_count, SUM(p.amount) AS total_amount
-            FROM payments p
+            FROM v_posted_payments p
             JOIN payment_types pt ON p.payment_type_id = pt.id
             WHERE DATE(p.payment_date) = ?
             GROUP BY pt.id
@@ -52,7 +52,7 @@ if ($is_super_admin) {
     $stmt->bind_param('s', $date);
 } else {
     $sql = "SELECT pt.name AS payment_type, COUNT(p.id) AS total_count, SUM(p.amount) AS total_amount
-            FROM payments p
+            FROM v_posted_payments p
             JOIN payment_types pt ON p.payment_type_id = pt.id
             WHERE DATE(p.payment_date) = ? AND p.recorded_by = ?
             GROUP BY pt.id
@@ -69,11 +69,11 @@ $stmt->close();
 // Fetch the total sum for all types for a summary footer
 // Apply same user filtering logic
 if ($is_super_admin) {
-    $total_sql = "SELECT SUM(amount) AS total_amount FROM payments WHERE DATE(payment_date) = ?";
+    $total_sql = "SELECT SUM(amount) AS total_amount FROM v_posted_payments WHERE DATE(payment_date) = ?";
     $total_stmt = $conn->prepare($total_sql);
     $total_stmt->bind_param('s', $date);
 } else {
-    $total_sql = "SELECT SUM(amount) AS total_amount FROM payments WHERE DATE(payment_date) = ? AND recorded_by = ?";
+    $total_sql = "SELECT SUM(amount) AS total_amount FROM v_posted_payments WHERE DATE(payment_date) = ? AND recorded_by = ?";
     $total_stmt = $conn->prepare($total_sql);
     $total_stmt->bind_param('si', $date, $current_user_id);
 }

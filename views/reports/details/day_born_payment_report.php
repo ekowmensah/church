@@ -70,7 +70,7 @@ if ($end_date) {
 $where_sql = count($where) ? 'WHERE ' . implode(' AND ', $where) : '';
 // Total
 $total_sql = "SELECT SUM(p.amount) AS total_amount FROM members m
-INNER JOIN payments p ON m.id = p.member_id
+INNER JOIN v_posted_payments p ON m.id = p.member_id
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 $where_sql";
 $total_result = $conn->query($total_sql);
@@ -80,7 +80,7 @@ if ($total_result && ($row = $total_result->fetch_assoc())) {
 }
 // Paginated results
 $sql = "SELECT m.crn, m.last_name, m.first_name, m.dob, pt.name AS payment_type, p.amount, p.payment_date FROM members m
-INNER JOIN payments p ON m.id = p.member_id
+INNER JOIN v_posted_payments p ON m.id = p.member_id
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 $where_sql
 ORDER BY m.last_name, m.first_name, p.payment_date DESC
@@ -93,7 +93,7 @@ if ($result) {
     }
 }
 $count_sql = "SELECT COUNT(*) AS total_count FROM members m
-INNER JOIN payments p ON m.id = p.member_id
+INNER JOIN v_posted_payments p ON m.id = p.member_id
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 $where_sql";
 $count_result = $conn->query($count_sql);

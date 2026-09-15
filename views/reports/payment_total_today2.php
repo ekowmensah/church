@@ -51,11 +51,11 @@ $by_payment_mode = [];
 try {
     // 1. Get overall totals
     if ($filter_by_user) {
-        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM payments WHERE DATE(payment_date) = ? AND recorded_by = ?";
+        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM v_posted_payments WHERE DATE(payment_date) = ? AND recorded_by = ?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param('si', $date, $current_user_id);
     } else {
-        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM payments WHERE DATE(payment_date) = ?";
+        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM v_posted_payments WHERE DATE(payment_date) = ?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param('s', $date);
     }
@@ -81,7 +81,7 @@ try {
                 COUNT(p.id) AS payment_count,
                 SUM(p.amount) AS total_amount,
                 CASE WHEN p.recorded_by IS NULL THEN 1 ELSE 0 END AS is_self_service
-            FROM payments p
+            FROM v_posted_payments p
             LEFT JOIN users u ON p.recorded_by = u.id
             WHERE DATE(p.payment_date) = ?
             GROUP BY COALESCE(u.id, 0), COALESCE(u.name, 'By Member'), COALESCE(u.email, 'Self-Service Payment'), is_self_service
@@ -105,7 +105,7 @@ try {
                 pt.name AS payment_type,
                 COUNT(p.id) AS payment_count,
                 SUM(p.amount) AS total_amount
-            FROM payments p
+            FROM v_posted_payments p
             JOIN payment_types pt ON p.payment_type_id = pt.id
             WHERE DATE(p.payment_date) = ? AND p.recorded_by = ?
             GROUP BY pt.id, pt.name
@@ -120,7 +120,7 @@ try {
                 pt.name AS payment_type,
                 COUNT(p.id) AS payment_count,
                 SUM(p.amount) AS total_amount
-            FROM payments p
+            FROM v_posted_payments p
             JOIN payment_types pt ON p.payment_type_id = pt.id
             WHERE DATE(p.payment_date) = ?
             GROUP BY pt.id, pt.name
@@ -143,7 +143,7 @@ try {
                 p.mode,
                 COUNT(p.id) AS payment_count,
                 SUM(p.amount) AS total_amount
-            FROM payments p
+            FROM v_posted_payments p
             WHERE DATE(p.payment_date) = ? AND p.recorded_by = ?
             GROUP BY p.mode
             ORDER BY total_amount DESC
@@ -156,7 +156,7 @@ try {
                 p.mode,
                 COUNT(p.id) AS payment_count,
                 SUM(p.amount) AS total_amount
-            FROM payments p
+            FROM v_posted_payments p
             WHERE DATE(p.payment_date) = ?
             GROUP BY p.mode
             ORDER BY total_amount DESC

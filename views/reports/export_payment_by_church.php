@@ -76,7 +76,7 @@ $sql = "SELECT
     SUM(p.amount) AS total_amount,
     AVG(p.amount) AS avg_amount,
     COUNT(DISTINCT m.id) AS unique_members
-FROM payments p
+FROM v_posted_payments p
     LEFT JOIN members m ON p.member_id = m.id
     LEFT JOIN churches ch ON m.church_id = ch.id
 $where

@@ -46,7 +46,7 @@ if ($date_to) {
 $sql = "SELECT p.id, p.payment_date, p.amount, p.description,
         m.first_name, m.last_name, m.middle_name, m.crn,
         ss.srn, ss.first_name AS ss_first_name, ss.last_name AS ss_last_name, ss.middle_name AS ss_middle_name
-        FROM payments p
+        FROM v_posted_payments p
         LEFT JOIN members m ON p.member_id = m.id
         LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
         WHERE ".implode(' AND ', $where)."
@@ -66,7 +66,7 @@ $stmt->execute();
 $result = $stmt->get_result();
 
 // Count query for pagination
-$count_sql = "SELECT COUNT(*) as total FROM payments p WHERE ".implode(' AND ', $where);
+$count_sql = "SELECT COUNT(*) as total FROM v_posted_payments p WHERE ".implode(' AND ', $where);
 $count_stmt = $conn->prepare($count_sql);
 if (!empty($types) && $per_page) {
     // Remove last two types/params for LIMIT/OFFSET
@@ -94,7 +94,7 @@ if ($per_page) {
 }
 
 // Total payments (all time, filtered)
-$total_sql = "SELECT COALESCE(SUM(amount),0) as total FROM payments p WHERE ".implode(' AND ', $stats_where);
+$total_sql = "SELECT COALESCE(SUM(amount),0) as total FROM v_posted_payments p WHERE ".implode(' AND ', $stats_where);
 $total_stmt = $conn->prepare($total_sql);
 if (!empty($stats_types)) $total_stmt->bind_param($stats_types, ...$stats_params);
 $total_stmt->execute();
@@ -107,7 +107,7 @@ $week_where = $stats_where;
 $week_params = $stats_params;
 $week_types = $stats_types;
 $week_where[] = "YEARWEEK(p.payment_date, 1) = YEARWEEK(CURDATE(), 1)";
-$week_sql = "SELECT COALESCE(SUM(amount),0) as total FROM payments p WHERE ".implode(' AND ', $week_where);
+$week_sql = "SELECT COALESCE(SUM(amount),0) as total FROM v_posted_payments p WHERE ".implode(' AND ', $week_where);
 $week_stmt = $conn->prepare($week_sql);
 if (!empty($week_types)) $week_stmt->bind_param($week_types, ...$week_params);
 $week_stmt->execute();
@@ -120,7 +120,7 @@ $month_where = $stats_where;
 $month_params = $stats_params;
 $month_types = $stats_types;
 $month_where[] = "YEAR(p.payment_date) = YEAR(CURDATE()) AND MONTH(p.payment_date) = MONTH(CURDATE())";
-$month_sql = "SELECT COALESCE(SUM(amount),0) as total FROM payments p WHERE ".implode(' AND ', $month_where);
+$month_sql = "SELECT COALESCE(SUM(amount),0) as total FROM v_posted_payments p WHERE ".implode(' AND ', $month_where);
 $month_stmt = $conn->prepare($month_sql);
 if (!empty($month_types)) $month_stmt->bind_param($month_types, ...$month_params);
 $month_stmt->execute();
@@ -129,7 +129,7 @@ $month_stmt->fetch();
 $month_stmt->close();
 
 // Payment type breakdown
-$type_sql = "SELECT pt.name, COALESCE(SUM(p.amount),0) as total FROM payments p
+$type_sql = "SELECT pt.name, COALESCE(SUM(p.amount),0) as total FROM v_posted_payments p
              LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
              WHERE ".implode(' AND ', $stats_where)." GROUP BY pt.id";
 $type_stmt = $conn->prepare($type_sql);

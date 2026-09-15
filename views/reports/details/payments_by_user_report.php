@@ -59,7 +59,7 @@ if ($payment_type_id) {
 $sql = "SELECT u.id AS user_id, u.name AS user_name, u.email AS user_email, COUNT(p.id) AS payment_count, 
                SUM(p.amount) AS total_amount, GROUP_CONCAT(DISTINCT pt.name) AS payment_types
         FROM users u
-        LEFT JOIN payments p ON p.recorded_by = u.id
+        LEFT JOIN v_posted_payments p ON p.recorded_by = u.id
         LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
         ".($where ? 'WHERE '.implode(' AND ', $where) : '')."
         GROUP BY u.id
