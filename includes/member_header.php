@@ -34,6 +34,12 @@ if (!empty($_SESSION['member_id'])) {
 
   <!-- Right navbar links -->
   <ul class="navbar-nav ml-auto">
+    <?php
+    $messageActorType = 'member';
+    $messageActorId = (int) ($_SESSION['member_id'] ?? 0);
+    $messageCanUse = $messageActorId > 0;
+    include __DIR__ . '/message_notification_menu.php';
+    ?>
     <!-- Notifications Dropdown Menu -->
     <!--<li class="nav-item dropdown">
       <a class="nav-link" data-toggle="dropdown" href="#">
@@ -89,3 +95,4 @@ if (!empty($_SESSION['member_id'])) {
     </li>
   </ul>
 </nav>
+<?php include __DIR__ . '/message_notification_toast.php'; ?>

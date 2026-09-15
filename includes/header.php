@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 
 // Defaults
 $user_name = 'User Name';
@@ -56,6 +57,12 @@ if (isset($_SESSION['user_id'])) {
 
   <!-- Right navbar links -->
   <ul class="navbar-nav ml-auto">
+    <?php
+    $messageActorType = 'user';
+    $messageActorId = (int) ($_SESSION['user_id'] ?? 0);
+    $messageCanUse = $messageActorId > 0 && (is_super_admin() || has_permission('use_in_app_messages'));
+    include __DIR__ . '/message_notification_menu.php';
+    ?>
     <!-- User Dropdown Menu -->
     <li class="nav-item dropdown user-menu">
       <a href="#" class="nav-link dropdown-toggle" data-toggle="dropdown">
@@ -86,3 +93,4 @@ if (isset($_SESSION['user_id'])) {
     </li>
   </ul>
 </nav>
+<?php include __DIR__ . '/message_notification_toast.php'; ?>
