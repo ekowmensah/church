@@ -3,6 +3,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/auth.php';
 require_once __DIR__ . '/../helpers/permissions_v2.php';
 require_once __DIR__ . '/../helpers/role_based_filter.php';
+require_once __DIR__ . '/../helpers/csrf.php';
 require_once __DIR__ . '/../services/BirthdayDirectoryService.php';
 require_once __DIR__ . '/../services/DashboardPaymentSummaryService.php';
 require_once __DIR__ . '/../services/DashboardPeriodSummaryService.php';
@@ -190,6 +191,7 @@ $can_view_payment_dashboard = $is_super_admin || has_permission('view_dashboard_
 $can_view_attendance_dashboard = $is_super_admin || has_permission('view_dashboard_attendance_summary');
 $can_view_health_dashboard = $is_super_admin || has_permission('view_dashboard_health_summary');
 $can_view_event_dashboard = $is_super_admin || has_permission('view_dashboard_event_summary');
+$can_use_dashboard_insights = $is_super_admin || has_permission('use_dashboard_insights');
 $has_operational_dashboard_data = $can_view_membership_dashboard
     || $can_view_payment_dashboard
     || $can_view_attendance_dashboard
@@ -950,6 +952,98 @@ ob_start();
     background: #f8fafc;
 }
 
+.dashboard-insights-card {
+    margin-bottom: 24px;
+    padding: 22px;
+    border: 1px solid var(--dashboard-border);
+    border-radius: 22px;
+    background: linear-gradient(135deg, #eff6ff 0%, #ffffff 55%, #f0fdfa 100%);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+}
+
+.dashboard-insights-heading {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.dashboard-insights-heading .icon {
+    width: 42px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 14px;
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.dashboard-insights-heading h2 {
+    margin: 0;
+    color: var(--dashboard-ink);
+    font-size: 1.15rem;
+    font-weight: 800;
+}
+
+.dashboard-insights-copy {
+    margin: 0 0 16px;
+    color: var(--dashboard-muted);
+}
+
+.dashboard-insights-form {
+    display: flex;
+    gap: 10px;
+}
+
+.dashboard-insights-form input {
+    flex: 1;
+    min-width: 0;
+    border-radius: 12px;
+}
+
+.dashboard-insights-form button {
+    border-radius: 12px;
+    white-space: nowrap;
+}
+
+.dashboard-insights-answer {
+    display: none;
+    margin-top: 16px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: #fff;
+    border: 1px solid #bfdbfe;
+    color: var(--dashboard-ink);
+}
+
+.dashboard-insights-answer.is-visible { display: block; }
+.dashboard-insights-answer.is-error { border-color: #fecaca; background: #fff7f7; color: #991b1b; }
+
+.dashboard-insights-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.dashboard-insights-suggestion {
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.82);
+    color: #334155;
+    font-size: 0.82rem;
+    cursor: pointer;
+}
+
+.dashboard-insights-privacy {
+    display: block;
+    margin-top: 10px;
+    color: var(--dashboard-muted);
+    font-size: 0.78rem;
+}
+
 .dashboard-chart-wrap {
     position: relative;
     height: 290px;
@@ -1052,6 +1146,10 @@ ob_start();
         align-items: flex-start;
     }
 
+    .dashboard-insights-form {
+        flex-direction: column;
+    }
+
     .dashboard-chart-wrap,
     .dashboard-chart-wrap.compact {
         height: 240px;
@@ -1106,6 +1204,36 @@ ob_start();
             </div>
         <?php endif; ?>
     </section>
+
+    <?php if ($can_use_dashboard_insights): ?>
+        <section class="dashboard-insights-card" aria-labelledby="dashboardInsightsTitle">
+            <div class="dashboard-insights-heading">
+                <span class="icon" aria-hidden="true"><i class="fas fa-comment-dots"></i></span>
+                <div>
+                    <h2 id="dashboardInsightsTitle">Dashboard Insights Assistant</h2>
+                    <small class="text-muted">Ask about information your account is already permitted to view.</small>
+                </div>
+            </div>
+            <p class="dashboard-insights-copy">Try payments, attendance, membership, health, events, or birthdays. Answers use current dashboard data and your existing access scope.</p>
+            <form id="dashboardInsightsForm" class="dashboard-insights-form" autocomplete="off">
+                <label for="dashboardInsightsQuestion" class="sr-only">Ask a dashboard question</label>
+                <input id="dashboardInsightsQuestion" class="form-control" name="question" maxlength="250" required
+                       placeholder="For example: How much was received this month?">
+                <button id="dashboardInsightsSubmit" class="btn btn-primary" type="submit">
+                    <i class="fas fa-paper-plane mr-1"></i> Ask
+                </button>
+            </form>
+            <div id="dashboardInsightsAnswer" class="dashboard-insights-answer" role="status" aria-live="polite"></div>
+            <div class="dashboard-insights-suggestions" aria-label="Suggested questions">
+                <?php if ($can_view_payment_dashboard): ?><button type="button" class="dashboard-insights-suggestion">How much was received this month?</button><?php endif; ?>
+                <?php if ($can_view_attendance_dashboard): ?><button type="button" class="dashboard-insights-suggestion">What was attendance this week?</button><?php endif; ?>
+                <?php if ($can_view_membership_dashboard): ?><button type="button" class="dashboard-insights-suggestion">How many active members are there?</button><?php endif; ?>
+                <?php if ($can_view_event_dashboard): ?><button type="button" class="dashboard-insights-suggestion">How many upcoming events are there?</button><?php endif; ?>
+                <?php if ($can_view_birthdays): ?><button type="button" class="dashboard-insights-suggestion">How many birthdays are today?</button><?php endif; ?>
+            </div>
+            <small class="dashboard-insights-privacy"><i class="fas fa-shield-alt mr-1"></i>Processed locally. Questions and answer text are not retained or sent to an external AI service.</small>
+        </section>
+    <?php endif; ?>
 
     <?php if ($is_cashier && $can_view_payment_dashboard): ?>
         <section class="dashboard-stat-grid">
@@ -1678,6 +1806,71 @@ ob_start();
     </div>
     <?php endif; ?>
 </div>
+
+<?php if ($can_use_dashboard_insights): ?>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('dashboardInsightsForm');
+    const input = document.getElementById('dashboardInsightsQuestion');
+    const submit = document.getElementById('dashboardInsightsSubmit');
+    const answer = document.getElementById('dashboardInsightsAnswer');
+    if (!form || !input || !submit || !answer) return;
+
+    document.querySelectorAll('.dashboard-insights-suggestion').forEach(function (button) {
+        button.addEventListener('click', function () {
+            input.value = button.textContent.trim();
+            form.requestSubmit();
+        });
+    });
+
+    form.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        const question = input.value.trim();
+        if (question.length < 3) {
+            input.focus();
+            return;
+        }
+
+        const original = submit.innerHTML;
+        submit.disabled = true;
+        submit.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Thinking';
+        answer.classList.remove('is-error');
+        answer.classList.add('is-visible');
+        answer.textContent = 'Reviewing your authorized dashboard data...';
+
+        const body = new URLSearchParams();
+        body.append('csrf_token', <?= json_encode(csrf_token()) ?>);
+        body.append('question', question);
+
+        try {
+            const response = await fetch(<?= json_encode(BASE_URL . '/views/ajax_dashboard_insights.php') ?>, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'},
+                body: body.toString(),
+                credentials: 'same-origin'
+            });
+            const responseText = await response.text();
+            let payload;
+            try {
+                payload = JSON.parse(responseText);
+            } catch (parseError) {
+                throw new Error('The dashboard insights endpoint returned an invalid response. Refresh the page and try again.');
+            }
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || 'Dashboard insights are unavailable.');
+            }
+            answer.textContent = payload.answer;
+        } catch (error) {
+            answer.classList.add('is-error');
+            answer.textContent = error.message || 'Dashboard insights are unavailable.';
+        } finally {
+            submit.disabled = false;
+            submit.innerHTML = original;
+        }
+    });
+});
+</script>
+<?php endif; ?>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>

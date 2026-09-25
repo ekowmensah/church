@@ -20,6 +20,7 @@ if ($id <= 0) {
     exit;
 }
 $lifecycleService = MemberLifecycleService::fromSession($conn);
+$lifecycleReasons = MemberLifecycleService::lifecycleReasonOptions();
 try {
     $member = $lifecycleService->getScopedMember($id);
 } catch (Throwable $e) {
@@ -34,7 +35,11 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         if (!csrf_is_valid($_POST['csrf_token'] ?? null)) throw new RuntimeException('Invalid session token.');
-        $lifecycleService->deactivateMember($id, (string) ($_POST['reason'] ?? ''));
+        $lifecycleService->deactivateMember(
+            $id,
+            (string) ($_POST['reason_code'] ?? ''),
+            (string) ($_POST['reason_details'] ?? '')
+        );
         header('Location: member_list.php?deactivated=1&info=' . urlencode('Member deactivated and reason recorded.'));
         exit;
     } catch (Throwable $e) {
@@ -53,8 +58,16 @@ ob_start();
         <p>Deactivate <strong><?= htmlspecialchars($fullName) ?></strong> (<?= htmlspecialchars($member['crn']) ?>)? The member can be reactivated later.</p>
         <form method="post">
             <?= csrf_input() ?><input type="hidden" name="id" value="<?= $id ?>">
-            <div class="form-group"><label for="reason">Reason <span class="text-danger">*</span></label>
-                <textarea id="reason" name="reason" class="form-control" maxlength="500" required><?= htmlspecialchars($_POST['reason'] ?? '') ?></textarea>
+            <div class="form-group"><label for="reason_code">Reason <span class="text-danger">*</span></label>
+                <select id="reason_code" name="reason_code" class="form-control" required>
+                    <option value="">-- Select reason --</option>
+                    <?php foreach ($lifecycleReasons as $reasonCode => $reasonLabel): ?>
+                        <option value="<?= htmlspecialchars($reasonCode) ?>" <?= (($_POST['reason_code'] ?? '') === $reasonCode) ? 'selected' : '' ?>><?= htmlspecialchars($reasonLabel) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="form-group"><label for="reason_details">Additional details</label>
+                <textarea id="reason_details" name="reason_details" class="form-control" maxlength="430" placeholder="Optional supporting information"><?= htmlspecialchars($_POST['reason_details'] ?? '') ?></textarea>
             </div>
             <button class="btn btn-warning" type="submit"><i class="fas fa-user-times"></i> Deactivate</button>
             <a class="btn btn-secondary" href="member_list.php">Cancel</a>

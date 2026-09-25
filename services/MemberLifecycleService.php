@@ -273,8 +273,17 @@ final class MemberLifecycleService {
         }
     }
 
-    public function deactivateMember(int $memberId, string $reason): void {
-        $reason = $this->requireReason($reason);
+    public static function lifecycleReasonOptions(): array {
+        return [
+            'deceased' => 'Deceased',
+            'unknown' => 'Unknown',
+            'exited' => 'Exited',
+            'duplicate_record' => 'Duplicate Record',
+        ];
+    }
+
+    public function deactivateMember(int $memberId, string $reasonCode, string $details = ''): void {
+        [$reasonCode, $reason] = $this->normalizeLifecycleReason($reasonCode, $details);
         $member = $this->getMember($memberId, true);
         if (!$member || (int) ($member['is_archived'] ?? 0) === 1) {
             throw new RuntimeException('The member is unavailable.');
@@ -287,14 +296,15 @@ final class MemberLifecycleService {
         try {
             $stmt = $this->conn->prepare(
                 "UPDATE members SET status = 'de-activated', deactivated_at = NOW(),
-                        deactivation_reason = ?, deactivated_by_user_id = ?
+                        deactivation_reason = ?, deactivation_reason_code = ?,
+                        deactivated_by_user_id = ?
                   WHERE id = ? AND is_archived = 0"
             );
             $actor = $this->userId;
-            $stmt->bind_param('sii', $reason, $actor, $memberId);
+            $stmt->bind_param('ssii', $reason, $reasonCode, $actor, $memberId);
             $stmt->execute();
             $stmt->close();
-            $this->writeAudit($member, 'deactivated', $reason);
+            $this->writeAudit($member, 'deactivated', $reason, null, $reasonCode);
             $this->conn->commit();
         } catch (Throwable $e) {
             $this->conn->rollback();
@@ -302,8 +312,8 @@ final class MemberLifecycleService {
         }
     }
 
-    public function archiveMember(int $memberId, string $reason): void {
-        $reason = $this->requireReason($reason);
+    public function archiveMember(int $memberId, string $reasonCode, string $details = ''): void {
+        [$reasonCode, $reason] = $this->normalizeLifecycleReason($reasonCode, $details);
         $member = $this->getMember($memberId, true);
         if (!$member || (int) ($member['is_archived'] ?? 0) === 1) {
             throw new RuntimeException('The member is already archived or unavailable.');
@@ -324,14 +334,15 @@ final class MemberLifecycleService {
 
             $stmt = $this->conn->prepare(
                 "UPDATE members SET status = 'de-activated', is_archived = 1,
-                        archived_at = NOW(), archive_reason = ?, archived_by_user_id = ?
+                        archived_at = NOW(), archive_reason = ?, archive_reason_code = ?,
+                        archived_by_user_id = ?
                   WHERE id = ?"
             );
             $actor = $this->userId;
-            $stmt->bind_param('sii', $reason, $actor, $memberId);
+            $stmt->bind_param('ssii', $reason, $reasonCode, $actor, $memberId);
             $stmt->execute();
             $stmt->close();
-            $this->writeAudit($member, 'archived', $reason);
+            $this->writeAudit($member, 'archived', $reason, null, $reasonCode);
             $this->conn->commit();
         } catch (Throwable $e) {
             $this->conn->rollback();
@@ -350,7 +361,8 @@ final class MemberLifecycleService {
         try {
             $stmt = $this->conn->prepare(
                 "UPDATE members SET status = 'pending', is_archived = 0,
-                        archived_at = NULL, archive_reason = NULL, archived_by_user_id = NULL
+                        archived_at = NULL, archive_reason = NULL,
+                        archive_reason_code = NULL, archived_by_user_id = NULL
                   WHERE id = ?"
             );
             $stmt->bind_param('i', $memberId);
@@ -623,7 +635,27 @@ final class MemberLifecycleService {
         return $reason;
     }
 
-    private function writeAudit(array $member, string $action, string $reason, ?int $requestId = null): void {
+    private function normalizeLifecycleReason(string $reasonCode, string $details): array {
+        $reasonCode = trim($reasonCode);
+        $options = self::lifecycleReasonOptions();
+        if (!isset($options[$reasonCode])) {
+            throw new RuntimeException('Select a valid lifecycle reason.');
+        }
+        $details = mb_substr(trim($details), 0, 430);
+        $reason = $options[$reasonCode];
+        if ($details !== '') {
+            $reason .= ' — ' . $details;
+        }
+        return [$reasonCode, mb_substr($reason, 0, 500)];
+    }
+
+    private function writeAudit(
+        array $member,
+        string $action,
+        string $reason,
+        ?int $requestId = null,
+        ?string $reasonCode = null
+    ): void {
         $memberId = (int) $member['id'];
         $churchId = (int) ($member['church_id'] ?? 0) ?: null;
         $crn = (string) ($member['crn'] ?? '');
@@ -636,13 +668,14 @@ final class MemberLifecycleService {
         $stmt = $this->conn->prepare(
             'INSERT INTO member_lifecycle_audit
                 (member_id, original_member_id, church_id, member_crn, member_name, action,
-                 reason, profile_change_request_id, performed_by_user_id, performed_by_member_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                 reason, reason_code, profile_change_request_id,
+                 performed_by_user_id, performed_by_member_id)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
         $stmt->bind_param(
-            'iiissssiii',
+            'iiisssssiii',
             $memberId, $memberId, $churchId, $crn, $name, $action, $reason,
-            $requestId, $actorUser, $actorMember
+            $reasonCode, $requestId, $actorUser, $actorMember
         );
         $stmt->execute();
         $stmt->close();

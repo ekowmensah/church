@@ -11,6 +11,7 @@ if (!is_logged_in() || ((int) ($_SESSION['role_id'] ?? 0) !== 1 && !has_permissi
 }
 $id = (int) ($_POST['id'] ?? $_GET['id'] ?? 0);
 $lifecycleService = MemberLifecycleService::fromSession($conn);
+$lifecycleReasons = MemberLifecycleService::lifecycleReasonOptions();
 try {
     $member = $lifecycleService->getScopedMember($id);
 } catch (Throwable $e) {
@@ -25,7 +26,11 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         if (!csrf_is_valid($_POST['csrf_token'] ?? null)) throw new RuntimeException('Invalid session token.');
-        $lifecycleService->archiveMember($id, (string) ($_POST['reason'] ?? ''));
+        $lifecycleService->archiveMember(
+            $id,
+            (string) ($_POST['reason_code'] ?? ''),
+            (string) ($_POST['reason_details'] ?? '')
+        );
         header('Location: deleted_members_list.php?info=' . urlencode('Member archived; related history was preserved.'));
         exit;
     } catch (Throwable $e) {
@@ -42,8 +47,15 @@ ob_start();
 <p>Archive <strong><?= htmlspecialchars($fullName) ?></strong> (<?= htmlspecialchars($member['crn']) ?>)? Payments, attendance, and other history will remain intact.</p>
 <?php if ($member['status'] === 'active'): ?><div class="alert alert-warning">Deactivate this active member before archiving.</div><?php endif; ?>
 <form method="post"><?= csrf_input() ?><input type="hidden" name="id" value="<?= $id ?>">
-<div class="form-group"><label for="reason">Archive reason <span class="text-danger">*</span></label>
-<textarea id="reason" name="reason" class="form-control" maxlength="500" required><?= htmlspecialchars($_POST['reason'] ?? '') ?></textarea></div>
+<div class="form-group"><label for="reason_code">Archive reason <span class="text-danger">*</span></label>
+<select id="reason_code" name="reason_code" class="form-control" required>
+<option value="">-- Select reason --</option>
+<?php foreach ($lifecycleReasons as $reasonCode => $reasonLabel): ?>
+<option value="<?= htmlspecialchars($reasonCode) ?>" <?= (($_POST['reason_code'] ?? '') === $reasonCode) ? 'selected' : '' ?>><?= htmlspecialchars($reasonLabel) ?></option>
+<?php endforeach; ?>
+</select></div>
+<div class="form-group"><label for="reason_details">Additional details</label>
+<textarea id="reason_details" name="reason_details" class="form-control" maxlength="430" placeholder="Optional supporting information"><?= htmlspecialchars($_POST['reason_details'] ?? '') ?></textarea></div>
 <button class="btn btn-danger" type="submit" <?= $member['status'] === 'active' ? 'disabled' : '' ?>><i class="fas fa-archive"></i> Archive</button>
 <a class="btn btn-secondary" href="member_list.php">Cancel</a></form>
 </div></div></div></div>

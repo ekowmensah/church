@@ -8,6 +8,7 @@ session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 // Set JSON header
 header('Content-Type: application/json');
@@ -30,6 +31,12 @@ $action = $_POST['action'] ?? $_GET['action'] ?? '';
 $current_user_id = $_SESSION['user_id'] ?? 0;
 $is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
                   (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(419);
+    echo json_encode(['success' => false, 'error' => 'Invalid or expired session token. Refresh the page and try again.']);
+    exit;
+}
 
 try {
     switch ($action) {
@@ -72,6 +79,8 @@ function saveAnalysis($conn, $user_id) {
         // Cash denomination analysis
         $denominations = $_POST['denom'] ?? [];
         $denomination_total = 0;
+        $notes_total = 0;
+        $coins_total = 0;
         
         // Calculate total
         $denom_config = [
@@ -81,32 +90,44 @@ function saveAnalysis($conn, $user_id) {
             '1 Coin' => 1, '0.50p' => 0.5, '0.20p' => 0.2, '0.10p' => 0.1
         ];
         
+        $note_labels = ['200 Note', '100 Note', '50 Note', '20 Note', '10 Note', '5 Note', '2 Note', '1 Note'];
         foreach ($denominations as $label => $qty) {
             if (isset($denom_config[$label])) {
-                $denomination_total += intval($qty) * $denom_config[$label];
+                $line_total = intval($qty) * $denom_config[$label];
+                $denomination_total += $line_total;
+                if (in_array($label, $note_labels, true)) {
+                    $notes_total += $line_total;
+                } else {
+                    $coins_total += $line_total;
+                }
             }
         }
         
         // Save to database
         $stmt = $conn->prepare("
             INSERT INTO payment_analyses 
-            (analysis_date, payment_mode, created_by, denomination_data, denomination_total, status)
-            VALUES (?, ?, ?, ?, ?, 'submitted')
+            (analysis_date, payment_mode, created_by, denomination_data,
+             denomination_total, notes_total, coins_total, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'submitted')
             ON DUPLICATE KEY UPDATE
             denomination_data = VALUES(denomination_data),
             denomination_total = VALUES(denomination_total),
+            notes_total = VALUES(notes_total),
+            coins_total = VALUES(coins_total),
             updated_at = CURRENT_TIMESTAMP
         ");
         
         $denom_json = json_encode($denominations);
-        $stmt->bind_param('ssisi', $date, $payment_mode, $user_id, $denom_json, $denomination_total);
+        $stmt->bind_param('ssisddd', $date, $payment_mode, $user_id, $denom_json, $denomination_total, $notes_total, $coins_total);
         $stmt->execute();
         $stmt->close();
         
         echo json_encode([
             'success' => true,
             'message' => 'Cash analysis saved successfully',
-            'total' => $denomination_total
+            'total' => $denomination_total,
+            'notes_total' => $notes_total,
+            'coins_total' => $coins_total
         ]);
         
     } else if ($payment_mode === 'cheque') {

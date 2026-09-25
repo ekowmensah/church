@@ -5,6 +5,7 @@ require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
 require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../helpers/member_transfer_origin.php';
 require_once __DIR__.'/../services/RegistrationDuplicateService.php';
 
 // Only allow logged-in users
@@ -43,7 +44,9 @@ $success = '';
 $duplicate_matches = [];
 $duplicateService = RegistrationDuplicateService::fromSession($conn);
 $member = [
-    'first_name'=>'','middle_name'=>'','last_name'=>'','crn'=>'','phone'=>'','email'=>'','class_id'=>'','church_id'=>''
+    'first_name'=>'','middle_name'=>'','last_name'=>'','crn'=>'','phone'=>'','email'=>'','class_id'=>'','church_id'=>'',
+    'transfer_from_other_chapel'=>0,'transfer_diocese'=>'','transfer_circuit'=>'','transfer_society'=>'',
+    'removal_note_provided'=>0,'superintendent_name'=>''
 ];
 
 if ($editing) {
@@ -57,7 +60,9 @@ if ($editing) {
         $error = 'Member not found.';
         $editing = false;
         $member = [
-            'first_name'=>'','middle_name'=>'','last_name'=>'','crn'=>'','phone'=>'','email'=>'','class_id'=>'','church_id'=>''
+            'first_name'=>'','middle_name'=>'','last_name'=>'','crn'=>'','phone'=>'','email'=>'','class_id'=>'','church_id'=>'',
+            'transfer_from_other_chapel'=>0,'transfer_diocese'=>'','transfer_circuit'=>'','transfer_society'=>'',
+            'removal_note_provided'=>0,'superintendent_name'=>''
         ];
     }
 }
@@ -79,11 +84,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email'] ?? '');
     $class_id = intval($_POST['class_id'] ?? 0);
     $church_id = intval($_POST['church_id'] ?? 0);
+    $transferOrigin = member_transfer_origin_from_input($_POST);
+    member_transfer_origin_apply($member, $transferOrigin);
+    $transfer_from_other_chapel = $transferOrigin['transfer_from_other_chapel'];
+    $transfer_diocese = $transferOrigin['transfer_diocese'];
+    $transfer_circuit = $transferOrigin['transfer_circuit'];
+    $transfer_society = $transferOrigin['transfer_society'];
+    $removal_note_provided = $transferOrigin['removal_note_provided'];
+    $superintendent_name = $transferOrigin['superintendent_name'];
+    foreach (['first_name', 'middle_name', 'last_name', 'crn', 'phone', 'email', 'class_id', 'church_id'] as $postedField) {
+        $member[$postedField] = ${$postedField};
+    }
+    $transferError = member_transfer_origin_validation_error($transferOrigin);
     // Validate required fields
     if ($error) {
         // Preserve the CSRF error.
     } elseif (!$first_name || !$last_name || !$crn || !$phone || !$class_id || !$church_id) {
         $error = 'Please fill in all required fields.';
+    } elseif ($transferError !== '') {
+        $error = $transferError;
     } else {
         $registration_token = bin2hex(random_bytes(16));
         $current_member_id = $editing ? (int) $id : 0;
@@ -110,8 +129,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if (!$error) {
-                $stmt = $conn->prepare('UPDATE members SET first_name=?, middle_name=?, last_name=?, crn=?, phone=?, email=?, class_id=?, church_id=? WHERE id=?');
-                $stmt->bind_param('ssssssiii', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $id);
+                $stmt = $conn->prepare('UPDATE members SET first_name=?, middle_name=?, last_name=?, crn=?, phone=?, email=?, class_id=?, church_id=?, transfer_from_other_chapel=?, transfer_diocese=?, transfer_circuit=?, transfer_society=?, removal_note_provided=?, superintendent_name=? WHERE id=?');
+                $stmt->bind_param('ssssssiiisssisi', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $transfer_from_other_chapel, $transfer_diocese, $transfer_circuit, $transfer_society, $removal_note_provided, $superintendent_name, $id);
                 $ok = $stmt->execute();
                 if ($ok && $stmt->affected_rows >= 0) {
                     $success = 'Member updated. (Notification would be sent here)';
@@ -139,8 +158,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = 'Possible duplicate found. Review the matches below. To create a separate member, confirm and enter a reason.';
                 }
                 if (!$error) {
-                $stmt = $conn->prepare("INSERT INTO members (first_name, middle_name, last_name, crn, phone, email, class_id, church_id, registration_token, status, deactivated_at, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '')");
-                $stmt->bind_param('ssssssiis', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $registration_token);
+                $stmt = $conn->prepare("INSERT INTO members (first_name, middle_name, last_name, crn, phone, email, class_id, church_id, registration_token, transfer_from_other_chapel, transfer_diocese, transfer_circuit, transfer_society, removal_note_provided, superintendent_name, status, deactivated_at, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '')");
+                $stmt->bind_param('ssssssiisisssis', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $registration_token, $transfer_from_other_chapel, $transfer_diocese, $transfer_circuit, $transfer_society, $removal_note_provided, $superintendent_name);
                 $ok = $stmt->execute();
                 if ($ok && $stmt->affected_rows > 0) {
                     $newMemberId = (int) $stmt->insert_id;
@@ -274,6 +293,26 @@ ob_start();
                         <input type="text" class="form-control" id="crn" placeholder="CRN will appear here" value="<?=htmlspecialchars($member['crn'])?>" readonly required tabindex="-1" autocomplete="off" style="background:#f9f9f9;">
                         <input type="hidden" name="crn" id="crn_hidden" value="<?=htmlspecialchars($member['crn'])?>">
                     </div>
+                    <div class="card border-secondary mb-3">
+                        <div class="card-header py-2"><strong>Transfer from another chapel</strong></div>
+                        <div class="card-body py-3">
+                            <div class="custom-control custom-checkbox mb-3">
+                                <input type="checkbox" class="custom-control-input" id="transfer_from_other_chapel" name="transfer_from_other_chapel" value="1" <?= !empty($member['transfer_from_other_chapel']) ? 'checked' : '' ?>>
+                                <label class="custom-control-label" for="transfer_from_other_chapel">This member transferred from another chapel</label>
+                            </div>
+                            <div id="transfer-origin-fields">
+                                <div class="form-row">
+                                    <div class="form-group col-md-4"><label for="transfer_diocese">Diocese <span class="text-danger">*</span></label><input type="text" class="form-control transfer-required" id="transfer_diocese" name="transfer_diocese" maxlength="150" value="<?= htmlspecialchars($member['transfer_diocese'] ?? '') ?>"></div>
+                                    <div class="form-group col-md-4"><label for="transfer_circuit">Circuit <span class="text-danger">*</span></label><input type="text" class="form-control transfer-required" id="transfer_circuit" name="transfer_circuit" maxlength="150" value="<?= htmlspecialchars($member['transfer_circuit'] ?? '') ?>"></div>
+                                    <div class="form-group col-md-4"><label for="transfer_society">Society/Chapel <span class="text-danger">*</span></label><input type="text" class="form-control transfer-required" id="transfer_society" name="transfer_society" maxlength="150" value="<?= htmlspecialchars($member['transfer_society'] ?? '') ?>"></div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group col-md-6"><label for="superintendent_name">Superintendent Minister <span class="text-danger">*</span></label><input type="text" class="form-control transfer-required" id="superintendent_name" name="superintendent_name" maxlength="150" value="<?= htmlspecialchars($member['superintendent_name'] ?? '') ?>"></div>
+                                    <div class="form-group col-md-6"><label for="removal_note_provided">Removal note provided? <span class="text-danger">*</span></label><select class="form-control transfer-required" id="removal_note_provided" name="removal_note_provided"><option value="0" <?= empty($member['removal_note_provided']) ? 'selected' : '' ?>>No</option><option value="1" <?= !empty($member['removal_note_provided']) ? 'selected' : '' ?>>Yes</option></select></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     <?php if ($duplicate_matches): ?>
                     <div class="alert alert-warning"><strong>Possible duplicate found:</strong><ul class="mb-0">
                     <?php foreach ($duplicate_matches as $match): ?><li><?= htmlspecialchars($match['display_name']) ?> — <?= htmlspecialchars($match['identifier']) ?> (<?= htmlspecialchars(implode(', ', $match['match_rules'])) ?>)</li><?php endforeach; ?>
@@ -297,6 +336,14 @@ ob_start();
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 $(document).ready(function() {
+    function toggleTransferOrigin() {
+        var enabled = $('#transfer_from_other_chapel').is(':checked');
+        $('#transfer-origin-fields').toggle(enabled);
+        $('#transfer-origin-fields .transfer-required').prop('required', enabled);
+    }
+    $('#transfer_from_other_chapel').on('change', toggleTransferOrigin);
+    toggleTransferOrigin();
+
     function loadClasses(churchId, selectedClassId) {
         if (!churchId) {
             $('#class_id').html('<option value="">-- Select Class --</option>');

@@ -2,6 +2,7 @@
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
 require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/payment_report_context.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -34,13 +35,19 @@ require_once dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SE
 ob_start();
 
 $conn = $GLOBALS['conn'];
-$start_date = isset($_GET['start_date']) ? $_GET['start_date'] : '';
-$end_date = isset($_GET['end_date']) ? $_GET['end_date'] : '';
+$period_preset = (string) ($_GET['period'] ?? 'custom');
+[$period_preset, $start_date, $end_date] = payment_report_resolve_period(
+    $period_preset,
+    (string) ($_GET['start_date'] ?? ''),
+    (string) ($_GET['end_date'] ?? '')
+);
+$period_label = payment_report_period_label($start_date, $end_date);
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
 $per_page = 25;
 $offset = ($page - 1) * $per_page;
-$where = ["m.status = 'active'"];
-$where_sql = count($where) ? 'WHERE ' . implode(' AND ', $where) : '';
+$where = ["m.status = 'active'", 'm.is_archived = 0', 'pt.active = 1'];
+$scopeCondition = payment_report_member_scope_condition($conn, 'm');
+if ($scopeCondition !== '') $where[] = $scopeCondition;
 // Get all payment types
 $payment_types = [];
 $pt_result = $conn->query("SELECT id, name FROM payment_types ORDER BY name");
@@ -50,14 +57,23 @@ if ($pt_result) {
     }
 }
 $selected_payment_type = isset($_GET['payment_type_id']) ? intval($_GET['payment_type_id']) : 0;
-$where_sql = count($where) ? 'WHERE ' . implode(' AND ', $where) : '';
-$pt_filter = $selected_payment_type ? "AND pt.id = $selected_payment_type" : '';
-$sql = "SELECT pt.name AS payment_type, m.last_name, m.first_name, m.crn FROM members m
+$where[] = $selected_payment_type ? 'pt.id = ' . $selected_payment_type : '1 = 1';
+$where_sql = 'WHERE ' . implode(' AND ', $where);
+$paymentDateConditions = '';
+if ($start_date !== '') $paymentDateConditions .= " AND p.payment_date >= '" . $conn->real_escape_string($start_date) . "'";
+if ($end_date !== '') $paymentDateConditions .= " AND p.payment_date <= '" . $conn->real_escape_string($end_date) . "'";
+$organizationsExpression = payment_report_organizations_expression('m');
+$sql = "SELECT pt.name AS payment_type, m.last_name, m.first_name, m.crn,
+               m.phone, bible_class.name AS class_name,
+               $organizationsExpression AS organizations
+FROM members m
 CROSS JOIN payment_types pt
-LEFT JOIN v_posted_payments p ON m.id = p.member_id AND pt.id = p.payment_type_id
+LEFT JOIN bible_classes bible_class ON bible_class.id = m.class_id
 $where_sql
-AND p.id IS NULL
-$pt_filter
+AND NOT EXISTS (
+    SELECT 1 FROM v_posted_payments p
+    WHERE p.member_id = m.id AND p.payment_type_id = pt.id $paymentDateConditions
+)
 ORDER BY pt.name, m.last_name, m.first_name
 LIMIT $per_page OFFSET $offset";
 $result = $conn->query($sql);
@@ -68,9 +84,12 @@ if ($result) {
     }
 }
 $count_sql = "SELECT COUNT(*) AS total_count FROM members m
-LEFT JOIN v_posted_payments p ON m.id = p.member_id
+CROSS JOIN payment_types pt
 $where_sql
-AND p.id IS NULL";
+AND NOT EXISTS (
+    SELECT 1 FROM v_posted_payments p
+    WHERE p.member_id = m.id AND p.payment_type_id = pt.id $paymentDateConditions
+)";
 $count_result = $conn->query($count_sql);
 $total_count = 0;
 if ($count_result && ($row = $count_result->fetch_assoc())) {
@@ -81,7 +100,16 @@ $total_pages = ceil($total_count / $per_page);
 <div class="container mt-4">
     <a href="../../reports.php" class="btn btn-secondary mb-3"><i class="fas fa-arrow-left mr-1"></i>Back to Reports</a>
     <h2 class="mb-4 font-weight-bold"><i class="fas fa-ban mr-2"></i>Zero Payment Type Report</h2>
+    <p class="text-muted"><strong>Reporting Period:</strong> <?= htmlspecialchars($period_label) ?></p>
     <form method="get" class="form-inline mb-3">
+        <div class="form-group mr-2">
+            <label for="period" class="mr-2 font-weight-bold">Period:</label>
+            <select name="period" id="period" class="form-control">
+                <?php foreach (payment_report_period_options() as $value => $label): ?>
+                    <option value="<?= htmlspecialchars($value) ?>" <?= $period_preset === $value ? 'selected' : '' ?>><?= htmlspecialchars($label) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
         <div class="form-group mr-2">
             <label for="payment_type_id" class="mr-2 font-weight-bold">Payment Type:</label>
             <select name="payment_type_id" id="payment_type_id" class="form-control">
@@ -116,11 +144,17 @@ $total_pages = ceil($total_count / $per_page);
                     <th>Payment Type</th>
                     <th>Member Name</th>
                     <th>CRN</th>
+                    <th>Contact</th>
+                    <th>Bible Class</th>
+                    <th>Organization(s)</th>
+                    <th>Reporting Period</th>
+                    <th>Amount Paid</th>
+                    <th>Status</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($rows)): ?>
-                    <tr><td colspan="4" class="text-center">No records found.</td></tr>
+                    <tr><td colspan="10" class="text-center">No records found.</td></tr>
                 <?php else: ?>
                     <?php foreach ($rows as $i => $row): ?>
                         <tr>
@@ -128,6 +162,12 @@ $total_pages = ceil($total_count / $per_page);
                             <td><?php echo htmlspecialchars($row['payment_type']); ?></td>
                             <td><?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name']); ?></td>
                             <td><?php echo htmlspecialchars($row['crn']); ?></td>
+                            <td><?php echo htmlspecialchars($row['phone'] ?: '-'); ?></td>
+                            <td><?php echo htmlspecialchars($row['class_name'] ?: '-'); ?></td>
+                            <td><?php echo htmlspecialchars($row['organizations'] ?: '-'); ?></td>
+                            <td><?php echo htmlspecialchars($period_label); ?></td>
+                            <td>0.00</td>
+                            <td><span class="badge badge-warning">No Payment</span></td>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>
@@ -172,19 +212,19 @@ $(document).ready(function() {
                 extend: 'csv',
                 text: '<i class="fas fa-file-csv"></i> CSV',
                 className: 'btn btn-success btn-sm mr-2',
-                title: 'Zero Payment Type Report'
+                title: <?= json_encode('Zero Payment Type Report - ' . $period_label) ?>
             },
             {
                 extend: 'pdf',
                 text: '<i class="fas fa-file-pdf"></i> PDF',
                 className: 'btn btn-danger btn-sm mr-2',
-                title: 'Zero Payment Type Report'
+                title: <?= json_encode('Zero Payment Type Report - ' . $period_label) ?>
             },
             {
                 extend: 'print',
                 text: '<i class="fas fa-print"></i> Print',
                 className: 'btn btn-secondary btn-sm',
-                title: 'Zero Payment Type Report'
+                title: <?= json_encode('Zero Payment Type Report - ' . $period_label) ?>
             }
         ],
         paging: false,

@@ -5,6 +5,7 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 require_once '../config/config.php';
 require_once '../helpers/auth.php';
 require_once '../helpers/permissions_v2.php';
+require_once '../helpers/csrf.php';
 require_once '../includes/report_ui_helpers.php';
 
 // Only allow logged-in users
@@ -118,19 +119,19 @@ function payment_mode_icon(string $mode): string
     return $map[$mode] ?? 'wallet';
 }
 $denominations = [
-    ['label' => '200 Note', 'value' => 200],
-    ['label' => '100 Note', 'value' => 100],
-    ['label' => '50 Note',  'value' => 50],
-    ['label' => '20 Note',  'value' => 20],
-    ['label' => '10 Note',  'value' => 10],
-    ['label' => '5 Note',   'value' => 5],
-    ['label' => '2 Note',   'value' => 2],
-    ['label' => '1 Note',   'value' => 1],
-    ['label' => '2 Coin',   'value' => 2],
-    ['label' => '1 Coin',   'value' => 1],
-    ['label' => '0.50p',    'value' => 0.5],
-    ['label' => '0.20p',    'value' => 0.2],
-    ['label' => '0.10p',    'value' => 0.1],
+    ['label' => '200 Note', 'value' => 200, 'type' => 'note'],
+    ['label' => '100 Note', 'value' => 100, 'type' => 'note'],
+    ['label' => '50 Note',  'value' => 50, 'type' => 'note'],
+    ['label' => '20 Note',  'value' => 20, 'type' => 'note'],
+    ['label' => '10 Note',  'value' => 10, 'type' => 'note'],
+    ['label' => '5 Note',   'value' => 5, 'type' => 'note'],
+    ['label' => '2 Note',   'value' => 2, 'type' => 'note'],
+    ['label' => '1 Note',   'value' => 1, 'type' => 'note'],
+    ['label' => '2 Coin',   'value' => 2, 'type' => 'coin'],
+    ['label' => '1 Coin',   'value' => 1, 'type' => 'coin'],
+    ['label' => '0.50p',    'value' => 0.5, 'type' => 'coin'],
+    ['label' => '0.20p',    'value' => 0.2, 'type' => 'coin'],
+    ['label' => '0.10p',    'value' => 0.1, 'type' => 'coin'],
 ];
 // --- FETCH PAYMENT TOTALS FROM DATABASE ---
 $total_cash = 0.00;
@@ -141,7 +142,7 @@ try {
     if ($filter_by_user) {
         // Non-admin: Show only payments recorded by this user
         // Fetch cash total
-        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND LOWER(TRIM(mode))='cash' AND recorded_by=?");
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE DATE(payment_date)=? AND LOWER(TRIM(mode))='cash' AND recorded_by=?");
         $stmt->bind_param('si', $date, $current_user_id);
         $stmt->execute();
         $stmt->bind_result($total_cash);
@@ -150,7 +151,7 @@ try {
         $total_cash = floatval($total_cash);
         
         // Fetch cheque total
-        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND LOWER(TRIM(mode)) IN ('cheque','check') AND recorded_by=?");
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE DATE(payment_date)=? AND LOWER(TRIM(mode)) IN ('cheque','check') AND recorded_by=?");
         $stmt->bind_param('si', $date, $current_user_id);
         $stmt->execute();
         $stmt->bind_result($total_cheque);
@@ -159,7 +160,7 @@ try {
         $total_cheque = floatval($total_cheque);
 
         // Total received for all payment modes (cashier scope)
-        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND recorded_by=?");
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE DATE(payment_date)=? AND recorded_by=?");
         $stmt->bind_param('si', $date, $current_user_id);
         $stmt->execute();
         $stmt->bind_result($total_all_methods);
@@ -169,7 +170,7 @@ try {
     } else {
         // Super admin: Show all payments
         // Fetch cash total
-        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND LOWER(TRIM(mode))='cash'");
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE DATE(payment_date)=? AND LOWER(TRIM(mode))='cash'");
         $stmt->bind_param('s', $date);
         $stmt->execute();
         $stmt->bind_result($total_cash);
@@ -178,7 +179,7 @@ try {
         $total_cash = floatval($total_cash);
         
         // Fetch cheque total
-        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=? AND LOWER(TRIM(mode)) IN ('cheque','check')");
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE DATE(payment_date)=? AND LOWER(TRIM(mode)) IN ('cheque','check')");
         $stmt->bind_param('s', $date);
         $stmt->execute();
         $stmt->bind_result($total_cheque);
@@ -187,7 +188,7 @@ try {
         $total_cheque = floatval($total_cheque);
 
         // Total received for all payment modes (admin scope)
-        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM payments WHERE DATE(payment_date)=?");
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE DATE(payment_date)=?");
         $stmt->bind_param('s', $date);
         $stmt->execute();
         $stmt->bind_result($total_all_methods);
@@ -198,10 +199,10 @@ try {
 
     // Dynamic payment mode summary (cashier scope for non-admin, all scope for admin)
     if ($filter_by_user) {
-        $stmt = $conn->prepare("SELECT COALESCE(mode,'') AS mode, COUNT(id) AS cnt, COALESCE(SUM(amount),0) AS total FROM payments WHERE DATE(payment_date)=? AND recorded_by=? GROUP BY mode ORDER BY total DESC");
+        $stmt = $conn->prepare("SELECT COALESCE(mode,'') AS mode, COUNT(id) AS cnt, COALESCE(SUM(amount),0) AS total FROM v_posted_payments WHERE DATE(payment_date)=? AND recorded_by=? GROUP BY mode ORDER BY total DESC");
         $stmt->bind_param('si', $date, $current_user_id);
     } else {
-        $stmt = $conn->prepare("SELECT COALESCE(mode,'') AS mode, COUNT(id) AS cnt, COALESCE(SUM(amount),0) AS total FROM payments WHERE DATE(payment_date)=? GROUP BY mode ORDER BY total DESC");
+        $stmt = $conn->prepare("SELECT COALESCE(mode,'') AS mode, COUNT(id) AS cnt, COALESCE(SUM(amount),0) AS total FROM v_posted_payments WHERE DATE(payment_date)=? GROUP BY mode ORDER BY total DESC");
         $stmt->bind_param('s', $date);
     }
     $stmt->execute();
@@ -224,28 +225,21 @@ try {
 // --- LOAD EXISTING ANALYSES FROM DATABASE ---
 $entry = [];
 $entry_total = 0;
+$entry_notes_total = 0;
+$entry_coins_total = 0;
 $cheque_entry = ['count' => 0, 'total' => 0.00, 'details' => ''];
+$analysis_history = [];
 
 try {
-    // Load analyses for current date and user
-    if ($filter_by_user) {
-        $stmt = $conn->prepare("
-            SELECT payment_mode, denomination_data, denomination_total, cheque_count, cheque_total, cheque_details
-            FROM payment_analyses
-            WHERE analysis_date = ? AND created_by = ?
-        ");
-        $stmt->bind_param('si', $date, $current_user_id);
-    } else {
-        // Super admin can see all analyses, but we'll load the most recent one
-        $stmt = $conn->prepare("
-            SELECT payment_mode, denomination_data, denomination_total, cheque_count, cheque_total, cheque_details, created_by
-            FROM payment_analyses
-            WHERE analysis_date = ?
-            ORDER BY created_at DESC
-            LIMIT 2
-        ");
-        $stmt->bind_param('s', $date);
-    }
+    // The edit modal must load only the signed-in cashier's own record. An
+    // administrator must never accidentally overwrite another cashier's entry.
+    $stmt = $conn->prepare("
+        SELECT payment_mode, denomination_data, denomination_total, notes_total,
+               coins_total, cheque_count, cheque_total, cheque_details
+        FROM payment_analyses
+        WHERE analysis_date = ? AND created_by = ?
+    ");
+    $stmt->bind_param('si', $date, $current_user_id);
     
     $stmt->execute();
     $result = $stmt->get_result();
@@ -254,6 +248,8 @@ try {
         if ($row['payment_mode'] === 'cash' && $row['denomination_data']) {
             $entry = json_decode($row['denomination_data'], true) ?: [];
             $entry_total = floatval($row['denomination_total']);
+            $entry_notes_total = floatval($row['notes_total']);
+            $entry_coins_total = floatval($row['coins_total']);
         } elseif ($row['payment_mode'] === 'cheque') {
             $cheque_entry = [
                 'count' => intval($row['cheque_count']),
@@ -263,6 +259,24 @@ try {
         }
     }
     
+    $stmt->close();
+
+    if ($filter_by_user) {
+        $stmt = $conn->prepare(
+            'SELECT * FROM v_cashier_denomination_history'
+            . ' WHERE analysis_date = ? AND cashier_id = ?'
+            . ' ORDER BY cashier_name, payment_mode'
+        );
+        $stmt->bind_param('si', $date, $current_user_id);
+    } else {
+        $stmt = $conn->prepare(
+            'SELECT * FROM v_cashier_denomination_history'
+            . ' WHERE analysis_date = ? ORDER BY cashier_name, payment_mode'
+        );
+        $stmt->bind_param('s', $date);
+    }
+    $stmt->execute();
+    $analysis_history = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
 } catch (Throwable $e) {
     // Silently fail, use empty defaults
@@ -391,7 +405,7 @@ ob_start();
                                         // Non-admin/cashier: show only payment types with transactions, scoped to own records
                                         $sql = "SELECT pt.name AS payment_type, COALESCE(SUM(p.amount),0) AS total_amount, COALESCE(COUNT(p.id),0) AS count
                                                 FROM payment_types pt
-                                                LEFT JOIN payments p
+                                                LEFT JOIN v_posted_payments p
                                                   ON p.payment_type_id = pt.id
                                                  AND DATE(p.payment_date) = ?
                                                  AND p.recorded_by = ?
@@ -404,7 +418,7 @@ ob_start();
                                         // Admin: show only payment types with transactions
                                         $sql = "SELECT pt.name AS payment_type, COALESCE(SUM(p.amount),0) AS total_amount, COALESCE(COUNT(p.id),0) AS count
                                                 FROM payment_types pt
-                                                LEFT JOIN payments p
+                                                LEFT JOIN v_posted_payments p
                                                   ON p.payment_type_id = pt.id
                                                  AND DATE(p.payment_date) = ?
                                                 GROUP BY pt.id, pt.name
@@ -441,6 +455,34 @@ ob_start();
                         </table>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+    <div class="row justify-content-center">
+        <div class="col-12 col-md-10 col-lg-8">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-light"><i class="fas fa-history text-primary mr-2"></i>Cashier Analysis History for <?= htmlspecialchars(date('j M Y', strtotime($date))) ?></div>
+                <div class="card-body p-0"><div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0">
+                        <thead class="thead-light"><tr><th>Cashier</th><th>Mode</th><th class="text-right">Notes</th><th class="text-right">Coins</th><th class="text-right">Total</th><th>Status</th><th>Last Updated</th></tr></thead>
+                        <tbody>
+                        <?php if (!$analysis_history): ?>
+                            <tr><td colspan="7" class="text-center text-muted py-3">No saved cashier analysis for this date.</td></tr>
+                        <?php else: foreach ($analysis_history as $history): ?>
+                            <?php $historyTotal = $history['payment_mode'] === 'cash' ? (float) $history['denomination_total'] : (float) $history['cheque_total']; ?>
+                            <tr>
+                                <td><?= htmlspecialchars($history['cashier_name']) ?></td>
+                                <td><?= htmlspecialchars(ucfirst($history['payment_mode'])) ?></td>
+                                <td class="text-right"><?= $history['payment_mode'] === 'cash' ? '&#8373;' . number_format((float) $history['notes_total'], 2) : '-' ?></td>
+                                <td class="text-right"><?= $history['payment_mode'] === 'cash' ? '&#8373;' . number_format((float) $history['coins_total'], 2) : '-' ?></td>
+                                <td class="text-right font-weight-bold">&#8373;<?= number_format($historyTotal, 2) ?></td>
+                                <td><span class="badge badge-secondary"><?= htmlspecialchars(ucfirst($history['status'])) ?></span></td>
+                                <td><?= htmlspecialchars(date('j M Y H:i', strtotime($history['updated_at']))) ?></td>
+                            </tr>
+                        <?php endforeach; endif; ?>
+                        </tbody>
+                    </table>
+                </div></div>
             </div>
         </div>
     </div>
@@ -483,10 +525,13 @@ ob_start();
                            </div>
                            <div class="row">
                              <?php
-                             $split = ceil(count($denominations)/2);
-                             $columns = [array_slice($denominations, 0, $split), array_slice($denominations, $split)];
-                             foreach ($columns as $colIdx => $col): ?>
+                             $columns = [
+                                 'Notes (Paper Currency)' => array_values(array_filter($denominations, static fn($d) => $d['type'] === 'note')),
+                                 'Coins' => array_values(array_filter($denominations, static fn($d) => $d['type'] === 'coin')),
+                             ];
+                             foreach ($columns as $columnTitle => $col): ?>
                              <div class="col-6">
+                                 <h6 class="font-weight-bold text-center mb-2"><?= htmlspecialchars($columnTitle) ?></h6>
                                  <table class="table table-sm table-striped table-borderless mb-2">
                                      <thead>
                                      <tr>
@@ -541,7 +586,7 @@ ob_start();
                                                       COALESCE(m.last_name, ss.last_name) as last_name,
                                                       COALESCE(m.crn, ss.srn) as identifier,
                                                       pt.name as payment_type_name
-                                               FROM payments p
+                                               FROM v_posted_payments p
                                                LEFT JOIN members m ON p.member_id = m.id
                                                LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
                                                LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
@@ -558,7 +603,7 @@ ob_start();
                                                       COALESCE(m.last_name, ss.last_name) as last_name,
                                                       COALESCE(m.crn, ss.srn) as identifier,
                                                       pt.name as payment_type_name
-                                               FROM payments p
+                                               FROM v_posted_payments p
                                                LEFT JOIN members m ON p.member_id = m.id
                                                LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
                                                LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
@@ -620,9 +665,10 @@ ob_start();
                          </div>
 
                          <div class="row align-items-center" id="totalRow">
-                           <div class="col-6 text-right font-weight-bold">Total</div>
-                           <div class="col-4"></div>
-                           <div class="col-2 text-right font-weight-bold">₵<span id="denom-total">0.00</span></div>
+                           <div class="col-3 text-right font-weight-bold">Notes: &#8373;<span id="notes-total"><?= number_format($entry_notes_total, 2) ?></span></div>
+                           <div class="col-3 text-right font-weight-bold">Coins: &#8373;<span id="coins-total"><?= number_format($entry_coins_total, 2) ?></span></div>
+                           <div class="col-3 text-right font-weight-bold">Total</div>
+                           <div class="col-3 text-right font-weight-bold">&#8373;<span id="denom-total">0.00</span></div>
                          </div>
                          <div class="d-flex justify-content-end mt-2">
                            <button type="button" id="saveAnalysisBtn" class="btn btn-primary btn-sm px-4">
@@ -640,13 +686,21 @@ ob_start();
 const denomData = <?= json_encode($denominations) ?>;
 function updateDenomTotals() {
     let total = 0;
+    let notesTotal = 0;
+    let coinsTotal = 0;
     denomData.forEach(function(d) {
         let qty = parseInt(document.querySelector('[name="denom['+d.label+']"]')?.value) || 0;
         let value = qty * d.value;
         let el = document.querySelector('.denom-value[data-label="'+d.label+'"]');
         if (el) el.textContent = value.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
         total += value;
+        if (d.type === 'note') notesTotal += value;
+        if (d.type === 'coin') coinsTotal += value;
     });
+    let notesCell = document.getElementById('notes-total');
+    let coinsCell = document.getElementById('coins-total');
+    if (notesCell) notesCell.textContent = notesTotal.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+    if (coinsCell) coinsCell.textContent = coinsTotal.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
     let totalCell = document.getElementById('denom-total');
     if (totalCell) {
         totalCell.textContent = total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -736,6 +790,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Prepare form data
         const formData = new FormData();
         formData.append('action', 'save');
+        formData.append('csrf_token', <?= json_encode(csrf_token()) ?>);
         formData.append('date', currentDate);
         formData.append('payment_mode', selectedMode);
         

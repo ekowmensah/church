@@ -3,6 +3,7 @@ ob_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
 require_once __DIR__.'/../helpers/spouse_link_helper.php';
+require_once __DIR__.'/../helpers/member_transfer_origin.php';
 require_once __DIR__.'/../services/RoleOfServingAccessService.php';
 
 function normalize_user_sync_email(string $email): ?string
@@ -160,6 +161,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
     $date_of_confirmation = $_POST['date_of_confirmation'] ?? null;
     $membership_status = $_POST['membership_status'] ?? '';
     $date_of_enrollment = $_POST['date_of_enrollment'] ?? null;
+    $transferOrigin = member_transfer_origin_from_input($_POST);
+    member_transfer_origin_apply($member, $transferOrigin);
+    $transfer_from_other_chapel = $transferOrigin['transfer_from_other_chapel'];
+    $transfer_diocese = $transferOrigin['transfer_diocese'];
+    $transfer_circuit = $transferOrigin['transfer_circuit'];
+    $transfer_society = $transferOrigin['transfer_society'];
+    $removal_note_provided = $transferOrigin['removal_note_provided'];
+    $superintendent_name = $transferOrigin['superintendent_name'];
     $status = 'active';
     $allowed_marriage_types = ['Customary', 'Ordinance', 'Blessing', 'Court Registration'];
     if ($marital_status !== 'Married') {
@@ -223,6 +232,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
         error_log('DEBUG: valid_contacts count: ' . count($valid_contacts));
         error_log('DEBUG: emergency_contacts: ' . print_r($emergency_contacts, true));
         $error = 'Please fill in all required fields (at least one emergency contact).';
+    } elseif (($transferError = member_transfer_origin_validation_error($transferOrigin)) !== '') {
+        $error = $transferError;
     } else {
         $target_class_id = (int) ($member['class_id'] ?? 0);
         $capacity = bible_class_validate_capacity($conn, $target_class_id, $member_id);
@@ -236,11 +247,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
         try {
             $conn->begin_transaction();
 
-            $stmt = $conn->prepare('UPDATE members SET first_name=?, middle_name=?, last_name=?, gender=?, dob=?, day_born=?, place_of_birth=?, address=?, gps_address=?, marital_status=?, spouse_crn=?, spouse_name=?, marriage_type=?, home_town=?, region=?, phone=?, telephone=?, email=?, employment_status=?, profession=?, occupation=?, baptized=?, confirmed=?, date_of_baptism=?, date_of_confirmation=?, membership_status=?, date_of_enrollment=?, photo=?, status=?, password_hash=?, registration_token=NULL WHERE id=?');
-            $member_update_types = str_repeat('s', 30) . 'i';
+            $stmt = $conn->prepare('UPDATE members SET first_name=?, middle_name=?, last_name=?, gender=?, dob=?, day_born=?, place_of_birth=?, address=?, gps_address=?, marital_status=?, spouse_crn=?, spouse_name=?, marriage_type=?, home_town=?, region=?, phone=?, telephone=?, email=?, employment_status=?, profession=?, occupation=?, baptized=?, confirmed=?, date_of_baptism=?, date_of_confirmation=?, membership_status=?, date_of_enrollment=?, transfer_from_other_chapel=?, transfer_diocese=?, transfer_circuit=?, transfer_society=?, removal_note_provided=?, superintendent_name=?, photo=?, status=?, password_hash=?, registration_token=NULL WHERE id=?');
+            $member_update_types = str_repeat('s', 36) . 'i';
             $stmt->bind_param($member_update_types,
                 $first_name, $middle_name, $last_name, $gender, $dob, $day_born, $place_of_birth, $address, $gps_address, $marital_status, $spouse_crn, $spouse_name, $marriage_type, $home_town, $region, $phone, $telephone, $email,
-                $employment_status, $profession, $occupation, $baptized, $confirmed, $date_of_baptism, $date_of_confirmation, $membership_status, $date_of_enrollment, $photo, $status, $password_hash, $member_id
+                $employment_status, $profession, $occupation, $baptized, $confirmed, $date_of_baptism, $date_of_confirmation, $membership_status, $date_of_enrollment,
+                $transfer_from_other_chapel, $transfer_diocese, $transfer_circuit, $transfer_society, $removal_note_provided, $superintendent_name,
+                $photo, $status, $password_hash, $member_id
             );
             if (!$stmt->execute()) {
                 throw new Exception($stmt->error ?: 'Failed to update member during registration.');
@@ -709,6 +722,28 @@ ob_start();
   </div>
 </div>
 
+<!-- SECTION: Transfer Origin -->
+<div class="card mb-4 border-primary">
+  <div class="card-header bg-light border-primary"><strong>Transfer from Another Chapel</strong></div>
+  <div class="card-body p-3">
+    <div class="custom-control custom-checkbox mb-3">
+      <input type="checkbox" class="custom-control-input" id="transfer_from_other_chapel" name="transfer_from_other_chapel" value="1" <?= !empty($member['transfer_from_other_chapel']) ? 'checked' : '' ?>>
+      <label class="custom-control-label" for="transfer_from_other_chapel">I transferred from another chapel</label>
+    </div>
+    <div id="transfer-origin-fields">
+      <div class="form-row">
+        <div class="form-group col-md-4"><label for="transfer_diocese">Diocese <span class="text-danger">*</span></label><input type="text" class="form-control transfer-required" id="transfer_diocese" name="transfer_diocese" maxlength="150" value="<?= htmlspecialchars($member['transfer_diocese'] ?? '') ?>"></div>
+        <div class="form-group col-md-4"><label for="transfer_circuit">Circuit <span class="text-danger">*</span></label><input type="text" class="form-control transfer-required" id="transfer_circuit" name="transfer_circuit" maxlength="150" value="<?= htmlspecialchars($member['transfer_circuit'] ?? '') ?>"></div>
+        <div class="form-group col-md-4"><label for="transfer_society">Society/Chapel <span class="text-danger">*</span></label><input type="text" class="form-control transfer-required" id="transfer_society" name="transfer_society" maxlength="150" value="<?= htmlspecialchars($member['transfer_society'] ?? '') ?>"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group col-md-6"><label for="superintendent_name">Superintendent Minister <span class="text-danger">*</span></label><input type="text" class="form-control transfer-required" id="superintendent_name" name="superintendent_name" maxlength="150" value="<?= htmlspecialchars($member['superintendent_name'] ?? '') ?>"></div>
+        <div class="form-group col-md-6"><label for="removal_note_provided">Removal note provided? <span class="text-danger">*</span></label><select class="form-control transfer-required" id="removal_note_provided" name="removal_note_provided"><option value="0" <?= empty($member['removal_note_provided']) ? 'selected' : '' ?>>No</option><option value="1" <?= !empty($member['removal_note_provided']) ? 'selected' : '' ?>>Yes</option></select></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- SECTION: Membership & Organizations -->
 <div class="card mb-4 border-primary">
   <div class="card-header bg-light border-primary"><strong>Membership & Organizations</strong></div>
@@ -762,6 +797,14 @@ ob_start();
                 <script src="<?= BASE_URL ?>/assets/registration.js"></script>
 <script>
 $(function(){
+    function toggleTransferOrigin() {
+        var enabled = $('#transfer_from_other_chapel').is(':checked');
+        $('#transfer-origin-fields').toggle(enabled);
+        $('#transfer-origin-fields .transfer-required').prop('required', enabled);
+    }
+    $('#transfer_from_other_chapel').on('change', toggleTransferOrigin);
+    toggleTransferOrigin();
+
     // Click to copy CRN
     $('#copy-crn-btn').tooltip();
     $('#copy-crn-btn').on('click', function(){

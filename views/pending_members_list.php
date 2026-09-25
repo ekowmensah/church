@@ -67,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_action'])) {
             case 'activate':
                 if ($can_activate) {
                     $fetch_stmt = $conn->prepare("SELECT id, class_id, status, deactivated_at FROM members WHERE id = ? AND is_archived = 0 LIMIT 1");
-                    $activate_stmt = $conn->prepare("UPDATE members SET status = 'active', deactivated_at = NULL WHERE id = ? AND is_archived = 0 AND status IN ('pending', 'de-activated')");
+                    $activate_stmt = $conn->prepare("UPDATE members SET status = 'active', deactivated_at = NULL, deactivation_reason = NULL, deactivation_reason_code = NULL, deactivated_by_user_id = NULL WHERE id = ? AND is_archived = 0 AND status IN ('pending', 'de-activated')");
 
                     if (!$fetch_stmt || !$activate_stmt) {
                         $message = 'Error preparing activation statements.';

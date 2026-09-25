@@ -2,6 +2,7 @@
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
 require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/payment_report_context.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -43,15 +44,23 @@ if ($pt_result) {
     }
 }
 $selected_payment_type = isset($_GET['payment_type_id']) ? intval($_GET['payment_type_id']) : 0;
-$start_date = isset($_GET['start_date']) ? $_GET['start_date'] : '';
-$end_date = isset($_GET['end_date']) ? $_GET['end_date'] : '';
+$period_preset = (string) ($_GET['period'] ?? 'custom');
+[$period_preset, $start_date, $end_date] = payment_report_resolve_period(
+    $period_preset,
+    (string) ($_GET['start_date'] ?? ''),
+    (string) ($_GET['end_date'] ?? '')
+);
+$period_label = payment_report_period_label($start_date, $end_date);
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
 $per_page = 25;
 $offset = ($page - 1) * $per_page;
 $where = ["m.status = 'active'"];
+$where[] = 'm.is_archived = 0';
+$scopeCondition = payment_report_member_scope_condition($conn, 'm');
+if ($scopeCondition !== '') $where[] = $scopeCondition;
 if ($search !== '') {
     $safe = $conn->real_escape_string($search);
-    $where[] = "(m.crn LIKE '%$safe%' OR m.first_name LIKE '%$safe%' OR m.last_name LIKE '%$safe%')";
+    $where[] = "(m.crn LIKE '%$safe%' OR m.first_name LIKE '%$safe%' OR m.last_name LIKE '%$safe%' OR m.phone LIKE '%$safe%')";
 }
 if ($selected_payment_type) {
     $where[] = "pt.id = $selected_payment_type";
@@ -74,8 +83,15 @@ if ($total_result && ($row = $total_result->fetch_assoc())) {
     $total_amount = $row['total_amount'] ?: 0;
 }
 // Paginated results
-$sql = "SELECT m.crn, m.last_name, m.first_name, pt.name AS payment_type, p.amount, p.payment_date FROM members m
+$sql = "SELECT m.id AS member_id, m.crn, m.last_name, m.first_name, m.phone,
+               bible_class.name AS class_name, pt.name AS payment_type,
+               p.amount, p.payment_date,
+               COALESCE(NULLIF(p.reporting_period_label, ''),
+                        NULLIF(p.payment_period_description, ''),
+                        DATE_FORMAT(COALESCE(p.payment_period, p.payment_date), '%M %Y')) AS reporting_period
+FROM members m
 INNER JOIN v_posted_payments p ON m.id = p.member_id
+LEFT JOIN bible_classes bible_class ON bible_class.id = m.class_id
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 $where_sql
 ORDER BY m.last_name, m.first_name, p.payment_date DESC
@@ -97,11 +113,56 @@ if ($count_result && ($row = $count_result->fetch_assoc())) {
     $total_count = $row['total_count'] ?: 0;
 }
 $total_pages = ceil($total_count / $per_page);
+$statement_member = null;
+$member_count_sql = "SELECT COUNT(DISTINCT m.id) AS member_count, MIN(m.id) AS member_id
+FROM members m
+INNER JOIN v_posted_payments p ON m.id = p.member_id
+LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
+$where_sql";
+$member_count_result = $conn->query($member_count_sql);
+$member_count_row = $member_count_result ? $member_count_result->fetch_assoc() : null;
+if ((int) ($member_count_row['member_count'] ?? 0) === 1) {
+    $statement_member_id = (int) $member_count_row['member_id'];
+    $stmt = $conn->prepare(
+        'SELECT m.crn, m.first_name, m.middle_name, m.last_name, m.phone,'
+        . ' bible_class.name AS class_name FROM members m'
+        . ' LEFT JOIN bible_classes bible_class ON bible_class.id = m.class_id'
+        . ' WHERE m.id = ? LIMIT 1'
+    );
+    $stmt->bind_param('i', $statement_member_id);
+    $stmt->execute();
+    $statement_member = $stmt->get_result()->fetch_assoc() ?: null;
+    $stmt->close();
+}
+$statement_export_header = 'Period: ' . $period_label;
+if ($statement_member) {
+    $statement_export_name = trim(implode(' ', array_filter([
+        $statement_member['first_name'],
+        $statement_member['middle_name'],
+        $statement_member['last_name'],
+    ])));
+    $statement_export_header = implode("\n", [
+        'Full Name: ' . $statement_export_name,
+        'CRN: ' . ($statement_member['crn'] ?: '-'),
+        'Class: ' . ($statement_member['class_name'] ?: '-'),
+        'Contact: ' . ($statement_member['phone'] ?: '-'),
+        'Period: ' . $period_label,
+    ]);
+}
 ?>
 <div class="container mt-4">
     <a href="../../reports.php" class="btn btn-secondary mb-3"><i class="fas fa-arrow-left mr-1"></i>Back to Reports</a>
     <h2 class="mb-4 font-weight-bold"><i class="fas fa-user-check mr-2"></i>Individual Payment Report</h2>
+    <p class="text-muted"><strong>Reporting Period:</strong> <?= htmlspecialchars($period_label) ?></p>
     <form method="get" class="form-inline mb-3">
+        <div class="form-group mr-2">
+            <label for="period" class="mr-2 font-weight-bold">Period:</label>
+            <select name="period" id="period" class="form-control">
+                <?php foreach (payment_report_period_options() as $value => $label): ?>
+                    <option value="<?= htmlspecialchars($value) ?>" <?= $period_preset === $value ? 'selected' : '' ?>><?= htmlspecialchars($label) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
         <div class="form-group mr-2">
             <label for="search" class="mr-2 font-weight-bold">Member CRN/Name:</label>
             <input type="text" name="search" id="search" class="form-control" value="<?php echo htmlspecialchars($search); ?>" placeholder="CRN, First or Last Name">
@@ -125,6 +186,20 @@ $total_pages = ceil($total_count / $per_page);
         </div>
         <button type="submit" class="btn btn-primary">Filter</button>
     </form>
+    <?php if ($statement_member): ?>
+        <?php $statement_name = trim(implode(' ', array_filter([$statement_member['first_name'], $statement_member['middle_name'], $statement_member['last_name']]))); ?>
+        <div class="card border-primary mb-3"><div class="card-body py-3">
+            <div class="row">
+                <div class="col-md-4"><strong>Full Name:</strong> <?= htmlspecialchars($statement_name) ?></div>
+                <div class="col-md-2"><strong>CRN:</strong> <?= htmlspecialchars($statement_member['crn']) ?></div>
+                <div class="col-md-3"><strong>Class Name:</strong> <?= htmlspecialchars($statement_member['class_name'] ?: '-') ?></div>
+                <div class="col-md-3"><strong>Contact:</strong> <?= htmlspecialchars($statement_member['phone'] ?: '-') ?></div>
+            </div>
+            <div class="mt-2"><strong>Period:</strong> <?= htmlspecialchars($period_label) ?></div>
+        </div></div>
+    <?php elseif ($search === ''): ?>
+        <div class="alert alert-info">Enter a member CRN, name, or contact to produce a single-member statement header.</div>
+    <?php endif; ?>
     <div class="mb-3">
     <?php if ($can_export): ?>
         <button id="export-csv" class="btn btn-success btn-sm mr-2"><i class="fas fa-file-csv"></i> Export CSV</button>
@@ -141,12 +216,13 @@ $total_pages = ceil($total_count / $per_page);
                     <th>CRN</th>
                     <th>Payment Type</th>
                     <th>Amount</th>
+                    <th>Reporting Period</th>
                     <th>Date</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($rows)): ?>
-                    <tr><td colspan="6" class="text-center">No records found.</td></tr>
+                    <tr><td colspan="7" class="text-center">No records found.</td></tr>
                 <?php else: ?>
                     <?php foreach ($rows as $i => $row): ?>
                         <tr>
@@ -155,6 +231,7 @@ $total_pages = ceil($total_count / $per_page);
                             <td><?php echo htmlspecialchars($row['crn']); ?></td>
                             <td><?php echo htmlspecialchars($row['payment_type'] ?: '-'); ?></td>
                             <td><?php echo htmlspecialchars(number_format($row['amount'], 2)); ?></td>
+                            <td><?php echo htmlspecialchars($row['reporting_period'] ?: '-'); ?></td>
                             <td><?php echo htmlspecialchars($row['payment_date']); ?></td>
                         </tr>
                     <?php endforeach; ?>
@@ -203,19 +280,21 @@ $(document).ready(function() {
                 extend: 'csv',
                 text: '<i class="fas fa-file-csv"></i> CSV',
                 className: 'btn btn-success btn-sm mr-2',
-                title: 'Individual Payment Report'
+                title: <?= json_encode('Individual Payment Report - ' . $period_label) ?>
             },
             {
                 extend: 'pdf',
                 text: '<i class="fas fa-file-pdf"></i> PDF',
                 className: 'btn btn-danger btn-sm mr-2',
-                title: 'Individual Payment Report'
+                title: <?= json_encode('Individual Payment Report - ' . $period_label) ?>,
+                messageTop: <?= json_encode($statement_export_header) ?>
             },
             {
                 extend: 'print',
                 text: '<i class="fas fa-print"></i> Print',
                 className: 'btn btn-secondary btn-sm',
-                title: 'Individual Payment Report'
+                title: <?= json_encode('Individual Payment Report - ' . $period_label) ?>,
+                messageTop: <?= json_encode($statement_export_header) ?>
             }
         ],
         paging: false,
