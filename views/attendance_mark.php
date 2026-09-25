@@ -3,6 +3,7 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../services/AttendanceAudienceService.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -62,14 +63,17 @@ if (!$session) {
     exit;
 }
 $raw_session_scope = strtolower(trim((string) ($session['attendance_scope'] ?? '')));
-if ($raw_session_scope === 'organization' && (int) ($session['scope_id'] ?? 0) > 0) {
+$raw_attendance_audience = (string) ($session['attendance_audience'] ?? 'members');
+if ($raw_attendance_audience === 'members'
+    && $raw_session_scope === 'organization' && (int) ($session['scope_id'] ?? 0) > 0) {
     header('Location: my_organization_attendance.php?' . http_build_query([
         'org_id' => (int) $session['scope_id'],
         'session_id' => $session_id,
     ]));
     exit;
 }
-if ($raw_session_scope === 'bible_class' && (int) ($session['scope_id'] ?? 0) > 0) {
+if ($raw_attendance_audience === 'members'
+    && $raw_session_scope === 'bible_class' && (int) ($session['scope_id'] ?? 0) > 0) {
     header('Location: my_bible_class_attendance.php?' . http_build_query([
         'class_id' => (int) $session['scope_id'],
         'session_id' => $session_id,
@@ -84,6 +88,13 @@ if (!has_permission('mark_attendance')) {
 $scope_columns_available = attendance_scope_columns_available($conn);
 $session_scope = $scope_columns_available ? strtolower(trim((string)($session['attendance_scope'] ?? ''))) : '';
 $session_scope_id = $scope_columns_available ? intval($session['scope_id'] ?? 0) : 0;
+$attendance_audience = $raw_attendance_audience;
+$record_subject_type = $attendance_audience === 'sunday_school' ? 'sunday_school' : 'member';
+$audience_label = $attendance_audience === 'sunday_school'
+    ? 'Sunday School children'
+    : ($attendance_audience === 'role_of_serving' ? 'role holders' : 'members');
+$subject_heading = $attendance_audience === 'sunday_school' ? 'Child' : 'Member';
+$identifier_heading = $attendance_audience === 'sunday_school' ? 'SRN' : 'CRN';
 $organizations_table_available = table_exists($conn, 'organizations');
 $session_display_date = safe_display_date($session['service_date'] ?? '');
 $scope_badge_name = $session_scope !== '' ? $session_scope : 'church';
@@ -121,75 +132,22 @@ if ($scope_columns_available && $session_scope === 'bible_class' && $session_sco
 $class_filter_locked = $scope_columns_available && $session_scope === 'bible_class' && $session_scope_id > 0;
 $org_filter_locked = $scope_columns_available && $session_scope === 'organization' && $session_scope_id > 0;
 
-// Build member query with filters
-$sql = "SELECT m.id, m.first_name, m.last_name, m.middle_name, m.crn, 
-        m.class_id, bc.name AS class_name, m.gender
-        FROM members m 
-        LEFT JOIN bible_classes bc ON m.class_id = bc.id ";
-if ($organizations_table_available && ($filter_org || ($session_scope === 'organization' && $session_scope_id > 0))) {
-    $sql .= "LEFT JOIN member_organizations mo ON mo.member_id = m.id ";
-}
-$sql .= "WHERE m.church_id = ? AND m.status = 'active' ";
-$params = [$session['church_id']];
-$types = 'i';
-
-if ($session_scope === 'bible_class' && $session_scope_id > 0) {
-    $sql .= "AND m.class_id = ? ";
-    $params[] = $session_scope_id;
-    $types .= 'i';
-} elseif ($filter_class) {
-    $sql .= "AND m.class_id = ? ";
-    $params[] = $filter_class;
-    $types .= 'i';
-}
-
-if ($session_scope === 'organization' && $session_scope_id > 0) {
-    if ($organizations_table_available) {
-        $sql .= "AND mo.organization_id = ? ";
-        $params[] = $session_scope_id;
-        $types .= 'i';
-    } else {
-        $sql .= "AND 1 = 0 ";
-    }
-} elseif ($filter_org && $organizations_table_available) {
-    $sql .= "AND mo.organization_id = ? ";
-    $params[] = $filter_org;
-    $types .= 'i';
-}
-if ($search !== '') {
-    $sql .= "AND (m.first_name LIKE ? OR m.last_name LIKE ? OR m.middle_name LIKE ? OR m.crn LIKE ?) ";
-    $like = "%$search%";
-    $params[] = $like;
-    $params[] = $like;
-    $params[] = $like;
-    $params[] = $like;
-    $types .= 'ssss';
-}
-$sql .= "ORDER BY m.last_name, m.first_name";
-
-$stmt = $conn->prepare($sql);
-$stmt->bind_param($types, ...$params);
-$stmt->execute();
-$members_result = $stmt->get_result();
-$members = $members_result ? $members_result->fetch_all(MYSQLI_ASSOC) : [];
+// Resolve the session's canonical register. Existing member sessions, Sunday
+// School sessions, and Role-of-Serving sessions all share the same UI.
+$audienceService = new AttendanceAudienceService($conn);
+$members = $audienceService->subjects(
+    $session,
+    $filter_class !== '' ? (int) $filter_class : null,
+    $filter_org !== '' ? (int) $filter_org : null,
+    $search
+);
 $eligible_member_ids = array_map('intval', array_column($members, 'id'));
 
-// Fetch member organizations for filtering
+// Fetch organization identifiers already returned with member-based rosters.
 $member_orgs = [];
-if (count($members) > 0) {
-    $member_ids = array_column($members, 'id');
-    $placeholders = implode(',', array_fill(0, count($member_ids), '?'));
-    $sql_orgs = "SELECT member_id, GROUP_CONCAT(organization_id) as org_ids 
-                 FROM member_organizations 
-                 WHERE member_id IN ($placeholders) 
-                 GROUP BY member_id";
-    $stmt_orgs = $conn->prepare($sql_orgs);
-    $types_orgs = str_repeat('i', count($member_ids));
-    $stmt_orgs->bind_param($types_orgs, ...$member_ids);
-    $stmt_orgs->execute();
-    $result_orgs = $stmt_orgs->get_result();
-    while ($row = $result_orgs->fetch_assoc()) {
-        $member_orgs[$row['member_id']] = $row['org_ids'];
+foreach ($members as $subject) {
+    if (!empty($subject['org_ids'])) {
+        $member_orgs[(int) $subject['id']] = $subject['org_ids'];
     }
 }
 
@@ -199,16 +157,20 @@ $draft_status = [];
 $member_ids = array_column($members, 'id');
 if (count($member_ids) > 0) {
     $placeholders = implode(',', array_fill(0, count($member_ids), '?'));
-    $sql_att = "SELECT member_id, status, is_draft FROM attendance_records WHERE session_id = ? AND member_id IN ($placeholders)";
+    $subjectColumn = $record_subject_type === 'sunday_school' ? 'sunday_school_id' : 'member_id';
+    $sql_att = "SELECT {$subjectColumn} AS subject_id, status, is_draft
+                FROM attendance_records
+                WHERE session_id = ? AND subject_type = ?
+                  AND {$subjectColumn} IN ($placeholders)";
     $stmt = $conn->prepare($sql_att);
-    $types_att = 'i' . str_repeat('i', count($member_ids));
-    $bind_params = array_merge([$session_id], $member_ids);
+    $types_att = 'is' . str_repeat('i', count($member_ids));
+    $bind_params = array_merge([$session_id, $record_subject_type], $member_ids);
     $stmt->bind_param($types_att, ...$bind_params);
     $stmt->execute();
     $result = $stmt->get_result();
     while ($row = $result->fetch_assoc()) {
-        $prev_attendance[$row['member_id']] = $row['status'];
-        $draft_status[$row['member_id']] = $row['is_draft'] ?? 0;
+        $prev_attendance[$row['subject_id']] = $row['status'];
+        $draft_status[$row['subject_id']] = $row['is_draft'] ?? 0;
     }
 }
 
@@ -267,12 +229,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
     
     if ($member_id > 0 && in_array($member_id, $eligible_member_ids, true)) {
-        // Save as draft (is_draft = 1)
-        $stmt = $conn->prepare("REPLACE INTO attendance_records (session_id, member_id, status, marked_by, is_draft, created_at, updated_at) VALUES (?, ?, ?, ?, 1, NOW(), NOW())");
-        $stmt->bind_param('iisi', $session_id, $member_id, $status, $_SESSION['user_id']);
-        if ($stmt->execute()) {
+        try {
+            $audienceService->save($session_id, $record_subject_type, $member_id, $status, (int) $_SESSION['user_id'], true);
             echo json_encode(['success' => true, 'message' => 'Draft saved']);
-        } else {
+        } catch (Throwable $saveError) {
             echo json_encode(['success' => false, 'message' => 'Failed to save draft']);
         }
     } else {
@@ -316,11 +276,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_POST['action']) || $_POST
         $status = isset($marked[$member_id]) && in_array($marked[$member_id], $valid_statuses) 
                   ? $marked[$member_id] 
                   : 'absent';
-        // Finalize: set is_draft = 0
-        $stmt = $conn->prepare("REPLACE INTO attendance_records (session_id, member_id, status, marked_by, is_draft, created_at, updated_at) VALUES (?, ?, ?, ?, 0, NOW(), NOW())");
-        $stmt->bind_param('iisi', $session_id, $member_id, $status, $_SESSION['user_id']);
-        $stmt->execute();
+        $audienceService->save(
+            $session_id,
+            $record_subject_type,
+            (int) $member_id,
+            $status,
+            (int) $_SESSION['user_id'],
+            false
+        );
     }
+    // Generic church/event attendance is final at this screen. Organization
+    // and Bible Class workflows are redirected above to their own governed
+    // submit/review services.
+    $actorUserId = (int) ($_SESSION['user_id'] ?? 0) ?: null;
+    $approval = $conn->prepare(
+        "UPDATE attendance_sessions
+         SET approval_status = 'approved',
+             submitted_by_user_id = ?, submitted_at = NOW(),
+             reviewed_by_user_id = ?, reviewed_at = NOW(), review_notes = NULL
+         WHERE id = ?"
+    );
+    $approval->bind_param('iii', $actorUserId, $actorUserId, $session_id);
+    $approval->execute();
+    $approval->close();
     header('Location: attendance_list.php?marked=1');
     exit;
 }
@@ -868,6 +846,10 @@ ob_start();
                         <span><?= htmlspecialchars($session['church_name'] ?? 'N/A') ?></span>
                     </div>
                     <div class="session-meta-item">
+                        <i class="fas fa-address-book"></i>
+                        <span><?= htmlspecialchars(ucwords($audience_label)) ?></span>
+                    </div>
+                    <div class="session-meta-item">
                         <i class="fas fa-calendar"></i>
                         <span><?= htmlspecialchars($session_display_date) ?></span>
                     </div>
@@ -892,7 +874,7 @@ ob_start();
 
     <div class="stats-row">
         <div class="stat-box total">
-            <div class="stat-label">Total Members</div>
+            <div class="stat-label">Total <?= htmlspecialchars(ucwords($audience_label)) ?></div>
             <div class="stat-value" id="total-count"><?= $total_members ?></div>
         </div>
         <div class="stat-box present">
@@ -926,7 +908,7 @@ ob_start();
     </div>
 
     <div class="filter-card">
-        <h5><i class="fas fa-filter"></i> Filter Members (Real-time)</h5>
+        <h5><i class="fas fa-filter"></i> Filter <?= htmlspecialchars(ucwords($audience_label)) ?> (Real-time)</h5>
         <form method="get" id="filterForm">
             <input type="hidden" name="id" value="<?= $session_id ?>">
             <div class="row">
@@ -947,7 +929,7 @@ ob_start();
                         </div>
                     <?php endif; ?>
                 </div>
-                <div class="col-md-4 mb-3">
+                <div class="col-md-4 mb-3" <?= $attendance_audience === 'sunday_school' ? 'style="display:none"' : '' ?>>
                     <label class="form-label fw-bold">Organization</label>
                     <select class="form-select" name="organization_id" <?= (!$organizations_table_available || $org_filter_locked) ? 'disabled' : '' ?>>
                         <option value="">All Organizations</option>
@@ -973,7 +955,7 @@ ob_start();
                 <div class="col-md-4 mb-3">
                     <label class="form-label fw-bold">Search</label>
                     <input type="text" class="form-control" id="realtimeSearch" 
-                           placeholder="Search by name or CRN..." 
+                           placeholder="Search by name or <?= htmlspecialchars($identifier_heading) ?>..."
                            value="<?= htmlspecialchars($search) ?>">
                     <small class="text-muted">Type to filter instantly</small>
                 </div>
@@ -984,7 +966,7 @@ ob_start();
     <form method="post" id="attendanceForm">
         <?= csrf_input() ?>
         <div class="bulk-actions">
-            <h6 class="mb-0"><i class="fas fa-users"></i> Mark Attendance (<?= $total_members ?> members)</h6>
+            <h6 class="mb-0"><i class="fas fa-users"></i> Mark Attendance (<?= $total_members ?> <?= htmlspecialchars($audience_label) ?>)</h6>
             <div class="bulk-actions-buttons">
                 <button type="button" class="btn btn-success btn-sm" onclick="markAllPresent()">
                     <i class="fas fa-check-double"></i> Mark All Present
@@ -1003,8 +985,8 @@ ob_start();
                 <thead>
                     <tr>
                         <th style="width: 50px;">#</th>
-                        <th style="width: 250px;">Member</th>
-                        <th style="width: 120px;">CRN</th>
+                        <th style="width: 250px;"><?= htmlspecialchars($subject_heading) ?></th>
+                        <th style="width: 120px;"><?= htmlspecialchars($identifier_heading) ?></th>
                         <th style="width: 150px;">Class</th>
                         <th style="width: 80px;">Gender</th>
                         <th>Attendance Status</th>
@@ -1322,7 +1304,7 @@ function applyFilters() {
     // Update visible count in bulk actions
     const bulkActionsTitle = document.querySelector('.bulk-actions h6');
     if (bulkActionsTitle) {
-        bulkActionsTitle.innerHTML = `<i class="fas fa-users"></i> Mark Attendance (${visibleCount} of ${rows.length} members shown)`;
+        bulkActionsTitle.innerHTML = `<i class="fas fa-users"></i> Mark Attendance (${visibleCount} of ${rows.length} <?= htmlspecialchars($audience_label, ENT_QUOTES, 'UTF-8') ?> shown)`;
     }
     
     console.log(`Showing ${visibleCount} of ${rows.length} members`);

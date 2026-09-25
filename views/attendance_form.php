@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../services/AttendanceScheduleService.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -94,6 +95,15 @@ $scope_id = null;
 $scope_class_id = null;
 $scope_org_id = null;
 $attendance_report_category_id = null;
+$attendance_audience = 'members';
+$role_of_serving_id = null;
+$schedule_mode = 'one_time';
+$schedule_type = 'weekly';
+$schedule_start_date = '';
+$schedule_end_date = '';
+$schedule_interval = 1;
+$schedule_weekday = '';
+$schedule_day_of_month = '';
 $edit_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
 // Load churches for dropdown
@@ -103,6 +113,7 @@ $bible_classes = $conn->query("SELECT id, church_id, name, code FROM bible_class
 $organizations = $organizations_table_available
     ? $conn->query("SELECT id, church_id, name FROM organizations ORDER BY name ASC")
     : false;
+$roles_of_serving = $conn->query("SELECT id, name FROM roles_of_serving ORDER BY name ASC");
 $attendance_categories = [];
 if ($reporting_categories_available) {
     $category_result = $conn->query(
@@ -146,6 +157,8 @@ if ($edit_id && $_SERVER['REQUEST_METHOD'] !== 'POST') {
                 ? (int) $row['attendance_report_category_id']
                 : null;
         }
+        $attendance_audience = $row['attendance_audience'] ?? 'members';
+        $role_of_serving_id = !empty($row['role_of_serving_id']) ? (int) $row['role_of_serving_id'] : null;
     } else {
         header('Location: attendance_list.php?notfound=1');
         exit;
@@ -155,10 +168,26 @@ if ($edit_id && $_SERVER['REQUEST_METHOD'] !== 'POST') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $title = trim($_POST['title'] ?? '');
     $service_date = normalize_date_input($_POST['service_date'] ?? '');
-    $is_recurring = intval($_POST['is_recurring'] ?? 0);
-    $recurrence_type = trim($_POST['recurrence_type'] ?? '');
-    $recurrence_day = $_POST['recurrence_day'] ?? '';
+    $schedule_mode = trim((string) ($_POST['schedule_mode'] ?? 'one_time'));
+    $is_recurring = $schedule_mode === 'recurring' ? 1 : 0;
+    $recurrence_type = trim($_POST['schedule_type'] ?? '');
+    $recurrence_day = $_POST['schedule_weekday'] ?? ($_POST['schedule_day_of_month'] ?? '');
+    $schedule_type = trim((string) ($_POST['schedule_type'] ?? 'weekly'));
+    $schedule_start_date = normalize_date_input($_POST['schedule_start_date'] ?? '') ?? '';
+    $schedule_end_date = normalize_date_input($_POST['schedule_end_date'] ?? '') ?? '';
+    $schedule_interval = max(1, intval($_POST['schedule_interval'] ?? 1));
+    $schedule_weekday = $_POST['schedule_weekday'] ?? '';
+    $schedule_day_of_month = $_POST['schedule_day_of_month'] ?? '';
     $church_id = intval($_POST['church_id'] ?? 0);
+    $attendance_audience = trim((string) ($_POST['attendance_audience'] ?? 'members'));
+    $role_of_serving_id = isset($_POST['role_of_serving_id']) && $_POST['role_of_serving_id'] !== ''
+        ? (int) $_POST['role_of_serving_id'] : null;
+    if (!in_array($attendance_audience, ['members', 'sunday_school', 'role_of_serving'], true)) {
+        $attendance_audience = 'members';
+    }
+    if ($attendance_audience !== 'role_of_serving') {
+        $role_of_serving_id = null;
+    }
     $attendance_report_category_id = isset($_POST['attendance_report_category_id'])
         && $_POST['attendance_report_category_id'] !== ''
         ? (int) $_POST['attendance_report_category_id']
@@ -189,10 +218,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $classification_source = 'scope';
     }
     $edit_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
-    if (!$title || (!$is_recurring && !$service_date) || !$church_id) {
+    if (!$title || !$church_id) {
         $error = 'All fields are required.';
-    } elseif ($is_recurring && (!$recurrence_type || strlen($recurrence_day) == 0)) {
-        $error = 'Please select recurrence type and day.';
+    } elseif (!in_array($schedule_mode, ['one_time', 'multi_day', 'recurring'], true)) {
+        $error = 'Please select a valid session schedule.';
+    } elseif ($schedule_mode === 'one_time' && !$service_date) {
+        $error = 'Please select the service date.';
+    } elseif ($schedule_mode !== 'one_time' && (!$schedule_start_date || !$schedule_end_date)) {
+        $error = 'Please select the schedule start and end dates.';
+    } elseif ($schedule_mode === 'recurring' && !in_array($schedule_type, ['daily', 'weekly', 'monthly'], true)) {
+        $error = 'Please select a valid recurrence type.';
+    } elseif ($schedule_mode === 'recurring' && $schedule_type === 'weekly'
+        && ($schedule_weekday === '' || (int) $schedule_weekday < 0 || (int) $schedule_weekday > 6)) {
+        $error = 'Please select a valid recurrence weekday.';
+    } elseif ($schedule_mode === 'recurring' && $schedule_type === 'monthly'
+        && ((int) $schedule_day_of_month < 1 || (int) $schedule_day_of_month > 31)) {
+        $error = 'Please select a valid day of month.';
     } elseif ($scope_columns_available && $attendance_scope === 'bible_class' && (!$scope_id || $scope_id <= 0)) {
         $error = 'Please select a Bible class for class-scoped attendance sessions.';
     } elseif ($scope_columns_available && $attendance_scope === 'organization' && (!$scope_id || $scope_id <= 0)) {
@@ -215,43 +256,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($error === '') {
-        if ($is_recurring) {
-            $service_date = null;
-        }
-
-        if ($edit_id) {
-            if ($scope_columns_available && $reporting_categories_available) {
-                $stmt = $conn->prepare("UPDATE attendance_sessions SET title=?, service_date=?, is_recurring=?, recurrence_type=?, recurrence_day=?, church_id=?, attendance_scope=?, scope_id=?, attendance_report_category_id=?, classification_source=? WHERE id=?");
-                $stmt->bind_param('ssissisiisi', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id, $attendance_scope, $scope_id, $attendance_report_category_id, $classification_source, $edit_id);
-            } elseif ($scope_columns_available) {
-                $stmt = $conn->prepare("UPDATE attendance_sessions SET title=?, service_date=?, is_recurring=?, recurrence_type=?, recurrence_day=?, church_id=?, attendance_scope=?, scope_id=? WHERE id=?");
-                $stmt->bind_param('ssissisii', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id, $attendance_scope, $scope_id, $edit_id);
-            } elseif ($reporting_categories_available) {
-                $stmt = $conn->prepare("UPDATE attendance_sessions SET title=?, service_date=?, is_recurring=?, recurrence_type=?, recurrence_day=?, church_id=?, attendance_report_category_id=?, classification_source=? WHERE id=?");
-                $stmt->bind_param('ssissiisi', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id, $attendance_report_category_id, $classification_source, $edit_id);
-            } else {
-                $stmt = $conn->prepare("UPDATE attendance_sessions SET title=?, service_date=?, is_recurring=?, recurrence_type=?, recurrence_day=?, church_id=? WHERE id=?");
-                $stmt->bind_param('ssissii', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id, $edit_id);
-            }
+        if ($edit_id && $schedule_mode !== 'one_time') {
+            $error = 'Edit this occurrence as a one-time session. Create a new schedule to change a series.';
+        } elseif ($edit_id) {
+            $stmt = $conn->prepare(
+                "UPDATE attendance_sessions
+                 SET title=?, service_date=?, church_id=?, attendance_scope=?,
+                     attendance_audience=?, scope_id=?, role_of_serving_id=?,
+                     attendance_report_category_id=?, classification_source=?
+                 WHERE id=?"
+            );
+            $stmt->bind_param(
+                'ssissiiisi',
+                $title, $service_date, $church_id, $attendance_scope,
+                $attendance_audience, $scope_id, $role_of_serving_id,
+                $attendance_report_category_id, $classification_source, $edit_id
+            );
             $stmt->execute();
             $stmt->close();
 
             header('Location: attendance_list.php?updated=1');
             exit;
-        } else {
-            if ($scope_columns_available && $reporting_categories_available) {
-                $stmt = $conn->prepare("INSERT INTO attendance_sessions (title, service_date, is_recurring, recurrence_type, recurrence_day, church_id, attendance_scope, scope_id, attendance_report_category_id, classification_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                $stmt->bind_param('ssissisiis', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id, $attendance_scope, $scope_id, $attendance_report_category_id, $classification_source);
-            } elseif ($scope_columns_available) {
-                $stmt = $conn->prepare("INSERT INTO attendance_sessions (title, service_date, is_recurring, recurrence_type, recurrence_day, church_id, attendance_scope, scope_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                $stmt->bind_param('ssissisi', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id, $attendance_scope, $scope_id);
-            } elseif ($reporting_categories_available) {
-                $stmt = $conn->prepare("INSERT INTO attendance_sessions (title, service_date, is_recurring, recurrence_type, recurrence_day, church_id, attendance_report_category_id, classification_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                $stmt->bind_param('ssissiis', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id, $attendance_report_category_id, $classification_source);
-            } else {
-                $stmt = $conn->prepare("INSERT INTO attendance_sessions (title, service_date, is_recurring, recurrence_type, recurrence_day, church_id) VALUES (?, ?, ?, ?, ?, ?)");
-                $stmt->bind_param('ssissi', $title, $service_date, $is_recurring, $recurrence_type, $recurrence_day, $church_id);
-            }
+        } elseif ($schedule_mode === 'one_time') {
+            $stmt = $conn->prepare(
+                "INSERT INTO attendance_sessions
+                    (title, service_date, is_recurring, church_id, attendance_scope,
+                     attendance_audience, scope_id, role_of_serving_id,
+                     attendance_report_category_id, classification_source, created_by_user_id)
+                 VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+            $actor_user_id = (int) ($_SESSION['user_id'] ?? 0) ?: null;
+            $stmt->bind_param(
+                'ssissiiisi',
+                $title, $service_date, $church_id, $attendance_scope,
+                $attendance_audience, $scope_id, $role_of_serving_id,
+                $attendance_report_category_id, $classification_source, $actor_user_id
+            );
             if ($stmt->execute()) {
                 $stmt->close();
 
@@ -259,6 +299,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             } else {
                 $error = 'Database error. Please try again.';
+            }
+        } else {
+            try {
+                $scheduleService = new AttendanceScheduleService($conn);
+                $result = $scheduleService->create([
+                    'church_id' => $church_id,
+                    'title' => $title,
+                    'attendance_scope' => $attendance_scope,
+                    'scope_id' => $scope_id,
+                    'attendance_report_category_id' => $attendance_report_category_id,
+                    'audience_type' => $attendance_audience,
+                    'role_of_serving_id' => $role_of_serving_id,
+                    'schedule_type' => $schedule_mode === 'multi_day' ? 'multi_day' : $schedule_type,
+                    'start_date' => $schedule_start_date,
+                    'end_date' => $schedule_end_date,
+                    'interval_value' => $schedule_interval,
+                    'weekday' => $schedule_weekday,
+                    'day_of_month' => $schedule_day_of_month,
+                ], (int) ($_SESSION['user_id'] ?? 0) ?: null);
+                header('Location: attendance_list.php?generated=' . (int) $result['created_sessions']);
+                exit;
+            } catch (Throwable $scheduleError) {
+                $error = $scheduleError->getMessage();
             }
         }
     }
@@ -480,6 +543,35 @@ ob_start();
                     </div>
                     <?php endif; ?>
 
+                    <div class="form-section">
+                        <h6>Attendance Audience</h6>
+                        <div class="row">
+                            <div class="col-md-6 form-group mb-md-0">
+                                <label for="attendance_audience">Register <span class="text-danger">*</span></label>
+                                <select class="form-control" name="attendance_audience" id="attendance_audience" required>
+                                    <option value="members" <?= $attendance_audience === 'members' ? 'selected' : '' ?>>Church Members</option>
+                                    <option value="sunday_school" <?= $attendance_audience === 'sunday_school' ? 'selected' : '' ?>>Sunday School Children</option>
+                                    <option value="role_of_serving" <?= $attendance_audience === 'role_of_serving' ? 'selected' : '' ?>>Role-of-Serving Holders</option>
+                                </select>
+                                <small class="text-muted">This determines which register appears when attendance is marked.</small>
+                            </div>
+                            <div class="col-md-6 form-group mb-0" id="role_of_serving_group" style="display: <?= $attendance_audience === 'role_of_serving' ? 'block' : 'none' ?>;">
+                                <label for="role_of_serving_id">Role of Serving</label>
+                                <select class="form-control" name="role_of_serving_id" id="role_of_serving_id">
+                                    <option value="">All active role holders</option>
+                                    <?php if ($roles_of_serving && $roles_of_serving->num_rows > 0):
+                                        $roles_of_serving->data_seek(0);
+                                        while ($servingRole = $roles_of_serving->fetch_assoc()): ?>
+                                        <option value="<?= (int) $servingRole['id'] ?>" <?= (int) $role_of_serving_id === (int) $servingRole['id'] ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($servingRole['name']) ?>
+                                        </option>
+                                    <?php endwhile; endif; ?>
+                                </select>
+                                <small class="text-muted">Leave blank for a Leaders Meeting containing every assigned role holder.</small>
+                            </div>
+                        </div>
+                    </div>
+
                     <?php if ($reporting_categories_available): ?>
                     <div class="form-section">
                         <h6>Reporting Classification</h6>
@@ -512,11 +604,15 @@ ob_start();
                             <label>Session Type <span class="text-danger">*</span></label>
                             <div class="session-type-grid">
                                 <div class="session-type-option">
-                                    <input type="radio" name="is_recurring" id="one_time" value="0" <?= !$is_recurring ? 'checked' : '' ?>>
+                                    <input type="radio" name="schedule_mode" id="one_time" value="one_time" <?= $schedule_mode === 'one_time' ? 'checked' : '' ?>>
                                     <label for="one_time"><i class="far fa-calendar-alt"></i> One-time Session</label>
                                 </div>
                                 <div class="session-type-option">
-                                    <input type="radio" name="is_recurring" id="recurring" value="1" <?= $is_recurring ? 'checked' : '' ?>>
+                                    <input type="radio" name="schedule_mode" id="multi_day" value="multi_day" <?= $schedule_mode === 'multi_day' ? 'checked' : '' ?>>
+                                    <label for="multi_day"><i class="fas fa-calendar-week"></i> Multi-day Event</label>
+                                </div>
+                                <div class="session-type-option">
+                                    <input type="radio" name="schedule_mode" id="recurring" value="recurring" <?= $schedule_mode === 'recurring' ? 'checked' : '' ?>>
                                     <label for="recurring"><i class="fas fa-sync-alt"></i> Recurring Session</label>
                                 </div>
                             </div>
@@ -529,46 +625,46 @@ ob_start();
                             </div>
                         </div>
 
-                        <div id="recurrence_fields" style="display: <?= $is_recurring ? 'block' : 'none' ?>;">
+                        <div id="schedule_range_fields" style="display: <?= $schedule_mode !== 'one_time' ? 'block' : 'none' ?>;">
                             <div class="row">
                                 <div class="col-md-4 form-group">
-                                    <label for="recurrence_type">Recurrence Type <span class="text-danger">*</span></label>
-                                    <select class="form-control" name="recurrence_type" id="recurrence_type">
-                                        <option value="">Select...</option>
-                                        <option value="weekly" <?= $recurrence_type === 'weekly' ? 'selected' : '' ?>>Weekly</option>
-                                        <option value="monthly" <?= $recurrence_type === 'monthly' ? 'selected' : '' ?>>Monthly</option>
-                                    </select>
+                                    <label for="schedule_start_date">Start Date <span class="text-danger">*</span></label>
+                                    <input type="date" class="form-control" name="schedule_start_date" id="schedule_start_date" value="<?= htmlspecialchars($schedule_start_date) ?>">
                                 </div>
                                 <div class="col-md-4 form-group">
-                                    <label for="recurrence_day_weekly">Day of Week <span class="text-danger">*</span></label>
-                                    <select class="form-control" id="recurrence_day_weekly" <?= $recurrence_type === 'weekly' ? 'name="recurrence_day"' : '' ?>>
-                                        <option value="">Select...</option>
-                                        <option value="0" <?= $recurrence_day === '0' ? 'selected' : '' ?>>Sunday</option>
-                                        <option value="1" <?= $recurrence_day === '1' ? 'selected' : '' ?>>Monday</option>
-                                        <option value="2" <?= $recurrence_day === '2' ? 'selected' : '' ?>>Tuesday</option>
-                                        <option value="3" <?= $recurrence_day === '3' ? 'selected' : '' ?>>Wednesday</option>
-                                        <option value="4" <?= $recurrence_day === '4' ? 'selected' : '' ?>>Thursday</option>
-                                        <option value="5" <?= $recurrence_day === '5' ? 'selected' : '' ?>>Friday</option>
-                                        <option value="6" <?= $recurrence_day === '6' ? 'selected' : '' ?>>Saturday</option>
+                                    <label for="schedule_end_date">End Date <span class="text-danger">*</span></label>
+                                    <input type="date" class="form-control" name="schedule_end_date" id="schedule_end_date" value="<?= htmlspecialchars($schedule_end_date) ?>">
+                                </div>
+                                <div class="col-md-4 form-group" id="recurrence_type_group">
+                                    <label for="schedule_type">Recurrence Type <span class="text-danger">*</span></label>
+                                    <select class="form-control" name="schedule_type" id="schedule_type">
+                                        <option value="daily" <?= $schedule_type === 'daily' ? 'selected' : '' ?>>Daily</option>
+                                        <option value="weekly" <?= $schedule_type === 'weekly' ? 'selected' : '' ?>>Weekly</option>
+                                        <option value="monthly" <?= $schedule_type === 'monthly' ? 'selected' : '' ?>>Monthly</option>
                                     </select>
                                 </div>
-                                <div class="col-md-4 form-group">
-                                    <label for="recurrence_day_monthly">Month <span class="text-danger">*</span></label>
-                                    <select class="form-control" id="recurrence_day_monthly" <?= $recurrence_type === 'monthly' ? 'name="recurrence_day"' : '' ?>>
+                                <div class="col-md-4 form-group" id="schedule_weekday_group">
+                                    <label for="schedule_weekday">Day of Week <span class="text-danger">*</span></label>
+                                    <select class="form-control" id="schedule_weekday" name="schedule_weekday">
                                         <option value="">Select...</option>
-                                        <option value="1" <?= $recurrence_day == '1' ? 'selected' : '' ?>>January</option>
-                                        <option value="2" <?= $recurrence_day == '2' ? 'selected' : '' ?>>February</option>
-                                        <option value="3" <?= $recurrence_day == '3' ? 'selected' : '' ?>>March</option>
-                                        <option value="4" <?= $recurrence_day == '4' ? 'selected' : '' ?>>April</option>
-                                        <option value="5" <?= $recurrence_day == '5' ? 'selected' : '' ?>>May</option>
-                                        <option value="6" <?= $recurrence_day == '6' ? 'selected' : '' ?>>June</option>
-                                        <option value="7" <?= $recurrence_day == '7' ? 'selected' : '' ?>>July</option>
-                                        <option value="8" <?= $recurrence_day == '8' ? 'selected' : '' ?>>August</option>
-                                        <option value="9" <?= $recurrence_day == '9' ? 'selected' : '' ?>>September</option>
-                                        <option value="10" <?= $recurrence_day == '10' ? 'selected' : '' ?>>October</option>
-                                        <option value="11" <?= $recurrence_day == '11' ? 'selected' : '' ?>>November</option>
-                                        <option value="12" <?= $recurrence_day == '12' ? 'selected' : '' ?>>December</option>
+                                        <option value="0" <?= (string) $schedule_weekday === '0' ? 'selected' : '' ?>>Sunday</option>
+                                        <option value="1" <?= (string) $schedule_weekday === '1' ? 'selected' : '' ?>>Monday</option>
+                                        <option value="2" <?= (string) $schedule_weekday === '2' ? 'selected' : '' ?>>Tuesday</option>
+                                        <option value="3" <?= (string) $schedule_weekday === '3' ? 'selected' : '' ?>>Wednesday</option>
+                                        <option value="4" <?= (string) $schedule_weekday === '4' ? 'selected' : '' ?>>Thursday</option>
+                                        <option value="5" <?= (string) $schedule_weekday === '5' ? 'selected' : '' ?>>Friday</option>
+                                        <option value="6" <?= (string) $schedule_weekday === '6' ? 'selected' : '' ?>>Saturday</option>
                                     </select>
+                                </div>
+                                <div class="col-md-4 form-group" id="schedule_monthday_group">
+                                    <label for="schedule_day_of_month">Day of Month <span class="text-danger">*</span></label>
+                                    <input type="number" min="1" max="31" class="form-control" id="schedule_day_of_month" name="schedule_day_of_month" value="<?= htmlspecialchars((string) $schedule_day_of_month) ?>">
+                                    <small class="text-muted">For shorter months, the final day is used.</small>
+                                </div>
+                                <div class="col-md-4 form-group" id="schedule_interval_group">
+                                    <label for="schedule_interval">Repeat Every</label>
+                                    <input type="number" min="1" max="52" class="form-control" id="schedule_interval" name="schedule_interval" value="<?= (int) $schedule_interval ?>">
+                                    <small class="text-muted">1 means every day, week, or month.</small>
                                 </div>
                             </div>
                         </div>
@@ -585,42 +681,42 @@ ob_start();
                 </form>
 <script>
     function showRecurrenceFields() {
-        var recurring = document.getElementById('recurring').checked;
+        var mode = document.querySelector('input[name="schedule_mode"]:checked').value;
+        var scheduled = mode !== 'one_time';
+        var recurring = mode === 'recurring';
         var serviceDateGroup = document.getElementById('service_date_group');
         var serviceDateInput = document.getElementById('service_date');
-        document.getElementById('recurrence_fields').style.display = recurring ? 'block' : 'none';
-        serviceDateGroup.style.display = recurring ? 'none' : 'block';
-        if (recurring) {
+        document.getElementById('schedule_range_fields').style.display = scheduled ? 'block' : 'none';
+        document.getElementById('recurrence_type_group').style.display = recurring ? 'block' : 'none';
+        document.getElementById('schedule_interval_group').style.display = recurring ? 'block' : 'none';
+        serviceDateGroup.style.display = scheduled ? 'none' : 'block';
+        if (scheduled) {
             serviceDateInput.removeAttribute('required');
-            serviceDateInput.value = '';
+            document.getElementById('schedule_start_date').required = true;
+            document.getElementById('schedule_end_date').required = true;
         } else {
             serviceDateInput.setAttribute('required', 'required');
+            document.getElementById('schedule_start_date').required = false;
+            document.getElementById('schedule_end_date').required = false;
         }
+        showRecurrenceDay();
     }
     function showRecurrenceDay() {
-        var type = document.getElementById('recurrence_type').value;
-        var weekly = document.getElementById('recurrence_day_weekly');
-        var monthly = document.getElementById('recurrence_day_monthly');
-        // Remove name from both
-        weekly.removeAttribute('name');
-        monthly.removeAttribute('name');
-        if (type === 'weekly') {
-            weekly.setAttribute('name', 'recurrence_day');
-            weekly.disabled = false;
-            weekly.parentElement.style.display = 'block';
-            monthly.disabled = true;
-            monthly.parentElement.style.display = 'none';
-        } else if (type === 'monthly') {
-            monthly.setAttribute('name', 'recurrence_day');
-            monthly.disabled = false;
-            monthly.parentElement.style.display = 'block';
-            weekly.disabled = true;
-            weekly.parentElement.style.display = 'none';
-        } else {
-            weekly.disabled = true;
-            monthly.disabled = true;
-            weekly.parentElement.style.display = 'none';
-            monthly.parentElement.style.display = 'none';
+        var recurring = document.getElementById('recurring').checked;
+        var type = document.getElementById('schedule_type').value;
+        var weeklyGroup = document.getElementById('schedule_weekday_group');
+        var monthlyGroup = document.getElementById('schedule_monthday_group');
+        weeklyGroup.style.display = recurring && type === 'weekly' ? 'block' : 'none';
+        monthlyGroup.style.display = recurring && type === 'monthly' ? 'block' : 'none';
+        document.getElementById('schedule_weekday').required = recurring && type === 'weekly';
+        document.getElementById('schedule_day_of_month').required = recurring && type === 'monthly';
+    }
+
+    function showAudienceFields() {
+        var audience = document.getElementById('attendance_audience').value;
+        document.getElementById('role_of_serving_group').style.display = audience === 'role_of_serving' ? 'block' : 'none';
+        if (audience !== 'role_of_serving') {
+            document.getElementById('role_of_serving_id').value = '';
         }
     }
 
@@ -720,8 +816,10 @@ ob_start();
     }
 
     document.getElementById('one_time').addEventListener('change', showRecurrenceFields);
+    document.getElementById('multi_day').addEventListener('change', showRecurrenceFields);
     document.getElementById('recurring').addEventListener('change', showRecurrenceFields);
-    document.getElementById('recurrence_type').addEventListener('change', showRecurrenceDay);
+    document.getElementById('schedule_type').addEventListener('change', showRecurrenceDay);
+    document.getElementById('attendance_audience').addEventListener('change', showAudienceFields);
     document.getElementById('church_id').addEventListener('change', function() {
         filterBibleClassesByChurch();
         filterOrganizationsByChurch();
@@ -732,6 +830,7 @@ ob_start();
     window.onload = function() {
         showRecurrenceFields();
         showRecurrenceDay();
+        showAudienceFields();
         filterBibleClassesByChurch();
         filterOrganizationsByChurch();
         showScopeFields();

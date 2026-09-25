@@ -101,9 +101,19 @@ $status_filter = $_GET['status'] ?? '';
 $class_filter = $_GET['class_id'] ?? '';
 $gender_filter = $_GET['gender'] ?? '';
 $search = trim($_GET['search'] ?? '');
+$attendance_audience = $session['attendance_audience'] ?? 'members';
+$identifier_heading = $attendance_audience === 'sunday_school' ? 'SRN' : 'CRN';
+$audience_label = $attendance_audience === 'sunday_school'
+    ? 'children'
+    : ($attendance_audience === 'role_of_serving' ? 'role holders' : 'members');
 
 // Fetch attendance records with filters
-$sql = "SELECT m.id, m.crn, m.last_name, m.first_name, m.middle_name, m.gender,
+$sql = "SELECT COALESCE(m.id, child.id) AS id,
+        COALESCE(m.crn, child.srn) AS crn,
+        COALESCE(m.last_name, child.last_name) AS last_name,
+        COALESCE(m.first_name, child.first_name) AS first_name,
+        COALESCE(m.middle_name, child.middle_name) AS middle_name,
+        COALESCE(m.gender, child.gender) AS gender,
         bc.name AS class_name, ar.status, ar.created_at, ar.is_draft,
         COALESCE(
             u.name,
@@ -111,8 +121,10 @@ $sql = "SELECT m.id, m.crn, m.last_name, m.first_name, m.middle_name, m.gender,
             'System'
         ) AS marked_by
         FROM attendance_records ar
-        JOIN members m ON ar.member_id = m.id
-        LEFT JOIN bible_classes bc ON m.class_id = bc.id
+        LEFT JOIN members m ON ar.subject_type = 'member' AND ar.member_id = m.id
+        LEFT JOIN sunday_school child
+               ON ar.subject_type = 'sunday_school' AND ar.sunday_school_id = child.id
+        LEFT JOIN bible_classes bc ON bc.id = COALESCE(m.class_id, child.class_id)
         LEFT JOIN users u ON ar.marked_by = u.id
         LEFT JOIN members marker_member ON ar.marked_by_member_id = marker_member.id
         WHERE ar.session_id = ?";
@@ -126,19 +138,22 @@ if (in_array($status_filter, ['present', 'absent', 'sick', 'permission', 'distan
 }
 
 if ($class_filter) {
-    $sql .= " AND m.class_id = ?";
+    $sql .= " AND COALESCE(m.class_id, child.class_id) = ?";
     $params[] = $class_filter;
     $types .= 'i';
 }
 
 if ($gender_filter) {
-    $sql .= " AND m.gender = ?";
+    $sql .= " AND COALESCE(m.gender, child.gender) = ?";
     $params[] = $gender_filter;
     $types .= 's';
 }
 
 if ($search) {
-    $sql .= " AND (m.first_name LIKE ? OR m.last_name LIKE ? OR m.middle_name LIKE ? OR m.crn LIKE ?)";
+    $sql .= " AND (COALESCE(m.first_name, child.first_name) LIKE ?
+              OR COALESCE(m.last_name, child.last_name) LIKE ?
+              OR COALESCE(m.middle_name, child.middle_name) LIKE ?
+              OR COALESCE(m.crn, child.srn) LIKE ?)";
     $like = "%$search%";
     $params[] = $like;
     $params[] = $like;
@@ -147,7 +162,7 @@ if ($search) {
     $types .= 'ssss';
 }
 
-$sql .= " ORDER BY m.last_name, m.first_name";
+$sql .= " ORDER BY COALESCE(m.last_name, child.last_name), COALESCE(m.first_name, child.first_name)";
 $stmt = $conn->prepare($sql);
 $stmt->bind_param($types, ...$params);
 $stmt->execute();
@@ -567,7 +582,7 @@ ob_start();
                 <div class="col-md-4 mb-3">
                     <label class="form-label fw-bold">Search</label>
                     <input type="text" class="form-control" name="search" 
-                           placeholder="Search by name or CRN..." 
+                           placeholder="Search by name or <?= htmlspecialchars($identifier_heading) ?>..."
                            value="<?= htmlspecialchars($search) ?>">
                 </div>
                 <div class="col-md-1 mb-3 d-flex align-items-end">
@@ -590,7 +605,7 @@ ob_start();
         <div class="records-header">
             <h5 class="mb-0">
                 <i class="fas fa-list"></i> 
-                Attendance Records (<?= count($all_records) ?> members)
+                Attendance Records (<?= count($all_records) ?> <?= htmlspecialchars($audience_label) ?>)
             </h5>
             <div class="no-print">
                 <button class="btn btn-light btn-sm" onclick="toggleView()">
@@ -648,7 +663,7 @@ ob_start();
             <table class="table table-hover mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>CRN</th>
+                        <th><?= htmlspecialchars($identifier_heading) ?></th>
                         <th>Name</th>
                         <th>Class</th>
                         <th>Gender</th>
@@ -715,7 +730,7 @@ function exportToCSV() {
     const sessionTitle = <?= json_encode($session['title']) ?>;
     const sessionDate = <?= json_encode($session['service_date']) ?>;
     
-    let csv = 'CRN,Last Name,First Name,Class,Gender,Status,Marked By,Marked At\n';
+    let csv = <?= json_encode($identifier_heading) ?> + ',Last Name,First Name,Class,Gender,Status,Marked By,Marked At\n';
     
     records.forEach(record => {
         csv += `"${record.crn || 'N/A'}",`;

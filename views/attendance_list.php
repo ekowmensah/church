@@ -92,6 +92,15 @@ $offset = ($current_page - 1) * $records_per_page;
 
 $success_msg = '';
 $error_msg = '';
+$attendance_schedules_available = table_exists($conn, 'attendance_schedules');
+if (isset($_GET['generated'])) {
+    $generated_count = max(0, (int) $_GET['generated']);
+    $success_msg = "Schedule created with {$generated_count} dated attendance session(s).";
+} elseif (isset($_GET['added'])) {
+    $success_msg = 'Attendance session created.';
+} elseif (isset($_GET['updated'])) {
+    $success_msg = 'Attendance session updated.';
+}
 
 // Auto-create recurring sessions for today if they don't exist
 function auto_create_recurring_sessions($conn, $scope_columns_available, $reporting_categories_available) {
@@ -153,13 +162,16 @@ function auto_create_recurring_sessions($conn, $scope_columns_available, $report
 }
 
 // Run auto-creation on page load
-$auto_created = auto_create_recurring_sessions($conn, $scope_columns_available, $reporting_categories_available);
+$auto_created = $attendance_schedules_available
+    ? 0
+    : auto_create_recurring_sessions($conn, $scope_columns_available, $reporting_categories_available);
 if ($auto_created > 0) {
     $success_msg = "Auto-created $auto_created recurring session(s) for today.";
 }
 
 // Handle create next recurring session
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_next_recurring']) && isset($_POST['recurring_template_id'])) {
+if (!$attendance_schedules_available && $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_POST['create_next_recurring']) && isset($_POST['recurring_template_id'])) {
     if (!$can_add) {
         http_response_code(403);
         $error_msg = 'You do not have permission to create recurring sessions.';
@@ -322,9 +334,9 @@ if ($filter_church) {
 }
 
 if ($filter_type === 'recurring') {
-    $session_sql .= " AND s.is_recurring = 1";
+    $session_sql .= " AND (s.is_recurring = 1 OR s.schedule_id IS NOT NULL)";
 } elseif ($filter_type === 'one-time') {
-    $session_sql .= " AND s.is_recurring = 0";
+    $session_sql .= " AND s.is_recurring = 0 AND s.schedule_id IS NULL";
 }
 
 if ($scope_columns_available && in_array($filter_scope, ['church', 'bible_class', 'organization', 'event', 'other'], true)) {
@@ -408,9 +420,9 @@ if ($filter_church) {
 }
 
 if ($filter_type === 'recurring') {
-    $count_sql .= " AND s.is_recurring = 1";
+    $count_sql .= " AND (s.is_recurring = 1 OR s.schedule_id IS NOT NULL)";
 } elseif ($filter_type === 'one-time') {
-    $count_sql .= " AND s.is_recurring = 0";
+    $count_sql .= " AND s.is_recurring = 0 AND s.schedule_id IS NULL";
 }
 
 if ($scope_columns_available && in_array($filter_scope, ['church', 'bible_class', 'organization', 'event', 'other'], true)) {
@@ -491,8 +503,8 @@ if ($session_types) {
 
 // Get statistics
 $stats_total = $conn->query("SELECT COUNT(*) as cnt FROM attendance_sessions")->fetch_assoc()['cnt'];
-$stats_recurring = $conn->query("SELECT COUNT(*) as cnt FROM attendance_sessions WHERE is_recurring = 1")->fetch_assoc()['cnt'];
-$stats_onetime = $conn->query("SELECT COUNT(*) as cnt FROM attendance_sessions WHERE is_recurring = 0")->fetch_assoc()['cnt'];
+$stats_recurring = $conn->query("SELECT COUNT(*) as cnt FROM attendance_sessions WHERE is_recurring = 1 OR schedule_id IS NOT NULL")->fetch_assoc()['cnt'];
+$stats_onetime = $conn->query("SELECT COUNT(*) as cnt FROM attendance_sessions WHERE is_recurring = 0 AND schedule_id IS NULL")->fetch_assoc()['cnt'];
 $stats_marked = $conn->query("SELECT COUNT(DISTINCT session_id) as cnt FROM attendance_records")->fetch_assoc()['cnt'];
 $stats_scope_class = 0;
 $stats_scope_org = 0;
@@ -995,14 +1007,17 @@ ob_start();
                                     <i class="fas fa-link"></i> <?= htmlspecialchars((string)$row['scope_target_name']) ?>
                                 </small>
                             <?php elseif (($row['scope_name'] ?? 'church') === 'church'): ?>
-                                <small class="text-muted">All church members</small>
+                                <small class="text-muted">
+                                    <?= htmlspecialchars(ucwords(str_replace('_', ' ', (string) ($row['attendance_audience'] ?? 'members')))) ?>
+                                </small>
                             <?php else: ?>
                                 <small class="text-muted">-</small>
                             <?php endif; ?>
                         </td>
                         <td>
-                            <span class="badge <?= $row['is_recurring'] ? 'badge-recurring' : 'badge-onetime' ?>">
-                                <?= $row['is_recurring'] ? 'Recurring' : 'One-Time' ?>
+                            <?php $is_scheduled_occurrence = !empty($row['schedule_id']); ?>
+                            <span class="badge <?= ($row['is_recurring'] || $is_scheduled_occurrence) ? 'badge-recurring' : 'badge-onetime' ?>">
+                                <?= $is_scheduled_occurrence ? 'Scheduled' : ($row['is_recurring'] ? 'Legacy Recurring' : 'One-Time') ?>
                             </span>
                         </td>
                         <td>
@@ -1147,7 +1162,9 @@ $page_title = 'Attendance Sessions';
 
 // Define modal outside output buffer
 $modal_html = '';
-$recurring_check = $conn->query("SELECT * FROM attendance_sessions WHERE is_recurring = 1 ORDER BY service_date DESC LIMIT 1");
+$recurring_check = !$attendance_schedules_available
+    ? $conn->query("SELECT * FROM attendance_sessions WHERE is_recurring = 1 ORDER BY service_date DESC LIMIT 1")
+    : false;
 if ($recurring_check && $recurring_check->num_rows > 0) {
     ob_start();
     ?>
