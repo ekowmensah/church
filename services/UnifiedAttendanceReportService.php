@@ -242,13 +242,13 @@ final class UnifiedAttendanceReportService {
             "session.service_date BETWEEN ? AND ?",
             "session.service_date <> '0000-00-00'",
             'session.church_id = ?',
-            'record.is_draft = 0',
+            'subject.is_draft = 0',
             "session.approval_status = 'approved'",
         ];
         $params = [$fromDate, $toDate, $churchId];
         $types = 'ssi';
         if ($status !== 'all') {
-            $where[] = 'record.status = ?';
+            $where[] = 'subject.status = ?';
             $params[] = $status;
             $types .= 's';
         }
@@ -262,7 +262,8 @@ final class UnifiedAttendanceReportService {
         if ($scopeCondition !== '') $where[] = $scopeCondition;
 
         $sql = "SELECT session.id AS session_id, session.title, session.service_date,
-                       session.attendance_scope, session.scope_id, session.organization_unit_id,
+                       session.attendance_scope, session.attendance_audience,
+                       session.scope_id, session.organization_unit_id,
                        category.id AS category_id, category.code AS category_code,
                        category.name AS category_name, category.aggregation_method,
                        parent.id AS parent_category_id, parent.code AS parent_code,
@@ -271,13 +272,12 @@ final class UnifiedAttendanceReportService {
                        bible_class.name AS bible_class_name,
                        organization.name AS organization_name,
                        unit.name AS organization_unit_name,
-                       SUM(CASE WHEN LOWER(TRIM(member.gender)) = 'male' THEN 1 ELSE 0 END) AS male_count,
-                       SUM(CASE WHEN LOWER(TRIM(member.gender)) = 'female' THEN 1 ELSE 0 END) AS female_count,
-                       SUM(CASE WHEN member.gender IS NULL OR LOWER(TRIM(member.gender)) NOT IN ('male','female') THEN 1 ELSE 0 END) AS unspecified_count,
+                       SUM(CASE WHEN LOWER(TRIM(subject.gender)) = 'male' THEN 1 ELSE 0 END) AS male_count,
+                       SUM(CASE WHEN LOWER(TRIM(subject.gender)) = 'female' THEN 1 ELSE 0 END) AS female_count,
+                       SUM(CASE WHEN subject.gender IS NULL OR LOWER(TRIM(subject.gender)) NOT IN ('male','female') THEN 1 ELSE 0 END) AS unspecified_count,
                        COUNT(*) AS total_count
                   FROM attendance_sessions session
-                  JOIN attendance_records record ON record.session_id = session.id
-                  JOIN members member ON member.id = record.member_id
+                  JOIN v_attendance_record_subjects subject ON subject.session_id = session.id
                   JOIN attendance_report_categories category ON category.id = session.attendance_report_category_id
                   LEFT JOIN attendance_report_categories parent ON parent.id = category.parent_id
                   LEFT JOIN bible_classes bible_class
@@ -287,6 +287,7 @@ final class UnifiedAttendanceReportService {
                   LEFT JOIN organization_units unit ON unit.id = session.organization_unit_id
                  WHERE " . implode(' AND ', $where) . "
                  GROUP BY session.id, session.title, session.service_date, session.attendance_scope,
+                          session.attendance_audience,
                           session.scope_id, session.organization_unit_id, category.id, category.code,
                           category.name, category.aggregation_method, parent.id, parent.code,
                           parent.name, parent.sort_order, category.sort_order,
