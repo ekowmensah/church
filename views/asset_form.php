@@ -17,6 +17,7 @@ $hasAcquisitionMode = asset_column_exists($conn, 'assets', 'acquisition_mode');
 $hasSeparatedReceiptFields = asset_column_exists($conn, 'assets', 'receipt_number')
     && asset_column_exists($conn, 'assets', 'serial_number');
 $hasSerialTracking = asset_table_exists($conn, 'asset_serial_numbers');
+$hasItemTracking = asset_item_tracking_available($conn);
 $assetId = $isEdit ? (int) $_GET['id'] : 0;
 $error = '';
 
@@ -110,7 +111,14 @@ if ($isEdit) {
     $quantity = (int) $asset['quantity'];
     $receiptNumber = (string) ($asset['receipt_number'] ?? ($asset['receipt_or_serial_number'] ?? ''));
     $primarySerialNumber = (string) ($asset['serial_number'] ?? '');
-    if ($hasSerialTracking) {
+    if ($hasItemTracking) {
+        $physicalItems = asset_fetch_physical_items($conn, $assetId);
+        $quantity = count(array_filter($physicalItems, static function (array $item): bool {
+            return (string) ($item['status'] ?? '') === 'active';
+        }));
+        $primarySerialNumber = (string) ($physicalItems[0]['serial_number'] ?? $primarySerialNumber);
+        $serialNumbersText = implode("\n", array_values(array_filter(array_column($physicalItems, 'serial_number'))));
+    } elseif ($hasSerialTracking) {
         $serialNumbersText = implode("\n", asset_fetch_serial_numbers($conn, $assetId));
     } elseif ($primarySerialNumber !== '') {
         $serialNumbersText = $primarySerialNumber;
@@ -168,7 +176,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $acquisitionMode = trim((string) ($_POST['acquisition_mode'] ?? 'purchase'));
     $acquisitionModeOther = trim((string) ($_POST['acquisition_mode_other'] ?? ''));
     $purchaseDate = trim((string) ($_POST['purchase_date'] ?? ''));
-    $quantity = (int) ($_POST['quantity'] ?? 1);
+    $quantity = $hasItemTracking
+        ? ($isEdit ? count(asset_fetch_physical_items($conn, $assetId, true)) : 1)
+        : (int) ($_POST['quantity'] ?? 1);
     $receiptNumber = trim((string) ($_POST['receipt_number'] ?? ''));
     $primarySerialNumber = trim((string) ($_POST['primary_serial_number'] ?? ''));
     $serialNumbersText = trim((string) ($_POST['serial_numbers_text'] ?? ''));
@@ -187,9 +197,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $selectedGroup = $hasGroups && $assetGroupId > 0 ? ($groupMap[$assetGroupId] ?? null) : null;
     if ($selectedGroup) {
         $itemGroup = (string) ($selectedGroup['name'] ?? $itemGroup);
-        if ((string) ($selectedGroup['quantity_rule'] ?? 'fixed') === 'fixed') {
+        if (!$hasItemTracking && (string) ($selectedGroup['quantity_rule'] ?? 'fixed') === 'fixed') {
             $quantity = (int) ($selectedGroup['default_quantity'] ?? 1);
-        } elseif ($quantity <= 0) {
+        } elseif (!$hasItemTracking && $quantity <= 0) {
             $quantity = (int) ($selectedGroup['default_quantity'] ?? 1);
         }
     }
@@ -241,7 +251,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Invalid lifecycle transition from ' . asset_lifecycle_label($existingLifecycleStatus) . ' to ' . asset_lifecycle_label($lifecycleStatus) . '.';
     } elseif ($acquisitionMode === 'other' && $acquisitionModeOther === '') {
         $error = 'Please specify the acquisition mode when "Other" is selected.';
-    } elseif (count($serials) > $quantity) {
+    } elseif ($hasItemTracking && count($serials) > 1) {
+        $error = 'Register one physical item at a time. Enter only that item\'s serial number.';
+    } elseif (!$hasItemTracking && count($serials) > $quantity) {
         $error = 'Serial numbers cannot exceed the asset quantity.';
     } elseif ($isEdit && $postedOriginalUpdatedAt !== '' && $postedOriginalUpdatedAt !== $originalUpdatedAt) {
         $error = 'This asset was updated by another user. Reload and try again.';
@@ -314,8 +326,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $values[] = $nextMaintenanceDb;
                 }
 
-                $sql .= ', quantity = ?, receipt_or_serial_number = ?';
-                $values[] = $quantity;
+                if (!$hasItemTracking) {
+                    $sql .= ', quantity = ?';
+                    $values[] = $quantity;
+                }
+                $sql .= ', receipt_or_serial_number = ?';
                 $values[] = $legacyReceiptOrSerialDb;
 
                 if ($hasSeparatedReceiptFields) {
@@ -349,6 +364,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!$sync['ok']) {
                         throw new RuntimeException($sync['message']);
                     }
+                }
+
+                if ($hasItemTracking) {
+                    $items = asset_fetch_physical_items($conn, $assetId);
+                    if (count($items) === 1) {
+                        $itemId = (int) $items[0]['id'];
+                        $stmt = $conn->prepare(
+                            'UPDATE asset_items SET serial_number = ?, condition_status = ?, status = ?, lifecycle_status = ? WHERE id = ?'
+                        );
+                        $serialDb = $primarySerialNumber !== '' ? $primarySerialNumber : null;
+                        $stmt->bind_param('ssssi', $serialDb, $conditionStatus, $status, $lifecycleStatus, $itemId);
+                        $stmt->execute();
+                        $stmt->close();
+                    }
+                    asset_sync_parent_from_items($conn, $assetId);
+                    $quantity = count(asset_fetch_physical_items($conn, $assetId, true));
                 }
 
                 $conn->commit();
@@ -463,6 +494,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!$sync['ok']) {
                     throw new RuntimeException($sync['message']);
                 }
+            }
+
+
+            if ($hasItemTracking) {
+                $stmt = $conn->prepare(
+                    'INSERT INTO asset_items
+                        (church_id, asset_id, item_number, department_id, serial_number,
+                         condition_status, status, lifecycle_status, registered_by_user_id)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                );
+                $serialDb = $primarySerialNumber !== '' ? $primarySerialNumber : null;
+                $stmt->bind_param(
+                    'iisissssi',
+                    $churchId,
+                    $newId,
+                    $assetCode,
+                    $departmentId,
+                    $serialDb,
+                    $conditionStatus,
+                    $status,
+                    $lifecycleStatus,
+                    $createdBy
+                );
+                $stmt->execute();
+                $stmt->close();
+                $quantity = 1;
             }
 
             $conn->commit();
@@ -646,15 +703,16 @@ ob_start();
 
                 <div class="form-row">
                     <div class="form-group col-md-2">
-                        <label>Quantity <span class="text-danger">*</span></label>
-                        <input type="number" name="quantity" id="quantity" class="form-control" value="<?= (int) $quantity ?>" min="1" required>
+                        <label><?= $hasItemTracking ? 'Derived Quantity' : 'Quantity' ?> <span class="text-danger">*</span></label>
+                        <input type="number" name="quantity" id="quantity" class="form-control" value="<?= (int) $quantity ?>" min="<?= $hasItemTracking && $isEdit ? 0 : 1 ?>" required <?= $hasItemTracking ? 'readonly data-derived="1"' : '' ?>>
+                        <?php if ($hasItemTracking): ?><small class="text-muted"><?= $isEdit ? 'Counted from active physical items.' : 'Each registration creates one uniquely numbered physical item.' ?></small><?php endif; ?>
                     </div>
                     <div class="form-group col-md-4">
                         <label>Receipt Number</label>
                         <input type="text" name="receipt_number" class="form-control" value="<?= htmlspecialchars($receiptNumber) ?>" maxlength="120" placeholder="One receipt can cover multiple items">
                     </div>
                     <div class="form-group col-md-3">
-                        <label>Primary Serial Number</label>
+                        <label><?= $hasItemTracking ? 'Item Serial Number' : 'Primary Serial Number' ?></label>
                         <input type="text" name="primary_serial_number" class="form-control" value="<?= htmlspecialchars($primarySerialNumber) ?>" maxlength="120" placeholder="Unique per item">
                     </div>
                     <div class="form-group col-md-3">
@@ -663,7 +721,7 @@ ob_start();
                     </div>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group" <?= $hasItemTracking ? 'style="display:none"' : '' ?>>
                     <label>All Serial Numbers</label>
                     <textarea name="serial_numbers_text" class="form-control" rows="3" placeholder="Enter one serial per line, or separate with commas"><?= htmlspecialchars($serialNumbersText) ?></textarea>
                     <small class="text-muted">Useful when one asset record covers multiple individually tracked items.</small>
@@ -748,7 +806,9 @@ ob_start();
         if (itemGroupDisplayInput) {
             itemGroupDisplayInput.value = groupName;
         }
-        if (quantityRule === 'fixed') {
+        if (quantityInput.getAttribute('data-derived') === '1') {
+            quantityInput.value = <?= $isEdit ? (int) $quantity : 1 ?>;
+        } else if (quantityRule === 'fixed') {
             quantityInput.value = defaultQuantity > 0 ? defaultQuantity : 1;
             quantityInput.setAttribute('readonly', 'readonly');
         } else {

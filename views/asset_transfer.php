@@ -37,14 +37,26 @@ if (!$asset) {
 }
 
 $churchId = (int) $asset['church_id'];
-$currentDepartmentId = (int) ($asset['department_id'] ?? 0);
+$physicalItems = asset_fetch_physical_items($conn, $id, true);
+if (!$physicalItems) {
+    http_response_code(409);
+    exit('This asset has no active physical items to transfer.');
+}
+$selectedItemId = (int) ($_POST['asset_item_id'] ?? $_GET['asset_item_id'] ?? (count($physicalItems) === 1 ? $physicalItems[0]['id'] : 0));
+$selectedItem = null;
+foreach ($physicalItems as $physicalItem) {
+    if ((int) $physicalItem['id'] === $selectedItemId) $selectedItem = $physicalItem;
+}
+$currentDepartmentId = (int) ($selectedItem['department_id'] ?? 0);
 $departments = asset_fetch_departments($conn, $churchId, false);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $toDepartmentId = (int) ($_POST['to_department_id'] ?? 0);
     $notes = trim((string) ($_POST['notes'] ?? ''));
 
-    if ($toDepartmentId <= 0) {
+    if (!$selectedItem) {
+        $error = 'Please select the physical item to transfer.';
+    } elseif ($toDepartmentId <= 0) {
         $error = 'Please select destination department.';
     } elseif ($toDepartmentId === $currentDepartmentId) {
         $error = 'Destination department must be different from current department.';
@@ -53,6 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $requestId = asset_create_approval_request($conn, $churchId, $id, 'transfer', [
                 'from_department_id' => $currentDepartmentId,
                 'to_department_id' => $toDepartmentId,
+                'asset_item_id' => $selectedItemId,
+                'item_number' => (string) $selectedItem['item_number'],
                 'note' => $notes,
             ]);
             asset_log_action('asset_approval_requested', 'asset_approval_request', $requestId, [
@@ -75,14 +89,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'department_name' => $asset['department_name'] ?? null,
                 ];
 
-                $stmt = $conn->prepare('UPDATE assets SET department_id = ? WHERE id = ?');
-                $stmt->bind_param('ii', $toDepartmentId, $id);
+                $destination = null;
+                foreach ($departments as $department) {
+                    if ((int) $department['id'] === $toDepartmentId) $destination = $department;
+                }
+                if (!$destination) throw new RuntimeException('Destination department not found.');
+                $newItemNumber = asset_replace_department_segment(
+                    (string) $selectedItem['item_number'],
+                    (string) ($destination['department_code'] ?? $destination['name'])
+                );
+                $stmt = $conn->prepare('UPDATE asset_items SET department_id = ?, item_number = ? WHERE id = ? AND asset_id = ?');
+                $stmt->bind_param('isii', $toDepartmentId, $newItemNumber, $selectedItemId, $id);
                 $stmt->execute();
                 $stmt->close();
 
+                asset_sync_parent_from_items($conn, $id);
+
                 $movedBy = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
-                $stmt = $conn->prepare('INSERT INTO asset_movements (asset_id, from_department_id, to_department_id, moved_by, notes) VALUES (?, ?, ?, ?, ?)');
-                $stmt->bind_param('iiiis', $id, $currentDepartmentId, $toDepartmentId, $movedBy, $notes);
+                $stmt = $conn->prepare('INSERT INTO asset_movements (asset_id, asset_item_id, from_department_id, to_department_id, moved_by, notes) VALUES (?, ?, ?, ?, ?, ?)');
+                $stmt->bind_param('iiiiis', $id, $selectedItemId, $currentDepartmentId, $toDepartmentId, $movedBy, $notes);
                 $stmt->execute();
                 $movementId = (int) $conn->insert_id;
                 $stmt->close();
@@ -105,6 +130,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 asset_log_action('asset_transfer', 'asset_movement', $movementId, [
                     'asset_id' => $id,
                     'asset_code' => $asset['asset_code'],
+                    'asset_item_id' => $selectedItemId,
+                    'old_item_number' => (string) $selectedItem['item_number'],
+                    'new_item_number' => $newItemNumber,
                     'church_id' => $churchId,
                     'from_department_id' => $currentDepartmentId,
                     'to_department_id' => $toDepartmentId,
@@ -133,13 +161,21 @@ ob_start();
             <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 
             <div class="mb-3">
-                <strong>Asset Code:</strong> <?= htmlspecialchars($asset['asset_code']) ?><br>
+                <strong>Asset Category Code:</strong> <?= htmlspecialchars($asset['asset_code']) ?><br>
                 <strong>Item:</strong> <?= htmlspecialchars($asset['item_name']) ?><br>
-                <strong>Current Department:</strong> <?= htmlspecialchars((string) ($asset['department_name'] ?? '-')) ?>
+                <?php if ($selectedItem): ?><strong>Item Number:</strong> <?= htmlspecialchars((string) $selectedItem['item_number']) ?><br><strong>Current Department:</strong> <?= htmlspecialchars((string) ($selectedItem['department_name'] ?? '-')) ?><?php endif; ?>
             </div>
 
             <form method="post">
                 <input type="hidden" name="id" value="<?= (int) $id ?>">
+
+                <div class="form-group">
+                    <label for="asset_item_id">Physical Item <span class="text-danger">*</span></label>
+                    <select class="form-control" id="asset_item_id" name="asset_item_id" required onchange="if(this.value){window.location='asset_transfer.php?id=<?= (int) $id ?>&asset_item_id='+encodeURIComponent(this.value);}">
+                        <option value="">-- Select Physical Item --</option>
+                        <?php foreach ($physicalItems as $item): ?><option value="<?= (int) $item['id'] ?>" <?= $selectedItemId === (int) $item['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $item['item_number']) ?><?= !empty($item['department_name']) ? ' - ' . htmlspecialchars((string) $item['department_name']) : '' ?></option><?php endforeach; ?>
+                    </select>
+                </div>
 
                 <div class="form-group">
                     <label for="to_department_id">Transfer To Department <span class="text-danger">*</span></label>

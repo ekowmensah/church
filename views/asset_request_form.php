@@ -6,130 +6,147 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-
-if (!asset_use_requests_available($conn)) {
-    http_response_code(404);
-    exit('Asset request workflow not available. Run the latest assets migration first.');
+if (!asset_use_requests_available($conn) || !asset_request_lines_available($conn)) {
+    http_response_code(503);
+    exit('Multi-item asset requests are not available. Run Phase 0024 first.');
 }
 
 $isSuper = asset_is_super_admin();
 $churchId = $isSuper
     ? (isset($_GET['church_id']) && (int) $_GET['church_id'] > 0 ? (int) $_GET['church_id'] : asset_current_church_id($conn))
     : asset_current_church_id($conn);
-$assetId = isset($_GET['asset_id']) ? (int) $_GET['asset_id'] : 0;
 $error = '';
-
 $actor = asset_use_request_actor($conn);
-$purpose = '';
-$requestNote = '';
-$quantityRequested = 1;
-$borrowStartDate = date('Y-m-d');
-$expectedReturnDate = date('Y-m-d', strtotime('+7 days'));
+$purpose = trim((string) ($_POST['purpose'] ?? ''));
+$requestNote = trim((string) ($_POST['request_note'] ?? ''));
+$borrowStartDate = trim((string) ($_POST['borrow_start_date'] ?? date('Y-m-d')));
+$expectedReturnDate = trim((string) ($_POST['expected_return_date'] ?? date('Y-m-d', strtotime('+7 days'))));
+$selectedAssetIds = array_values(array_filter(array_map('intval', (array) ($_POST['asset_ids'] ?? [($_GET['asset_id'] ?? 0)]))));
+if (!$selectedAssetIds) $selectedAssetIds = [0];
 
 $assetSql = "
-    SELECT a.id, a.asset_code, a.item_name, a.quantity, a.status,
-           d.name AS department_name,
-           " . (asset_can_use_groups($conn) ? "g.name AS asset_group_name," : "NULL AS asset_group_name,") . "
-           c.name AS church_name
-    FROM assets a
-    LEFT JOIN asset_departments d ON d.id = a.department_id
-    " . (asset_can_use_groups($conn) ? "LEFT JOIN asset_groups g ON g.id = a.asset_group_id" : "") . "
-    LEFT JOIN churches c ON c.id = a.church_id
-    WHERE a.status = 'active'
+    SELECT asset.id, asset.asset_code, asset.item_name, asset.church_id,
+           department.name AS department_name, category.name AS asset_group_name,
+           COUNT(item.id) AS available_units
+    FROM assets asset
+    JOIN asset_items item ON item.asset_id = asset.id AND item.status = 'active'
+    LEFT JOIN asset_departments department ON department.id = asset.department_id
+    LEFT JOIN asset_groups category ON category.id = asset.asset_group_id
+    WHERE asset.status = 'active'
+      AND NOT EXISTS (
+          SELECT 1 FROM asset_use_request_items used
+          WHERE used.asset_item_id = item.id AND used.line_status = 'checked_out'
+      )
 ";
 $assetTypes = '';
 $assetParams = [];
 if (!$isSuper || $churchId) {
-    $assetSql .= ' AND a.church_id = ?';
-    $assetTypes .= 'i';
-    $assetParams[] = $churchId;
+    $assetSql .= ' AND asset.church_id = ?';
+    $assetTypes = 'i';
+    $assetParams[] = (int) $churchId;
 }
-$assetSql .= ' ORDER BY a.item_name ASC';
+$assetSql .= ' GROUP BY asset.id, asset.asset_code, asset.item_name, asset.church_id,
+                       department.name, category.name
+               HAVING COUNT(item.id) > 0 ORDER BY asset.item_name, asset.asset_code';
 $stmt = $conn->prepare($assetSql);
-if ($assetTypes !== '') {
-    $stmt->bind_param($assetTypes, ...$assetParams);
-}
+if ($assetTypes !== '') $stmt->bind_param($assetTypes, ...$assetParams);
 $stmt->execute();
-$res = $stmt->get_result();
-$assets = [];
-while ($row = $res->fetch_assoc()) {
-    $assets[] = $row;
-}
+$assets = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
+$assetMap = [];
+foreach ($assets as $asset) $assetMap[(int) $asset['id']] = $asset;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $assetId = (int) ($_POST['asset_id'] ?? 0);
-    $purpose = trim((string) ($_POST['purpose'] ?? ''));
-    $requestNote = trim((string) ($_POST['request_note'] ?? ''));
-    $quantityRequested = max(1, (int) ($_POST['quantity_requested'] ?? 1));
-    $borrowStartDate = trim((string) ($_POST['borrow_start_date'] ?? ''));
-    $expectedReturnDate = trim((string) ($_POST['expected_return_date'] ?? ''));
-
-    $assetLookupSql = 'SELECT id, church_id, asset_code, item_name, quantity, status FROM assets WHERE id = ? LIMIT 1';
-    $assetStmt = $conn->prepare($assetLookupSql);
-    $assetStmt->bind_param('i', $assetId);
-    $assetStmt->execute();
-    $asset = $assetStmt->get_result()->fetch_assoc();
-    $assetStmt->close();
-
-    if (!$asset) {
-        $error = 'Please select a valid asset.';
-    } elseif (!$isSuper && (int) $asset['church_id'] !== (int) $churchId) {
-        $error = 'You cannot request assets outside your church.';
-    } elseif ((string) ($asset['status'] ?? '') !== 'active') {
-        $error = 'Only active assets can be requested.';
+    $selectedAssetIds = array_values(array_filter(array_map('intval', (array) ($_POST['asset_ids'] ?? []))));
+    if (count($selectedAssetIds) > 50) {
+        $error = 'A request can contain at most 50 selected items.';
+    } elseif (!$selectedAssetIds) {
+        $error = 'Select at least one asset item.';
     } elseif ($purpose === '') {
         $error = 'Purpose is required.';
     } elseif ($borrowStartDate === '' || $expectedReturnDate === '') {
         $error = 'Borrowing dates are required.';
     } elseif ($expectedReturnDate < $borrowStartDate) {
         $error = 'Expected return date cannot be earlier than the borrowing start date.';
-    } elseif ($quantityRequested > (int) ($asset['quantity'] ?? 1)) {
-        $error = 'Requested quantity cannot exceed the recorded asset quantity.';
-    } else {
-        $stmt = $conn->prepare(
-            'INSERT INTO asset_use_requests (church_id, asset_id, requested_by_user_id, requested_by_member_id, requester_name, requester_phone, purpose, request_note, quantity_requested, borrow_start_date, expected_return_date, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "pending")'
-        );
-        $requesterPhone = (string) ($actor['phone'] ?? '');
-        $requestedByUserId = $actor['user_id'];
-        $requestedByMemberId = $actor['member_id'];
-        $requestChurchId = (int) $asset['church_id'];
-        $requesterName = (string) $actor['name'];
-        $stmt->bind_param(
-            'iiiissssiss',
-            $requestChurchId,
-            $assetId,
-            $requestedByUserId,
-            $requestedByMemberId,
-            $requesterName,
-            $requesterPhone,
-            $purpose,
-            $requestNote,
-            $quantityRequested,
-            $borrowStartDate,
-            $expectedReturnDate
-        );
-        $ok = $stmt->execute();
-        $requestId = (int) $conn->insert_id;
-        $stmt->close();
+    }
 
-        if ($ok) {
+    $selectionCounts = array_count_values($selectedAssetIds);
+    if ($error === '') {
+        foreach ($selectionCounts as $assetId => $count) {
+            $asset = $assetMap[(int) $assetId] ?? null;
+            if (!$asset) {
+                $error = 'One of the selected assets is unavailable or outside your church.';
+                break;
+            }
+            if ($count > (int) $asset['available_units']) {
+                $error = $asset['item_name'] . ' has only ' . (int) $asset['available_units'] . ' active physical item(s).';
+                break;
+            }
+        }
+    }
+
+    if ($error === '') {
+        $conn->begin_transaction();
+        try {
+            $firstAsset = $assetMap[$selectedAssetIds[0]];
+            $requestChurchId = (int) $firstAsset['church_id'];
+            foreach ($selectedAssetIds as $assetId) {
+                if ((int) $assetMap[$assetId]['church_id'] !== $requestChurchId) {
+                    throw new RuntimeException('All requested assets must belong to the same church.');
+                }
+            }
+            $requestedByUserId = $actor['user_id'];
+            $requestedByMemberId = $actor['member_id'];
+            $requesterName = (string) $actor['name'];
+            $requesterPhone = (string) ($actor['phone'] ?? '');
+            $quantityRequested = count($selectedAssetIds);
+            $firstAssetId = $selectedAssetIds[0];
+            $stmt = $conn->prepare(
+                'INSERT INTO asset_use_requests
+                    (request_model_version, church_id, asset_id, requested_by_user_id,
+                     requested_by_member_id, requester_name, requester_phone, purpose,
+                     request_note, quantity_requested, borrow_start_date,
+                     expected_return_date, status)
+                 VALUES (2, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "pending")'
+            );
+            $stmt->bind_param(
+                'iiiissssiss',
+                $requestChurchId, $firstAssetId, $requestedByUserId, $requestedByMemberId,
+                $requesterName, $requesterPhone, $purpose, $requestNote,
+                $quantityRequested, $borrowStartDate, $expectedReturnDate
+            );
+            $stmt->execute();
+            $requestId = (int) $conn->insert_id;
+            $stmt->close();
+
+            $lineStmt = $conn->prepare(
+                'INSERT INTO asset_use_request_items (request_id, asset_id, line_status)
+                 VALUES (?, ?, "pending")'
+            );
+            foreach ($selectedAssetIds as $assetId) {
+                $lineStmt->bind_param('ii', $requestId, $assetId);
+                $lineStmt->execute();
+                $lineId = (int) $conn->insert_id;
+                asset_request_line_audit($conn, $requestId, $lineId, 'created', null, [
+                    'asset_id' => $assetId, 'line_status' => 'pending',
+                ], $requestedByUserId);
+            }
+            $lineStmt->close();
+            $conn->commit();
+
             asset_log_action('asset_use_request_create', 'asset_use_request', $requestId, [
-                'asset_id' => $assetId,
-                'asset_code' => (string) $asset['asset_code'],
-                'church_id' => $requestChurchId,
-                'quantity_requested' => $quantityRequested,
-                'borrow_start_date' => $borrowStartDate,
-                'expected_return_date' => $expectedReturnDate,
+                'asset_id' => $firstAssetId, 'church_id' => $requestChurchId,
+                'selected_item_count' => $quantityRequested, 'asset_ids' => $selectedAssetIds,
             ], [], [
-                'purpose' => $purpose,
-                'request_note' => $requestNote,
-                'requester_name' => $requesterName,
+                'purpose' => $purpose, 'borrow_start_date' => $borrowStartDate,
+                'expected_return_date' => $expectedReturnDate,
             ]);
             header('Location: asset_request_list.php?created=1');
             exit;
+        } catch (Throwable $exception) {
+            $conn->rollback();
+            $error = $exception->getMessage();
         }
-        $error = 'Failed to submit asset request.';
     }
 }
 
@@ -137,94 +154,63 @@ ob_start();
 ?>
 <div class="container-fluid mt-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h2 class="mb-1"><i class="fas fa-hand-holding mr-2"></i>Request Asset Use</h2>
-            <small class="text-muted">Submit a request to borrow or use a church asset.</small>
-        </div>
+        <div><h2 class="mb-1"><i class="fas fa-hand-holding mr-2"></i>Request Asset Use</h2><small class="text-muted">Add one row for each physical item needed. Quantity is counted automatically.</small></div>
         <a href="asset_request_list.php" class="btn btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i> Back</a>
     </div>
-
-    <div class="card shadow-sm">
-        <div class="card-body">
-            <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
-
-            <form method="post" autocomplete="off">
-                <div class="form-row">
-                    <div class="form-group col-md-6">
-                        <label>Requester</label>
-                        <input type="text" class="form-control" value="<?= htmlspecialchars((string) $actor['name']) ?>" readonly>
+    <div class="card shadow-sm"><div class="card-body">
+        <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+        <form method="post" autocomplete="off" id="assetRequestForm">
+            <div class="form-row">
+                <div class="form-group col-md-6"><label>Requester</label><input class="form-control" value="<?= htmlspecialchars((string) $actor['name']) ?>" readonly></div>
+                <div class="form-group col-md-6"><label>Requester Phone</label><input class="form-control" value="<?= htmlspecialchars((string) ($actor['phone'] ?? '')) ?>" readonly></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-2"><label class="mb-0">Requested Items <span class="text-danger">*</span></label><span class="badge badge-primary p-2">Quantity: <span id="requestQuantity">0</span></span></div>
+            <div id="requestLines">
+                <?php foreach ($selectedAssetIds as $selectedAssetId): ?>
+                <div class="form-row request-line align-items-end mb-2">
+                    <div class="form-group col-md-10 mb-0">
+                        <select class="form-control asset-selection" name="asset_ids[]" required>
+                            <option value="">-- Select an asset --</option>
+                            <?php foreach ($assets as $asset): ?>
+                            <option value="<?= (int) $asset['id'] ?>" data-available="<?= (int) $asset['available_units'] ?>" <?= (int) $selectedAssetId === (int) $asset['id'] ? 'selected' : '' ?>><?= htmlspecialchars($asset['asset_code'] . ' - ' . $asset['item_name']) ?> (<?= (int) $asset['available_units'] ?> available<?= !empty($asset['department_name']) ? ', ' . htmlspecialchars($asset['department_name']) : '' ?>)</option>
+                            <?php endforeach; ?>
+                        </select>
                     </div>
-                    <div class="form-group col-md-6">
-                        <label>Requester Phone</label>
-                        <input type="text" class="form-control" value="<?= htmlspecialchars((string) ($actor['phone'] ?? '')) ?>" readonly>
-                    </div>
+                    <div class="form-group col-md-2 mb-0"><button type="button" class="btn btn-outline-danger btn-block remove-line"><i class="fas fa-times"></i> Remove</button></div>
                 </div>
-
-                <div class="form-group">
-                    <label for="asset_id">Asset <span class="text-danger">*</span></label>
-                    <select class="form-control" id="asset_id" name="asset_id" required>
-                        <option value="">-- Select Asset --</option>
-                        <?php foreach ($assets as $row): ?>
-                            <option value="<?= (int) $row['id'] ?>" data-quantity="<?= (int) ($row['quantity'] ?? 1) ?>" <?= $assetId === (int) $row['id'] ? 'selected' : '' ?>>
-                                <?= htmlspecialchars((string) $row['asset_code']) ?> - <?= htmlspecialchars((string) $row['item_name']) ?>
-                                <?= !empty($row['asset_group_name']) ? ' - Category: ' . htmlspecialchars((string) $row['asset_group_name']) : '' ?>
-                                <?= !empty($row['department_name']) ? ' - ' . htmlspecialchars((string) $row['department_name']) : '' ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group col-md-3">
-                        <label for="quantity_requested">Quantity <span class="text-danger">*</span></label>
-                        <input type="number" class="form-control" id="quantity_requested" name="quantity_requested" value="<?= (int) $quantityRequested ?>" min="1" required>
-                    </div>
-                    <div class="form-group col-md-3">
-                        <label for="borrow_start_date">Borrow Start Date <span class="text-danger">*</span></label>
-                        <input type="date" class="form-control" id="borrow_start_date" name="borrow_start_date" value="<?= htmlspecialchars($borrowStartDate) ?>" required>
-                    </div>
-                    <div class="form-group col-md-3">
-                        <label for="expected_return_date">Expected Return Date <span class="text-danger">*</span></label>
-                        <input type="date" class="form-control" id="expected_return_date" name="expected_return_date" value="<?= htmlspecialchars($expectedReturnDate) ?>" required>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="purpose">Purpose <span class="text-danger">*</span></label>
-                    <input type="text" class="form-control" id="purpose" name="purpose" value="<?= htmlspecialchars($purpose) ?>" maxlength="255" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="request_note">Additional Note</label>
-                    <textarea class="form-control" id="request_note" name="request_note" rows="3"><?= htmlspecialchars($requestNote) ?></textarea>
-                </div>
-
-                <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane mr-1"></i> Submit Request</button>
-            </form>
-        </div>
-    </div>
+                <?php endforeach; ?>
+            </div>
+            <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="addRequestLine"><i class="fas fa-plus mr-1"></i>Add another item</button>
+            <hr>
+            <div class="form-group"><label>Purpose <span class="text-danger">*</span></label><input name="purpose" class="form-control" value="<?= htmlspecialchars($purpose) ?>" required maxlength="255"></div>
+            <div class="form-row">
+                <div class="form-group col-md-6"><label>Borrow Start <span class="text-danger">*</span></label><input type="date" name="borrow_start_date" class="form-control" value="<?= htmlspecialchars($borrowStartDate) ?>" required></div>
+                <div class="form-group col-md-6"><label>Expected Return <span class="text-danger">*</span></label><input type="date" name="expected_return_date" class="form-control" value="<?= htmlspecialchars($expectedReturnDate) ?>" required></div>
+            </div>
+            <div class="form-group"><label>Request Note</label><textarea name="request_note" class="form-control" rows="3" maxlength="255"><?= htmlspecialchars($requestNote) ?></textarea></div>
+            <button class="btn btn-primary" type="submit"><i class="fas fa-paper-plane mr-1"></i>Submit Request</button>
+        </form>
+    </div></div>
 </div>
 <script>
 (function () {
-    var assetSelect = document.getElementById('asset_id');
-    var qtyInput = document.getElementById('quantity_requested');
-
-    function syncQuantityLimit() {
-        if (!assetSelect || !qtyInput) {
-            return;
-        }
-        var option = assetSelect.options[assetSelect.selectedIndex];
-        var maxQty = parseInt((option && option.getAttribute('data-quantity')) || '1', 10);
-        qtyInput.max = maxQty > 0 ? maxQty : 1;
-        if (parseInt(qtyInput.value || '0', 10) > maxQty) {
-            qtyInput.value = maxQty;
-        }
+    var lines = document.getElementById('requestLines'), add = document.getElementById('addRequestLine'), quantity = document.getElementById('requestQuantity');
+    function updateQuantity() {
+        var count = lines.querySelectorAll('.asset-selection').length;
+        quantity.textContent = count;
+        lines.querySelectorAll('.remove-line').forEach(function (button) { button.disabled = count === 1; });
     }
-
-    if (assetSelect) {
-        assetSelect.addEventListener('change', syncQuantityLimit);
-        syncQuantityLimit();
-    }
+    add.addEventListener('click', function () {
+        var clone = lines.querySelector('.request-line').cloneNode(true);
+        clone.querySelector('.asset-selection').value = '';
+        lines.appendChild(clone); updateQuantity();
+    });
+    lines.addEventListener('click', function (event) {
+        var button = event.target.closest('.remove-line');
+        if (!button || lines.querySelectorAll('.request-line').length === 1) return;
+        button.closest('.request-line').remove(); updateQuantity();
+    });
+    updateQuantity();
 })();
 </script>
 <?php

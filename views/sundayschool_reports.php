@@ -629,6 +629,7 @@ ob_start();
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.print.min.js"></script>
+<script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.colVis.min.js"></script>
 
 <script>
@@ -692,6 +693,7 @@ $(document).ready(function() {
                     doc.defaultStyle.fontSize = 8;
                     doc.styles.tableHeader.fontSize = 9;
                     doc.styles.title.fontSize = 14;
+                    MyFreemanExportBranding.brandPdf(doc);
                 }
             },
             {

@@ -1,3 +1,12 @@
+<?php
+require_once __DIR__ . '/../helpers/report_export_branding.php';
+$reportExportBranding = isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof mysqli
+    ? report_export_branding_context(
+        $GLOBALS['conn'],
+        isset($_GET['church_id']) ? (int) $_GET['church_id'] : null
+    )
+    : report_export_branding_defaults();
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5,6 +14,9 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <meta name="base-url" content="<?php echo BASE_URL; ?>">
+    <script>
+    window.MyFreemanReportBrand = <?= json_encode($reportExportBranding, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+    </script>
     
     <!-- Favicon and App Icons -->
     <link rel="icon" type="image/svg+xml" href="<?php echo BASE_URL; ?>/assets/img/favicon.svg">

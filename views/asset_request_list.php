@@ -7,7 +7,7 @@ if (!is_logged_in()) {
     exit;
 }
 
-if (!asset_use_requests_available($conn)) {
+if (!asset_use_requests_available($conn) || !asset_request_lines_available($conn)) {
     http_response_code(404);
     exit('Asset request workflow not available. Run the latest assets migration first.');
 }
@@ -41,7 +41,14 @@ if ($isSuper) {
 
 $sql = "
     SELECT aur.*, a.asset_code, a.item_name, c.name AS church_name,
-           d.name AS department_name
+           d.name AS department_name,
+           (SELECT COUNT(*) FROM asset_use_request_items request_line
+             WHERE request_line.request_id = aur.id AND request_line.line_status <> 'cancelled') AS line_count,
+           (SELECT GROUP_CONCAT(CONCAT(line_asset.asset_code, ' - ', line_asset.item_name)
+                    ORDER BY request_line.id SEPARATOR ' | ')
+              FROM asset_use_request_items request_line
+              JOIN assets line_asset ON line_asset.id = request_line.asset_id
+             WHERE request_line.request_id = aur.id AND request_line.line_status <> 'cancelled') AS requested_items
     FROM asset_use_requests aur
     INNER JOIN assets a ON a.id = aur.asset_id
     LEFT JOIN churches c ON c.id = aur.church_id
@@ -169,10 +176,10 @@ ob_start();
                         <tr>
                             <td><?= htmlspecialchars((string) ($row['created_at'] ?? '')) ?></td>
                             <?php if ($isSuper): ?><td><?= htmlspecialchars((string) ($row['church_name'] ?? '-')) ?></td><?php endif; ?>
-                            <td><?= htmlspecialchars((string) (($row['asset_code'] ?? '-') . ' - ' . ($row['item_name'] ?? ''))) ?></td>
+                            <td><?= htmlspecialchars((string) ($row['requested_items'] ?: (($row['asset_code'] ?? '-') . ' - ' . ($row['item_name'] ?? '')))) ?></td>
                             <td><?= htmlspecialchars((string) ($row['requester_name'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string) ($row['purpose'] ?? '')) ?></td>
-                            <td><?= (int) ($row['approved_quantity'] ?? $row['quantity_requested'] ?? 1) ?></td>
+                            <td><?= (int) ($row['approved_quantity'] ?? $row['line_count'] ?? $row['quantity_requested'] ?? 1) ?></td>
                             <td>
                                 <?= htmlspecialchars((string) ($row['borrow_start_date'] ?? '')) ?>
                                 <br>
@@ -190,14 +197,7 @@ ob_start();
 
                                 <?php if ($canApprove): ?>
                                     <?php if ((string) ($row['status'] ?? '') === 'pending'): ?>
-                                        <form method="post" action="asset_request_action.php" class="d-inline">
-                                            <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
-                                            <input type="hidden" name="request_action" value="approve">
-                                            <input type="hidden" name="approved_quantity" value="<?= (int) ($row['quantity_requested'] ?? 1) ?>">
-                                            <input type="hidden" name="borrow_start_date" value="<?= htmlspecialchars((string) ($row['borrow_start_date'] ?? '')) ?>">
-                                            <input type="hidden" name="expected_return_date" value="<?= htmlspecialchars((string) ($row['expected_return_date'] ?? '')) ?>">
-                                            <button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Approve this request?');">Approve</button>
-                                        </form>
+                                        <a href="asset_request_review.php?id=<?= (int) $row['id'] ?>" class="btn btn-sm btn-success"><i class="fas fa-edit mr-1"></i>Review / Edit</a>
                                         <form method="post" action="asset_request_action.php" class="d-inline">
                                             <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
                                             <input type="hidden" name="request_action" value="reject">

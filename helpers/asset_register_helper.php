@@ -287,11 +287,28 @@ if (!function_exists('asset_generate_code')) {
         $maxSeq = 0;
         while ($row = $res->fetch_assoc()) {
             $code = (string) ($row['asset_code'] ?? '');
-            if (preg_match('#^' . preg_quote($prefix, '#') . '([0-9]+)' . preg_quote($suffix, '#') . '$#', $code, $m)) {
+            if (preg_match('#^' . preg_quote($prefix, '#') . '([0-9]+)' . preg_quote($suffix, '#') . '(?:-LEGACY-[0-9]+)?$#', $code, $m)) {
                 $maxSeq = max($maxSeq, (int) $m[1]);
             }
         }
         $stmt->close();
+
+        // Physical items can advance the sequence without creating another
+        // category/header row. Include them so a later category registration
+        // can never collide with an already-issued item number.
+        if (asset_table_exists($conn, 'asset_items')) {
+            $stmt = $conn->prepare("SELECT item_number AS asset_code FROM asset_items WHERE church_id = ? AND item_number LIKE ?");
+            $stmt->bind_param('is', $churchId, $like);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            while ($row = $res->fetch_assoc()) {
+                $code = (string) ($row['asset_code'] ?? '');
+                if (preg_match('#^' . preg_quote($prefix, '#') . '([0-9]+)' . preg_quote($suffix, '#') . '(?:-LEGACY-[0-9]+)?$#', $code, $m)) {
+                    $maxSeq = max($maxSeq, (int) $m[1]);
+                }
+            }
+            $stmt->close();
+        }
 
         $nextSeq = $maxSeq + 1;
         return sprintf('%s%s%s', $prefix, str_pad((string) $nextSeq, 3, '0', STR_PAD_LEFT), $suffix);
@@ -492,6 +509,171 @@ if (!function_exists('asset_document_categories')) {
 if (!function_exists('asset_use_requests_available')) {
     function asset_use_requests_available(mysqli $conn): bool {
         return asset_table_exists($conn, 'asset_use_requests');
+    }
+}
+
+if (!function_exists('asset_item_tracking_available')) {
+    function asset_item_tracking_available(mysqli $conn): bool {
+        return asset_table_exists($conn, 'asset_items');
+    }
+}
+
+if (!function_exists('asset_request_lines_available')) {
+    function asset_request_lines_available(mysqli $conn): bool {
+        return asset_table_exists($conn, 'asset_use_request_items')
+            && asset_column_exists($conn, 'asset_use_requests', 'request_model_version');
+    }
+}
+
+if (!function_exists('asset_fetch_physical_items')) {
+    function asset_fetch_physical_items(mysqli $conn, int $assetId, bool $activeOnly = false): array {
+        if (!asset_item_tracking_available($conn)) {
+            return [];
+        }
+        $sql = 'SELECT item.*, department.name AS department_name
+                FROM asset_items item
+                LEFT JOIN asset_departments department ON department.id = item.department_id
+                WHERE item.asset_id = ?';
+        if ($activeOnly) {
+            $sql .= " AND item.status = 'active'";
+        }
+        $sql .= ' ORDER BY item.item_number, item.id';
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('i', $assetId);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        return $rows;
+    }
+}
+
+if (!function_exists('asset_replace_department_segment')) {
+    function asset_replace_department_segment(string $itemNumber, string $departmentCode): string {
+        $parts = explode('/', $itemNumber);
+        if (count($parts) < 6) {
+            throw new InvalidArgumentException('The item number does not contain the expected department segment.');
+        }
+        $parts[1] = asset_normalize_code_part($departmentCode, 3, 'GEN');
+        return implode('/', $parts);
+    }
+}
+
+if (!function_exists('asset_sync_parent_from_items')) {
+    function asset_sync_parent_from_items(mysqli $conn, int $assetId): void {
+        if (!asset_item_tracking_available($conn)) {
+            return;
+        }
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) AS active_count, COUNT(DISTINCT department_id) AS departments,
+                    MIN(department_id) AS department_id
+             FROM asset_items WHERE asset_id = ? AND status = 'active'"
+        );
+        $stmt->bind_param('i', $assetId);
+        $stmt->execute();
+        $summary = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        $quantity = (int) ($summary['active_count'] ?? 0);
+        $departmentId = (int) ($summary['departments'] ?? 0) === 1
+            ? (int) ($summary['department_id'] ?? 0)
+            : null;
+        $status = $quantity > 0 ? 'active' : 'disposed';
+        $stmt = $conn->prepare('UPDATE assets SET quantity = ?, department_id = ?, status = ? WHERE id = ?');
+        $stmt->bind_param('iisi', $quantity, $departmentId, $status, $assetId);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
+
+if (!function_exists('asset_generate_item_number')) {
+    /**
+     * Generate the next physical-item number for an existing asset category.
+     * The church, department, group, year and society segments follow the
+     * canonical asset format; only the sequence is newly allocated.
+     */
+    function asset_generate_item_number(mysqli $conn, array $asset, int $departmentId): string {
+        $candidate = asset_generate_code(
+            $conn,
+            (int) $asset['church_id'],
+            $departmentId,
+            (string) ($asset['item_group'] ?? ''),
+            isset($asset['asset_group_id']) ? (int) $asset['asset_group_id'] : null,
+            (string) ($asset['purchase_date'] ?? date('Y-m-d'))
+        );
+
+        $parts = explode('/', $candidate);
+        if (count($parts) < 6) {
+            throw new RuntimeException('Unable to generate a canonical physical-item number.');
+        }
+
+        $prefix = implode('/', array_slice($parts, 0, 3)) . '/';
+        $suffix = '/' . implode('/', array_slice($parts, 4, 2));
+        $like = $prefix . '%' . $suffix . '%';
+        $churchId = (int) $asset['church_id'];
+        $stmt = $conn->prepare(
+            'SELECT item_number FROM asset_items WHERE church_id = ? AND item_number LIKE ?'
+        );
+        $stmt->bind_param('is', $churchId, $like);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $maxSequence = 0;
+        while ($row = $result->fetch_assoc()) {
+            $number = (string) ($row['item_number'] ?? '');
+            if (preg_match('#^' . preg_quote($prefix, '#') . '([0-9]+)' . preg_quote($suffix, '#') . '(?:-LEGACY-[0-9]+)?$#', $number, $matches)) {
+                $maxSequence = max($maxSequence, (int) $matches[1]);
+            }
+        }
+        $stmt->close();
+
+        $sequence = max($maxSequence + 1, (int) ($parts[3] ?? 1));
+        return $prefix . str_pad((string) $sequence, 3, '0', STR_PAD_LEFT) . $suffix;
+    }
+}
+
+if (!function_exists('asset_fetch_request_lines')) {
+    function asset_fetch_request_lines(mysqli $conn, int $requestId): array {
+        if (!asset_request_lines_available($conn)) {
+            return [];
+        }
+        $stmt = $conn->prepare(
+            'SELECT line.*, asset.asset_code, asset.item_name, item.item_number,
+                    department.name AS department_name
+             FROM asset_use_request_items line
+             JOIN assets asset ON asset.id = line.asset_id
+             LEFT JOIN asset_items item ON item.id = line.asset_item_id
+             LEFT JOIN asset_departments department ON department.id = item.department_id
+             WHERE line.request_id = ? ORDER BY line.id'
+        );
+        $stmt->bind_param('i', $requestId);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        return $rows;
+    }
+}
+
+if (!function_exists('asset_request_line_audit')) {
+    function asset_request_line_audit(
+        mysqli $conn,
+        int $requestId,
+        ?int $requestItemId,
+        string $action,
+        ?array $before = null,
+        ?array $after = null,
+        ?int $actorUserId = null
+    ): void {
+        if (!asset_table_exists($conn, 'asset_use_request_item_audit')) {
+            return;
+        }
+        $beforeJson = $before === null ? null : json_encode($before, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $afterJson = $after === null ? null : json_encode($after, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $stmt = $conn->prepare(
+            'INSERT INTO asset_use_request_item_audit
+                (request_id, request_item_id, action, before_json, after_json, performed_by_user_id)
+             VALUES (?, ?, ?, ?, ?, ?)'
+        );
+        $stmt->bind_param('iisssi', $requestId, $requestItemId, $action, $beforeJson, $afterJson, $actorUserId);
+        $stmt->execute();
+        $stmt->close();
     }
 }
 

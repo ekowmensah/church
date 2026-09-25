@@ -18,11 +18,13 @@ if ($isSuper) {
 
 $sql = "
 SELECT am.*, a.asset_code, a.item_name, c.name AS church_name,
+       item.item_number,
        d1.name AS from_department_name,
        d2.name AS to_department_name,
        u.name AS moved_by_name
 FROM asset_movements am
 INNER JOIN assets a ON a.id = am.asset_id
+LEFT JOIN asset_items item ON item.id = am.asset_item_id
 LEFT JOIN churches c ON c.id = a.church_id
 LEFT JOIN asset_departments d1 ON d1.id = am.from_department_id
 LEFT JOIN asset_departments d2 ON d2.id = am.to_department_id
@@ -38,9 +40,10 @@ if ($churchId !== null) {
     $params[] = $churchId;
 }
 if ($q !== '') {
-    $sql .= ' AND (a.asset_code LIKE ? OR a.item_name LIKE ? OR d1.name LIKE ? OR d2.name LIKE ?)';
-    $types .= 'ssss';
+    $sql .= ' AND (a.asset_code LIKE ? OR item.item_number LIKE ? OR a.item_name LIKE ? OR d1.name LIKE ? OR d2.name LIKE ?)';
+    $types .= 'sssss';
     $like = '%' . $q . '%';
+    $params[] = $like;
     $params[] = $like;
     $params[] = $like;
     $params[] = $like;
@@ -85,7 +88,7 @@ ob_start();
                 <?php endif; ?>
                 <div class="form-group col-md-4">
                     <label>Search</label>
-                    <input type="text" name="q" class="form-control" value="<?= htmlspecialchars($q) ?>" placeholder="Asset code, item, department...">
+                    <input type="text" name="q" class="form-control" value="<?= htmlspecialchars($q) ?>" placeholder="Item number, category, department...">
                 </div>
                 <div class="form-group col-md-2">
                     <button class="btn btn-outline-primary btn-block" type="submit">Filter</button>
@@ -102,6 +105,7 @@ ob_start();
                         <th>Moved At</th>
                         <?php if ($isSuper): ?><th>Church</th><?php endif; ?>
                         <th>Asset Code</th>
+                        <th>Item Number</th>
                         <th>Item</th>
                         <th>From</th>
                         <th>To</th>
@@ -115,6 +119,7 @@ ob_start();
                         <td><?= htmlspecialchars((string) $row['moved_at']) ?></td>
                         <?php if ($isSuper): ?><td><?= htmlspecialchars((string) ($row['church_name'] ?? '-')) ?></td><?php endif; ?>
                         <td><?= htmlspecialchars((string) $row['asset_code']) ?></td>
+                        <td><?= htmlspecialchars((string) ($row['item_number'] ?? '-')) ?></td>
                         <td><?= htmlspecialchars((string) $row['item_name']) ?></td>
                         <td><?= htmlspecialchars((string) ($row['from_department_name'] ?? '-')) ?></td>
                         <td><?= htmlspecialchars((string) ($row['to_department_name'] ?? '-')) ?></td>
@@ -123,7 +128,7 @@ ob_start();
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($rows)): ?>
-                    <tr><td colspan="<?= $isSuper ? 8 : 7 ?>" class="text-center">No movement records found.</td></tr>
+                    <tr><td colspan="<?= $isSuper ? 9 : 8 ?>" class="text-center">No movement records found.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

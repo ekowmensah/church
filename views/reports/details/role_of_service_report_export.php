@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../../config/config.php';
 require_once __DIR__ . '/../../../helpers/auth.php';
 require_once __DIR__ . '/../../../helpers/permissions_v2.php';
+require_once __DIR__ . '/../../../helpers/report_export_branding.php';
 require_once __DIR__ . '/../../../services/RoleOfServingReportService.php';
 
 if (!is_logged_in()) {
@@ -32,6 +33,7 @@ try {
     foreach ($service->getAllowedChurches() as $church) {
         if ((int) $church['id'] === $churchId) $churchName = $church['name'];
     }
+    $exportBranding = report_export_branding_context($conn, $churchId, $churchName);
     $generatedAt = gmdate('Y-m-d H:i') . ' UTC';
     $filename = 'role_of_serving_report_' . gmdate('Y-m-d');
 
@@ -70,12 +72,13 @@ try {
 ?><!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Role of Serving Report</title>
 <style>
-body{font-family:Arial,sans-serif;color:#25212b;margin:28px}.header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #6d4387;padding-bottom:12px;margin-bottom:18px}.header h1{font-size:22px;font-style:italic;margin:0;color:#4a2b64}.meta{text-align:right;font-size:12px}h2{font-size:17px;color:#4a2b64;margin-top:22px}table{border-collapse:collapse;width:100%;font-size:11px}th,td{border:1px solid #9b91a2;padding:6px}th{background:#4a2b64;color:#fff;text-align:left}.num{text-align:right}.total td{font-weight:bold;background:#eee5f3}.footer{text-align:center;color:#4a2b64;margin-top:22px;font-size:10px;line-height:1.5}.no-print{margin-bottom:14px;padding:8px 12px}@media print{.no-print{display:none}body{margin:12mm}tr{break-inside:avoid}.header{break-after:avoid}}
+<?= report_export_branding_css($exportBranding) ?>
+body{font-family:Arial,sans-serif;color:#25212b;margin:28px}.meta{text-align:right;font-size:12px}h2{font-size:17px;color:<?= htmlspecialchars($exportBranding['primary_color']) ?>;margin-top:22px}table{border-collapse:collapse;width:100%;font-size:11px}th,td{border:1px solid #9b91a2;padding:6px}th{text-align:left}.num{text-align:right}.total td{font-weight:bold;background:#eee5f3}.no-print{margin-bottom:14px;padding:8px 12px}@media print{.no-print{display:none}body{margin:12mm}tr{break-inside:avoid}}
 </style></head><body>
 <?php if ($format === 'print'): ?><button class="no-print" onclick="window.print()">Print / Save as PDF</button><?php endif; ?>
-<div class="header"><div><strong><?= htmlspecialchars($churchName) ?></strong><div>Current active role holders</div></div><div class="meta"><h1>Role of Serving Report</h1>Generated <?= htmlspecialchars($generatedAt) ?></div></div>
+<?= report_export_branding_header_html($exportBranding, 'Role of Serving Report', 'Current active role holders | Generated ' . $generatedAt) ?>
 <h2>Gender Summary by Role</h2><table><thead><tr><th>Role of Serving</th><th>Male</th><th>Female</th><th>Unspecified</th><th>Total</th></tr></thead><tbody><?php foreach ($report['summary'] as $row): ?><tr><td><?= htmlspecialchars($row['role_name']) ?></td><td class="num"><?= (int) $row['male'] ?></td><td class="num"><?= (int) $row['female'] ?></td><td class="num"><?= (int) $row['unspecified'] ?></td><td class="num"><?= (int) $row['total'] ?></td></tr><?php endforeach; ?><tr class="total"><td>Unique Members</td><td class="num"><?= $report['totals']['male'] ?></td><td class="num"><?= $report['totals']['female'] ?></td><td class="num"><?= $report['totals']['unspecified'] ?></td><td class="num"><?= $report['totals']['total'] ?></td></tr></tbody></table>
 <h2>Role Holder Details</h2><table><thead><tr><th>CRN</th><th>Member</th><th>Role</th><th>Gender</th><th>Bible Class</th><th>Organization(s)</th><th>Contact</th></tr></thead><tbody><?php foreach ($report['members'] as $member): ?><tr><td><?= htmlspecialchars($member['crn'] ?: '-') ?></td><td><?= htmlspecialchars($member['member_name']) ?></td><td><?= htmlspecialchars($member['role_name']) ?></td><td><?= htmlspecialchars($member['gender']) ?></td><td><?= htmlspecialchars($member['class_name'] ?: '-') ?></td><td><?= htmlspecialchars($member['organizations'] ?: '-') ?></td><td><?= htmlspecialchars($member['phone'] ?: '-') ?></td></tr><?php endforeach; ?></tbody></table>
-<div class="footer"><strong>Powered By: MyFreeman Digital Networks - Evangelism, Through Digitalization!</strong><br>FDN: Extenditque Manum Omni Membri, Ubique!!</div>
+<?= report_export_branding_footer_html($exportBranding) ?>
 <?php if ($format === 'print'): ?><script>window.addEventListener('load',function(){window.print();});</script><?php endif; ?>
 </body></html>

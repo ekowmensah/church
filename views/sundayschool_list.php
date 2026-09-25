@@ -412,6 +412,7 @@ ob_start();
 <script src="<?= BASE_URL ?>/AdminLTE/plugins/datatables-buttons/js/buttons.bootstrap4.min.js"></script>
 <script src="<?= BASE_URL ?>/AdminLTE/plugins/datatables-buttons/js/buttons.html5.min.js"></script>
 <script src="<?= BASE_URL ?>/AdminLTE/plugins/datatables-buttons/js/buttons.print.min.js"></script>
+<script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
 <script src="<?= BASE_URL ?>/AdminLTE/plugins/datatables-buttons/js/buttons.colVis.min.js"></script>
 
 <script>

@@ -12,6 +12,7 @@ $hasMaintenanceFields = asset_can_use_maintenance_fields($conn);
 $hasGroups = asset_can_use_groups($conn);
 $canTransfer = $isSuper || has_permission('transfer_asset');
 $canEdit = $isSuper || has_permission('edit_asset');
+$canCreate = $isSuper || has_permission('create_asset');
 $canUploadDoc = $isSuper || has_permission('upload_asset_document');
 $canDeleteDoc = $isSuper || has_permission('delete_asset_document');
 $canDownloadDoc = $isSuper || has_permission('download_asset_document');
@@ -27,7 +28,7 @@ if ($assetId <= 0) {
 }
 
 $tab = trim((string) ($_GET['tab'] ?? 'overview'));
-if (!in_array($tab, ['overview', 'movements', 'audit', 'financial', 'documents', 'approvals'], true)) {
+if (!in_array($tab, ['overview', 'items', 'movements', 'audit', 'financial', 'documents', 'approvals'], true)) {
     $tab = 'overview';
 }
 
@@ -61,6 +62,7 @@ if (!$asset) {
 }
 
 $churchId = (int) $asset['church_id'];
+$physicalItems = asset_fetch_physical_items($conn, $assetId, false);
 $error = '';
 $success = '';
 
@@ -164,22 +166,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ];
                     }
                 } elseif ($requestType === 'dispose') {
+                    $assetItemId = (int) ($_POST['asset_item_id'] ?? 0);
                     $note = trim((string) ($_POST['request_note'] ?? ''));
-                    $payload = [
-                        'new_status' => 'disposed',
-                        'new_lifecycle_status' => 'disposed',
-                        'note' => $note,
-                    ];
+                    $selectedItem = null;
+                    foreach ($physicalItems as $physicalItem) {
+                        if ((int) $physicalItem['id'] === $assetItemId && (string) $physicalItem['status'] === 'active') {
+                            $selectedItem = $physicalItem;
+                            break;
+                        }
+                    }
+                    if (!$selectedItem) {
+                        $error = 'Select an active physical item to dispose.';
+                    } else {
+                        $payload = [
+                            'asset_item_id' => $assetItemId,
+                            'item_number' => (string) $selectedItem['item_number'],
+                            'new_status' => 'disposed',
+                            'new_lifecycle_status' => 'disposed',
+                            'note' => $note,
+                        ];
+                    }
                 } else {
+                    $assetItemId = (int) ($_POST['asset_item_id'] ?? 0);
                     $newStatus = trim((string) ($_POST['new_status'] ?? 'active'));
                     $newLifecycle = trim((string) ($_POST['new_lifecycle_status'] ?? 'in_use'));
                     $note = trim((string) ($_POST['request_note'] ?? ''));
-                    if (!in_array($newStatus, ['active', 'disposed'], true)) {
+                    $selectedItem = null;
+                    foreach ($physicalItems as $physicalItem) {
+                        if ((int) $physicalItem['id'] === $assetItemId) {
+                            $selectedItem = $physicalItem;
+                            break;
+                        }
+                    }
+                    if (!$selectedItem) {
+                        $error = 'Select a valid physical item.';
+                    } elseif (!in_array($newStatus, ['active', 'disposed'], true)) {
                         $error = 'Invalid status selected.';
                     } elseif ($hasLifecycle && !in_array($newLifecycle, asset_lifecycle_options(), true)) {
                         $error = 'Invalid lifecycle selected.';
                     } else {
                         $payload = [
+                            'asset_item_id' => $assetItemId,
                             'new_status' => $newStatus,
                             'new_lifecycle_status' => $hasLifecycle ? $newLifecycle : asset_default_lifecycle($newStatus, (string) ($asset['condition_status'] ?? 'Good')),
                             'note' => $note,
@@ -211,8 +238,9 @@ $departments = asset_fetch_departments($conn, $churchId, false);
 
 if ($tab === 'movements' || $tab === 'overview') {
     $stmt = $conn->prepare("
-        SELECT am.*, d1.name AS from_department_name, d2.name AS to_department_name, u.name AS moved_by_name
+        SELECT am.*, item.item_number, d1.name AS from_department_name, d2.name AS to_department_name, u.name AS moved_by_name
         FROM asset_movements am
+        LEFT JOIN asset_items item ON item.id = am.asset_item_id
         LEFT JOIN asset_departments d1 ON d1.id = am.from_department_id
         LEFT JOIN asset_departments d2 ON d2.id = am.to_department_id
         LEFT JOIN users u ON u.id = am.moved_by
@@ -314,6 +342,9 @@ ob_start();
             <?php if ($canEdit): ?>
                 <a href="asset_form.php?id=<?= $assetId ?>" class="btn btn-warning ml-1"><i class="fas fa-edit mr-1"></i> Edit</a>
             <?php endif; ?>
+            <?php if ($canCreate && asset_item_tracking_available($conn)): ?>
+                <a href="asset_item_form.php?asset_id=<?= $assetId ?>" class="btn btn-success ml-1"><i class="fas fa-plus mr-1"></i> Register Item</a>
+            <?php endif; ?>
             <?php if ($canTransfer): ?>
                 <a href="asset_transfer.php?id=<?= $assetId ?>" class="btn btn-primary ml-1"><i class="fas fa-exchange-alt mr-1"></i> Transfer</a>
             <?php endif; ?>
@@ -323,6 +354,7 @@ ob_start();
     <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
     <?php if (isset($_GET['doc_saved'])): ?><div class="alert alert-success">Document uploaded successfully.</div><?php endif; ?>
     <?php if (isset($_GET['request_saved'])): ?><div class="alert alert-success">Approval request submitted.</div><?php endif; ?>
+    <?php if (isset($_GET['item_saved'])): ?><div class="alert alert-success">Physical item registered. The derived quantity has been updated.</div><?php endif; ?>
 
     <div class="card shadow-sm mb-3">
         <div class="card-body">
@@ -330,6 +362,7 @@ ob_start();
                 <?php
                 $tabs = [
                     'overview' => 'Overview',
+                    'items' => 'Physical Items',
                     'movements' => 'Movements',
                     'audit' => 'Audit',
                     'financial' => 'Financial',
@@ -393,6 +426,13 @@ ob_start();
                                 <input type="hidden" name="id" value="<?= $assetId ?>">
                                 <input type="hidden" name="asset_action" value="request_dispose">
                                 <div class="form-group">
+                                    <label>Physical Item <span class="text-danger">*</span></label>
+                                    <select name="asset_item_id" class="form-control mb-2" required>
+                                        <option value="">-- Select active item --</option>
+                                        <?php foreach ($physicalItems as $physicalItem): if ((string) $physicalItem['status'] !== 'active') continue; ?>
+                                            <option value="<?= (int) $physicalItem['id'] ?>"><?= htmlspecialchars((string) $physicalItem['item_number']) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
                                     <label>Dispose Request Note</label>
                                     <input type="text" name="request_note" class="form-control" maxlength="255" placeholder="Reason for disposal">
                                 </div>
@@ -404,6 +444,12 @@ ob_start();
                                 <input type="hidden" name="asset_action" value="request_status_change">
                                 <div class="form-group">
                                     <label>Request Status Change</label>
+                                    <select name="asset_item_id" class="form-control mb-2" required>
+                                        <option value="">-- Select physical item --</option>
+                                        <?php foreach ($physicalItems as $physicalItem): ?>
+                                            <option value="<?= (int) $physicalItem['id'] ?>"><?= htmlspecialchars((string) $physicalItem['item_number']) ?> (<?= htmlspecialchars((string) $physicalItem['status']) ?>)</option>
+                                        <?php endforeach; ?>
+                                    </select>
                                     <select name="new_status" class="form-control mb-2">
                                         <option value="active">Active</option>
                                         <option value="disposed">Disposed</option>
@@ -426,24 +472,50 @@ ob_start();
                 </div>
             </div>
         </div>
+    <?php elseif ($tab === 'items'): ?>
+        <div class="card shadow-sm">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>Physical Items</strong>
+                <?php if ($canCreate): ?><a href="asset_item_form.php?asset_id=<?= $assetId ?>" class="btn btn-sm btn-success"><i class="fas fa-plus mr-1"></i>Register Item</a><?php endif; ?>
+            </div>
+            <div class="card-body table-responsive">
+                <table class="table table-bordered table-hover">
+                    <thead class="thead-light"><tr><th>Item Number</th><th>Department</th><th>Serial</th><th>Condition</th><th>Status</th><th>Registered</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($physicalItems as $physicalItem): ?>
+                        <tr>
+                            <td><strong><?= htmlspecialchars((string) $physicalItem['item_number']) ?></strong></td>
+                            <td><?= htmlspecialchars((string) ($physicalItem['department_name'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string) (($physicalItem['serial_number'] ?? '') !== '' ? $physicalItem['serial_number'] : '-')) ?></td>
+                            <td><?= htmlspecialchars((string) $physicalItem['condition_status']) ?></td>
+                            <td><span class="badge badge-<?= (string) $physicalItem['status'] === 'active' ? 'success' : 'secondary' ?>"><?= htmlspecialchars(ucfirst((string) $physicalItem['status'])) ?></span></td>
+                            <td><?= htmlspecialchars((string) $physicalItem['created_at']) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    <?php if (!$physicalItems): ?><tr><td colspan="6" class="text-center">No physical items are registered.</td></tr><?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     <?php elseif ($tab === 'movements'): ?>
         <div class="card shadow-sm">
             <div class="card-body table-responsive">
                 <table class="table table-bordered table-hover">
                     <thead class="thead-light">
-                        <tr><th>Moved At</th><th>From</th><th>To</th><th>By</th><th>Notes</th></tr>
+                        <tr><th>Moved At</th><th>Item Number</th><th>From</th><th>To</th><th>By</th><th>Notes</th></tr>
                     </thead>
                     <tbody>
                         <?php foreach ($movements as $m): ?>
                             <tr>
                                 <td><?= htmlspecialchars((string) $m['moved_at']) ?></td>
+                                <td><?= htmlspecialchars((string) ($m['item_number'] ?? '-')) ?></td>
                                 <td><?= htmlspecialchars((string) ($m['from_department_name'] ?? '-')) ?></td>
                                 <td><?= htmlspecialchars((string) ($m['to_department_name'] ?? '-')) ?></td>
                                 <td><?= htmlspecialchars((string) ($m['moved_by_name'] ?? '-')) ?></td>
                                 <td><?= htmlspecialchars((string) ($m['notes'] ?? '')) ?></td>
                             </tr>
                         <?php endforeach; ?>
-                        <?php if (empty($movements)): ?><tr><td colspan="5" class="text-center">No movement records.</td></tr><?php endif; ?>
+                        <?php if (empty($movements)): ?><tr><td colspan="6" class="text-center">No movement records.</td></tr><?php endif; ?>
                     </tbody>
                 </table>
             </div>

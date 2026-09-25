@@ -57,40 +57,95 @@ try {
 
         if ($requestType === 'transfer') {
             $toDepartmentId = (int) ($payload['to_department_id'] ?? 0);
-            $fromDepartmentId = (int) ($request['current_department_id'] ?? 0);
+            $assetItemId = (int) ($payload['asset_item_id'] ?? 0);
+            $fromDepartmentId = (int) ($payload['from_department_id'] ?? $request['current_department_id'] ?? 0);
             $note = (string) ($payload['note'] ?? '');
             if ($toDepartmentId <= 0 || $toDepartmentId === $fromDepartmentId) {
                 throw new RuntimeException('Invalid transfer payload.');
             }
 
-            $stmt = $conn->prepare('UPDATE assets SET department_id = ? WHERE id = ?');
-            $stmt->bind_param('ii', $toDepartmentId, $assetId);
-            $stmt->execute();
-            $stmt->close();
+            if ($assetItemId > 0 && asset_item_tracking_available($conn)) {
+                $stmt = $conn->prepare('SELECT item_number, department_id FROM asset_items WHERE id = ? AND asset_id = ? FOR UPDATE');
+                $stmt->bind_param('ii', $assetItemId, $assetId); $stmt->execute();
+                $item = $stmt->get_result()->fetch_assoc(); $stmt->close();
+                if (!$item) throw new RuntimeException('Physical item no longer exists.');
+                $fromDepartmentId = (int) ($item['department_id'] ?? 0);
+                $stmt = $conn->prepare('SELECT name, department_code FROM asset_departments WHERE id = ? AND church_id = ? LIMIT 1');
+                $requestChurchId = (int) $request['church_id'];
+                $stmt->bind_param('ii', $toDepartmentId, $requestChurchId); $stmt->execute();
+                $destination = $stmt->get_result()->fetch_assoc(); $stmt->close();
+                if (!$destination) throw new RuntimeException('Destination department not found.');
+                $newItemNumber = asset_replace_department_segment((string) $item['item_number'], (string) ($destination['department_code'] ?? $destination['name']));
+                $stmt = $conn->prepare('UPDATE asset_items SET department_id = ?, item_number = ? WHERE id = ?');
+                $stmt->bind_param('isi', $toDepartmentId, $newItemNumber, $assetItemId); $stmt->execute(); $stmt->close();
+                asset_sync_parent_from_items($conn, $assetId);
+            } else {
+                $stmt = $conn->prepare('UPDATE assets SET department_id = ? WHERE id = ?');
+                $stmt->bind_param('ii', $toDepartmentId, $assetId); $stmt->execute(); $stmt->close();
+                $assetItemId = null;
+            }
 
-            $stmt = $conn->prepare('INSERT INTO asset_movements (asset_id, from_department_id, to_department_id, moved_by, notes) VALUES (?, ?, ?, ?, ?)');
-            $stmt->bind_param('iiiis', $assetId, $fromDepartmentId, $toDepartmentId, $reviewedBy, $note);
+            $stmt = $conn->prepare('INSERT INTO asset_movements (asset_id, asset_item_id, from_department_id, to_department_id, moved_by, notes) VALUES (?, ?, ?, ?, ?, ?)');
+            $stmt->bind_param('iiiiis', $assetId, $assetItemId, $fromDepartmentId, $toDepartmentId, $reviewedBy, $note);
             $stmt->execute();
             $stmt->close();
         } elseif ($requestType === 'dispose' || $requestType === 'status_change') {
             $newStatus = (string) ($payload['new_status'] ?? 'active');
+            $assetItemId = (int) ($payload['asset_item_id'] ?? 0);
             if (!in_array($newStatus, ['active', 'disposed'], true)) {
                 throw new RuntimeException('Invalid status payload.');
             }
 
-            if (asset_can_use_lifecycle($conn)) {
-                $newLifecycle = (string) ($payload['new_lifecycle_status'] ?? asset_default_lifecycle($newStatus, 'Good'));
-                if (!in_array($newLifecycle, asset_lifecycle_options(), true)) {
-                    throw new RuntimeException('Invalid lifecycle payload.');
-                }
-                $stmt = $conn->prepare('UPDATE assets SET status = ?, lifecycle_status = ? WHERE id = ?');
-                $stmt->bind_param('ssi', $newStatus, $newLifecycle, $assetId);
-            } else {
-                $stmt = $conn->prepare('UPDATE assets SET status = ? WHERE id = ?');
-                $stmt->bind_param('si', $newStatus, $assetId);
+            $newLifecycle = (string) ($payload['new_lifecycle_status'] ?? asset_default_lifecycle($newStatus, 'Good'));
+            if (!in_array($newLifecycle, asset_lifecycle_options(), true)) {
+                throw new RuntimeException('Invalid lifecycle payload.');
             }
-            $stmt->execute();
-            $stmt->close();
+
+            if (asset_item_tracking_available($conn)) {
+                if ($assetItemId <= 0) {
+                    throw new RuntimeException('A physical item is required for this status change.');
+                }
+                $stmt = $conn->prepare('SELECT item_number, status, lifecycle_status FROM asset_items WHERE id = ? AND asset_id = ? FOR UPDATE');
+                $stmt->bind_param('ii', $assetItemId, $assetId);
+                $stmt->execute();
+                $item = $stmt->get_result()->fetch_assoc();
+                $stmt->close();
+                if (!$item) {
+                    throw new RuntimeException('Physical item no longer exists.');
+                }
+
+                if ($newStatus === 'disposed') {
+                    $reason = trim((string) ($payload['note'] ?? ''));
+                    $stmt = $conn->prepare(
+                        "UPDATE asset_items
+                         SET status = 'disposed', lifecycle_status = 'disposed', disposed_by_user_id = ?,
+                             disposed_at = NOW(), disposal_reason = ?
+                         WHERE id = ?"
+                    );
+                    $stmt->bind_param('isi', $reviewedBy, $reason, $assetItemId);
+                } else {
+                    $stmt = $conn->prepare(
+                        "UPDATE asset_items
+                         SET status = 'active', lifecycle_status = ?, disposed_by_user_id = NULL,
+                             disposed_at = NULL, disposal_reason = NULL
+                         WHERE id = ?"
+                    );
+                    $stmt->bind_param('si', $newLifecycle, $assetItemId);
+                }
+                $stmt->execute();
+                $stmt->close();
+                asset_sync_parent_from_items($conn, $assetId);
+            } else {
+                if (asset_can_use_lifecycle($conn)) {
+                    $stmt = $conn->prepare('UPDATE assets SET status = ?, lifecycle_status = ? WHERE id = ?');
+                    $stmt->bind_param('ssi', $newStatus, $newLifecycle, $assetId);
+                } else {
+                    $stmt = $conn->prepare('UPDATE assets SET status = ? WHERE id = ?');
+                    $stmt->bind_param('si', $newStatus, $assetId);
+                }
+                $stmt->execute();
+                $stmt->close();
+            }
         } else {
             throw new RuntimeException('Unsupported request type.');
         }
@@ -119,4 +174,3 @@ try {
 
 header('Location: asset_approval_list.php?done=1');
 exit;
-
