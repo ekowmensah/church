@@ -5,6 +5,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../services/PaymentGatewayCallbackService.php';
 require_once __DIR__ . '/../services/OnlinePaymentApprovalService.php';
+require_once __DIR__ . '/../helpers/hubtel_status.php';
 
 $debugLog = __DIR__ . '/../logs/hubtel_callback_debug.log';
 $rawInput = file_get_contents('php://input');
@@ -23,6 +24,30 @@ if ($reference === '') {
 }
 
 try {
+    $intentStmt = $conn->prepare('SELECT amount, hubtel_transaction_id, transaction_id FROM payment_intents WHERE client_reference = ? LIMIT 1');
+    $intentStmt->bind_param('s', $reference);
+    $intentStmt->execute();
+    $existingIntent = $intentStmt->get_result()->fetch_assoc();
+    $intentStmt->close();
+
+    $callbackStatus = PaymentGatewayCallbackService::normalizeStatus((string) $data['Status']);
+    $callbackAmount = (float) ($data['Amount'] ?? 0);
+    $callbackTransactionId = $data['TransactionId'] ?? $data['transactionId'] ?? null;
+    $verificationStatus = 'not_checked';
+    if ($callbackStatus === 'Completed') {
+        $verification = verify_hubtel_transaction_status(
+            $callbackTransactionId ?: ($existingIntent['hubtel_transaction_id'] ?? $reference),
+            $reference,
+            (float) ($existingIntent['amount'] ?? $callbackAmount)
+        );
+        $verificationStatus = (string) ($verification['verification_status'] ?? 'not_checked');
+        if (!empty($verification['verified'])) {
+            $callbackStatus = (string) ($verification['status'] ?? $callbackStatus);
+            $callbackAmount = (float) $verification['amount'];
+            $callbackTransactionId = $verification['transaction_id'] ?? $callbackTransactionId;
+        }
+    }
+
     $memberId = null;
     $churchId = null;
     $paymentTypeId = null;
@@ -75,9 +100,9 @@ try {
     $service = new PaymentGatewayCallbackService($conn);
     $result = $service->record([
         'client_reference' => $reference,
-        'status' => (string) $data['Status'],
-        'amount' => (float) ($data['Amount'] ?? 0),
-        'transaction_id' => $data['TransactionId'] ?? $data['transactionId'] ?? null,
+        'status' => $callbackStatus,
+        'amount' => $callbackAmount,
+        'transaction_id' => $callbackTransactionId,
         'description' => $description,
         'customer_name' => $data['CustomerName'] ?? 'Hubtel customer',
         'customer_phone' => $data['CustomerMobileNumber'] ?? '',
@@ -87,11 +112,14 @@ try {
         'payment_period' => $paymentPeriod,
         'payment_period_description' => $periodDescription,
         'payment_source' => 'online_checkout',
+        'gateway_verification_status' => $verificationStatus,
         'raw_payload' => $rawInput,
     ]);
     if (($result['status'] ?? '') === 'Completed'
         && ($result['previous_status'] ?? null) !== 'Failed'
-        && ($result['confirmation_source'] ?? null) === 'gateway_callback') {
+        && ($result['confirmation_source'] ?? null) === 'gateway_callback'
+        && ($result['gateway_verification_status'] ?? null) === 'verified'
+        && !empty($result['locally_initialized'])) {
         $postingService = new OnlinePaymentApprovalService($conn, 0, true, true);
         $posting = $postingService->autoPostDefinitiveGatewayPayment(
             (int) $result['intent_id'],

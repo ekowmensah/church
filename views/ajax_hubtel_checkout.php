@@ -3,6 +3,7 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 require_once __DIR__.'/../helpers/hubtel_payment.php';
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../services/PaymentGatewayCallbackService.php';
 
 header('Content-Type: application/json');
 
@@ -106,41 +107,25 @@ if ($result['success']) {
     ];
     file_put_contents(__DIR__.'/../logs/hubtel_debug.log', date('c') . " - Payment Creation Debug (v1): " . json_encode($debugData) . "\n", FILE_APPEND);
     
-    require_once __DIR__.'/../models/PaymentIntent.php';
-    $intentModel = new PaymentIntent();
-    $status = 'Pending';
-    if ($bulk_items && is_array($bulk_items) && count($bulk_items) > 0) {
-        $intentModel->add($conn, [
-            'client_reference' => $clientReference,
-            'hubtel_transaction_id' => $result['transaction_id'],
-            'member_id' => $member_id,
-            'amount' => $amount,
-            'description' => $description,
-            'church_id' => $church_id,
-            'customer_name' => $customerName,
-            'customer_phone' => $customerPhone,
-            'status' => $status,
-            'bulk_breakdown' => json_encode($bulk_items),
-            'payment_type_id' => null,
-            'payment_period' => null,
-            'payment_period_description' => null
-        ]);
-    } else {
-        $intentModel->add($conn, [
-            'client_reference' => $clientReference,
-            'hubtel_transaction_id' => $result['transaction_id'],
-            'member_id' => $member_id,
-            'amount' => $amount,
-            'description' => $description,
-            'church_id' => $church_id,
-            'customer_name' => $customerName,
-            'customer_phone' => $customerPhone,
-            'status' => $status,
-            'payment_type_id' => $_POST['payment_type_id'] ?? null,
-            'payment_period' => $_POST['payment_period'] ?? null,
-            'payment_period_description' => $_POST['payment_period_description'] ?? null
-        ]);
-    }
+    $intentService = new PaymentGatewayCallbackService($conn);
+    $intentService->record([
+        'client_reference' => $clientReference,
+        'transaction_id' => $result['transaction_id'] ?? null,
+        'member_id' => $member_id,
+        'church_id' => $church_id,
+        'amount' => $amount,
+        'description' => $description,
+        'customer_name' => $customerName,
+        'customer_phone' => $customerPhone,
+        'status' => 'Pending',
+        'bulk_breakdown' => $bulk_items,
+        'payment_type_id' => $bulk_items ? null : ($_POST['payment_type_id'] ?? null),
+        'payment_period' => $bulk_items ? null : ($_POST['payment_period'] ?? null),
+        'payment_period_description' => $bulk_items ? null : ($_POST['payment_period_description'] ?? null),
+        'payment_source' => 'online_checkout',
+        'locally_initialized' => true,
+        'raw_payload' => json_encode($result),
+    ]);
     echo json_encode(['success' => true, 'checkoutUrl' => $result['checkoutUrl']]);
 } else {
     echo json_encode(['success' => false, 'error' => $result['error'] ?? 'Unknown error', 'debug' => $result]);

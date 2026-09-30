@@ -189,6 +189,41 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
 }
 
 /**
+ * Independently verify that Hubtel returned the requested transaction and the
+ * amount the application expects. An HTTP 200 by itself is not verification.
+ */
+function verify_hubtel_transaction_status($transaction_id, $client_reference, $expected_amount) {
+    $result = check_hubtel_transaction_status($transaction_id, $client_reference);
+    $result['verified'] = false;
+    $result['verification_status'] = 'not_checked';
+
+    if (empty($result['success'])) {
+        return $result;
+    }
+
+    $expectedReference = trim((string) $client_reference);
+    $actualReference = trim((string) ($result['reference'] ?? ''));
+    if ($expectedReference === '' || $actualReference === '' || !hash_equals($expectedReference, $actualReference)) {
+        $result['verification_status'] = 'failed';
+        $result['error'] = 'Hubtel returned a different or missing client reference.';
+        return $result;
+    }
+
+    $expectedAmount = (float) $expected_amount;
+    $actualAmount = $result['amount'] ?? null;
+    if ($expectedAmount <= 0 || $actualAmount === null || !is_numeric($actualAmount)
+        || abs((float) $actualAmount - $expectedAmount) > 0.01) {
+        $result['verification_status'] = 'failed';
+        $result['error'] = 'Hubtel returned a different or missing transaction amount.';
+        return $result;
+    }
+
+    $result['verified'] = true;
+    $result['verification_status'] = 'verified';
+    return $result;
+}
+
+/**
  * Check transaction status by client reference
  * @param object $conn Database connection
  * @param string $client_reference The client reference from payment intent
@@ -227,9 +262,13 @@ function check_transaction_by_reference($conn, $client_reference, $transaction_i
     
     // Try the Hubtel API if we have a transaction ID
     if ($transaction_id) {
-        $status_result = check_hubtel_transaction_status($transaction_id, $client_reference);
+        $status_result = verify_hubtel_transaction_status(
+            $transaction_id,
+            $client_reference,
+            (float) ($intent['amount'] ?? 0)
+        );
         
-        if ($status_result['success']) {
+        if (!empty($status_result['verified'])) {
             // Update local status if different
             $hubtel_status = $status_result['status'];
             $local_status = match (strtolower($hubtel_status)) {
@@ -263,6 +302,7 @@ function check_transaction_by_reference($conn, $client_reference, $transaction_i
                 'bulk_breakdown' => $intent['bulk_breakdown'] ?? null,
                 'payment_source' => $intent['payment_source'] ?? 'legacy_callback',
                 'confirmation_source' => 'status_check',
+                'gateway_verification_status' => 'verified',
                 'raw_payload' => json_encode($status_result['data'] ?? $status_result),
             ]);
 
@@ -274,6 +314,7 @@ function check_transaction_by_reference($conn, $client_reference, $transaction_i
                 'current_status' => $capture['status'],
                 'approval_status' => $capture['approval_status'],
                 'confirmation_source' => $capture['confirmation_source'],
+                'gateway_verification_status' => $capture['gateway_verification_status'],
                 'hubtel_data' => $status_result['data'],
                 'transaction_id' => $transaction_id,
                 'method' => 'hubtel_api'
@@ -290,7 +331,9 @@ function check_transaction_by_reference($conn, $client_reference, $transaction_i
         'note' => 'Status retrieved from local database. Hubtel updates status via webhook callbacks.',
         'transaction_id' => $transaction_id,
         'method' => 'database_only',
-        'api_error' => isset($status_result) ? $status_result['error'] : 'Transaction ID is client reference - API not attempted'
+        'verified' => false,
+        'verification_status' => $status_result['verification_status'] ?? 'not_checked',
+        'api_error' => isset($status_result) ? ($status_result['error'] ?? 'Gateway response was not verified') : 'Transaction ID is client reference - API not attempted'
     ];
 }
 

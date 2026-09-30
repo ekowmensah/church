@@ -105,6 +105,10 @@ final class OnlinePaymentApprovalService
                 return ['decision' => 'rejected', 'payment_ids' => []];
             }
 
+            if ((string) ($intent['gateway_verification_status'] ?? 'not_checked') !== 'verified') {
+                throw new RuntimeException('Check this transaction with the gateway before approving and posting it.');
+            }
+
             $existing = $this->conn->prepare('SELECT COUNT(*) AS total FROM payments WHERE client_reference = ?');
             $existing->bind_param('s', $intent['client_reference']);
             $existing->execute();
@@ -195,6 +199,13 @@ final class OnlinePaymentApprovalService
             }
             if ((string) ($intent['success_confirmation_source'] ?? '') !== 'gateway_callback') {
                 throw new RuntimeException('A success discovered by status checking requires authorized approval.');
+            }
+            if ((string) ($intent['gateway_verification_status'] ?? 'not_checked') !== 'verified') {
+                throw new RuntimeException('The gateway reference and amount must be verified server-to-server before automatic posting.');
+            }
+            if (in_array($source, ['online_checkout', 'paystack'], true)
+                && empty($intent['gateway_initialized_at'])) {
+                throw new RuntimeException('This online payment has no local initialization baseline and requires manual reconciliation.');
             }
 
             $existing = $this->conn->prepare('SELECT id, amount FROM payments WHERE client_reference = ? ORDER BY id');

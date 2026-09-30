@@ -33,6 +33,7 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../services/PaymentGatewayCallbackService.php';
 require_once __DIR__.'/../services/OnlinePaymentApprovalService.php';
 require_once __DIR__.'/../includes/payment_sms_template.php';
+require_once __DIR__.'/../helpers/hubtel_status.php';
 
 // Set up logging
 $debug_log = __DIR__.'/../logs/shortcode_webhook_debug.log';
@@ -132,7 +133,9 @@ $subtotal = $order_info['Subtotal'] ?? null;
 
 // Extract payment details
 $payment_info = $order_info['Payment'] ?? null;
-$amount = $payment_info['AmountAfterCharges'] ?? $payment_info['AmountPaid'] ?? $subtotal;
+// Credit the member with the gross amount paid. Gateway charges affect the
+// settlement, not the member's contribution, and must not reduce the ledger.
+$amount = $payment_info['AmountPaid'] ?? $subtotal ?? $payment_info['AmountAfterCharges'];
 $payment_type = $payment_info['PaymentType'] ?? 'mobilemoney';
 $payment_date = $payment_info['PaymentDate'] ?? $order_date;
 $is_successful = $payment_info['IsSuccessful'] ?? false;
@@ -381,6 +384,17 @@ try {
         }
         $type_stmt->close();
         $formatted_description = "Payment for " . ($payment_period_description ?: date('F Y')) . " " . $payment_type_name;
+        $verificationStatus = 'not_checked';
+        if ($is_definitive_success) {
+            $verification = verify_hubtel_transaction_status($order_id, $reference, (float) $amount);
+            $verificationStatus = (string) ($verification['verification_status'] ?? 'not_checked');
+            if (!empty($verification['verified'])) {
+                $payment_status = (string) ($verification['status'] ?? $payment_status);
+                $amount = (float) $verification['amount'];
+            } else {
+                log_debug('USSD server verification did not pass: ' . ($verification['error'] ?? 'unknown verification error'));
+            }
+        }
         $gatewayService = new PaymentGatewayCallbackService($conn);
         $capture = $gatewayService->record([
             'client_reference' => $reference,
@@ -397,11 +411,13 @@ try {
             'payment_period' => $payment_period,
             'payment_period_description' => $payment_period_description,
             'payment_source' => 'ussd',
+            'gateway_verification_status' => $verificationStatus,
             'raw_payload' => $raw_input,
         ]);
         if ($is_definitive_success
             && ($capture['previous_status'] ?? null) !== 'Failed'
-            && ($capture['confirmation_source'] ?? null) === 'gateway_callback') {
+            && ($capture['confirmation_source'] ?? null) === 'gateway_callback'
+            && ($capture['gateway_verification_status'] ?? null) === 'verified') {
             $postingService = new OnlinePaymentApprovalService($conn, 0, true, true);
             $posting = $postingService->autoPostSuccessfulUssd(
                 (int) $capture['intent_id'],

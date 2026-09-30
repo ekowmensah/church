@@ -56,6 +56,18 @@ if (!hash_equals($reference, $verifiedReference)) {
     exit('The verified payment reference did not match the request.');
 }
 
+$verifiedAmount = ((float) ($transaction['amount'] ?? 0)) / 100;
+$intentStmt = $conn->prepare('SELECT amount, gateway_initialized_at FROM payment_intents WHERE client_reference = ? LIMIT 1');
+$intentStmt->bind_param('s', $verifiedReference);
+$intentStmt->execute();
+$existingIntent = $intentStmt->get_result()->fetch_assoc();
+$intentStmt->close();
+$verificationStatus = 'verified';
+if ($verifiedAmount <= 0
+    || ($existingIntent && abs((float) $existingIntent['amount'] - $verifiedAmount) > 0.01)) {
+    $verificationStatus = 'failed';
+}
+
 $bulkItems = is_array($metadata['bulk_items'] ?? null) ? $metadata['bulk_items'] : null;
 $customer = is_array($transaction['customer'] ?? null) ? $transaction['customer'] : [];
 $customerName = trim((string) ($metadata['name'] ?? ''));
@@ -72,7 +84,7 @@ try {
         'client_reference' => $verifiedReference,
         'transaction_id' => $transaction['id'] ?? null,
         'status' => $transaction['status'] ?? 'pending',
-        'amount' => ((float) ($transaction['amount'] ?? 0)) / 100,
+        'amount' => $verifiedAmount,
         'description' => $metadata['description'] ?? 'Paystack online payment',
         'customer_name' => $customerName ?: 'Paystack customer',
         'customer_phone' => $metadata['phone'] ?? $customer['phone'] ?? '',
@@ -83,12 +95,15 @@ try {
         'payment_period_description' => $metadata['payment_period_description'] ?? null,
         'bulk_breakdown' => $bulkItems,
         'payment_source' => 'paystack',
+        'gateway_verification_status' => $verificationStatus,
         'raw_payload' => $rawResponse,
     ]);
 
     if (($capture['status'] ?? '') === 'Completed'
         && ($capture['previous_status'] ?? null) !== 'Failed'
-        && ($capture['confirmation_source'] ?? null) === 'gateway_callback') {
+        && ($capture['confirmation_source'] ?? null) === 'gateway_callback'
+        && ($capture['gateway_verification_status'] ?? null) === 'verified'
+        && !empty($capture['locally_initialized'])) {
         $postingService = new OnlinePaymentApprovalService($conn, 0, true, true);
         $posting = $postingService->autoPostDefinitiveGatewayPayment(
             (int) $capture['intent_id'],
@@ -96,6 +111,9 @@ try {
             'Automatically posted after definitive Paystack server verification.'
         );
         echo '<h2>Payment confirmed</h2><p>Your verified transaction has been posted. Reference: '
+            . htmlspecialchars($verifiedReference, ENT_QUOTES, 'UTF-8') . '.</p>';
+    } elseif (($capture['gateway_verification_status'] ?? '') !== 'verified') {
+        echo '<h2>Payment requires reconciliation</h2><p>Paystack verified the reference, but the returned amount did not match the locally initialized amount. No income was posted. Reference: '
             . htmlspecialchars($verifiedReference, ENT_QUOTES, 'UTF-8') . '.</p>';
     } elseif ($capture['approval_status'] === 'pending') {
         echo '<h2>Payment received</h2><p>Your transaction was verified and is awaiting authorized posting. Reference: '

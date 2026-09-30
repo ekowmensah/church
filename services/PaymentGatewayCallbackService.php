@@ -36,6 +36,11 @@ final class PaymentGatewayCallbackService
         if (!in_array($confirmationSource, ['gateway_callback', 'status_check'], true)) {
             $confirmationSource = 'gateway_callback';
         }
+        $locallyInitialized = !empty($callback['locally_initialized']);
+        $verificationStatus = (string) ($callback['gateway_verification_status'] ?? 'not_checked');
+        if (!in_array($verificationStatus, ['not_checked', 'verified', 'failed'], true)) {
+            $verificationStatus = 'not_checked';
+        }
         $payloadHash = isset($callback['raw_payload'])
             ? hash('sha256', (string) $callback['raw_payload'])
             : null;
@@ -75,22 +80,25 @@ final class PaymentGatewayCallbackService
                         (client_reference, hubtel_transaction_id, transaction_id,
                          member_id, sundayschool_id, church_id, amount, description,
                          customer_name, customer_phone, status, approval_status,
-                         success_confirmation_source, approval_requested_at,
-                         payment_type_id, payment_period,
+                         success_confirmation_source, gateway_initialized_at,
+                         gateway_verification_status, gateway_verified_at,
+                         approval_requested_at, payment_type_id, payment_period,
                          payment_period_description, bulk_breakdown, payment_source,
                          created_at, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                             CASE WHEN ? = \'pending\' THEN NOW() ELSE NULL END,
-                             ?, ?, ?, ?, ?, NOW(), NOW())'
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())'
                 );
                 $approvalStatus = $gatewayStatus === 'Completed' ? 'pending' : 'not_required';
                 $successfulConfirmation = $gatewayStatus === 'Completed' ? $confirmationSource : null;
+                $initializedAt = $locallyInitialized ? date('Y-m-d H:i:s') : null;
+                $verifiedAt = $verificationStatus === 'verified' ? date('Y-m-d H:i:s') : null;
+                $approvalRequestedAt = $approvalStatus === 'pending' ? date('Y-m-d H:i:s') : null;
                 $insert->bind_param(
-                    'sssiiidsssssssissss',
+                    'sssiiidssssssssssissss',
                     $reference, $transactionId, $transactionId, $memberId, $childId,
                     $churchId, $amount, $description, $customerName, $customerPhone,
                     $gatewayStatus, $approvalStatus, $successfulConfirmation,
-                    $approvalStatus, $paymentTypeId,
+                    $initializedAt, $verificationStatus, $verifiedAt,
+                    $approvalRequestedAt, $paymentTypeId,
                     $paymentPeriod, $periodDescription, $bulkBreakdown, $source
                 );
                 $insert->execute();
@@ -114,12 +122,20 @@ final class PaymentGatewayCallbackService
                 } elseif ($storedGatewayStatus === 'Failed' && $gatewayStatus === 'Pending') {
                     $gatewayStatus = 'Failed';
                 }
-                $successfulConfirmation = $storedGatewayStatus === 'Completed'
-                    ? ($intent['success_confirmation_source'] ?? null)
-                    : ($gatewayStatus === 'Completed'
-                        ? ($storedGatewayStatus === 'Failed' ? 'status_check' : $confirmationSource)
-                        : null);
                 $previousApproval = (string) ($intent['approval_status'] ?? 'not_required');
+                $successfulConfirmation = null;
+                if ($gatewayStatus === 'Completed') {
+                    if ($confirmationSource === 'status_check'
+                        && !in_array($previousApproval, ['approved', 'rejected'], true)) {
+                        $successfulConfirmation = 'status_check';
+                    } elseif ($storedGatewayStatus === 'Completed') {
+                        $successfulConfirmation = $intent['success_confirmation_source'] ?? $confirmationSource;
+                    } else {
+                        $successfulConfirmation = $storedGatewayStatus === 'Failed'
+                            ? 'status_check'
+                            : $confirmationSource;
+                    }
+                }
                 $approvalStatus = $previousApproval;
                 if (!in_array($previousApproval, ['approved', 'rejected'], true)) {
                     $approvalStatus = $gatewayStatus === 'Completed' ? 'pending' : 'not_required';
@@ -139,8 +155,19 @@ final class PaymentGatewayCallbackService
                             payment_source = ?, approval_status = ?,
                             success_confirmation_source = CASE
                                 WHEN ? = \'Completed\'
-                                    THEN COALESCE(success_confirmation_source, ?)
+                                    THEN ?
                                 ELSE success_confirmation_source END,
+                            gateway_initialized_at = CASE
+                                WHEN ? = 1 THEN COALESCE(gateway_initialized_at, NOW())
+                                ELSE gateway_initialized_at END,
+                            gateway_verification_status = CASE
+                                WHEN gateway_verification_status = \'verified\' THEN \'verified\'
+                                WHEN ? = \'verified\' THEN \'verified\'
+                                WHEN ? = \'failed\' THEN \'failed\'
+                                ELSE gateway_verification_status END,
+                            gateway_verified_at = CASE
+                                WHEN ? = \'verified\' THEN COALESCE(gateway_verified_at, NOW())
+                                ELSE gateway_verified_at END,
                             approval_requested_at = CASE
                                 WHEN ? = \'pending\' THEN COALESCE(approval_requested_at, NOW())
                                 ELSE approval_requested_at END,
@@ -148,17 +175,27 @@ final class PaymentGatewayCallbackService
                       WHERE id = ?'
                 );
                 $update->bind_param(
-                    'sssddiiiisssssssi',
+                    'sssddiiiissssssissssi',
                     $gatewayStatus, $transactionId, $transactionId, $amount, $amount,
                     $memberId, $childId, $churchId, $paymentTypeId, $paymentPeriod,
                     $periodDescription, $source, $approvalStatus, $gatewayStatus,
-                    $successfulConfirmation, $approvalStatus, $intentId
+                    $successfulConfirmation, $locallyInitialized, $verificationStatus,
+                    $verificationStatus, $verificationStatus, $approvalStatus, $intentId
                 );
                 $update->execute();
                 $update->close();
             }
 
-            $this->audit($intentId, 'callback_received', $gatewayStatus, 'Gateway callback captured without posting income.', $payloadHash, null);
+            $captureAction = $locallyInitialized ? 'intent_initialized' : 'callback_received';
+            $captureNote = $locallyInitialized
+                ? 'Gateway intent initialized locally before customer redirection.'
+                : 'Gateway callback captured without posting income.';
+            $this->audit($intentId, $captureAction, $gatewayStatus, $captureNote, $payloadHash, null);
+            if ($verificationStatus === 'verified') {
+                $this->audit($intentId, 'verification_succeeded', $gatewayStatus, 'Gateway reference and amount were verified server-to-server.', $payloadHash, null);
+            } elseif ($verificationStatus === 'failed') {
+                $this->audit($intentId, 'verification_failed', $gatewayStatus, 'Gateway reference, amount, or status could not be verified.', $payloadHash, null);
+            }
             if ($approvalStatus === 'pending' && $previousApproval !== 'pending') {
                 $this->audit($intentId, 'approval_requested', $gatewayStatus, 'Successful gateway payment queued for authorized review.', $payloadHash, null);
             }
@@ -169,6 +206,10 @@ final class PaymentGatewayCallbackService
                 'approval_status' => $approvalStatus,
                 'previous_status' => $previousGatewayStatus,
                 'confirmation_source' => $successfulConfirmation,
+                'gateway_verification_status' => $verificationStatus === 'not_checked' && $intent
+                    ? (string) ($intent['gateway_verification_status'] ?? 'not_checked')
+                    : $verificationStatus,
+                'locally_initialized' => $locallyInitialized || !empty($intent['gateway_initialized_at']),
                 'was_existing' => (bool) $intent,
             ];
         } catch (Throwable $error) {

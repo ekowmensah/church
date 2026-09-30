@@ -3,6 +3,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../services/PaymentGatewayCallbackService.php';
 
 header('Content-Type: application/json');
 
@@ -50,16 +51,18 @@ if (!$amount || !$email) {
 }
 
 // Convert to kobo (Paystack expects amount in lowest currency unit)
-$amount_kobo = intval($amount * 100);
+$amount_kobo = (int) round($amount * 100);
+$clientReference = 'PAYSTACK-' . date('YmdHis') . '-' . bin2hex(random_bytes(8));
 
 // Prepare Paystack API request
 $member_id = isset($input['member_id']) ? intval($input['member_id']) : ($_SESSION['member_id'] ?? null);
 $church_id = isset($input['church_id']) ? intval($input['church_id']) : ($_SESSION['church_id'] ?? null);
-$payment_type_id = isset($input['payment_type_id']) ? intval($input['payment_type_id']) : (isset($input['payment_type_id']) ? intval($input['payment_type_id']) : null);
+$payment_type_id = isset($input['payment_type_id']) ? intval($input['payment_type_id']) : null;
 
 $fields = [
     'amount' => $amount_kobo,
     'email' => $email,
+    'reference' => $clientReference,
     'callback_url' => $callback_url,
     'metadata' => [
         'name' => $name,
@@ -108,7 +111,37 @@ if (!$data || !$data['status']) {
 
 $auth_url = $data['data']['authorization_url'] ?? null;
 if ($auth_url) {
-    echo json_encode(['success'=>true, 'checkoutUrl'=>$auth_url]);
+    $returnedReference = trim((string) ($data['data']['reference'] ?? ''));
+    if ($returnedReference === '' || !hash_equals($clientReference, $returnedReference)) {
+        http_response_code(502);
+        echo json_encode(['success' => false, 'error' => 'Paystack returned an unexpected transaction reference.']);
+        exit;
+    }
+    try {
+        $intentService = new PaymentGatewayCallbackService($conn);
+        $intentService->record([
+            'client_reference' => $clientReference,
+            'status' => 'Pending',
+            'amount' => $amount,
+            'description' => $description ?: 'Paystack online payment',
+            'customer_name' => $name ?: 'Paystack customer',
+            'customer_phone' => $phone,
+            'member_id' => $member_id,
+            'church_id' => $church_id,
+            'payment_type_id' => $payment_type_id,
+            'payment_period' => $input['payment_period'] ?? null,
+            'payment_period_description' => $input['payment_period_description'] ?? null,
+            'bulk_breakdown' => $bulk_items,
+            'payment_source' => 'paystack',
+            'locally_initialized' => true,
+            'raw_payload' => $response,
+        ]);
+        echo json_encode(['success'=>true, 'checkoutUrl'=>$auth_url]);
+    } catch (Throwable $error) {
+        error_log('Paystack initialization could not be persisted: ' . $error->getMessage());
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'The payment was initialized but could not be safely tracked. Please contact support before retrying.']);
+    }
 } else {
     echo json_encode(['success'=>false, 'error'=>'No authorization URL returned by Paystack.']);
 }
