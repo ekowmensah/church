@@ -1,722 +1,2152 @@
 <?php
-session_start();
-require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../includes/member_auth.php';
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../includes/member_auth.php';
 
 if (!isset($_SESSION['member_id'])) {
-    header('Location: '.BASE_URL.'/login.php');
+    header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
 
+$memberId = (int) $_SESSION['member_id'];
+
+
+/*
+|--------------------------------------------------------------------------
+| Load Member
+|--------------------------------------------------------------------------
+*/
+
+$memberStmt = $conn->prepare(
+    "SELECT 
+        member.id,
+        member.crn,
+        member.church_id,
+        member.phone,
+        TRIM(
+            CONCAT_WS(
+                ' ',
+                member.first_name,
+                member.middle_name,
+                member.last_name
+            )
+        ) AS full_name,
+        bible_class.name AS class_name
+    FROM members member
+    LEFT JOIN bible_classes bible_class
+        ON bible_class.id = member.class_id
+    WHERE member.id = ?
+      AND member.is_archived = 0
+    LIMIT 1"
+);
+
+$memberStmt->bind_param('i', $memberId);
+$memberStmt->execute();
+
+$member = $memberStmt
+    ->get_result()
+    ->fetch_assoc();
+
+$memberStmt->close();
+
+
+if (!$member) {
+    http_response_code(403);
+    exit('Your member profile is unavailable.');
+}
+
+
+$crn       = (string) ($member['crn'] ?? '');
+$fullName  = (string) ($member['full_name'] ?? '');
+$className = (string) ($member['class_name'] ?? '');
+$phone     = (string) ($member['phone'] ?? '');
+$churchId  = (int) ($member['church_id'] ?? 0);
+
+
+/*
+|--------------------------------------------------------------------------
+| Payment Types
+|--------------------------------------------------------------------------
+*/
+
+$paymentTypes = $conn->query(
+    'SELECT id, name 
+     FROM payment_types 
+     WHERE active = 1 
+     ORDER BY name'
+)->fetch_all(MYSQLI_ASSOC);
+
+
+/*
+|--------------------------------------------------------------------------
+| Start Page Content Buffer
+|--------------------------------------------------------------------------
+*/
+
 ob_start();
 ?>
-<div class="container py-4" style="max-width: 900px;">
-  <!-- Member Summary -->
-  <div class="card mb-4 shadow-sm border-0 bg-light">
-    <div class="card-body d-flex flex-wrap align-items-center justify-content-between">
-      <div class="mb-2 mb-md-0">
-        <?php
-// Patch: Always show class and phone, even if not in session
-$member_id = $_SESSION['member_id'] ?? null;
-$crn = $_SESSION['crn'] ?? '';
-$full_name = $_SESSION['full_name'] ?? '';
-$class_name = $_SESSION['class_name'] ?? '';
-$phone = $_SESSION['phone'] ?? '';
-$church_id = $_SESSION['church_id'] ?? null;
-if (!$church_id && $member_id) {
-    $stmt = $conn->prepare('SELECT church_id FROM members WHERE id = ?');
-    $stmt->bind_param('i', $member_id);
-    $stmt->execute();
-    $church_id = $stmt->get_result()->fetch_assoc()['church_id'] ?? null;
-}
-if ((!$class_name || !$phone) && $member_id) {
-  $stmt = $conn->prepare('SELECT crn, CONCAT(last_name, ", ", first_name, IF(middle_name != "", CONCAT(" ", middle_name), "")) as full_name, phone, class_id FROM members WHERE id = ?');
-  $stmt->bind_param('i', $member_id);
-  $stmt->execute();
-  $m = $stmt->get_result()->fetch_assoc();
-  if ($m) {
-    $crn = $m['crn'];
-    $full_name = $m['full_name'];
-    $phone = $m['phone'];
-    // Get class name
-    $class_name = '';
-    if (!empty($m['class_id'])) {
-      $res = $conn->query('SELECT name FROM bible_classes WHERE id = '.intval($m['class_id']));
-      if ($row = $res->fetch_assoc()) $class_name = $row['name'];
-    }
-  }
-}
-?>
-<div class="font-weight-bold text-primary" style="font-size: 1.2rem;">Welcome, <?php echo htmlspecialchars($full_name); ?></div>
-<div class="small text-muted">CRN: <b><?php echo htmlspecialchars($crn); ?></b> | Class: <b><?php echo htmlspecialchars($class_name); ?></b></div>
-<div class="small text-muted">Phone: <b><?php echo htmlspecialchars($phone); ?></b></div>
-      </div>
+
+
+<div class="container py-4" style="max-width:980px;">
+
+    <!-- MEMBER INFORMATION -->
+    <div class="card mb-4 shadow-sm border-0 bg-light">
+
+        <div class="card-body">
+
+            <div
+                class="font-weight-bold text-primary"
+                style="font-size:1.2rem;"
+            >
+                Welcome,
+                <?= htmlspecialchars(
+                    $fullName,
+                    ENT_QUOTES,
+                    'UTF-8'
+                ) ?>
+            </div>
+
+            <div class="small text-muted">
+
+                CRN:
+                <strong>
+                    <?= htmlspecialchars(
+                        $crn,
+                        ENT_QUOTES,
+                        'UTF-8'
+                    ) ?>
+                </strong>
+
+                <span class="mx-1">|</span>
+
+                Class:
+                <strong>
+                    <?= htmlspecialchars(
+                        $className ?: 'Not assigned',
+                        ENT_QUOTES,
+                        'UTF-8'
+                    ) ?>
+                </strong>
+
+            </div>
+
+            <div class="small text-muted">
+
+                Phone:
+                <strong>
+                    <?= htmlspecialchars(
+                        $phone,
+                        ENT_QUOTES,
+                        'UTF-8'
+                    ) ?>
+                </strong>
+
+            </div>
+
+        </div>
+
     </div>
-  </div>
-  <!-- Tabs -->
-  <ul class="nav nav-pills nav-justified mb-3" id="payTab" role="tablist">
-    <li class="nav-item">
-      <a class="nav-link active" id="single-tab" data-toggle="pill" href="#singlePanel" role="tab" aria-controls="singlePanel" aria-selected="true"><i class="fas fa-money-bill-wave"></i> Single Payment</a>
-    </li>
-    <li class="nav-item">
-      <a class="nav-link" id="bulk-tab" data-toggle="pill" href="#bulkPanel" role="tab" aria-controls="bulkPanel" aria-selected="false"><i class="fas fa-layer-group"></i> Bulk Payment</a>
-    </li>
-  </ul>
-  <div class="tab-content" id="payTabContent">
-    <!-- Single Payment -->
-    <div class="tab-pane fade show active" id="singlePanel" role="tabpanel" aria-labelledby="single-tab">
-      <form id="singlePaymentForm" autocomplete="off">
-        <div class="form-row">
-          <div class="form-group col-md-4">
-            <label for="single_payment_type">Payment Type <span class="text-danger">*</span></label>
-            <select class="form-control form-control-lg" id="single_payment_type" name="payment_type_id" required>
-              <option value="">-- Select Type --</option>
-              <?php $types = $conn->query("SELECT id, name FROM payment_types WHERE active=1 ORDER BY name");
-                if ($types && $types->num_rows > 0): while($t = $types->fetch_assoc()): ?>
-                <option value="<?= $t['id'] ?>"><?= htmlspecialchars($t['name']) ?></option>
-              <?php endwhile; endif; ?>
-            </select>
-          </div>
-          <div class="form-group col-md-3">
-            <label for="single_amount">Amount (₵) <span class="text-danger">*</span></label>
-            <input type="number" step="0.01" min="1" class="form-control form-control-lg" id="single_amount" name="amount" placeholder="e.g. 100.00" required>
-          </div>
-          <div class="form-group col-md-3">
-            <label for="single_mode">Mode <span class="text-danger">*</span></label>
-            <select class="form-control form-control-lg" id="single_mode" name="mode" readonly required>
-             
-              <option value="Cash">Hubtel</option>
-             
-            </select>
-          </div>
-          <div class="form-group col-md-2">
-            <label for="single_payment_date">Date <span class="text-danger">*</span></label>
-            <input type="date" class="form-control form-control-lg" id="single_payment_date" name="payment_date" value="<?= date('Y-m-d') ?>" readonly required>
-          </div>
-          <div class="form-group col-md-6">
-            <label for="single_payment_period">Period <span class="text-danger">*</span></label>
-            <select class="form-control form-control-lg" id="single_payment_period" name="payment_period" required>
-              <option value="">-- Select Period --</option>
-              <?php
-              // Generate payment period options (current month and previous 12 months)
-              for ($i = 0; $i < 12; $i++) {
-                $date = date('Y-m-01', strtotime("-$i months"));
-                $display = date('F Y', strtotime($date));
-                $selected = ($i == 0) ? 'selected' : '';
-                echo "<option value=\"$date\" $selected>$display</option>";
-              }
-              ?>
-            </select>
-          </div>
+
+
+    <!-- PAYMENT CARD -->
+    <div class="card border-primary shadow-sm mb-3">
+
+        <div
+            class="
+                card-header
+                bg-primary
+                text-white
+                py-3
+                d-flex
+                flex-wrap
+                justify-content-between
+                align-items-center
+            "
+        >
+
+            <span style="font-size:1.25rem">
+
+                <i class="fas fa-credit-card mr-2"></i>
+
+                Payment
+
+            </span>
+
+            <span
+                class="
+                    badge
+                    badge-light
+                    text-primary
+                    px-3
+                    py-2
+                    mt-2
+                    mt-sm-0
+                "
+            >
+                Add one or more payment lines
+            </span>
+
         </div>
-        <div class="form-row">
-          <div class="form-group col-md-12">
-            <label for="single_description">Description</label>
-            <input type="text" class="form-control form-control-lg" id="single_description" name="description" placeholder="Optional" autocomplete="off">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="col-md-12 text-right">
-            <button type="submit" class="btn btn-success btn-lg px-4 shadow-sm" id="submitSinglePaymentBtn"><i class="fas fa-credit-card mr-1"></i> Pay Now</button>
-          </div>
-        </div>
-        <div id="single-payment-feedback" class="mt-2"></div>
-        <script>
-        // Auto-populate description field
-        function updateDescriptionField() {
-          var paymentType = $('#single_payment_type option:selected').text();
-          var periodText = $('#single_payment_period option:selected').text();
-          if (paymentType && paymentType !== '-- Select Type --' && periodText && periodText !== '-- Select Period --') {
-            $('#single_description').val('Payment for ' + periodText + ' ' + paymentType);
-          } else {
-            $('#single_description').val('');
-          }
-        }
-        $('#single_payment_type, #single_payment_period').on('change', updateDescriptionField);
-        $(document).ready(updateDescriptionField);
-        </script>
-      </form>
-    </div>
-    <!-- Bulk Payment -->
-    <div class="tab-pane fade" id="bulkPanel" role="tabpanel" aria-labelledby="bulk-tab">
-      <div class="card border-primary shadow-sm mb-3">
-        <div class="card-header bg-primary text-white py-3 d-flex justify-content-between align-items-center">
-          <span style="font-size:1.25rem"><i class="fas fa-layer-group mr-2"></i>Bulk Payment Entry</span>
-          <span class="badge badge-light text-primary px-3 py-2" style="font-size:1rem;">Professional Teller Mode</span>
-        </div>
+
+
         <div class="card-body bg-light">
-          <div class="row mb-3">
-            <div class="form-group" hidden>
-              <label for="payment_method">Payment Method</label>
-              <select class="form-control" id="payment_method" name="payment_method" required readonly>
-                <option value="hubtel" selected>Hubtel</option>
-              </select>
+
+            <input
+                type="hidden"
+                id="payment_method"
+                value="hubtel"
+            >
+
+
+            <!-- ADD PAYMENT LINE FORM -->
+            <form
+                id="paymentLineForm"
+                autocomplete="off"
+                onsubmit="return false;"
+            >
+
+                <div class="form-row align-items-end">
+
+                    <!-- PAYMENT TYPE -->
+                    <div class="form-group col-md-4">
+
+                        <label
+                            for="payment_type_id"
+                            class="font-weight-bold"
+                        >
+                            Payment Type
+
+                            <span class="text-danger">
+                                *
+                            </span>
+                        </label>
+
+                        <select
+                            class="
+                                form-control
+                                form-control-lg
+                                border-primary
+                            "
+                            id="payment_type_id"
+                        >
+
+                            <option value="">
+                                -- Select Type --
+                            </option>
+
+                            <?php foreach ($paymentTypes as $paymentType): ?>
+
+                                <option
+                                    value="<?= (int) $paymentType['id'] ?>"
+                                >
+                                    <?= htmlspecialchars(
+                                        $paymentType['name'],
+                                        ENT_QUOTES,
+                                        'UTF-8'
+                                    ) ?>
+                                </option>
+
+                            <?php endforeach; ?>
+
+                        </select>
+
+                    </div>
+
+
+                    <!-- AMOUNT -->
+                    <div class="form-group col-md-3">
+
+                        <label
+                            for="payment_amount"
+                            class="font-weight-bold"
+                        >
+                            Amount (GH&#8373;)
+
+                            <span class="text-danger">
+                                *
+                            </span>
+                        </label>
+
+                        <input
+                            type="number"
+                            step="0.01"
+                            min="1"
+                            class="
+                                form-control
+                                form-control-lg
+                                border-primary
+                            "
+                            id="payment_amount"
+                            placeholder="e.g. 100.00"
+                        >
+
+                    </div>
+
+
+                    <!-- REPORTING PERIOD -->
+                    <div class="form-group col-md-4">
+
+                        <label
+                            for="payment_period"
+                            class="font-weight-bold"
+                        >
+                            Reporting Period
+
+                            <span class="text-danger">
+                                *
+                            </span>
+                        </label>
+
+                        <select
+                            class="
+                                form-control
+                                form-control-lg
+                                border-primary
+                            "
+                            id="payment_period"
+                        >
+
+                            <option value="">
+                                -- Select Period --
+                            </option>
+
+                            <?php
+                            for (
+                                $monthOffset = 0;
+                                $monthOffset < 13;
+                                $monthOffset++
+                            ):
+
+                                $periodValue = date(
+                                    'Y-m-01',
+                                    strtotime(
+                                        "-{$monthOffset} months"
+                                    )
+                                );
+
+                                $periodLabel = date(
+                                    'F Y',
+                                    strtotime($periodValue)
+                                );
+                            ?>
+
+                                <option
+                                    value="<?= $periodValue ?>"
+                                    <?= $monthOffset === 0
+                                        ? 'selected'
+                                        : '' ?>
+                                >
+                                    <?= $periodLabel ?>
+                                </option>
+
+                            <?php endfor; ?>
+
+                        </select>
+
+                    </div>
+
+
+                    <!-- ADD BUTTON -->
+                    <div class="form-group col-md-1">
+
+                        <button
+                            type="button"
+                            class="
+                                btn
+                                btn-success
+                                btn-lg
+                                btn-block
+                            "
+                            id="addPaymentLineBtn"
+                            title="Add payment line"
+                            aria-label="Add payment line"
+                        >
+
+                            <i class="fas fa-plus-circle"></i>
+
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </form>
+
+
+            <!-- PAYMENT LINES -->
+            <div class="table-responsive">
+
+                <table
+                    class="
+                        table
+                        table-bordered
+                        table-hover
+                        table-sm
+                        bg-white
+                    "
+                    id="paymentLinesTable"
+                >
+
+                    <thead class="thead-light">
+
+                        <tr>
+
+                            <th style="width:48px">
+                                #
+                            </th>
+
+                            <th>
+                                Payment Type
+                            </th>
+
+                            <th style="width:140px">
+                                Amount
+                            </th>
+
+                            <th style="width:190px">
+                                Reporting Period
+                            </th>
+
+                            <th>
+                                Description
+                            </th>
+
+                            <th style="width:54px"></th>
+
+                        </tr>
+
+                    </thead>
+
+                    <tbody></tbody>
+
+                </table>
+
             </div>
-          </div>
-          <form id="bulkPaymentEntryForm" autocomplete="off" onsubmit="return false;">
-            <div class="form-row align-items-end mb-2">
-              <div class="form-group col-md-4 mb-2">
-                <label for="bulk_payment_type_id" class="font-weight-bold">Payment Type <span class="text-danger">*</span></label>
-                <select class="form-control form-control-lg border-primary" id="bulk_payment_type_id" name="bulk_payment_type_id">
-                  <option value="">-- Select Type --</option>
-                  <?php $types2 = $conn->query("SELECT id, name FROM payment_types WHERE active=1 ORDER BY name");
-                  if ($types2 && $types2->num_rows > 0): while($t = $types2->fetch_assoc()): ?>
-                    <option value="<?= $t['id'] ?>"><?= htmlspecialchars($t['name']) ?></option>
-                  <?php endwhile; endif; ?>
-                </select>
-              </div>
-              <div class="form-group col-md-2 mb-2">
-                <label for="bulk_amount" class="font-weight-bold">Amount (₵) <span class="text-danger">*</span></label>
-                <input type="number" step="0.01" min="1" class="form-control form-control-lg border-primary" id="bulk_amount" name="bulk_amount" placeholder="e.g. 100.00">
-              </div>
-              <div class="form-group col-md-2 mb-2" hidden>
-                <label for="bulk_payment_date" class="font-weight-bold">Date <span class="text-danger">*</span></label>
-                <input type="date" class="form-control form-control-lg border-primary" id="bulk_payment_date" name="bulk_payment_date" value="<?= date('Y-m-d') ?>" readonly>
-              </div>
-              <div class="form-group col-md-4 mb-2">
-                <label for="bulk_payment_period" class="font-weight-bold">Period <span class="text-danger">*</span></label>
-                <select class="form-control form-control-lg border-primary" id="bulk_payment_period" name="bulk_payment_period">
-                  <option value="">-- Select Period --</option>
-                  <?php
-                  for ($i = 0; $i < 12; $i++) {
-                    $date = date('Y-m-01', strtotime("-$i months"));
-                    $display = date('F Y', strtotime($date));
-                    $selected = ($i == 0) ? 'selected' : '';
-                    echo "<option value=\"$date\" $selected>$display</option>";
-                  }
-                  ?>
-                </select>
-              </div>
-              <!-- <div class="form-group col-md-3 mb-2">
-                <label for="bulk_description" class="font-weight-bold">Description</label>
-                <input type="text" class="form-control form-control-lg border-primary" id="bulk_description" name="bulk_description" placeholder="Optional">
-              </div> -->
-              
-              <div class="form-group col-md-1 mb-2 text-right">
-                <button type="button" class="btn btn-success btn-lg px-3 shadow-sm mt-4 w-100" id="addToBulkBtn" style="min-width:44px;">
-                  <i class="fas fa-plus-circle"></i>
+
+
+            <!-- TOTAL / REVIEW -->
+            <div
+                class="
+                    d-flex
+                    flex-wrap
+                    justify-content-between
+                    align-items-center
+                    mt-3
+                "
+            >
+
+                <strong class="mb-2 mb-sm-0">
+
+                    Total:
+
+                    <span id="paymentLinesTotal">
+                        GH&#8373;0.00
+                    </span>
+
+                </strong>
+
+
+                <button
+                    type="button"
+                    class="
+                        btn
+                        btn-primary
+                        btn-lg
+                        px-4
+                    "
+                    id="reviewPaymentsBtn"
+                    disabled
+                >
+
+                    <i class="fas fa-check mr-1"></i>
+
+                    Review and Submit
+
                 </button>
-              </div>
+
             </div>
-          </form>
-          <hr class="my-3">
-          <div class="table-responsive">
-            <table class="table table-bordered table-hover table-sm mt-2 bg-white" id="bulkPaymentsTable">
-              <thead class="thead-light">
-                <tr style="font-size:1.07rem;">
-                  <th>#</th>
-                  <th>Type</th>
-                  <th>Amount</th>
-                  <th>Date</th>
-                  <th>Payment Period</th>
-                  <th>Description</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-          <div id="bulkPaymentsFooter" class="d-flex justify-content-between align-items-center mt-3">
-            <span class="font-weight-bold" style="font-size:1.15rem;">Total: <span id="bulkPaymentsTotal">₵0.00</span></span>
-            <button type="button" class="btn btn-primary btn-lg px-4" id="submitBulkPaymentsBtn" disabled><i class="fas fa-check mr-1"></i> Submit All Payments</button>
-          </div>
-          <div id="bulk-payment-feedback" class="mt-3"></div>
+
+
+            <div
+                id="payment-feedback"
+                class="mt-3"
+                aria-live="polite"
+            ></div>
+
         </div>
-      </div>
-      <style>
-        #bulkPaymentsTable th, #bulkPaymentsTable td { vertical-align: middle; }
-        #bulkPaymentsTable tbody tr:hover { background: #e3f2fd; }
-        #bulkPaymentEntryForm .form-control-lg { font-size: 1.15rem; }
-        #bulkPaymentEntryForm label { margin-bottom: 0.25rem; }
-        @media (max-width: 900px) {
-          .container { max-width: 99vw !important; }
-        }
-      </style>
+
     </div>
-    
-  </div>
+
 </div>
+
+
+
+<!--
+|--------------------------------------------------------------------------
+| PAYMENT REVIEW MODAL
+|--------------------------------------------------------------------------
+|
+| This is initially captured inside page_content because of ob_start().
+| JavaScript below moves it directly underneath <body>.
+|
+-->
+
+<div
+    class="modal fade"
+    id="paymentReviewModal"
+    tabindex="-1"
+    role="dialog"
+    aria-labelledby="paymentReviewModalLabel"
+    aria-hidden="true"
+>
+
+    <div
+        class="
+            modal-dialog
+            modal-lg
+            modal-dialog-centered
+        "
+        role="document"
+    >
+
+        <div class="modal-content">
+
+            <!-- HEADER -->
+            <div class="modal-header bg-primary text-white">
+
+                <h5
+                    class="modal-title"
+                    id="paymentReviewModalLabel"
+                >
+
+                    <i
+                        class="
+                            fas
+                            fa-question-circle
+                            mr-2
+                        "
+                    ></i>
+
+                    Confirm Payments
+
+                </h5>
+
+
+                <button
+                    type="button"
+                    class="close text-white"
+                    data-dismiss="modal"
+                    aria-label="Close"
+                >
+
+                    <span aria-hidden="true">
+                        &times;
+                    </span>
+
+                </button>
+
+            </div>
+
+
+            <!-- BODY -->
+            <div class="modal-body">
+
+                <p>
+                    Review these payment lines before continuing
+                    to the payment gateway.
+                </p>
+
+
+                <div class="table-responsive">
+
+                    <table
+                        class="
+                            table
+                            table-bordered
+                            table-sm
+                            mb-0
+                        "
+                        id="paymentReviewTable"
+                    >
+
+                        <thead class="thead-light">
+
+                            <tr>
+
+                                <th>#</th>
+
+                                <th>Type</th>
+
+                                <th>Amount</th>
+
+                                <th>
+                                    Reporting Period
+                                </th>
+
+                                <th>
+                                    Description
+                                </th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody></tbody>
+
+
+                        <tfoot>
+
+                            <tr>
+
+                                <td
+                                    colspan="2"
+                                    class="
+                                        text-right
+                                        font-weight-bold
+                                    "
+                                >
+                                    Total
+                                </td>
+
+                                <td
+                                    colspan="3"
+                                    class="font-weight-bold"
+                                    id="paymentReviewTotal"
+                                ></td>
+
+                            </tr>
+
+                        </tfoot>
+
+                    </table>
+
+                </div>
+
+            </div>
+
+
+            <!-- FOOTER -->
+            <div class="modal-footer">
+
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    data-dismiss="modal"
+                >
+                    Cancel
+                </button>
+
+
+                <button
+                    type="button"
+                    class="btn btn-success"
+                    id="confirmPaymentsBtn"
+                >
+
+                    <i
+                        class="
+                            fas
+                            fa-check-circle
+                            mr-1
+                        "
+                    ></i>
+
+                    Confirm and Continue
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+
+<?php
+
+/*
+|--------------------------------------------------------------------------
+| Paystack Email Prompt Modal
+|--------------------------------------------------------------------------
+*/
+
+include __DIR__ . '/bulk_paystack_email_prompt.php';
+
+?>
+
+
 
 <style>
-.card-hover:hover {
-  background: #f4f8ff;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+
+#paymentLinesTable th,
+#paymentLinesTable td {
+    vertical-align: middle;
 }
-.btn-outline-primary:focus, .btn-outline-primary.active {
-  background: #e3f2fd;
-  color: #1565c0;
-  border-color: #1565c0;
+
+
+#paymentLinesTable tbody tr:hover {
+    background: #e3f2fd;
 }
-#bulkCartList .remove-bulk-item {
-  color: #e53935;
-  cursor: pointer;
+
+
+#paymentLineForm .form-control-lg {
+    font-size: 1.05rem;
 }
+
+
+#paymentLineForm label {
+    margin-bottom: .25rem;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Bootstrap Modal Protection
+|--------------------------------------------------------------------------
+*/
+
+#paymentReviewModal {
+    z-index: 1060 !important;
+}
+
+
+#paymentReviewModal .modal-dialog,
+#paymentReviewModal .modal-content {
+    position: relative;
+    pointer-events: auto !important;
+}
+
+
+.modal-backdrop {
+    z-index: 1050 !important;
+}
+
 </style>
 
+
+
 <script>
-// --- Single Payment ---
-$('#singlePaymentForm').on('submit', function(e){
-  e.preventDefault();
-  let typeId = $('#single_payment_type').val();
-  let typeName = $('#single_payment_type option:selected').text();
-  let amount = parseFloat($('#single_amount').val());
-  let paymentMethod = $('#payment_method').val();
-  if (!typeId || !amount || amount < 1) {
-    $('#single-payment-feedback').html('<div class="alert alert-danger">Please select a payment type and enter a valid amount.</div>');
-    return;
-  }
-  $('#confirmSummary').html(`<div>Type: <b>${typeName}</b><br>Amount: <b>₵${amount.toLocaleString(undefined,{minimumFractionDigits:2})}</b></div>`);
-  $('#paymentConfirmModal').modal('show');
-  $('#confirmPayBtn').off('click').on('click', function(){
-    $('#paymentConfirmModal').modal('hide');
-    let endpoint = paymentMethod === 'paystack' ? '<?php echo BASE_URL; ?>/views/ajax_paystack_checkout.php' : '<?php echo BASE_URL; ?>/views/ajax_hubtel_checkout.php';
-    let feedbackMsg = paymentMethod === 'paystack' ? 'Contacting Paystack...' : 'Contacting Hubtel...';
-    $('#single-payment-feedback').html('<div class="alert alert-info">'+feedbackMsg+'</div>');
-    let periodText = $('#single_payment_period option:selected').text();
-    let periodValue = $('#single_payment_period').val();
-    let payload = {
-      amount: amount,
-      description: 'Payment for ' + periodText + ' ' + typeName,
-      payment_type_id: typeId,
-      payment_type_name: typeName,
-      payment_period: periodValue,
-      payment_period_description: periodText,
-      customerName: <?php echo json_encode($full_name); ?>,
-      customerPhone: <?php echo json_encode($phone); ?>,
-      member_id: <?php echo json_encode($member_id); ?>,
-      church_id: <?php echo json_encode($church_id); ?>
-    };
 
-    if (paymentMethod === 'paystack') {
-      payload.customerEmail = <?php echo json_encode($_SESSION['email'] ?? ''); ?>;
-    }
-    $.post(
-      endpoint,
-      payload,
-      function(resp) {
-        if (resp.success && resp.checkoutUrl) {
-          window.location.href = resp.checkoutUrl;
-        } else {
-          let debugMsg = resp.debug ? `<pre class='small bg-light p-2 border rounded mt-2'>${JSON.stringify(resp.debug, null, 2)}</pre>` : '';
-          $('#single-payment-feedback').html('<div class="alert alert-danger">'+(resp.error || 'Could not initiate payment. Please try again.')+debugMsg+'</div>');
+(function ($) {
+
+    'use strict';
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | PAGE VARIABLES
+    |--------------------------------------------------------------------------
+    */
+
+    const baseUrl =
+        <?= json_encode(
+            BASE_URL,
+            JSON_UNESCAPED_SLASHES
+        ) ?>;
+
+
+    const customerName =
+        <?= json_encode(
+            $fullName,
+            JSON_UNESCAPED_UNICODE |
+            JSON_UNESCAPED_SLASHES
+        ) ?>;
+
+
+    const customerPhone =
+        <?= json_encode(
+            $phone,
+            JSON_UNESCAPED_SLASHES
+        ) ?>;
+
+
+    const memberId =
+        <?= $memberId ?>;
+
+
+    const churchId =
+        <?= $churchId ?>;
+
+
+    const customerEmail =
+        <?= json_encode(
+            (string) ($_SESSION['email'] ?? ''),
+            JSON_UNESCAPED_SLASHES
+        ) ?>;
+
+
+    const paymentDate =
+        <?= json_encode(
+            date('Y-m-d')
+        ) ?>;
+
+
+    const paymentLines = [];
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | IMPORTANT MODAL FIX
+    |--------------------------------------------------------------------------
+    |
+    | Because this entire page is captured with ob_start(), the layout.php
+    | file may put page_content inside a wrapper such as:
+    |
+    | <main>
+    |     <?= $page_content ?>
+    | </main>
+    |
+    | If that wrapper has transform, position, overflow or z-index,
+    | Bootstrap's backdrop can cover the modal.
+    |
+    | Therefore move the modals DIRECTLY underneath BODY.
+    |
+    */
+
+    function moveModalsToBody() {
+
+        const $reviewModal =
+            $('#paymentReviewModal');
+
+
+        if (
+            $reviewModal.length &&
+            !$reviewModal.parent().is('body')
+        ) {
+
+            $reviewModal.appendTo(
+                document.body
+            );
+
         }
-      },
-      'json'
-    ).fail(function(xhr){
-      $('#single-payment-feedback').html('<div class="alert alert-danger">Failed to contact '+(paymentMethod==='paystack'?'Paystack':'Hubtel')+'. Try again later.</div>');
-    });
-  });
-});
-// --- Bulk Payment Logic ---
-let bulkCart = [];
-function updateBulkCartUI() {
-  console.log('updateBulkCartUI called, bulkCart:', bulkCart);
-  let $tbody = $('#bulkPaymentsTable tbody');
-  $tbody.empty();
-  let total = 0;
-  bulkCart.forEach(function(item, idx){
-    total += item.amount;
-    $tbody.append(`
-      <tr data-idx="${idx}">
-        <td>${idx+1}</td>
-        <td>
-          <select class="form-control form-control-sm bulk-type-input" data-idx="${idx}">
-            ${$('#bulk_payment_type_id').html().replace('selected', '')}
-          </select>
-        </td>
-        <td><input type="number" step="0.01" min="1" class="form-control form-control-sm bulk-amount-input" data-idx="${idx}" value="${item.amount}"></td>
-        <td><input type="date" class="form-control form-control-sm" value="${item.date}" readonly></td>
-        <td>
-          <select class="form-control form-control-sm bulk-period-input" data-idx="${idx}">
-            ${$('#bulk_payment_period').html().replace('selected', '')}
-          </select>
-        </td>
-        <td><input type="text" class="form-control form-control-sm bulk-desc-input" data-idx="${idx}" value="${item.desc || ''}"></td>
-        <td><span class="remove-bulk-item text-danger ml-2" style="cursor:pointer;" data-idx="${idx}">&times;</span></td>
-      </tr>
-    `);
-    // Set current value for type and period
-    $tbody.find(`.bulk-type-input[data-idx="${idx}"]`).val(item.typeId);
-    $tbody.find(`.bulk-period-input[data-idx="${idx}"]`).val(item.period);
-  });
-  // Attach change handlers
-  // Track if user has manually edited description for each row
-  if (!window.bulkDescManualEdit) window.bulkDescManualEdit = {};
 
-  $tbody.find('.bulk-type-input').off('change').on('change', function(){
-    let idx = $(this).data('idx');
-    let typeId = $(this).val();
-    let typeName = $(this).find('option:selected').text();
-    bulkCart[idx].typeId = typeId;
-    bulkCart[idx].typeName = typeName;
-    // Only auto-update desc if not manually edited
-    if (!window.bulkDescManualEdit[idx]) {
-      let periodText = $tbody.find(`.bulk-period-input[data-idx="${idx}"] option:selected`).text();
-      if (typeName && typeName !== '-- Select Type --' && periodText && periodText !== '-- Select Period --') {
-        let desc = 'Payment for ' + periodText + ' ' + typeName;
-        bulkCart[idx].desc = desc;
-        $tbody.find(`.bulk-desc-input[data-idx="${idx}"]`).val(desc);
-      }
-    }
-    updateBulkCartUI();
-  });
-  $tbody.find('.bulk-amount-input').off('input').on('input', function(){
-    let idx = $(this).data('idx');
-    let amount = parseFloat($(this).val());
-    if (!isNaN(amount)) bulkCart[idx].amount = amount;
-    updateBulkCartUI();
-  });
-  $tbody.find('.bulk-period-input').off('change').on('change', function(){
-    let idx = $(this).data('idx');
-    let period = $(this).val();
-    let periodText = $(this).find('option:selected').text();
-    bulkCart[idx].period = period;
-    bulkCart[idx].periodText = periodText;
-    // Only auto-update desc if not manually edited
-    if (!window.bulkDescManualEdit[idx]) {
-      let typeName = $tbody.find(`.bulk-type-input[data-idx="${idx}"] option:selected`).text();
-      if (typeName && typeName !== '-- Select Type --' && periodText && periodText !== '-- Select Period --') {
-        let desc = 'Payment for ' + periodText + ' ' + typeName;
-        bulkCart[idx].desc = desc;
-        $tbody.find(`.bulk-desc-input[data-idx="${idx}"]`).val(desc);
-      }
-    }
-    updateBulkCartUI();
-  });
-  $tbody.find('.bulk-desc-input').off('input').on('input', function(){
-    let idx = $(this).data('idx');
-    bulkCart[idx].desc = $(this).val();
-    window.bulkDescManualEdit[idx] = true;
-  });
-  $('#bulkPaymentsTotal').text('₵'+total.toLocaleString(undefined,{minimumFractionDigits:2}));
-  $('#submitBulkPaymentsBtn').prop('disabled', bulkCart.length===0);
-}
 
-$('#submitBulkPaymentsBtn').off('click').on('click', function(e){
-  e.preventDefault();
-  // Ensure only the bulk modal is shown and summary is populated ONCE
-  $('#paymentConfirmModal').modal('hide'); // Hide single payment modal
-  $('#bulkConfirmTable tbody').empty(); // Clear previous summary rows
-  $('#bulkConfirmTotal').text('');
-  if (bulkCart.length === 0) {
-    $('#bulk-payment-feedback').html('<div class="alert alert-danger">Add at least one payment to your cart.</div>');
-    return;
-  }
-  // Populate the bulk confirmation modal table (only once)
-  let $tbody = $('#bulkConfirmTable tbody');
-  let total = 0;
-  bulkCart.forEach(function(item, idx){
-    total += item.amount;
-    $tbody.append(`
-      <tr>
-        <td>${idx+1}</td>
-        <td>${item.typeName}</td>
-        <td>₵${item.amount.toLocaleString(undefined,{minimumFractionDigits:2})}</td>
-        <td>${item.date}</td>
-        <td>${item.periodText || ''}</td>
-        <td>${item.desc || ''}</td>
-      </tr>
-    `);
-  });
-  $('#bulkConfirmTotal').text('₵'+total.toLocaleString(undefined,{minimumFractionDigits:2}));
-  $('#bulkPaymentConfirmModal').modal('show');
-});
+        const $emailModal =
+            $('#paystackEmailPromptModal');
 
-$(document).on('click', '#confirmBulkPaymentBtn', function(){
-  console.log('Bulk payment: Confirm & Submit clicked');
-  $('#bulkPaymentConfirmModal').modal('hide');
-  let paymentMethod = $('#payment_method').val(); // Fix: use correct selector
-  let endpoint = paymentMethod === 'paystack' ? '<?php echo BASE_URL; ?>/views/ajax_paystack_checkout.php' : '<?php echo BASE_URL; ?>/views/ajax_hubtel_checkout.php';
-  let feedbackMsg = paymentMethod === 'paystack' ? 'Contacting Paystack...' : 'Contacting Hubtel...';
-  $('#bulk-payment-feedback').html('<div class="alert alert-info">'+feedbackMsg+'</div>');
-  // Calculate total and description
-  let total = 0;
-  let descArr = [];
-  bulkCart.forEach(function(item){
-    total += item.amount;
-    descArr.push(item.desc || item.typeName);
-  });
-  let description = 'Bulk Payment ['+descArr.join(', ')+']';
-  let payload = {
-    amount: total,
-    description: description,
-    customerName: <?php echo json_encode($full_name); ?>,
-    customerPhone: <?php echo json_encode($phone); ?>,
-    member_id: <?php echo json_encode($member_id); ?>,
-    church_id: <?php echo json_encode($church_id); ?>,
-    bulk_items: bulkCart.map(item => ({
-      typeId: item.typeId,
-      typeName: item.typeName,
-      amount: item.amount,
-      date: item.date,
-      period: item.period,
-      periodText: item.periodText,
-      desc: item.desc
-    }))
-  };
-  // Paystack requires email; if missing, prompt
-  if (paymentMethod === 'paystack') {
-    payload.customerEmail = <?php echo json_encode($_SESSION['email'] ?? ''); ?>;
-    if (!payload.customerEmail) {
-      // Show modal to prompt for email
-      $('#paystackBulkEmailInput').val('');
-      $('#paystackBulkEmailError').text('');
-      $('#paystackEmailPromptModal').modal('show');
-      $('#paystackBulkEmailSubmitBtn').off('click').on('click', function(){
-        var email = $('#paystackBulkEmailInput').val().trim();
-        if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
-          $('#paystackBulkEmailError').text('Please enter a valid email address.');
-          return;
+
+        if (
+            $emailModal.length &&
+            !$emailModal.parent().is('body')
+        ) {
+
+            $emailModal.appendTo(
+                document.body
+            );
+
         }
-        $('#paystackEmailPromptModal').modal('hide');
-        setTimeout(function() {
-          payload.customerEmail = email;
-          console.log('Email entered, modal closed, submitting bulk paystack:', {endpoint, payload});
-          submitBulkPaystack(endpoint, payload);
-        }, 400); // Wait for modal to fully hide
-      });
-      return; // Wait for user to submit email
+
     }
-  }
-  // Debug: Log payload and endpoint
-  console.log('Submitting bulk payment:', {endpoint, payload});
-  submitBulkPaystack(endpoint, payload);
-});
-
-function submitBulkPaystack(endpoint, payload) {
-  // Debug: Log payload and endpoint
-  console.log('submitBulkPaystack() called:', {endpoint, payload});
-  $.post(
-    endpoint,
-    payload,
-    function(resp) {
-      console.log((endpoint.includes('paystack') ? 'Paystack' : 'Hubtel')+' AJAX response:', resp);
-      if (resp.success && resp.checkoutUrl) {
-        window.location.href = resp.checkoutUrl;
-      } else {
-        $('#bulk-payment-feedback').html('<div class="alert alert-danger">'+(resp.error || 'Could not initiate payment. Please try again.')+(resp.debug ? `<pre class='small bg-light p-2 border rounded mt-2'>${JSON.stringify(resp.debug, null, 2)}</pre>` : '')+'</div>');
-      }
-    },
-    'json'
-  ).fail(function(xhr){
-    $('#bulk-payment-feedback').html('<div class="alert alert-danger">Failed to contact '+(endpoint.includes('paystack')?'Paystack':'Hubtel')+'. Try again later.</div>');
-  });
-}
 
 
-$('#addToBulkBtn').on('click', function(){
-  console.log('Add to Bulk button clicked');
-  let typeId = $('#bulk_payment_type_id').val();
-  let typeName = $('#bulk_payment_type_id option:selected').text();
-  let amount = parseFloat($('#bulk_amount').val());
-  let date = $('#bulk_payment_date').val();
-  if (!date) {
-    // Always set to today if empty
-    let now = new Date();
-    date = now.toISOString().slice(0, 10);
-    $('#bulk_payment_date').val(date);
-  }
-  let period = $('#bulk_payment_period').val();
-  let periodText = $('#bulk_payment_period option:selected').text();
-  // Auto-populate description if not manually entered
-  let desc = $('#bulk_description').val();
-  if (!desc && typeName && periodText && typeName !== '-- Select Type --' && periodText !== '-- Select Period --') {
-    desc = 'Payment for ' + periodText + ' ' + typeName;
-    $('#bulk_description').val(desc);
-  }
-  console.log('typeId:', typeId, '| typeName:', typeName, '| amount:', amount, '| date:', date, '| period:', period, '| desc:', desc);
-  if (!typeId) {
-    console.log('No payment type selected');
-  }
-  if (!amount || amount < 1) {
-    console.log('Invalid amount:', amount);
-  }
-  if (!date) {
-    console.log('No date selected');
-  }
-  if (!period) {
-    console.log('No period selected');
-  }
-  if (!typeId || !amount || amount < 1 || !date || !period) {
-    $('#bulk-payment-feedback').html('<div class="alert alert-danger">Please select a payment type, enter a valid amount, select a date, and select a period.</div>');
-    return;
-  }
-  bulkCart.push({typeId, typeName, amount, date, period, periodText, desc});
-  console.log('Added to bulkCart:', bulkCart);
-  updateBulkCartUI();
-  // Reset form fields and set date to today
-  $('#bulk_payment_type_id').val('');
-  $('#bulk_amount').val('');
-  let today = new Date().toISOString().slice(0, 10);
-  $('#bulk_payment_date').val(today);
-  $('#bulk_payment_period').val('');
-  $('#bulk_description').val('');
-  $('#bulk-payment-feedback').empty();
-});
 
-$(document).on('click', '.remove-bulk-item', function(){
-  const idx = $(this).data('idx');
-  bulkCart.splice(idx, 1);
-  updateBulkCartUI();
-});
+    /*
+    |--------------------------------------------------------------------------
+    | MONEY FORMAT
+    |--------------------------------------------------------------------------
+    */
 
-// Disable form submit on Enter
-$('#bulkPaymentEntryForm').on('submit', function(e){ e.preventDefault(); });
+    function money(value) {
 
-// Initial UI update
-updateBulkCartUI();
-$(document).on('click', '.add-bulk-btn', function(){
-  let typeId = $(this).data('type-id');
-  let typeName = $(this).data('type-name');
-  let amount = parseFloat($(this).closest('.card').find('.bulk-amount-input').val());
-  if (!amount || amount < 1) {
-    alert('Enter a valid amount for '+typeName);
-    return;
-  }
-  if (bulkCart.some(item => item.typeId == typeId)) {
-    alert('This payment type is already in your cart.');
-    return;
-  }
-  bulkCart.push({typeId, typeName, amount});
-  updateBulkCartUI();
-  $(this).closest('.card').find('.bulk-amount-input').val('');
-});
-$(document).on('click', '.remove-bulk-item', function(){
-  let idx = $(this).data('idx');
-  bulkCart.splice(idx, 1);
-  updateBulkCartUI();
-});
-$('#bulkPaymentForm').on('submit', function(e){
-  e.preventDefault();
-  if (bulkCart.length === 0) {
-    $('#bulk-payment-feedback').html('<div class="alert alert-danger">Add at least one payment to your cart.</div>');
-    return;
-  }
-  let summaryHtml = '<ul>';
-  let total = 0;
-  bulkCart.forEach(function(item){
-    summaryHtml += `<li>${item.typeName}: <b>₵${item.amount.toLocaleString(undefined,{minimumFractionDigits:2})}</b></li>`;
-    total += item.amount;
-  });
-  summaryHtml += `</ul><div class="font-weight-bold mt-2">Total: ₵${total.toLocaleString(undefined,{minimumFractionDigits:2})}</div>`;
-  $('#confirmSummary').html(summaryHtml);
-  $('#paymentConfirmModal').modal('show');
-  $(document).on('click', '#confirmBulkPaymentBtn', function(){
-  console.log('Bulk payment: Confirm & Submit clicked');
-  $('#paymentConfirmModal').modal('hide');
-  $('#bulk-payment-feedback').html('<div class="alert alert-info">Contacting Hubtel...</div>');
-  // Calculate total and description
-  let total = 0;
-  let descArr = [];
-  bulkCart.forEach(function(item){
-    total += item.amount;
-    descArr.push(item.desc || item.typeName);
-  });
-  let description = 'Bulk Payment ['+descArr.join(', ')+']';
-  $.post(
-    '<?php echo BASE_URL; ?>/views/ajax_hubtel_checkout.php',
-    {
-      amount: total,
-      description: description,
-      customerName: <?php echo json_encode($full_name); ?>,
-      customerPhone: <?php echo json_encode($phone); ?>,
-      member_id: <?php echo json_encode($member_id); ?>,
-      church_id: <?php echo json_encode($church_id); ?>,
-      bulk_items: JSON.stringify(bulkCart.map(function(item) {
-        return {
-          typeId: item.typeId,
-          typeName: item.typeName,
-          amount: item.amount,
-          date: item.date,
-          desc: item.desc,
-          payment_type_id: item.typeId,
-          payment_period: item.date || null,
-          payment_period_description: $('#bulk_payment_period option:selected').text() || null,
-          church_id: <?php echo json_encode($church_id); ?>,
-          recorded_by: <?php echo json_encode($_SESSION['user_id'] ?? null); ?>
+        return 'GH₵' +
+            Number(value || 0)
+                .toLocaleString(
+                    undefined,
+                    {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    }
+                );
+
+    }
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | AUTOMATIC DESCRIPTION
+    |--------------------------------------------------------------------------
+    */
+
+    function descriptionFor(line) {
+
+        return (
+            'Payment for ' +
+            line.periodText +
+            ' ' +
+            line.typeName
+        );
+
+    }
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | RENDER PAYMENT LINES
+    |--------------------------------------------------------------------------
+    */
+
+    function renderLines() {
+
+        const $body =
+            $('#paymentLinesTable tbody')
+                .empty();
+
+
+        let total = 0;
+
+
+        paymentLines.forEach(
+            function (line, index) {
+
+                total +=
+                    Number(line.amount);
+
+
+                const $row =
+                    $('<tr>')
+                        .attr(
+                            'data-index',
+                            index
+                        );
+
+
+                $('<td>')
+                    .text(index + 1)
+                    .appendTo($row);
+
+
+                /*
+                 * Payment type dropdown
+                 */
+                const $type =
+                    $('#payment_type_id')
+                        .clone(false)
+                        .removeAttr('id')
+                        .removeClass(
+                            'form-control-lg border-primary'
+                        )
+                        .addClass(
+                            'form-control-sm line-type'
+                        )
+                        .val(
+                            line.typeId
+                        );
+
+
+                $('<td>')
+                    .append($type)
+                    .appendTo($row);
+
+
+                /*
+                 * Amount
+                 */
+                $('<td>')
+                    .append(
+                        $('<input>', {
+
+                            type: 'number',
+
+                            min: '1',
+
+                            step: '0.01',
+
+                            class:
+                                'form-control ' +
+                                'form-control-sm ' +
+                                'line-amount',
+
+                            value:
+                                line.amount
+
+                        })
+                    )
+                    .appendTo($row);
+
+
+                /*
+                 * Reporting period
+                 */
+                const $period =
+                    $('#payment_period')
+                        .clone(false)
+                        .removeAttr('id')
+                        .removeClass(
+                            'form-control-lg border-primary'
+                        )
+                        .addClass(
+                            'form-control-sm line-period'
+                        )
+                        .val(
+                            line.period
+                        );
+
+
+                $('<td>')
+                    .append($period)
+                    .appendTo($row);
+
+
+                /*
+                 * Description
+                 */
+                $('<td>')
+                    .append(
+                        $('<input>', {
+
+                            type: 'text',
+
+                            class:
+                                'form-control ' +
+                                'form-control-sm ' +
+                                'line-description',
+
+                            value:
+                                line.description,
+
+                            maxlength:
+                                255
+
+                        })
+                    )
+                    .appendTo($row);
+
+
+                /*
+                 * Remove button
+                 */
+                $('<td>')
+                    .append(
+                        $('<button>', {
+
+                            type:
+                                'button',
+
+                            class:
+                                'btn btn-sm btn-outline-danger remove-line',
+
+                            title:
+                                'Remove line',
+
+                            'aria-label':
+                                'Remove line'
+
+                        })
+                        .html('&times;')
+                    )
+                    .appendTo($row);
+
+
+                $body.append($row);
+
+            }
+        );
+
+
+        $('#paymentLinesTotal')
+            .text(
+                money(total)
+            );
+
+
+        $('#reviewPaymentsBtn')
+            .prop(
+                'disabled',
+                paymentLines.length === 0
+            );
+
+    }
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | ADD PAYMENT LINE
+    |--------------------------------------------------------------------------
+    */
+
+    $('#addPaymentLineBtn')
+        .on(
+            'click',
+            function () {
+
+                const typeId =
+                    $('#payment_type_id')
+                        .val();
+
+
+                const typeName =
+                    $('#payment_type_id option:selected')
+                        .text();
+
+
+                const amount =
+                    Number(
+                        $('#payment_amount')
+                            .val()
+                    );
+
+
+                const period =
+                    $('#payment_period')
+                        .val();
+
+
+                const periodText =
+                    $('#payment_period option:selected')
+                        .text();
+
+
+                if (
+                    !typeId ||
+                    !Number.isFinite(amount) ||
+                    amount < 1 ||
+                    !period
+                ) {
+
+                    $('#payment-feedback')
+                        .html(
+                            '<div class="alert alert-danger">' +
+                            'Select a payment type and reporting period, ' +
+                            'then enter an amount of at least GH&#8373;1.00.' +
+                            '</div>'
+                        );
+
+                    return;
+
+                }
+
+
+                const line = {
+
+                    typeId:
+                        typeId,
+
+                    typeName:
+                        typeName,
+
+                    amount:
+                        amount,
+
+                    period:
+                        period,
+
+                    periodText:
+                        periodText
+
+                };
+
+
+                line.description =
+                    descriptionFor(line);
+
+
+                paymentLines.push(
+                    line
+                );
+
+
+                $('#payment_type_id')
+                    .val('');
+
+
+                $('#payment_amount')
+                    .val('');
+
+
+                $('#payment-feedback')
+                    .empty();
+
+
+                renderLines();
+
+            }
+        );
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | EDIT TYPE / PERIOD
+    |--------------------------------------------------------------------------
+    */
+
+    $('#paymentLinesTable')
+        .on(
+            'change',
+            '.line-type, .line-period',
+            function () {
+
+                const index =
+                    Number(
+                        $(this)
+                            .closest('tr')
+                            .attr('data-index')
+                    );
+
+
+                const $row =
+                    $(this)
+                        .closest('tr');
+
+
+                paymentLines[index].typeId =
+                    $row
+                        .find('.line-type')
+                        .val();
+
+
+                paymentLines[index].typeName =
+                    $row
+                        .find(
+                            '.line-type option:selected'
+                        )
+                        .text();
+
+
+                paymentLines[index].period =
+                    $row
+                        .find('.line-period')
+                        .val();
+
+
+                paymentLines[index].periodText =
+                    $row
+                        .find(
+                            '.line-period option:selected'
+                        )
+                        .text();
+
+
+                paymentLines[index].description =
+                    descriptionFor(
+                        paymentLines[index]
+                    );
+
+
+                $row
+                    .find(
+                        '.line-description'
+                    )
+                    .val(
+                        paymentLines[index]
+                            .description
+                    );
+
+            }
+        );
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | EDIT AMOUNT
+    |--------------------------------------------------------------------------
+    */
+
+    $('#paymentLinesTable')
+        .on(
+            'input',
+            '.line-amount',
+            function () {
+
+                const index =
+                    Number(
+                        $(this)
+                            .closest('tr')
+                            .attr('data-index')
+                    );
+
+
+                paymentLines[index].amount =
+                    Number(
+                        $(this).val()
+                    );
+
+
+                const total =
+                    paymentLines.reduce(
+                        function (
+                            sum,
+                            line
+                        ) {
+
+                            return (
+                                sum +
+                                (
+                                    Number(
+                                        line.amount
+                                    ) || 0
+                                )
+                            );
+
+                        },
+                        0
+                    );
+
+
+                $('#paymentLinesTotal')
+                    .text(
+                        money(total)
+                    );
+
+            }
+        );
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | EDIT DESCRIPTION
+    |--------------------------------------------------------------------------
+    */
+
+    $('#paymentLinesTable')
+        .on(
+            'input',
+            '.line-description',
+            function () {
+
+                const index =
+                    Number(
+                        $(this)
+                            .closest('tr')
+                            .attr('data-index')
+                    );
+
+
+                paymentLines[index]
+                    .description =
+                    $(this).val();
+
+            }
+        );
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | REMOVE PAYMENT LINE
+    |--------------------------------------------------------------------------
+    */
+
+    $('#paymentLinesTable')
+        .on(
+            'click',
+            '.remove-line',
+            function () {
+
+                const index =
+                    Number(
+                        $(this)
+                            .closest('tr')
+                            .attr('data-index')
+                    );
+
+
+                paymentLines.splice(
+                    index,
+                    1
+                );
+
+
+                renderLines();
+
+            }
+        );
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | REVIEW PAYMENTS
+    |--------------------------------------------------------------------------
+    */
+
+    $('#reviewPaymentsBtn')
+        .on(
+            'click',
+            function () {
+
+
+                const invalidLine =
+                    paymentLines.some(
+                        function (line) {
+
+                            return (
+
+                                !line.typeId ||
+
+                                !line.period ||
+
+                                !Number.isFinite(
+                                    Number(
+                                        line.amount
+                                    )
+                                ) ||
+
+                                Number(
+                                    line.amount
+                                ) < 1
+
+                            );
+
+                        }
+                    );
+
+
+                if (
+                    !paymentLines.length ||
+                    invalidLine
+                ) {
+
+                    $('#payment-feedback')
+                        .html(
+                            '<div class="alert alert-danger">' +
+                            'Correct every payment line before continuing.' +
+                            '</div>'
+                        );
+
+                    return;
+
+                }
+
+
+
+                /*
+                 * Clear previous review
+                 */
+                const $body =
+                    $('#paymentReviewTable tbody')
+                        .empty();
+
+
+                let total = 0;
+
+
+
+                /*
+                 * Generate review table
+                 */
+                paymentLines.forEach(
+                    function (
+                        line,
+                        index
+                    ) {
+
+                        total +=
+                            Number(
+                                line.amount
+                            );
+
+
+                        const $row =
+                            $('<tr>');
+
+
+                        $('<td>')
+                            .text(
+                                index + 1
+                            )
+                            .appendTo($row);
+
+
+                        $('<td>')
+                            .text(
+                                line.typeName
+                            )
+                            .appendTo($row);
+
+
+                        $('<td>')
+                            .text(
+                                money(
+                                    line.amount
+                                )
+                            )
+                            .appendTo($row);
+
+
+                        $('<td>')
+                            .text(
+                                line.periodText
+                            )
+                            .appendTo($row);
+
+
+                        $('<td>')
+                            .text(
+                                line.description
+                            )
+                            .appendTo($row);
+
+
+                        $body.append(
+                            $row
+                        );
+
+                    }
+                );
+
+
+                $('#paymentReviewTotal')
+                    .text(
+                        money(total)
+                    );
+
+
+
+                /*
+                 * IMPORTANT:
+                 * Make sure modal is outside the
+                 * ob_start/layout content wrapper.
+                 */
+                moveModalsToBody();
+
+
+
+                /*
+                 * Remove any stale Bootstrap
+                 * backdrop from a previous modal.
+                 */
+                $('.modal-backdrop')
+                    .remove();
+
+
+                $('body')
+                    .removeClass(
+                        'modal-open'
+                    )
+                    .css(
+                        'padding-right',
+                        ''
+                    );
+
+
+
+                /*
+                 * Show modal
+                 */
+                $('#paymentReviewModal')
+                    .modal({
+
+                        backdrop:
+                            true,
+
+                        keyboard:
+                            true,
+
+                        show:
+                            true
+
+                    });
+
+            }
+        );
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | SUBMIT PAYMENT TO PAYMENT GATEWAY
+    |--------------------------------------------------------------------------
+    */
+
+    function submitPayment(email) {
+
+        const method =
+            $('#payment_method')
+                .val();
+
+
+        const endpoint =
+            method === 'paystack'
+
+                ? baseUrl +
+                  '/views/ajax_paystack_checkout.php'
+
+                : baseUrl +
+                  '/views/ajax_hubtel_checkout.php';
+
+
+
+        const total =
+            paymentLines.reduce(
+                function (
+                    sum,
+                    line
+                ) {
+
+                    return (
+                        sum +
+                        Number(
+                            line.amount
+                        )
+                    );
+
+                },
+                0
+            );
+
+
+
+        const payload = {
+
+            amount:
+                total,
+
+
+            description:
+                'Payment [' +
+
+                paymentLines
+                    .map(
+                        function (line) {
+
+                            return (
+                                line.description
+                            );
+
+                        }
+                    )
+                    .join('; ') +
+
+                ']',
+
+
+            customerName:
+                customerName,
+
+
+            customerPhone:
+                customerPhone,
+
+
+            member_id:
+                memberId,
+
+
+            church_id:
+                churchId,
+
+
+            bulk_items:
+                paymentLines.map(
+                    function (line) {
+
+                        return {
+
+                            member_id:
+                                memberId,
+
+                            church_id:
+                                churchId,
+
+                            typeId:
+                                line.typeId,
+
+                            payment_type_id:
+                                line.typeId,
+
+                            typeName:
+                                line.typeName,
+
+                            amount:
+                                Number(
+                                    line.amount
+                                ),
+
+                            date:
+                                paymentDate,
+
+                            period:
+                                line.period,
+
+                            payment_period:
+                                line.period,
+
+                            periodText:
+                                line.periodText,
+
+                            payment_period_description:
+                                line.periodText,
+
+                            desc:
+                                line.description
+
+                        };
+
+                    }
+                )
+
         };
-      }))
-    },
-    function(resp) {
-      console.log('Hubtel AJAX response:', resp);
-      if (resp.success && resp.checkoutUrl) {
-        window.location.href = resp.checkoutUrl;
-      } else {
-        $('#bulk-payment-feedback').html('<div class="alert alert-danger">'+(resp.error || 'Could not initiate payment. Please try again.')+(resp.debug ? `<pre class='small bg-light p-2 border rounded mt-2'>${JSON.stringify(resp.debug, null, 2)}</pre>` : '')+'</div>');
-      }
-    },
-    'json'
-  ).fail(function(xhr){
-    $('#bulk-payment-feedback').html('<div class="alert alert-danger">Failed to contact Hubtel. Try again later.</div>');
-  });
-});
-});
+
+
+
+        /*
+         * Paystack requires email
+         */
+        if (
+            method === 'paystack'
+        ) {
+
+            payload.customerEmail =
+                email;
+
+        }
+
+
+
+        /*
+         * Show loading feedback
+         */
+        $('#payment-feedback')
+            .html(
+                '<div class="alert alert-info">' +
+                '<i class="fas fa-spinner fa-spin mr-2"></i>' +
+                'Contacting the payment gateway...' +
+                '</div>'
+            );
+
+
+        $('#confirmPaymentsBtn')
+            .prop(
+                'disabled',
+                true
+            );
+
+
+
+        /*
+         * Initiate gateway checkout
+         */
+        $.post(
+            endpoint,
+            payload,
+            null,
+            'json'
+        )
+        .done(
+            function (response) {
+
+
+                if (
+                    response &&
+                    response.success &&
+                    response.checkoutUrl
+                ) {
+
+                    window.location.href =
+                        response.checkoutUrl;
+
+                    return;
+
+                }
+
+
+                $('#confirmPaymentsBtn')
+                    .prop(
+                        'disabled',
+                        false
+                    );
+
+
+                $('#payment-feedback')
+                    .html(
+                        $('<div>', {
+                            class:
+                                'alert alert-danger'
+                        })
+                        .text(
+                            (
+                                response &&
+                                response.error
+                            )
+                                ? response.error
+                                : 'Could not initiate payment. Please try again.'
+                        )
+                    );
+
+            }
+        )
+        .fail(
+            function (
+                xhr
+            ) {
+
+                $('#confirmPaymentsBtn')
+                    .prop(
+                        'disabled',
+                        false
+                    );
+
+
+                let message =
+                    'The payment gateway could not be reached. Please try again.';
+
+
+                /*
+                 * Display server response when available.
+                 * Very useful when debugging PHP errors.
+                 */
+                if (
+                    xhr.responseJSON &&
+                    xhr.responseJSON.error
+                ) {
+
+                    message =
+                        xhr.responseJSON.error;
+
+                }
+
+
+                $('#payment-feedback')
+                    .html(
+                        $('<div>', {
+                            class:
+                                'alert alert-danger'
+                        })
+                        .text(
+                            message
+                        )
+                    );
+
+            }
+        );
+
+    }
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | CONFIRM AND CONTINUE
+    |--------------------------------------------------------------------------
+    */
+
+    $('#confirmPaymentsBtn')
+        .on(
+            'click',
+            function () {
+
+
+                const method =
+                    $('#payment_method')
+                        .val();
+
+
+                /*
+                 * Disable immediately to prevent
+                 * double-clicks.
+                 */
+                $('#confirmPaymentsBtn')
+                    .prop(
+                        'disabled',
+                        true
+                    );
+
+
+
+                /*
+                 * HUBTEL
+                 */
+                if (
+                    method !== 'paystack'
+                ) {
+
+                    $('#paymentReviewModal')
+                        .one(
+                            'hidden.bs.modal',
+                            function () {
+
+                                submitPayment(
+                                    ''
+                                );
+
+                            }
+                        );
+
+
+                    $('#paymentReviewModal')
+                        .modal(
+                            'hide'
+                        );
+
+
+                    return;
+
+                }
+
+
+
+                /*
+                 * PAYSTACK:
+                 * Email already available
+                 */
+                if (
+                    customerEmail
+                ) {
+
+                    $('#paymentReviewModal')
+                        .one(
+                            'hidden.bs.modal',
+                            function () {
+
+                                submitPayment(
+                                    customerEmail
+                                );
+
+                            }
+                        );
+
+
+                    $('#paymentReviewModal')
+                        .modal(
+                            'hide'
+                        );
+
+
+                    return;
+
+                }
+
+
+
+                /*
+                 * PAYSTACK:
+                 * Ask member for email
+                 */
+                $('#paymentReviewModal')
+                    .one(
+                        'hidden.bs.modal',
+                        function () {
+
+
+                            moveModalsToBody();
+
+
+                            $('#confirmPaymentsBtn')
+                                .prop(
+                                    'disabled',
+                                    false
+                                );
+
+
+                            $('#paystackEmailPromptModal')
+                                .modal({
+
+                                    backdrop:
+                                        true,
+
+                                    keyboard:
+                                        true,
+
+                                    show:
+                                        true
+
+                                });
+
+                        }
+                    );
+
+
+                $('#paymentReviewModal')
+                    .modal(
+                        'hide'
+                    );
+
+            }
+        );
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | PAYSTACK EMAIL SUBMISSION
+    |--------------------------------------------------------------------------
+    */
+
+    $(document)
+        .off(
+            'click.memberPayment',
+            '#paystackBulkEmailSubmitBtn'
+        )
+        .on(
+            'click.memberPayment',
+            '#paystackBulkEmailSubmitBtn',
+            function () {
+
+
+                const email =
+                    $('#paystackBulkEmailInput')
+                        .val()
+                        .trim();
+
+
+
+                if (
+                    !/^\S+@\S+\.\S+$/
+                        .test(email)
+                ) {
+
+                    $('#paystackBulkEmailError')
+                        .text(
+                            'Enter a valid email address.'
+                        );
+
+                    return;
+
+                }
+
+
+
+                $('#paystackBulkEmailError')
+                    .text('');
+
+
+                $('#paystackBulkEmailSubmitBtn')
+                    .prop(
+                        'disabled',
+                        true
+                    );
+
+
+
+                $('#paystackEmailPromptModal')
+                    .one(
+                        'hidden.bs.modal',
+                        function () {
+
+                            $('#paystackBulkEmailSubmitBtn')
+                                .prop(
+                                    'disabled',
+                                    false
+                                );
+
+
+                            submitPayment(
+                                email
+                            );
+
+                        }
+                    );
+
+
+                $('#paystackEmailPromptModal')
+                    .modal(
+                        'hide'
+                    );
+
+            }
+        );
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | CLEANUP AFTER ANY MODAL
+    |--------------------------------------------------------------------------
+    */
+
+    $('#paymentReviewModal')
+        .on(
+            'hidden.bs.modal',
+            function () {
+
+                /*
+                 * Bootstrap normally removes
+                 * the backdrop itself.
+                 *
+                 * This delayed check only removes
+                 * orphaned backdrops.
+                 */
+                setTimeout(
+                    function () {
+
+                        if (
+                            $('.modal.show')
+                                .length === 0
+                        ) {
+
+                            $('.modal-backdrop')
+                                .remove();
+
+
+                            $('body')
+                                .removeClass(
+                                    'modal-open'
+                                )
+                                .css(
+                                    'padding-right',
+                                    ''
+                                );
+
+                        }
+
+                    },
+                    100
+                );
+
+            }
+        );
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | INITIALISE
+    |--------------------------------------------------------------------------
+    */
+
+    $(function () {
+
+
+        /*
+         * CRITICAL FIX
+         *
+         * Do this after the page has been
+         * inserted by layout.php.
+         */
+        moveModalsToBody();
+
+
+        renderLines();
+
+    });
+
+
+})(jQuery);
+
 </script>
+
+
 <?php
-// Ensure Paystack email prompt modal is available
-include __DIR__.'/bulk_paystack_email_prompt.php';
+
+/*
+|--------------------------------------------------------------------------
+| Finish Content Buffer
+|--------------------------------------------------------------------------
+*/
+
 $page_content = ob_get_clean();
-include __DIR__.'/../includes/layout.php';
-?>
 
-<!-- Confirmation Modal -->
+$page_title = 'Payment';
 
-<div class="modal fade" id="paymentConfirmModal" tabindex="-1" role="dialog" aria-labelledby="paymentConfirmModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered" role="document">
-    <div class="modal-content">
-      <div class="modal-header bg-primary text-white">
-        <h5 class="modal-title" id="paymentConfirmModalLabel"><i class="fas fa-question-circle mr-2"></i>Confirm Payment</h5>
-        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-          <span aria-hidden="true">&times;</span>
-        </button>
-      </div>
-      <div class="modal-body" id="confirmSummary"></div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-success" id="confirmPayBtn"><i class="fas fa-credit-card mr-1"></i>Proceed to Pay</button>
-      </div>
-    </div>
-  </div>
-</div>
 
-<!-- Bulk Payment Confirmation Modal -->
-<div class="modal fade" id="bulkPaymentConfirmModal" tabindex="-1" role="dialog" aria-labelledby="bulkPaymentConfirmModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
-        <div class="modal-content">
-          <div class="modal-header bg-primary text-white">
-            <h5 class="modal-title" id="bulkPaymentConfirmModalLabel"><i class="fas fa-question-circle mr-2"></i>Confirm Bulk Payments</h5>
-            <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-              <span aria-hidden="true">&times;</span>
-            </button>
-          </div>
-          <div class="modal-body">
-            <div class="mb-2">Are you sure you want to submit all these payments?</div>
-            <div class="table-responsive">
-              <table class="table table-bordered table-sm mb-0" id="bulkConfirmTable">
-                <thead class="thead-light">
-                  <tr>
-                    <th>#</th>
-                    <th>Type</th>
-                    <th>Amount</th>
-                    <th>Date</th>
-                    <th>Description</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-                <tfoot>
-                  <tr>
-                    <td colspan="2" class="text-right font-weight-bold">Total</td>
-                    <td colspan="4" class="font-weight-bold" id="bulkConfirmTotal"></td>
-                  </tr>
-                </tfoot>
-              </table>
-           
-            
-            <div class="modal-footer">
-              <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-              <button type="button" class="btn btn-success" id="confirmBulkPaymentBtn"><i class="fas fa-check-circle mr-1"></i>Confirm & Submit</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+/*
+|--------------------------------------------------------------------------
+| Render Main Layout
+|--------------------------------------------------------------------------
+*/
+
+include __DIR__ . '/../includes/layout.php';
