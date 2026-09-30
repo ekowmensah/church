@@ -146,6 +146,7 @@ $sql = "SELECT p.*,
     bc.name AS class_name,
     org.name AS organization_name,
     u.name AS recorded_by_username,
+    EXISTS (SELECT 1 FROM v_posted_payments posted WHERE posted.id = p.id) AS is_posted,
     p.reversal_requested_at,
     p.reversal_approved_at,
     p.reversal_undone_at
@@ -491,6 +492,33 @@ if ($count_types) {
     }
 }
 
+// Aggregate the complete filtered posted-payment set before applying table
+// pagination. Otherwise, adding a new row can push an older row onto page 2
+// and make the dashboard total appear to decrease.
+$count_from_position = stripos($count_sql, ' FROM ');
+$summary_sql = "SELECT COUNT(*) AS payment_count,
+                       COALESCE(SUM(filtered.amount), 0) AS total_amount
+                  FROM (
+                        SELECT DISTINCT p.id, p.amount"
+    . substr($count_sql, $count_from_position)
+    . " AND EXISTS (
+            SELECT 1 FROM v_posted_payments posted WHERE posted.id = p.id
+        )
+      ) filtered";
+if ($count_types) {
+    $summary_stmt = $conn->prepare($summary_sql);
+    $summary_stmt->bind_param($count_types, ...$count_params);
+    $summary_stmt->execute();
+    $summary = $summary_stmt->get_result()->fetch_assoc() ?: [];
+    $summary_stmt->close();
+} else {
+    $summary_result = $conn->query($summary_sql);
+    $summary = $summary_result ? ($summary_result->fetch_assoc() ?: []) : [];
+}
+$total_amount = (float) ($summary['total_amount'] ?? 0);
+$payment_count = (int) ($summary['payment_count'] ?? 0);
+$avg_amount = $payment_count > 0 ? $total_amount / $payment_count : 0;
+
 // Calculate pagination values
 $total_pages = ceil($total_records / $records_per_page);
 $current_page = min($current_page, max(1, $total_pages));
@@ -514,33 +542,17 @@ if ($types) {
     $payments = $conn->query($sql);
 }
 
-// Calculate totals and statistics
-$total_amount = 0;
-$payment_count = 0;
+// Materialize the requested table page. Its footer remains a page total, while
+// the cards above use the complete filtered aggregate calculated earlier.
+$page_total_amount = 0.0;
 $payments_array = [];
-$payment_modes_count = [];
-$payment_types_count = [];
 
 while ($row = $payments->fetch_assoc()) {
     $payments_array[] = $row;
-    
-    // Only posted, non-reversed payments contribute to the statement totals.
-    $is_reversed = !empty($row['reversal_approved_at']) && empty($row['reversal_undone_at']);
-    $is_unposted_cheque = in_array(strtolower(trim((string) ($row['mode'] ?? ''))), ['cheque', 'check'], true)
-        && ($row['cheque_verification_status'] ?? 'pending') !== 'verified';
-    if (!$is_reversed && !$is_unposted_cheque) {
-        $total_amount += $row['amount'];
-        $payment_count++;
-        
-        $mode = $row['mode'] ?? 'cash';
-        $payment_modes_count[$mode] = ($payment_modes_count[$mode] ?? 0) + 1;
-        
-        $type = $row['payment_type'] ?? 'Unknown';
-        $payment_types_count[$type] = ($payment_types_count[$type] ?? 0) + 1;
+    if (!empty($row['is_posted'])) {
+        $page_total_amount += (float) $row['amount'];
     }
 }
-
-$avg_amount = $payment_count > 0 ? $total_amount / $payment_count : 0;
 
 // Status-confirmed or legacy pending USSD charges are deliberately not ledger
 // rows until an authorized reviewer approves them. Definitive new successes
@@ -1371,7 +1383,7 @@ ob_start();
                         <td colspan="5" class="text-end"><strong>Page Total:</strong></td>
                         <td class="text-end">
                             <strong class="text-success" style="font-size: 1.2rem;">
-                                ₵<?= number_format($total_amount, 2) ?>
+                                ₵<?= number_format($page_total_amount, 2) ?>
                             </strong>
                         </td>
                         <td></td>
