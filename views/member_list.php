@@ -40,7 +40,7 @@ $sort_direction = isset($_GET['order']) && $_GET['order'] === 'desc' ? 'DESC' : 
 
 // Build WHERE clause with filters. Membership categories remain visible here;
 // access is controlled by the scoped role filters below.
-$where_conditions = ["m.status = 'active'"];
+$where_conditions = ["m.status = 'active'", 'm.is_archived = 0'];
 $params = [];
 $param_types = "";
 
@@ -148,7 +148,7 @@ if (!empty($ss_role_filter['sql'])) {
 $where_clause = implode(' AND ', $where_conditions);
 
 // Build Sunday School WHERE clause with similar filters
-$ss_where_conditions = ['s.transferred_to_member_id IS NULL'];
+$ss_where_conditions = ['s.transferred_to_member_id IS NULL', 's.is_duplicate_archived = 0'];
 $ss_params = [];
 $ss_param_types = "";
 

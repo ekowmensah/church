@@ -42,9 +42,6 @@ $period_preset = (string) ($_GET['period'] ?? 'custom');
     (string) ($_GET['end_date'] ?? '')
 );
 $period_label = payment_report_period_label($start_date, $end_date);
-$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
-$per_page = 25;
-$offset = ($page - 1) * $per_page;
 $where = ["m.status = 'active'", 'm.is_archived = 0', 'pt.active = 1'];
 $scopeCondition = payment_report_member_scope_condition($conn, 'm');
 if ($scopeCondition !== '') $where[] = $scopeCondition;
@@ -75,7 +72,7 @@ AND NOT EXISTS (
     WHERE p.member_id = m.id AND p.payment_type_id = pt.id $paymentDateConditions
 )
 ORDER BY pt.name, m.last_name, m.first_name
-LIMIT $per_page OFFSET $offset";
+";
 $result = $conn->query($sql);
 $rows = [];
 if ($result) {
@@ -83,19 +80,6 @@ if ($result) {
         $rows[] = $row;
     }
 }
-$count_sql = "SELECT COUNT(*) AS total_count FROM members m
-CROSS JOIN payment_types pt
-$where_sql
-AND NOT EXISTS (
-    SELECT 1 FROM v_posted_payments p
-    WHERE p.member_id = m.id AND p.payment_type_id = pt.id $paymentDateConditions
-)";
-$count_result = $conn->query($count_sql);
-$total_count = 0;
-if ($count_result && ($row = $count_result->fetch_assoc())) {
-    $total_count = $row['total_count'] ?: 0;
-}
-$total_pages = ceil($total_count / $per_page);
 ?>
 <div class="container mt-4">
     <a href="../../reports.php" class="btn btn-secondary mb-3"><i class="fas fa-arrow-left mr-1"></i>Back to Reports</a>
@@ -158,7 +142,7 @@ $total_pages = ceil($total_count / $per_page);
                 <?php else: ?>
                     <?php foreach ($rows as $i => $row): ?>
                         <tr>
-                            <td><?php echo $i + 1 + $offset; ?></td>
+                            <td><?php echo $i + 1; ?></td>
                             <td><?php echo htmlspecialchars($row['payment_type']); ?></td>
                             <td><?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name']); ?></td>
                             <td><?php echo htmlspecialchars($row['crn']); ?></td>
@@ -174,22 +158,6 @@ $total_pages = ceil($total_count / $per_page);
             </tbody>
         </table>
     </div>
-    <?php if ($total_pages > 1): ?>
-    <nav aria-label="Page navigation">
-        <ul class="pagination justify-content-center mt-3">
-            <?php
-                $query_params = $_GET;
-                for ($i = 1; $i <= $total_pages; $i++):
-                    $query_params['page'] = $i;
-                    $url = '?' . http_build_query($query_params);
-            ?>
-                <li class="page-item<?php if ($i == $page) echo ' active'; ?>">
-                    <a class="page-link" href="<?php echo $url; ?>"><?php echo $i; ?></a>
-                </li>
-            <?php endfor; ?>
-        </ul>
-    </nav>
-    <?php endif; ?>
 </div>
 <!-- DataTables and JS export dependencies -->
 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
@@ -208,6 +176,7 @@ $(document).ready(function() {
     var table = $(".table").DataTable({
         dom: 'Bfrtip',
         buttons: [
+            <?php if ($can_export): ?>
             {
                 extend: 'csv',
                 text: '<i class="fas fa-file-csv"></i> CSV',
@@ -220,6 +189,7 @@ $(document).ready(function() {
                 className: 'btn btn-danger btn-sm mr-2',
                 title: <?= json_encode('Zero Payment Type Report - ' . $period_label) ?>
             },
+            <?php endif; ?>
             {
                 extend: 'print',
                 text: '<i class="fas fa-print"></i> Print',
@@ -227,9 +197,11 @@ $(document).ready(function() {
                 title: <?= json_encode('Zero Payment Type Report - ' . $period_label) ?>
             }
         ],
-        paging: false,
+        paging: true,
+        pageLength: 25,
+        lengthMenu: [25, 50, 100],
         searching: false,
-        info: false,
+        info: true,
         ordering: false
     });
     // Hide custom buttons if DataTables is used

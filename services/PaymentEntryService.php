@@ -135,7 +135,8 @@ final class PaymentEntryService {
         } else {
             $stmt = $this->conn->prepare(
                 'SELECT id, church_id FROM sunday_school
-                  WHERE id = ? AND transferred_to_member_id IS NULL LIMIT 1'
+                  WHERE id = ? AND transferred_to_member_id IS NULL
+                    AND is_duplicate_archived = 0 LIMIT 1'
             );
             $stmt->bind_param('i', $sundaySchoolId);
         }

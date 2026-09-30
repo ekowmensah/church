@@ -21,12 +21,21 @@ $notice = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         if (!csrf_is_valid($_POST['csrf_token'] ?? null)) throw new RuntimeException('Invalid session token.');
-        $service->review(
-            (int) ($_POST['review_id'] ?? 0),
-            (string) ($_POST['decision'] ?? ''),
-            (string) ($_POST['review_notes'] ?? '')
-        );
-        $notice = 'Duplicate review updated. No records were automatically deleted or merged.';
+        if (($_POST['action'] ?? '') === 'resolve_duplicate') {
+            $service->resolveConfirmedDuplicate(
+                (int) ($_POST['review_id'] ?? 0),
+                (string) ($_POST['survivor_side'] ?? ''),
+                (string) ($_POST['resolution_notes'] ?? '')
+            );
+            $notice = 'Duplicate resolved. The survivor was retained and the duplicate was archived with audit evidence.';
+        } else {
+            $service->review(
+                (int) ($_POST['review_id'] ?? 0),
+                (string) ($_POST['decision'] ?? ''),
+                (string) ($_POST['review_notes'] ?? '')
+            );
+            $notice = 'Duplicate review updated. Confirmed matches still require an explicit survivor decision.';
+        }
     } catch (Throwable $e) {
         $error = $e->getMessage();
     }
@@ -51,7 +60,7 @@ ob_start();
 ?>
 <div class="d-sm-flex align-items-center justify-content-between mb-4">
     <div><h4 class="m-0 font-weight-bold text-primary"><i class="fas fa-clone"></i> Possible Duplicates</h4>
-    <small class="text-muted">Matching contact details are review signals. This queue never merges or deletes records automatically.</small></div>
+    <small class="text-muted">Matching details are review signals. Confirmed duplicates require an explicit survivor; the other record remains available as archived evidence.</small></div>
     <a href="member_list.php" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Members</a>
 </div>
 <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
@@ -94,6 +103,23 @@ ob_start();
 <button class="btn btn-success" name="decision" value="not_duplicate" type="submit">Not a Duplicate</button>
 <button class="btn btn-info" name="decision" value="allowed_duplicate" type="submit">Allow Separate Records</button>
 </form>
+<?php elseif ($review['status'] === 'confirmed_duplicate' && empty($review['resolution_id'])): ?>
+<form method="post" class="border border-danger rounded p-3"><?= csrf_input() ?>
+<input type="hidden" name="action" value="resolve_duplicate">
+<input type="hidden" name="review_id" value="<?= (int) $review['id'] ?>">
+<div class="alert alert-warning">Choose the authoritative surviving identity. The other record is archived, never physically deleted.</div>
+<div class="form-group"><label>Surviving record</label><select class="form-control" name="survivor_side" required>
+<option value="">Choose survivor</option>
+<option value="a"><?= htmlspecialchars(duplicate_source_label($review['source_a_type']) . ': ' . $review['source_a']['display_name']) ?></option>
+<option value="b"><?= htmlspecialchars(duplicate_source_label($review['source_b_type']) . ': ' . $review['source_b']['display_name']) ?></option>
+</select></div>
+<div class="form-group"><label>Resolution evidence <span class="text-danger">*</span></label><textarea class="form-control" name="resolution_notes" maxlength="500" required></textarea></div>
+<button class="btn btn-danger" type="submit" onclick="return confirm('Archive the non-surviving duplicate and preserve this decision in the audit trail?');">Resolve and Archive Duplicate</button>
+</form>
+<?php elseif (!empty($review['resolution_id'])): ?>
+<div class="alert alert-success"><strong>Resolved:</strong> <?= htmlspecialchars(ucwords(str_replace('_', ' ', $review['resolution_action']))) ?>.
+Survivor: <?= htmlspecialchars(duplicate_source_label($review['survivor_type']) . ' #' . $review['survivor_id']) ?>.
+<?= nl2br(htmlspecialchars($review['resolution_notes'])) ?></div>
 <?php elseif (!empty($review['review_notes'])): ?><div class="alert alert-secondary"><strong>Review notes:</strong> <?= nl2br(htmlspecialchars($review['review_notes'])) ?></div><?php endif; ?>
 </div></div>
 <?php endforeach; ?>

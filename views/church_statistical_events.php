@@ -41,6 +41,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $memberId = isset($_POST['member_id']) && $_POST['member_id'] !== '' ? (int) $_POST['member_id'] : null;
             $personName = trim((string) ($_POST['person_name'] ?? ''));
             $gender = (string) ($_POST['gender'] ?? 'Unspecified');
+            $parentGuardianNames = trim((string) ($_POST['parent_guardian_names'] ?? ''));
+            $officiatingMinister = trim((string) ($_POST['officiating_minister'] ?? ''));
+            $ceremonyLocation = trim((string) ($_POST['ceremony_location'] ?? ''));
+            $funeralDate = trim((string) ($_POST['funeral_date'] ?? ''));
+            $funeralLocation = trim((string) ($_POST['funeral_location'] ?? ''));
+            $funeralDetails = trim((string) ($_POST['funeral_details'] ?? ''));
             $notes = trim((string) ($_POST['notes'] ?? ''));
             $date = DateTimeImmutable::createFromFormat('!Y-m-d', $eventDate);
             if (!in_array($eventType, ['naming', 'death'], true)) throw new RuntimeException('Choose Naming or Death.');
@@ -48,6 +54,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Enter a valid event date on or after 1900-01-01.');
             }
             if (!in_array($gender, ['Male', 'Female', 'Unspecified'], true)) $gender = 'Unspecified';
+            if ($eventType === 'naming' && ($parentGuardianNames === '' || $officiatingMinister === '')) {
+                throw new RuntimeException('Naming records require parent/guardian names and the officiating minister.');
+            }
+            if ($funeralDate !== '') {
+                $parsedFuneralDate = DateTimeImmutable::createFromFormat('!Y-m-d', $funeralDate);
+                if (!$parsedFuneralDate || $parsedFuneralDate->format('Y-m-d') !== $funeralDate || $funeralDate < '1900-01-01') {
+                    throw new RuntimeException('Enter a valid funeral date.');
+                }
+            } else {
+                $funeralDate = null;
+            }
+            if ($eventType === 'naming') {
+                $funeralDate = null; $funeralLocation = ''; $funeralDetails = '';
+            } else {
+                $parentGuardianNames = ''; $officiatingMinister = ''; $ceremonyLocation = '';
+            }
 
             if ($memberId !== null) {
                 $memberStmt = $conn->prepare(
@@ -67,10 +89,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $conn->prepare(
                 "INSERT INTO church_statistical_events
                     (church_id, event_type, event_date, member_id, person_name, gender,
-                     notes, recorded_by_user_id)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                     parent_guardian_names, officiating_minister, ceremony_location,
+                     funeral_date, funeral_location, funeral_details, notes, recorded_by_user_id)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
-            $stmt->bind_param('ississsi', $churchId, $eventType, $eventDate, $memberId, $personName, $gender, $notes, $actorUserId);
+            $stmt->bind_param(
+                'ississsssssssi',
+                $churchId, $eventType, $eventDate, $memberId, $personName, $gender,
+                $parentGuardianNames, $officiatingMinister, $ceremonyLocation,
+                $funeralDate, $funeralLocation, $funeralDetails, $notes, $actorUserId
+            );
             $stmt->execute();
             $stmt->close();
             $message = ucfirst($eventType) . ' event recorded.';
@@ -156,21 +184,45 @@ ob_start();
   <div class="row">
     <div class="col-lg-4 mb-3"><div class="card stat-card"><div class="card-header bg-white font-weight-bold">Record Event</div><div class="card-body">
       <form method="post"><?= csrf_input() ?><input type="hidden" name="action" value="create"><input type="hidden" name="church_id" value="<?= $churchId ?>">
-        <div class="form-group"><label>Event Type</label><select class="form-control" name="event_type" required><option value="naming">Naming</option><option value="death">Death</option></select></div>
+        <div class="form-group"><label>Event Type</label><select class="form-control" name="event_type" id="statEventType" required><option value="naming">Naming</option><option value="death">Death</option></select></div>
         <div class="form-group"><label>Event Date</label><input type="date" class="form-control" name="event_date" value="<?= date('Y-m-d') ?>" required></div>
         <div class="form-group"><label>Linked Member <small class="text-muted">(optional)</small></label><select class="form-control" name="member_id"><option value="">Not linked to a member</option><?php foreach ($members as $member): ?><option value="<?= (int) $member['id'] ?>"><?= htmlspecialchars(($member['crn'] ? $member['crn'] . ' — ' : '') . $member['full_name']) ?></option><?php endforeach; ?></select></div>
         <div class="form-group"><label>Person’s Name</label><input class="form-control" name="person_name" maxlength="255" placeholder="Filled automatically when a member is selected"></div>
         <div class="form-group"><label>Gender</label><select class="form-control" name="gender"><option>Male</option><option>Female</option><option selected>Unspecified</option></select></div>
+        <div id="namingFields">
+          <div class="form-group"><label>Parents / Guardians</label><textarea class="form-control" name="parent_guardian_names" maxlength="500" rows="2"></textarea></div>
+          <div class="form-group"><label>Officiating Minister</label><input class="form-control" name="officiating_minister" maxlength="255"></div>
+          <div class="form-group"><label>Ceremony Location</label><input class="form-control" name="ceremony_location" maxlength="255"></div>
+        </div>
+        <div id="deathFields" style="display:none">
+          <div class="form-group"><label>Funeral Date <small class="text-muted">(if arranged)</small></label><input type="date" class="form-control" name="funeral_date"></div>
+          <div class="form-group"><label>Funeral Location</label><input class="form-control" name="funeral_location" maxlength="255"></div>
+          <div class="form-group"><label>Funeral Information</label><textarea class="form-control" name="funeral_details" maxlength="500" rows="3" placeholder="Burial, service or family information relevant to the register"></textarea></div>
+        </div>
         <div class="form-group"><label>Notes</label><textarea class="form-control" name="notes" maxlength="500" rows="3"></textarea></div>
         <button class="btn btn-primary btn-block"><i class="fas fa-save mr-1"></i>Record Event</button>
       </form>
     </div></div></div>
-    <div class="col-lg-8"><div class="card stat-card"><div class="card-header bg-white font-weight-bold">Event Register</div><div class="card-body p-0"><div class="table-responsive"><table class="table table-bordered table-hover mb-0"><thead><tr><th>Date</th><th>Type</th><th>Person</th><th>Gender</th><th>Status</th><th>Audit / Action</th></tr></thead><tbody>
+    <div class="col-lg-8"><div class="card stat-card"><div class="card-header bg-white font-weight-bold">Event Register</div><div class="card-body p-0"><div class="table-responsive"><table class="table table-bordered table-hover mb-0"><thead><tr><th>Date</th><th>Type</th><th>Person</th><th>Register Details</th><th>Status</th><th>Audit / Action</th></tr></thead><tbody>
       <?php if (!$events): ?><tr><td colspan="6" class="text-center text-muted py-4">No manual statistical events found.</td></tr><?php endif; ?>
-      <?php foreach ($events as $event): ?><tr><td><?= htmlspecialchars($event['event_date']) ?></td><td><?= htmlspecialchars(ucfirst($event['event_type'])) ?></td><td><?= htmlspecialchars($event['person_name']) ?><?php if ($event['crn']): ?><br><small class="text-muted"><?= htmlspecialchars($event['crn']) ?></small><?php endif; ?></td><td><?= htmlspecialchars($event['gender']) ?></td><td><span class="badge badge-<?= $event['status'] === 'active' ? 'success' : 'secondary' ?>"><?= htmlspecialchars(ucfirst($event['status'])) ?></span></td><td><small>Recorded by <?= htmlspecialchars($event['recorded_by_name'] ?: 'system') ?></small><?php if ($event['status'] === 'active'): ?><form method="post" class="mt-2" onsubmit="return confirm('Cancel this event while retaining its audit record?')"><?= csrf_input() ?><input type="hidden" name="action" value="cancel"><input type="hidden" name="church_id" value="<?= $churchId ?>"><input type="hidden" name="event_id" value="<?= (int) $event['id'] ?>"><input class="form-control form-control-sm mb-1" name="cancellation_reason" maxlength="500" placeholder="Cancellation reason" required><button class="btn btn-sm btn-outline-danger">Cancel</button></form><?php else: ?><br><small class="text-muted"><?= htmlspecialchars($event['cancellation_reason'] ?: '') ?></small><?php endif; ?></td></tr><?php endforeach; ?>
+      <?php foreach ($events as $event): ?><tr><td><?= htmlspecialchars($event['event_date']) ?></td><td><?= htmlspecialchars(ucfirst($event['event_type'])) ?></td><td><?= htmlspecialchars($event['person_name']) ?><br><small class="text-muted"><?= htmlspecialchars($event['gender']) ?><?= $event['crn'] ? ' · ' . htmlspecialchars($event['crn']) : '' ?></small></td><td><?php if ($event['event_type'] === 'naming'): ?><small><strong>Parents/Guardians:</strong> <?= htmlspecialchars($event['parent_guardian_names'] ?: '-') ?><br><strong>Minister:</strong> <?= htmlspecialchars($event['officiating_minister'] ?: '-') ?><br><strong>Location:</strong> <?= htmlspecialchars($event['ceremony_location'] ?: '-') ?></small><?php else: ?><small><strong>Funeral date:</strong> <?= htmlspecialchars($event['funeral_date'] ?: '-') ?><br><strong>Location:</strong> <?= htmlspecialchars($event['funeral_location'] ?: '-') ?><br><?= htmlspecialchars($event['funeral_details'] ?: '') ?></small><?php endif; ?></td><td><span class="badge badge-<?= $event['status'] === 'active' ? 'success' : 'secondary' ?>"><?= htmlspecialchars(ucfirst($event['status'])) ?></span></td><td><small>Recorded by <?= htmlspecialchars($event['recorded_by_name'] ?: 'system') ?></small><?php if ($event['status'] === 'active'): ?><form method="post" class="mt-2" onsubmit="return confirm('Cancel this event while retaining its audit record?')"><?= csrf_input() ?><input type="hidden" name="action" value="cancel"><input type="hidden" name="church_id" value="<?= $churchId ?>"><input type="hidden" name="event_id" value="<?= (int) $event['id'] ?>"><input class="form-control form-control-sm mb-1" name="cancellation_reason" maxlength="500" placeholder="Cancellation reason" required><button class="btn btn-sm btn-outline-danger">Cancel</button></form><?php else: ?><br><small class="text-muted"><?= htmlspecialchars($event['cancellation_reason'] ?: '') ?></small><?php endif; ?></td></tr><?php endforeach; ?>
     </tbody></table></div></div></div></div>
   </div>
 </div></div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var type = document.getElementById('statEventType');
+  function toggleDetails() {
+    var naming = type.value === 'naming';
+    document.getElementById('namingFields').style.display = naming ? '' : 'none';
+    document.getElementById('deathFields').style.display = naming ? 'none' : '';
+    document.querySelector('[name="parent_guardian_names"]').required = naming;
+    document.querySelector('[name="officiating_minister"]').required = naming;
+  }
+  type.addEventListener('change', toggleDetails);
+  toggleDetails();
+});
+</script>
 <?php
 $page_content = ob_get_clean();
 include __DIR__ . '/../includes/layout.php';

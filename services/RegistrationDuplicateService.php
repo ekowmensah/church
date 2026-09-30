@@ -168,10 +168,15 @@ final class RegistrationDuplicateService {
             $types .= 'i';
             $params[] = $this->churchId;
         }
-        $sql = 'SELECT review.*, church.name AS church_name, reviewer.name AS reviewer_name
+        $sql = 'SELECT review.*, church.name AS church_name, reviewer.name AS reviewer_name,
+                       resolution.id AS resolution_id, resolution.survivor_type,
+                       resolution.survivor_id, resolution.duplicate_type,
+                       resolution.duplicate_id, resolution.resolution_action,
+                       resolution.resolution_notes
                   FROM registration_duplicate_reviews review
                   LEFT JOIN churches church ON church.id = review.church_id
-                  LEFT JOIN users reviewer ON reviewer.id = review.reviewed_by_user_id';
+                  LEFT JOIN users reviewer ON reviewer.id = review.reviewed_by_user_id
+                  LEFT JOIN registration_duplicate_resolutions resolution ON resolution.review_id = review.id';
         if ($where) $sql .= ' WHERE ' . implode(' AND ', $where);
         $sql .= ' ORDER BY review.created_at DESC, review.id DESC';
         $stmt = $this->conn->prepare($sql);
@@ -211,8 +216,150 @@ final class RegistrationDuplicateService {
         $stmt->close();
     }
 
+    public function resolveConfirmedDuplicate(int $reviewId, string $survivorSide, string $notes): void {
+        if (!in_array($survivorSide, ['a', 'b'], true)) {
+            throw new InvalidArgumentException('Choose which record must survive.');
+        }
+        $notes = mb_substr(trim($notes), 0, 500);
+        if ($notes === '') throw new RuntimeException('Enter resolution notes.');
+
+        $this->conn->begin_transaction();
+        try {
+            $stmt = $this->conn->prepare(
+                'SELECT review.*, resolution.id AS resolution_id
+                   FROM registration_duplicate_reviews review
+                   LEFT JOIN registration_duplicate_resolutions resolution ON resolution.review_id = review.id
+                  WHERE review.id = ? FOR UPDATE'
+            );
+            $stmt->bind_param('i', $reviewId);
+            $stmt->execute();
+            $review = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$review || $review['status'] !== 'confirmed_duplicate') {
+                throw new RuntimeException('Confirm the duplicate before resolving it.');
+            }
+            if (!empty($review['resolution_id'])) throw new RuntimeException('This duplicate has already been resolved.');
+            $this->assertChurchAccess((int) $review['church_id']);
+
+            $duplicateSide = $survivorSide === 'a' ? 'b' : 'a';
+            $survivorType = (string) $review['source_' . $survivorSide . '_type'];
+            $survivorId = (int) $review['source_' . $survivorSide . '_id'];
+            $duplicateType = (string) $review['source_' . $duplicateSide . '_type'];
+            $duplicateId = (int) $review['source_' . $duplicateSide . '_id'];
+            $this->assertSourceType($survivorType);
+            $this->assertSourceType($duplicateType);
+            $survivor = $this->getIdentity($survivorType, $survivorId);
+            $duplicate = $this->getIdentity($duplicateType, $duplicateId);
+            if (($survivor['display_name'] ?? 'Record no longer available') === 'Record no longer available'
+                || ($duplicate['display_name'] ?? 'Record no longer available') === 'Record no longer available') {
+                throw new RuntimeException('Both records must still exist before resolution.');
+            }
+
+            $action = 'archive_duplicate';
+            $actor = $this->userId;
+            if ($duplicateType === 'member') {
+                $memberStmt = $this->conn->prepare(
+                    'SELECT id, church_id, crn, first_name, middle_name, last_name, is_archived
+                       FROM members WHERE id = ? FOR UPDATE'
+                );
+                $memberStmt->bind_param('i', $duplicateId);
+                $memberStmt->execute();
+                $member = $memberStmt->get_result()->fetch_assoc();
+                $memberStmt->close();
+                if (!$member || (int) $member['is_archived'] === 1) {
+                    throw new RuntimeException('The duplicate member is already archived or unavailable.');
+                }
+                $reason = 'Duplicate of ' . $survivorType . ' #' . $survivorId . ': ' . $notes;
+                $archive = $this->conn->prepare(
+                    "UPDATE members SET status = 'de-activated', is_archived = 1,
+                            archived_at = NOW(), archive_reason = ?, archive_reason_code = 'duplicate_record',
+                            archived_by_user_id = ? WHERE id = ?"
+                );
+                $archive->bind_param('sii', $reason, $actor, $duplicateId);
+                $archive->execute();
+                $archive->close();
+                $disableAccount = $this->conn->prepare(
+                    "UPDATE users SET status = 'inactive' WHERE member_id = ? AND status = 'active'"
+                );
+                $disableAccount->bind_param('i', $duplicateId);
+                $disableAccount->execute();
+                $disableAccount->close();
+                $name = trim(implode(' ', array_filter([
+                    $member['first_name'], $member['middle_name'], $member['last_name']
+                ])));
+                $audit = $this->conn->prepare(
+                    "INSERT INTO member_lifecycle_audit
+                        (member_id, original_member_id, church_id, member_crn, member_name,
+                         action, reason, reason_code, performed_by_user_id)
+                     VALUES (?, ?, ?, ?, ?, 'archived', ?, 'duplicate_record', ?)"
+                );
+                $memberChurchId = (int) $member['church_id'];
+                $memberCrn = (string) $member['crn'];
+                $audit->bind_param(
+                    'iiisssi', $duplicateId, $duplicateId, $memberChurchId,
+                    $memberCrn, $name, $reason, $actor
+                );
+                $audit->execute();
+                $audit->close();
+            } elseif ($duplicateType === 'sunday_school') {
+                $linkedMember = $survivorType === 'member' ? $survivorId : null;
+                $archive = $this->conn->prepare(
+                    'UPDATE sunday_school
+                        SET is_duplicate_archived = 1, duplicate_archived_at = NOW(),
+                            duplicate_archived_by_user_id = ?,
+                            transferred_to_member_id = COALESCE(?, transferred_to_member_id)
+                      WHERE id = ? AND is_duplicate_archived = 0'
+                );
+                $archive->bind_param('iii', $actor, $linkedMember, $duplicateId);
+                $archive->execute();
+                if ($archive->affected_rows !== 1) throw new RuntimeException('The Sunday School duplicate is already archived.');
+                $archive->close();
+                if ($linkedMember !== null) $action = 'link_to_member';
+            } else {
+                $linkedMember = $survivorType === 'member' ? $survivorId : null;
+                $archive = $this->conn->prepare(
+                    "UPDATE visitors
+                        SET is_duplicate_archived = 1, duplicate_archived_at = NOW(),
+                            duplicate_archived_by_user_id = ?,
+                            conversion_status = IF(? IS NULL, conversion_status, 'registered'),
+                            converted_to_member_id = COALESCE(?, converted_to_member_id),
+                            converted_at = IF(? IS NULL, converted_at, NOW()),
+                            converted_by_user_id = COALESCE(?, converted_by_user_id),
+                            conversion_notes = CONCAT_WS(' ', conversion_notes, ?)
+                      WHERE id = ? AND is_duplicate_archived = 0"
+                );
+                $resolutionText = 'Duplicate resolved: ' . $notes;
+                $archive->bind_param(
+                    'iiiiisi', $actor, $linkedMember, $linkedMember,
+                    $linkedMember, $actor, $resolutionText, $duplicateId
+                );
+                $archive->execute();
+                if ($archive->affected_rows !== 1) throw new RuntimeException('The visitor duplicate is already archived.');
+                $archive->close();
+                if ($linkedMember !== null) $action = 'link_to_member';
+            }
+
+            $insert = $this->conn->prepare(
+                'INSERT INTO registration_duplicate_resolutions
+                    (review_id, survivor_type, survivor_id, duplicate_type, duplicate_id,
+                     resolution_action, resolution_notes, resolved_by_user_id)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            );
+            $insert->bind_param(
+                'isisissi', $reviewId, $survivorType, $survivorId,
+                $duplicateType, $duplicateId, $action, $notes, $actor
+            );
+            $insert->execute();
+            $insert->close();
+            $this->conn->commit();
+        } catch (Throwable $e) {
+            $this->conn->rollback();
+            throw $e;
+        }
+    }
+
     public function getVisitor(int $visitorId): ?array {
-        $stmt = $this->conn->prepare('SELECT * FROM visitors WHERE id = ? LIMIT 1');
+        $stmt = $this->conn->prepare('SELECT * FROM visitors WHERE id = ? AND is_duplicate_archived = 0 LIMIT 1');
         $stmt->bind_param('i', $visitorId);
         $stmt->execute();
         $visitor = $stmt->get_result()->fetch_assoc() ?: null;
@@ -299,14 +446,34 @@ final class RegistrationDuplicateService {
             $stmt = $this->conn->prepare(
                 "UPDATE visitors
                     SET conversion_status = 'registered', converted_to_member_id = ?,
-                        converted_at = NOW(), converted_by_user_id = ?, conversion_notes = ?
+                        converted_at = NOW(), converted_by_user_id = ?, conversion_notes = ?,
+                        follow_up_status = 'completed', next_follow_up_date = NULL,
+                        last_follow_up_at = NOW(), follow_up_summary = ?
                   WHERE id = ? AND conversion_status = 'visitor'"
             );
             $actor = $this->userId;
-            $stmt->bind_param('iisi', $memberId, $actor, $conversionNotes, $visitorId);
+            $followUpSummary = 'Completed when the visitor was converted to membership.';
+            $stmt->bind_param('iissi', $memberId, $actor, $conversionNotes, $followUpSummary, $visitorId);
             $stmt->execute();
             if ($stmt->affected_rows !== 1) throw new RuntimeException('The visitor conversion state changed. Try again.');
             $stmt->close();
+
+            $previousFollowUpStatus = (string) ($visitor['follow_up_status'] ?? 'not_started');
+            $assignedFollowUpUser = isset($visitor['follow_up_assigned_to_user_id'])
+                ? (int) $visitor['follow_up_assigned_to_user_id'] : null;
+            $history = $this->conn->prepare(
+                "INSERT INTO visitor_follow_up_history
+                    (visitor_id, church_id, previous_status, follow_up_status,
+                     contact_method, notes, assigned_to_user_id, recorded_by_user_id)
+                 VALUES (?, ?, ?, 'completed', 'none', ?, ?, ?)"
+            );
+            $history->bind_param(
+                'iissii',
+                $visitorId, $churchId, $previousFollowUpStatus,
+                $followUpSummary, $assignedFollowUpUser, $actor
+            );
+            $history->execute();
+            $history->close();
 
             if ($matches) {
                 $this->recordMatches('member', $memberId, $churchId, $matches, 'conversion', $reason);
@@ -351,7 +518,7 @@ final class RegistrationDuplicateService {
         $stmt = $this->conn->prepare(
             "SELECT id, crn AS identifier, first_name, middle_name, last_name,
                     dob, phone, email, is_archived
-               FROM members WHERE church_id = ?"
+               FROM members WHERE church_id = ? AND is_archived = 0"
         );
         $stmt->bind_param('i', $churchId);
         $stmt->execute();
@@ -369,7 +536,7 @@ final class RegistrationDuplicateService {
         $stmt = $this->conn->prepare(
             'SELECT id, srn AS identifier, first_name, middle_name, last_name,
                     dob, contact AS phone, transferred_to_member_id
-               FROM sunday_school WHERE church_id = ?'
+               FROM sunday_school WHERE church_id = ? AND is_duplicate_archived = 0'
         );
         $stmt->bind_param('i', $churchId);
         $stmt->execute();
@@ -386,7 +553,7 @@ final class RegistrationDuplicateService {
 
         $stmt = $this->conn->prepare(
             'SELECT id, name, phone, email, conversion_status, converted_to_member_id
-               FROM visitors WHERE church_id = ?'
+               FROM visitors WHERE church_id = ? AND is_duplicate_archived = 0'
         );
         $stmt->bind_param('i', $churchId);
         $stmt->execute();

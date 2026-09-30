@@ -42,6 +42,65 @@ function log_raw($data) {
     file_put_contents($raw_log, date('c')."\n".$data."\n", FILE_APPEND);
 }
 
+function find_ussd_payment_subject(mysqli $conn, string $reference): ?array {
+    $reference = strtoupper(trim($reference));
+    if ($reference === '') return null;
+
+    $stmt = $conn->prepare(
+        "SELECT id, CONCAT_WS(' ', first_name, last_name) AS full_name,
+                crn AS reference, 'member' AS subject_type
+           FROM members
+          WHERE UPPER(TRIM(crn)) = ? AND status = 'active' AND is_archived = 0 LIMIT 1"
+    );
+    $stmt->bind_param('s', $reference);
+    $stmt->execute();
+    $subject = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if ($subject) return $subject;
+
+    $stmt = $conn->prepare(
+        "SELECT id, CONCAT_WS(' ', first_name, last_name) AS full_name,
+                srn AS reference, 'sunday_school' AS subject_type
+           FROM sunday_school
+          WHERE UPPER(TRIM(srn)) = ? AND transferred_to_member_id IS NULL LIMIT 1"
+    );
+    $stmt->bind_param('s', $reference);
+    $stmt->execute();
+    $subject = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $subject ?: null;
+}
+
+function ussd_subject_token(array $subject): string {
+    return $subject['subject_type'] === 'sunday_school'
+        ? 'ss-' . (int) $subject['id']
+        : (string) (int) $subject['id'];
+}
+
+function get_ussd_subject_by_token(mysqli $conn, string $token): ?array {
+    if (preg_match('/^ss-(\d+)$/', $token, $matches)) {
+        $id = (int) $matches[1];
+        $stmt = $conn->prepare(
+            "SELECT id, CONCAT_WS(' ', first_name, last_name) AS full_name,
+                    srn AS reference, 'sunday_school' AS subject_type
+               FROM sunday_school WHERE id = ? AND transferred_to_member_id IS NULL LIMIT 1"
+        );
+    } else {
+        $id = (int) $token;
+        if ($id <= 0) return null;
+        $stmt = $conn->prepare(
+            "SELECT id, CONCAT_WS(' ', first_name, last_name) AS full_name,
+                    crn AS reference, 'member' AS subject_type
+               FROM members WHERE id = ? AND status = 'active' AND is_archived = 0 LIMIT 1"
+        );
+    }
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    $subject = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $subject ?: null;
+}
+
 // Log raw input for debugging
 $raw_input = file_get_contents('php://input');
 log_raw($raw_input);
@@ -229,8 +288,8 @@ try {
                 $response = [
                     'SessionId' => $session_id,
                     'Type' => 'response',
-                    'Message' => "Welcome to Freeman Methodist Church Payments\n\nYour phone number is not registered.\n\nEnter the CRN of the member you want to pay for:",
-                    'Label' => 'Enter CRN',
+                    'Message' => "Welcome to Freeman Methodist Church Payments\n\nYour phone number is not registered.\n\nEnter the CRN or SRN of the person you want to pay for:",
+                    'Label' => 'Enter CRN or SRN',
                     'ClientState' => 'crn_input_unregistered',
                     'DataType' => 'input',
                     'FieldType' => 'text'
@@ -264,12 +323,12 @@ try {
                                 'FieldType' => 'text'
                             ];
                         } elseif ($message === '2') {
-                            // Paying for a church member - ask for CRN
+                            // Paying for a church member or Sunday School child.
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Enter the CRN of the church member you want to pay for:",
-                                'Label' => 'Enter CRN',
+                                'Message' => "Enter the CRN or SRN of the person you want to pay for:",
+                                'Label' => 'Enter CRN or SRN',
                                 'ClientState' => "crn_input_unregistered",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
@@ -301,12 +360,12 @@ try {
                                 'FieldType' => 'text'
                             ];
                         } elseif ($message === '2') {
-                            // Paying for another member - ask for CRN
+                            // Paying for another member or Sunday School child.
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "Enter the CRN of the member you want to pay for:",
-                                'Label' => 'Enter CRN',
+                                'Message' => "Enter the CRN or SRN of the person you want to pay for:",
+                                'Label' => 'Enter CRN or SRN',
                                 'ClientState' => "crn_input_$member_id",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
@@ -326,27 +385,22 @@ try {
                     break;
                     
                 case (str_starts_with($client_state, 'crn_input_')):
-                    // User entered CRN for another member
+                    // User entered a CRN or SRN for another beneficiary.
                     $context = substr($client_state, 10);
-                    $crn = strtoupper(trim($message));
-                    
-                    // Validate CRN exists
-                    $crn_stmt = $conn->prepare("SELECT id, CONCAT(first_name, ' ', last_name) as full_name, crn FROM members WHERE crn = ? AND status = 'active'");
-                    $crn_stmt->bind_param("s", $crn);
-                    $crn_stmt->execute();
-                    $crn_result = $crn_stmt->get_result();
-                    $target_member = $crn_result->fetch_assoc();
+                    $reference = strtoupper(trim($message));
+                    $target_member = find_ussd_payment_subject($conn, $reference);
                     
                     if ($target_member) {
                         if ($context === 'unregistered') {
                             // Unregistered user paying for a member
                             $unregistered_for_menu_data = build_payment_menu_page($payment_types, 1);
+                            $targetToken = ussd_subject_token($target_member);
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
                                 'Message' => "For: {$target_member['full_name']} \n\nPayment Types (1/{$unregistered_for_menu_data['total_pages']}):\n\n" . $unregistered_for_menu_data['menu'] . "Select type:",
                                 'Label' => 'Select Payment Type',
-                                'ClientState' => "menu_unregistered_for_{$target_member['id']}_page_1",
+                                'ClientState' => "menu_unregistered_for_{$targetToken}_page_1",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
                             ];
@@ -354,12 +408,13 @@ try {
                             // Registered member paying for another member
                             $payer_id = $context;
                             $other_menu_data = build_payment_menu_page($payment_types, 1);
+                            $targetToken = ussd_subject_token($target_member);
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
                                 'Message' => "For: {$target_member['full_name']} \n\nPayment Types (1/{$other_menu_data['total_pages']}):\n\n" . $other_menu_data['menu'] . "Select type:",
                                 'Label' => 'Select Payment Type',
-                                'ClientState' => "menu_other_{$payer_id}_{$target_member['id']}_page_1",
+                                'ClientState' => "menu_other_{$payer_id}_{$targetToken}_page_1",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
                             ];
@@ -369,8 +424,8 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "CRN '$crn' not found. Please try again.\n\nEnter the CRN of the member you want to pay for:",
-                                'Label' => 'Enter CRN',
+                                'Message' => "CRN or SRN '$reference' not found. Please try again.\n\nEnter the CRN or SRN of the person you want to pay for:",
+                                'Label' => 'Enter CRN or SRN',
                                 'ClientState' => "crn_input_unregistered",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
@@ -379,8 +434,8 @@ try {
                             $response = [
                                 'SessionId' => $session_id,
                                 'Type' => 'response',
-                                'Message' => "CRN '$crn' not found. Please try again.\n\nEnter the CRN of the member you want to pay for:",
-                                'Label' => 'Enter CRN',
+                                'Message' => "CRN or SRN '$reference' not found. Please try again.\n\nEnter the CRN or SRN of the person you want to pay for:",
+                                'Label' => 'Enter CRN or SRN',
                                 'ClientState' => "crn_input_$context",
                                 'DataType' => 'input',
                                 'FieldType' => 'text'
@@ -414,25 +469,17 @@ try {
                             
                             // Check if this is for a specific member and add member info
                             if (str_starts_with($context, 'unregistered_for_')) {
-                                $target_member_id = substr($context, 17);
-                                $member_stmt = $conn->prepare("SELECT CONCAT(first_name, ' ', last_name) as full_name, crn FROM members WHERE id = ? AND status = 'active'");
-                                $member_stmt->bind_param("i", $target_member_id);
-                                $member_stmt->execute();
-                                $member_result = $member_stmt->get_result();
-                                $target_member = $member_result->fetch_assoc();
+                                $targetToken = substr($context, 17);
+                                $target_member = get_ussd_subject_by_token($conn, $targetToken);
                                 
                                 if ($target_member) {
                                     $message = "For: {$target_member['full_name']} \n\nPayment Types ({$new_page}/{$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "Select type:";
                                 }
                             } elseif (str_starts_with($context, 'other_')) {
                                 $context_parts = explode('_', $context, 3);
-                                $target_member_id = $context_parts[2] ?? null;
-                                if ($target_member_id) {
-                                    $member_stmt = $conn->prepare("SELECT CONCAT(first_name, ' ', last_name) as full_name, crn FROM members WHERE id = ? AND status = 'active'");
-                                    $member_stmt->bind_param("i", $target_member_id);
-                                    $member_stmt->execute();
-                                    $member_result = $member_stmt->get_result();
-                                    $target_member = $member_result->fetch_assoc();
+                                $targetToken = $context_parts[2] ?? '';
+                                if ($targetToken !== '') {
+                                    $target_member = get_ussd_subject_by_token($conn, $targetToken);
                                     
                                     if ($target_member) {
                                         $message = "For: {$target_member['full_name']} \n\nPayment Types ({$new_page}/{$menu_data['total_pages']}):\n\n" . $menu_data['menu'] . "Select type:";
@@ -657,30 +704,21 @@ try {
                             
                             // Check if this is an unregistered user paying for a specific member
                             if (str_starts_with($context, 'unregistered_for_')) {
-                                $target_member_id = substr($context, 17);
-                                // Get member details for confirmation
-                                $member_stmt = $conn->prepare("SELECT CONCAT(first_name, ' ', last_name) as full_name, crn FROM members WHERE id = ? AND status = 'active'");
-                                $member_stmt->bind_param("i", $target_member_id);
-                                $member_stmt->execute();
-                                $member_result = $member_stmt->get_result();
-                                $target_member = $member_result->fetch_assoc();
+                                $targetToken = substr($context, 17);
+                                $target_member = get_ussd_subject_by_token($conn, $targetToken);
                                 
                                 if ($target_member) {
-                                    $confirmation_message = "Payment Type: $selected_type_name\nFor: {$target_member['full_name']} ({$target_member['crn']})\nAmount: GHS " . number_format($amount, 2);
+                                    $confirmation_message = "Payment Type: $selected_type_name\nFor: {$target_member['full_name']} ({$target_member['reference']})\nAmount: GHS " . number_format($amount, 2);
                                 }
                             } elseif (str_starts_with($context, 'other_')) {
                                 // Registered member paying for another member
                                 $context_parts = explode('_', $context, 3);
-                                $target_member_id = $context_parts[2] ?? null;
-                                if ($target_member_id) {
-                                    $member_stmt = $conn->prepare("SELECT CONCAT(first_name, ' ', last_name) as full_name, crn FROM members WHERE id = ? AND status = 'active'");
-                                    $member_stmt->bind_param("i", $target_member_id);
-                                    $member_stmt->execute();
-                                    $member_result = $member_stmt->get_result();
-                                    $target_member = $member_result->fetch_assoc();
+                                $targetToken = $context_parts[2] ?? '';
+                                if ($targetToken !== '') {
+                                    $target_member = get_ussd_subject_by_token($conn, $targetToken);
                                     
                                     if ($target_member) {
-                                        $confirmation_message = "Payment Type: $selected_type_name\nFor: {$target_member['full_name']} ({$target_member['crn']})\nAmount: GHS " . number_format($amount, 2);
+                                        $confirmation_message = "Payment Type: $selected_type_name\nFor: {$target_member['full_name']} ({$target_member['reference']})\nAmount: GHS " . number_format($amount, 2);
                                     }
                                 }
                             } elseif ($context === 'unmatched') {
@@ -749,18 +787,27 @@ try {
                             $payer_member_id = $member_id;
                             $item_description = "$payment_description - Member ID: $member_id, Period: $period_date";
                         } elseif (str_starts_with($context, 'other_')) {
-                            // Registered member paying for another member
+                            // Registered member paying for another CRN/SRN subject.
                             $context_parts = explode('_', $context, 4);
                             $payer_member_id = $context_parts[1] ?? null;
-                            $target_member_id = $context_parts[2] ?? null;
-                            log_debug("Context parsing - Full context: $context, Payer: $payer_member_id, Target: $target_member_id");
-                            // CRITICAL FIX: Use Target ID as the primary member for payment attribution
-                            $item_description = "$payment_description - Target ID: $target_member_id, Payer ID: $payer_member_id, Period: $period_date";
+                            $targetToken = $context_parts[2] ?? '';
+                            $targetSubject = get_ussd_subject_by_token($conn, $targetToken);
+                            if (!$targetSubject) throw new RuntimeException('The selected payment beneficiary is no longer available.');
+                            $targetLabel = $targetSubject['subject_type'] === 'sunday_school'
+                                ? 'Sunday School ID: ' . (int) $targetSubject['id']
+                                : 'Target ID: ' . (int) $targetSubject['id'];
+                            log_debug("Context parsing - Full context: $context, Payer: $payer_member_id, Target: $targetToken");
+                            $item_description = "$payment_description - $targetLabel, Payer ID: $payer_member_id, Period: $period_date";
                             log_debug("Generated ItemName: $item_description");
                         } elseif (str_starts_with($context, 'unregistered_for_')) {
-                            // Unregistered user paying for a member
-                            $target_member_id = substr($context, 17);
-                            $item_description = "$payment_description - Target ID: $target_member_id, Phone: $phone (unregistered), Period: $period_date";
+                            // Unregistered user paying for a CRN/SRN subject.
+                            $targetToken = substr($context, 17);
+                            $targetSubject = get_ussd_subject_by_token($conn, $targetToken);
+                            if (!$targetSubject) throw new RuntimeException('The selected payment beneficiary is no longer available.');
+                            $targetLabel = $targetSubject['subject_type'] === 'sunday_school'
+                                ? 'Sunday School ID: ' . (int) $targetSubject['id']
+                                : 'Target ID: ' . (int) $targetSubject['id'];
+                            $item_description = "$payment_description - $targetLabel, Phone: $phone (unregistered), Period: $period_date";
                         } else {
                             // Unregistered user paying for themselves
                             $item_description = "$payment_description - Phone: $phone (unregistered), Period: $period_date";

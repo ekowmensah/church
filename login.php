@@ -43,7 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare(
             'SELECT user_account.id, user_account.member_id, user_account.name,
                     user_account.email, user_account.password_hash,
-                    user_account.must_change_password
+                    user_account.must_change_password, member.status AS member_status,
+                    member.is_archived AS member_is_archived
                FROM users user_account
                JOIN members member ON member.id = user_account.member_id
               WHERE user_account.email = ? AND user_account.status = "active" LIMIT 1'
@@ -52,7 +53,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute();
         $result = $stmt->get_result();
         if ($user = $result->fetch_assoc()) {
-            if (password_verify($password, $user['password_hash'])) {
+            $officialEmailEnforced = false;
+            $policyTable = $conn->query(
+                "SELECT COUNT(*) AS total FROM information_schema.TABLES
+                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'official_email_security_policy'"
+            )->fetch_assoc();
+            if ((int) ($policyTable['total'] ?? 0) === 1) {
+                $policy = $conn->query(
+                    'SELECT enforcement_enabled FROM official_email_security_policy WHERE id = 1'
+                )->fetch_assoc();
+                $officialEmailEnforced = (int) ($policy['enforcement_enabled'] ?? 0) === 1;
+            }
+            $officialAccountEligible = str_ends_with(strtolower(trim((string) $user['email'])), '@myfreeman.org')
+                && (string) $user['member_status'] === 'active'
+                && (int) $user['member_is_archived'] === 0;
+            if (password_verify($password, $user['password_hash'])
+                && (!$officialEmailEnforced || $officialAccountEligible)) {
                 session_regenerate_id(true);
                 unset(
                     $_SESSION['crn'], $_SESSION['member_name'], $_SESSION['role'],
@@ -140,7 +156,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 require_once __DIR__.'/helpers/global_audit_log.php';
                 log_activity('login_failed', 'user', null, json_encode(['username'=>$email, 'ip'=>$_SERVER['REMOTE_ADDR']]));
-                $error = 'Invalid email or password.';
+                $error = password_verify($password, $user['password_hash']) && $officialEmailEnforced
+                    ? 'This back-office account does not meet the official-email or active-member policy. Contact a System Administrator.'
+                    : 'Invalid email or password.';
             }
         } else {
             require_once __DIR__.'/helpers/global_audit_log.php';

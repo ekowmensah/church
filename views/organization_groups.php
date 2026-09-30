@@ -268,10 +268,15 @@ if ($organizationId) {
 
     $memberStmt = $conn->prepare(
         "SELECT mo.id AS membership_id, m.id, m.crn, m.first_name, m.middle_name, m.last_name,
-                assignment.unit_id, assignment.assignment_type
+                m.gender, assignment.unit_id, assignment.assignment_type,
+                eligibility.officer_branch, eligibility.rank_or_level AS officer_rank
            FROM member_organizations mo
            INNER JOIN members m ON m.id = mo.member_id
            LEFT JOIN organization_unit_assignments assignment ON assignment.member_organization_id = mo.id
+           LEFT JOIN brigade_officer_eligibility eligibility
+                  ON eligibility.organization_id = mo.organization_id
+                 AND eligibility.member_id = mo.member_id
+                 AND eligibility.status = 'active'
           WHERE mo.organization_id = ? AND m.status = 'active'
           ORDER BY m.last_name, m.first_name"
     );
@@ -287,7 +292,15 @@ if ($organizationId) {
     foreach ($units as $unit) {
         $unitId = (int) $unit['id'];
         foreach ($organizationMembers as $member) {
-            if ($unit['unit_type'] === 'brigade_section' || (int) ($member['unit_id'] ?? 0) === $unitId) {
+            $eligibleBrigadeOfficer = $unit['unit_type'] === 'brigade_section'
+                && !empty($member['officer_branch'])
+                && ($unit['branch'] !== 'girls' || (
+                    strtolower(trim((string) $member['gender'])) === 'female'
+                    && in_array($member['officer_branch'], ['girls', 'both'], true)
+                ))
+                && ($unit['branch'] !== 'boys' || in_array($member['officer_branch'], ['boys', 'both'], true));
+            if ($eligibleBrigadeOfficer
+                || ($unit['unit_type'] !== 'brigade_section' && (int) ($member['unit_id'] ?? 0) === $unitId)) {
                 $eligibleMembersByUnit[$unitId][(int) $member['id']] = $member;
             }
         }
@@ -594,7 +607,7 @@ ob_start();
                     <select class="form-control form-control-sm mr-2" name="leader_role"><option value="leader">Leader</option><option value="assistant">Assistant</option></select>
                     <button class="btn btn-sm btn-outline-primary">Assign</button>
                   </form>
-                  <?php if ($type === 'brigade_section'): ?><small class="text-muted">The assigning leader must verify Brigade officer eligibility.</small><?php endif; ?>
+                  <?php if ($type === 'brigade_section'): ?><small class="text-muted">Only officers certified in <a href="identity_governance.php?organization_id=<?= $organizationId ?>">Identity Governance</a> are listed.</small><?php endif; ?>
                 <?php endif; ?>
               </td>
             </tr>

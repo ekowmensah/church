@@ -50,9 +50,6 @@ $period_preset = (string) ($_GET['period'] ?? 'custom');
     (string) ($_GET['end_date'] ?? '')
 );
 $period_label = payment_report_period_label($start_date, $end_date);
-$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
-$per_page = 25;
-$offset = ($page - 1) * $per_page;
 $where = [];
 $scopeCondition = payment_report_member_scope_condition($conn, 'm');
 if ($scopeCondition !== '') $where[] = $scopeCondition;
@@ -80,7 +77,7 @@ LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 $where_sql
 GROUP BY m.id, m.crn, m.last_name, m.first_name, bible_class.name, pt.id, pt.name
 ORDER BY m.last_name, m.first_name, pt.name
-LIMIT $per_page OFFSET $offset";
+";
 $result = $conn->query($sql);
 $rows = [];
 if ($result) {
@@ -88,20 +85,6 @@ if ($result) {
         $rows[] = $row;
     }
 }
-$count_sql = "SELECT COUNT(*) AS total_count FROM (
-    SELECT m.id, pt.id AS payment_type_id
-    FROM v_posted_payments p
-    JOIN members m ON m.id = p.member_id
-    LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
-    $where_sql
-    GROUP BY m.id, pt.id
-) accumulated_rows";
-$count_result = $conn->query($count_sql);
-$total_count = 0;
-if ($count_result && ($row = $count_result->fetch_assoc())) {
-    $total_count = $row['total_count'] ?: 0;
-}
-$total_pages = ceil($total_count / $per_page);
 // Total for all
 $total_all_sql = "SELECT SUM(p.amount) AS total_amount FROM v_posted_payments p
 JOIN members m ON m.id = p.member_id
@@ -165,7 +148,7 @@ if ($total_all_result && ($row = $total_all_result->fetch_assoc())) {
                 <?php else: ?>
                     <?php foreach ($rows as $i => $row): ?>
                         <tr>
-                            <td><?php echo $i + 1 + $offset; ?></td>
+                            <td><?php echo $i + 1; ?></td>
                             <td><?php echo htmlspecialchars($row['crn'] ?: '-'); ?></td>
                             <td><?php echo htmlspecialchars(trim($row['last_name'] . ', ' . $row['first_name'])); ?></td>
                             <td><?php echo htmlspecialchars($row['class_name'] ?: '-'); ?></td>
@@ -182,22 +165,6 @@ if ($total_all_result && ($row = $total_all_result->fetch_assoc())) {
     <div class="mt-3">
         <h5 class="font-weight-bold">Total Amount: <span class="text-primary">₵<?php echo number_format($total_amount, 2); ?></span></h5>
     </div>
-    <?php if ($total_pages > 1): ?>
-    <nav aria-label="Page navigation">
-        <ul class="pagination justify-content-center mt-3">
-            <?php
-                $query_params = $_GET;
-                for ($i = 1; $i <= $total_pages; $i++):
-                    $query_params['page'] = $i;
-                    $url = '?' . http_build_query($query_params);
-            ?>
-                <li class="page-item<?php if ($i == $page) echo ' active'; ?>">
-                    <a class="page-link" href="<?php echo $url; ?>"><?php echo $i; ?></a>
-                </li>
-            <?php endfor; ?>
-        </ul>
-    </nav>
-    <?php endif; ?>
 </div>
 <!-- DataTables and JS export dependencies -->
 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
@@ -216,6 +183,7 @@ $(document).ready(function() {
     var table = $(".table").DataTable({
         dom: 'Bfrtip',
         buttons: [
+            <?php if ($can_export): ?>
             {
                 extend: 'csv',
                 text: '<i class="fas fa-file-csv"></i> CSV',
@@ -228,6 +196,7 @@ $(document).ready(function() {
                 className: 'btn btn-danger btn-sm mr-2',
                 title: <?= json_encode('Accumulated Payment Type Report - ' . $period_label) ?>
             },
+            <?php endif; ?>
             {
                 extend: 'print',
                 text: '<i class="fas fa-print"></i> Print',
@@ -235,9 +204,11 @@ $(document).ready(function() {
                 title: <?= json_encode('Accumulated Payment Type Report - ' . $period_label) ?>
             }
         ],
-        paging: false,
+        paging: true,
+        pageLength: 25,
+        lengthMenu: [25, 50, 100],
         searching: false,
-        info: false,
+        info: true,
         ordering: false
     });
     // Hide custom buttons if DataTables is used

@@ -4,6 +4,7 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
+require_once __DIR__.'/../services/UnifiedAttendanceReportService.php';
 
 // Authentication check
 if (!is_logged_in()) {
@@ -14,7 +15,7 @@ if (!is_logged_in()) {
 }
 
 // Permission check
-if (!has_permission('view_member')) {
+if (!has_permission('view_member') && !has_permission('create_transfer')) {
     header('Content-Type: application/json');
     http_response_code(403);
     echo json_encode(['error' => 'Permission denied']);
@@ -27,9 +28,18 @@ if (!$member_id) {
     echo json_encode(['error'=>'No member_id']);
     exit;
 }
-// Get current class and church for member
-$stmt = $conn->prepare('SELECT m.class_id, m.church_id, bc.name AS class_name FROM members m LEFT JOIN bible_classes bc ON m.class_id = bc.id WHERE m.id = ? LIMIT 1');
-$stmt->bind_param('i', $member_id);
+$scope = UnifiedAttendanceReportService::fromSession($conn);
+$allowedChurchIds = array_map('intval', array_column($scope->getAllowedChurches(), 'id'));
+if (!$allowedChurchIds) {
+    echo json_encode(['error' => 'No authorized church scope']);
+    exit;
+}
+$placeholders = implode(',', array_fill(0, count($allowedChurchIds), '?'));
+$types = 'i' . str_repeat('i', count($allowedChurchIds));
+$params = array_merge([$member_id], $allowedChurchIds);
+// Get current class and church for an authorized member.
+$stmt = $conn->prepare('SELECT m.class_id, m.church_id, bc.name AS class_name FROM members m LEFT JOIN bible_classes bc ON m.class_id = bc.id WHERE m.id = ? AND m.church_id IN (' . $placeholders . ') LIMIT 1');
+$stmt->bind_param($types, ...$params);
 $stmt->execute();
 $res = $stmt->get_result();
 if (!$row = $res->fetch_assoc()) {

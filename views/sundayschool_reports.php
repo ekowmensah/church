@@ -28,7 +28,7 @@ $report_type = isset($_GET['report_type']) ? $_GET['report_type'] : 'summary';
 $parent_member = isset($_GET['parent_member']) ? $_GET['parent_member'] : '';
 
 // Build WHERE clause
-$where_conditions = [];
+$where_conditions = ['ss.is_duplicate_archived = 0'];
 $params = [];
 $types = '';
 

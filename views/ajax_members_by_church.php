@@ -111,7 +111,7 @@ while ($row = $res->fetch_assoc()) {
 
 // Add Sunday School children
 if ($church_id) {
-    $ss_sql = "SELECT id, srn, first_name, last_name, middle_name, dob, class_id, gender FROM sunday_school WHERE church_id = ?";
+    $ss_sql = "SELECT id, srn, first_name, last_name, middle_name, dob, class_id, gender FROM sunday_school WHERE church_id = ? AND is_duplicate_archived = 0";
     if ($is_class_leader && $class_leader_class_id) {
         $ss_sql .= " AND class_id = " . intval($class_leader_class_id);
     }

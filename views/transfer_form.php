@@ -4,6 +4,8 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../services/UnifiedAttendanceReportService.php';
 
 
 if (!is_logged_in()) {
@@ -11,8 +13,10 @@ if (!is_logged_in()) {
     exit;
 }
 
-// Permission check
-if (!has_permission('view_transfer_list')) {
+$roleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
+if (isset($_SESSION['role_id'])) $roleIds[] = (int) $_SESSION['role_id'];
+$is_super_admin = in_array(1, $roleIds, true) || (int) ($_SESSION['user_id'] ?? 0) === 3;
+if (!$is_super_admin && !has_permission('create_transfer')) {
     http_response_code(403);
     echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
     exit;
@@ -22,48 +26,100 @@ $page_title = 'Add Member Transfer';
 $error = '';
 $success = '';
 
-// Fetch all members for dropdown
-$members = $conn->query("SELECT id, CONCAT(last_name, ' ', first_name, ' ', middle_name) AS full_name FROM members ORDER BY last_name, first_name, middle_name");
+$transferScope = UnifiedAttendanceReportService::fromSession($conn);
+$allowedChurchIds = array_map('intval', array_column($transferScope->getAllowedChurches(), 'id'));
 
 // Get current user info
 $user_id = $_SESSION['user_id'] ?? null;
 $user_name = $_SESSION['name'] ?? 'Unknown';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        http_response_code(419);
+        exit('Your form expired. Refresh and try again.');
+    }
     $member_id = intval($_POST['member_id'] ?? 0);
     $from_class_id = intval($_POST['from_class_id'] ?? 0);
     $to_class_id = intval($_POST['to_class_id'] ?? 0);
     $transfer_date = trim($_POST['transfer_date'] ?? date('Y-m-d'));
+    $transfer_reason = trim((string) ($_POST['transfer_reason'] ?? ''));
+    $transfer_notes = trim((string) ($_POST['transfer_notes'] ?? ''));
     $transferred_by = $user_id;
 
-    if (!$member_id || !$from_class_id || !$to_class_id || !$transferred_by || !$transfer_date) {
+    $parsedTransferDate = DateTimeImmutable::createFromFormat('!Y-m-d', $transfer_date);
+    if (!$member_id || !$from_class_id || !$to_class_id || !$transferred_by || !$transfer_date || $transfer_reason === '') {
         $error = 'Please fill in all required fields.';
+    } else if (!$parsedTransferDate || $parsedTransferDate->format('Y-m-d') !== $transfer_date || $transfer_date < '1900-01-01') {
+        $error = 'Enter a valid transfer date.';
     } else if ($from_class_id == $to_class_id) {
         $error = 'From Class and To Class cannot be the same.';
     } else {
         // Get old CRN before transfer
-        $old_crn = '';
-        $member_status = '';
-        $crn_stmt = $conn->prepare("SELECT crn, status FROM members WHERE id = ?");
+        $crn_stmt = $conn->prepare(
+            "SELECT member.crn, member.status, member.class_id, member.church_id,
+                    class.name AS class_name, church.name AS church_name
+               FROM members member
+               LEFT JOIN bible_classes class ON class.id = member.class_id
+               LEFT JOIN churches church ON church.id = member.church_id
+              WHERE member.id = ? LIMIT 1"
+        );
         $crn_stmt->bind_param('i', $member_id);
         $crn_stmt->execute();
-        $crn_stmt->bind_result($old_crn, $member_status);
-        $crn_stmt->fetch();
+        $memberRow = $crn_stmt->get_result()->fetch_assoc();
         $crn_stmt->close();
+        $old_crn = (string) ($memberRow['crn'] ?? '');
+        $member_status = (string) ($memberRow['status'] ?? '');
 
-        if ($old_crn === '') {
+        if (!$memberRow || $old_crn === '') {
             $error = 'Unable to load member CRN for transfer.';
+        } elseif ((int) $memberRow['class_id'] !== $from_class_id) {
+            $error = 'The member\'s current Bible Class changed. Search for the member again.';
+        } elseif (!in_array((int) $memberRow['church_id'], $allowedChurchIds, true)) {
+            $error = 'The member is outside your authorized church scope.';
         } else {
             $migration_msgs = [];
             try {
                 $conn->begin_transaction();
 
+                $destinationStmt = $conn->prepare(
+                    "SELECT class.id, class.name AS class_name, class.church_id,
+                            church.name AS church_name
+                       FROM bible_classes class
+                       JOIN churches church ON church.id = class.church_id
+                      WHERE class.id = ? LIMIT 1"
+                );
+                $destinationStmt->bind_param('i', $to_class_id);
+                $destinationStmt->execute();
+                $destination = $destinationStmt->get_result()->fetch_assoc();
+                $destinationStmt->close();
+                if (!$destination || !in_array((int) $destination['church_id'], $allowedChurchIds, true)) {
+                    throw new RuntimeException('The destination class is outside your authorized church scope.');
+                }
+
+                $fromChurchId = (int) $memberRow['church_id'];
+                $toChurchId = (int) $destination['church_id'];
+                $movementType = $fromChurchId === $toChurchId ? 'class_change' : 'church_transfer';
+                $originName = trim(($memberRow['church_name'] ?? '') . ' / ' . ($memberRow['class_name'] ?? ''));
+                $destinationName = trim(($destination['church_name'] ?? '') . ' / ' . ($destination['class_name'] ?? ''));
+
                 // Record transfer
-                $stmt = $conn->prepare("INSERT INTO member_transfers (member_id, from_class_id, to_class_id, transfer_date, transferred_by, old_crn) VALUES (?, ?, ?, ?, ?, ?)");
-                $stmt->bind_param('iiisis', $member_id, $from_class_id, $to_class_id, $transfer_date, $transferred_by, $old_crn);
+                $stmt = $conn->prepare(
+                    "INSERT INTO member_transfers
+                        (member_id, from_class_id, to_class_id, transfer_date, transferred_by,
+                         old_crn, movement_type, transfer_status, from_church_id, to_church_id,
+                         origin_name, destination_name, transfer_reason, transfer_notes)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?)"
+                );
+                $stmt->bind_param(
+                    'iiisissiissss',
+                    $member_id, $from_class_id, $to_class_id, $transfer_date, $transferred_by,
+                    $old_crn, $movementType, $fromChurchId, $toChurchId,
+                    $originName, $destinationName, $transfer_reason, $transfer_notes
+                );
                 if (!$stmt->execute()) {
                     throw new Exception($stmt->error ?: 'Failed to record transfer.');
                 }
+                $transfer_id = (int) $stmt->insert_id;
                 $stmt->close();
 
                 // App-level fallback for shared hosting where trigger migrations cannot run.
@@ -160,6 +216,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new Exception($stmt2->error ?: 'Failed to update member CRN.');
                 }
                 $stmt2->close();
+
+                $transferUpdate = $conn->prepare('UPDATE member_transfers SET new_crn = ? WHERE id = ?');
+                $transferUpdate->bind_param('si', $new_crn, $transfer_id);
+                $transferUpdate->execute();
+                $transferUpdate->close();
 
                 $conn->commit();
 
@@ -312,6 +373,7 @@ ob_start(); ?>
         <div class="alert alert-danger"><?=htmlspecialchars($error)?></div>
     <?php endif; ?>
     <form method="post" id="transferForm" autocomplete="off">
+        <?= csrf_input() ?>
         <div class="form-group">
             <label for="crn_search">Member CRN <span class="text-danger">*</span></label>
             <div class="input-group">
@@ -339,6 +401,8 @@ ob_start(); ?>
             <label for="transfer_date">Transfer Date <span class="text-danger">*</span></label>
             <input type="date" name="transfer_date" id="transfer_date" class="form-control" required value="<?=htmlspecialchars($_POST['transfer_date'] ?? date('Y-m-d'))?>">
         </div>
+        <div class="form-group"><label for="transfer_reason">Transfer Reason <span class="text-danger">*</span></label><input type="text" name="transfer_reason" id="transfer_reason" class="form-control" maxlength="500" required value="<?= htmlspecialchars($_POST['transfer_reason'] ?? '') ?>"></div>
+        <div class="form-group"><label for="transfer_notes">Transfer Notes</label><textarea name="transfer_notes" id="transfer_notes" class="form-control" maxlength="500" rows="3"><?= htmlspecialchars($_POST['transfer_notes'] ?? '') ?></textarea></div>
         <div class="form-group">
             <label for="transferred_by">Transferred By</label>
             <input type="text" class="form-control" value="<?=htmlspecialchars($user_name)?>" readonly>

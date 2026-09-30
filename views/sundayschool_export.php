@@ -25,7 +25,7 @@ $baptized = isset($_GET['baptized']) ? $_GET['baptized'] : '';
 $education_level = isset($_GET['education_level']) ? $_GET['education_level'] : '';
 
 // Build WHERE clause
-$where_conditions = [];
+$where_conditions = ['ss.is_duplicate_archived = 0'];
 $params = [];
 $types = '';
 

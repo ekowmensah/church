@@ -28,7 +28,7 @@ if (!$id) {
 }
 
 // Fetch Sunday School record
-$stmt = $conn->prepare('SELECT * FROM sunday_school WHERE id = ? LIMIT 1');
+$stmt = $conn->prepare('SELECT * FROM sunday_school WHERE id = ? AND is_duplicate_archived = 0 LIMIT 1');
 $stmt->bind_param('i', $id);
 $stmt->execute();
 $result = $stmt->get_result();

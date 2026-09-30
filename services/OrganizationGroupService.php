@@ -199,6 +199,7 @@ class OrganizationGroupService {
             throw new RuntimeException('The selected leader must be an active member of the organization.');
         }
 
+        $brigadeEligibility = null;
         if ($unit['unit_type'] !== 'brigade_section') {
             $assignmentType = $unit['unit_type'] === 'vocal_part' ? 'vocal_part' : 'primary_group';
             $assignmentStmt = $this->conn->prepare(
@@ -213,6 +214,34 @@ class OrganizationGroupService {
             if (!$isUnitMember) {
                 throw new RuntimeException('A group or vocal-part leader must first be assigned to that unit.');
             }
+        } else {
+            $eligibilityStmt = $this->conn->prepare(
+                "SELECT eligibility.officer_branch, eligibility.rank_or_level,
+                        member.gender
+                   FROM brigade_officer_eligibility eligibility
+                   JOIN members member ON member.id = eligibility.member_id
+                  WHERE eligibility.organization_id = ? AND eligibility.member_id = ?
+                    AND eligibility.status = 'active'
+                    AND eligibility.effective_from <= CURDATE()
+                    AND (eligibility.effective_to IS NULL OR eligibility.effective_to >= CURDATE())
+                  LIMIT 1"
+            );
+            $eligibilityStmt->bind_param('ii', $organizationId, $memberId);
+            $eligibilityStmt->execute();
+            $brigadeEligibility = $eligibilityStmt->get_result()->fetch_assoc();
+            $eligibilityStmt->close();
+            if (!$brigadeEligibility) {
+                throw new RuntimeException('Certify this member as a Brigade officer before assigning section leadership.');
+            }
+            $officerBranch = (string) $brigadeEligibility['officer_branch'];
+            if ($unit['branch'] === 'girls'
+                && (strtolower(trim((string) $brigadeEligibility['gender'])) !== 'female'
+                    || !in_array($officerBranch, ['girls', 'both'], true))) {
+                throw new RuntimeException('A Girls Brigade section requires a certified female Girls/Both officer.');
+            }
+            if ($unit['branch'] === 'boys' && !in_array($officerBranch, ['boys', 'both'], true)) {
+                throw new RuntimeException('A Boys Brigade section requires a certified Boys/Both officer.');
+            }
         }
 
         $closeStmt = $this->conn->prepare(
@@ -225,7 +254,8 @@ class OrganizationGroupService {
         $closeStmt->close();
 
         $notes = $unit['unit_type'] === 'brigade_section'
-            ? 'Brigade officer eligibility confirmed by assigning organization leader.'
+            ? 'Brigade officer eligibility enforced: ' . $brigadeEligibility['officer_branch']
+                . ' officer, rank/level ' . $brigadeEligibility['rank_or_level'] . '.'
             : null;
         $insertStmt = $this->conn->prepare(
             "INSERT INTO organization_unit_leaders

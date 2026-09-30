@@ -51,7 +51,8 @@ class AttendanceAudienceService
                        child.gender, '' AS org_ids, 'sunday_school' AS subject_type
                 FROM sunday_school child
                 LEFT JOIN bible_classes class ON class.id = child.class_id
-                WHERE child.church_id = ? AND child.transferred_to_member_id IS NULL";
+                WHERE child.church_id = ? AND child.transferred_to_member_id IS NULL
+                  AND child.is_duplicate_archived = 0";
         $params = [(int) $session['church_id']];
         $types = 'i';
         $scopeClass = ($session['attendance_scope'] ?? '') === 'bible_class'

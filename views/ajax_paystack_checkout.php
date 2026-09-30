@@ -28,7 +28,6 @@ if (!$paystack_secret_key) {
     echo json_encode(['success'=>false, 'error'=>'Paystack secret key missing on server.']);
     exit;
 }
-error_log("Paystack key: [$paystack_secret_key]");
 $callback_url = BASE_URL . '/views/paystack_callback.php';
 
 $input = $_POST;
@@ -37,6 +36,13 @@ $email = isset($input['customerEmail']) ? trim($input['customerEmail']) : '';
 $name = isset($input['customerName']) ? trim($input['customerName']) : '';
 $phone = isset($input['customerPhone']) ? trim($input['customerPhone']) : '';
 $description = isset($input['description']) ? trim($input['description']) : '';
+$bulk_items = $input['bulk_items'] ?? null;
+if (is_string($bulk_items) && $bulk_items !== '') {
+    $bulk_items = json_decode($bulk_items, true);
+}
+if (!is_array($bulk_items)) {
+    $bulk_items = null;
+}
 
 if (!$amount || !$email) {
     echo json_encode(['success'=>false, 'error'=>'Missing amount or email.']);
@@ -61,7 +67,10 @@ $fields = [
         'description' => $description,
         'member_id' => $member_id,
         'church_id' => $church_id,
-        'payment_type_id' => $payment_type_id
+        'payment_type_id' => $payment_type_id,
+        'payment_period' => $input['payment_period'] ?? null,
+        'payment_period_description' => $input['payment_period_description'] ?? null,
+        'bulk_items' => $bulk_items
     ]
 ];
 

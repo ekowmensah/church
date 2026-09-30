@@ -3,6 +3,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../services/UnifiedAttendanceReportService.php';
 
 header('Content-Type: application/json');
 
@@ -15,7 +16,7 @@ if (!is_logged_in()) {
 
 // Canonical permission check with robust super admin bypass
 $is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
-if (!$is_super_admin && !has_permission('access_ajax_find_member_by_crn')) {
+if (!$is_super_admin && !has_permission('access_ajax_find_member_by_crn') && !has_permission('create_transfer')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Permission denied']);
     exit;
@@ -26,8 +27,17 @@ if (!$crn) {
     echo json_encode(['error'=>'No CRN provided']);
     exit;
 }
-$stmt = $conn->prepare('SELECT id, crn, CONCAT(last_name, " ", first_name, " ", middle_name) AS full_name FROM members WHERE crn = ? LIMIT 1');
-$stmt->bind_param('s', $crn);
+$scope = UnifiedAttendanceReportService::fromSession($conn);
+$allowedChurchIds = array_map('intval', array_column($scope->getAllowedChurches(), 'id'));
+if (!$allowedChurchIds) {
+    echo json_encode(['error' => 'No authorized church scope']);
+    exit;
+}
+$placeholders = implode(',', array_fill(0, count($allowedChurchIds), '?'));
+$types = 's' . str_repeat('i', count($allowedChurchIds));
+$params = array_merge([$crn], $allowedChurchIds);
+$stmt = $conn->prepare('SELECT id, crn, CONCAT(last_name, " ", first_name, " ", middle_name) AS full_name FROM members WHERE crn = ? AND church_id IN (' . $placeholders . ') LIMIT 1');
+$stmt->bind_param($types, ...$params);
 $stmt->execute();
 $res = $stmt->get_result();
 if ($row = $res->fetch_assoc()) {

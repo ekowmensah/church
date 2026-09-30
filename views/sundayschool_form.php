@@ -29,7 +29,7 @@ $record = [
     'srn'=>'','photo'=>'','last_name'=>'','middle_name'=>'','first_name'=>'','other_name'=>'','dob'=>'','gender'=>'','dayborn'=>'','contact'=>'','gps_address'=>'','residential_address'=>'','organization'=>'','school_attend'=>'','father_name'=>'','father_contact'=>'','father_occupation'=>'','mother_name'=>'','mother_contact'=>'','mother_occupation'=>'','church_id'=>'','class_id'=>'116','father_member_id'=>'','mother_member_id'=>'','father_is_member'=>'','mother_is_member'=>'','baptized'=>'','baptism_date'=>'','school_location'=>'','education_level'=>''
 ];
 if ($editing) {
-    $stmt = $conn->prepare('SELECT * FROM sunday_school WHERE id = ?');
+    $stmt = $conn->prepare('SELECT * FROM sunday_school WHERE id = ? AND is_duplicate_archived = 0');
     $stmt->bind_param('i', $id);
     $stmt->execute();
     $result = $stmt->get_result();

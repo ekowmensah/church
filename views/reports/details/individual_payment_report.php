@@ -51,9 +51,6 @@ $period_preset = (string) ($_GET['period'] ?? 'custom');
     (string) ($_GET['end_date'] ?? '')
 );
 $period_label = payment_report_period_label($start_date, $end_date);
-$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
-$per_page = 25;
-$offset = ($page - 1) * $per_page;
 $where = ["m.status = 'active'"];
 $where[] = 'm.is_archived = 0';
 $scopeCondition = payment_report_member_scope_condition($conn, 'm');
@@ -82,7 +79,7 @@ $total_amount = 0;
 if ($total_result && ($row = $total_result->fetch_assoc())) {
     $total_amount = $row['total_amount'] ?: 0;
 }
-// Paginated results
+// Load the complete filtered result so CSV/PDF/print exports are complete.
 $sql = "SELECT m.id AS member_id, m.crn, m.last_name, m.first_name, m.phone,
                bible_class.name AS class_name, pt.name AS payment_type,
                p.amount, p.payment_date,
@@ -95,7 +92,7 @@ LEFT JOIN bible_classes bible_class ON bible_class.id = m.class_id
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 $where_sql
 ORDER BY m.last_name, m.first_name, p.payment_date DESC
-LIMIT $per_page OFFSET $offset";
+";
 $result = $conn->query($sql);
 $rows = [];
 if ($result) {
@@ -103,16 +100,6 @@ if ($result) {
         $rows[] = $row;
     }
 }
-$count_sql = "SELECT COUNT(*) AS total_count FROM members m
-INNER JOIN v_posted_payments p ON m.id = p.member_id
-LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
-$where_sql";
-$count_result = $conn->query($count_sql);
-$total_count = 0;
-if ($count_result && ($row = $count_result->fetch_assoc())) {
-    $total_count = $row['total_count'] ?: 0;
-}
-$total_pages = ceil($total_count / $per_page);
 $statement_member = null;
 $member_count_sql = "SELECT COUNT(DISTINCT m.id) AS member_count, MIN(m.id) AS member_id
 FROM members m
@@ -226,7 +213,7 @@ if ($statement_member) {
                 <?php else: ?>
                     <?php foreach ($rows as $i => $row): ?>
                         <tr>
-                            <td><?php echo $i + 1 + $offset; ?></td>
+                            <td><?php echo $i + 1; ?></td>
                             <td><?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name']); ?></td>
                             <td><?php echo htmlspecialchars($row['crn']); ?></td>
                             <td><?php echo htmlspecialchars($row['payment_type'] ?: '-'); ?></td>
@@ -242,22 +229,6 @@ if ($statement_member) {
     <div class="mt-3">
         <h5 class="font-weight-bold">Total Amount: <span class="text-primary">₵<?php echo number_format($total_amount, 2); ?></span></h5>
     </div>
-    <?php if ($total_pages > 1): ?>
-    <nav aria-label="Page navigation">
-        <ul class="pagination justify-content-center mt-3">
-            <?php
-                $query_params = $_GET;
-                for ($i = 1; $i <= $total_pages; $i++):
-                    $query_params['page'] = $i;
-                    $url = '?' . http_build_query($query_params);
-            ?>
-                <li class="page-item<?php if ($i == $page) echo ' active'; ?>">
-                    <a class="page-link" href="<?php echo $url; ?>"><?php echo $i; ?></a>
-                </li>
-            <?php endfor; ?>
-        </ul>
-    </nav>
-    <?php endif; ?>
 </div>
 <!-- DataTables and JS export dependencies -->
 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
@@ -276,6 +247,7 @@ $(document).ready(function() {
     var table = $(".table").DataTable({
         dom: 'Bfrtip',
         buttons: [
+            <?php if ($can_export): ?>
             {
                 extend: 'csv',
                 text: '<i class="fas fa-file-csv"></i> CSV',
@@ -289,6 +261,7 @@ $(document).ready(function() {
                 title: <?= json_encode('Individual Payment Report - ' . $period_label) ?>,
                 messageTop: <?= json_encode($statement_export_header) ?>
             },
+            <?php endif; ?>
             {
                 extend: 'print',
                 text: '<i class="fas fa-print"></i> Print',
@@ -297,9 +270,11 @@ $(document).ready(function() {
                 messageTop: <?= json_encode($statement_export_header) ?>
             }
         ],
-        paging: false,
+        paging: true,
+        pageLength: 25,
+        lengthMenu: [25, 50, 100],
         searching: false,
-        info: false,
+        info: true,
         ordering: false
     });
     // Hide custom buttons if DataTables is used

@@ -30,7 +30,7 @@
 
 if (session_status() === PHP_SESSION_NONE) session_start();
 require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../models/Payment.php';
+require_once __DIR__.'/../services/PaymentGatewayCallbackService.php';
 require_once __DIR__.'/../includes/payment_sms_template.php';
 
 // Set up logging
@@ -195,6 +195,7 @@ try {
     // Step 2: Extract payment type and member info from payment items
     $payment_type_id = 1; // Default to first available payment type
     $target_member_id = null;
+    $target_sunday_school_id = null;
     $payer_member_id = null;
     $donation_type = 'Donation';
     
@@ -239,7 +240,10 @@ try {
                 }
                 
                 // Extract member IDs from member info
-                if (preg_match('/Member ID:\s*(\d+)/', $member_info, $member_matches)) {
+                if (preg_match('/Sunday School ID:\s*(\d+)/', $member_info, $child_matches)) {
+                    $target_sunday_school_id = intval($child_matches[1]);
+                    log_debug("Sunday School payment - child ID: $target_sunday_school_id");
+                } elseif (preg_match('/Member ID:\s*(\d+)/', $member_info, $member_matches)) {
                     // Self payment by registered member
                     $target_member_id = intval($member_matches[1]);
                     $payer_member_id = $target_member_id;
@@ -319,10 +323,23 @@ try {
     
     // Step 3: Determine final member ID for payment attribution
     $final_member_id = null;
+    $final_sunday_school_id = null;
     $final_church_id = null;
     
     // Priority: target_member_id > payer_member_id > member_id (from phone lookup)
-    if ($target_member_id) {
+    if ($target_sunday_school_id) {
+        $final_sunday_school_id = $target_sunday_school_id;
+        $target_stmt = $conn->prepare('SELECT church_id FROM sunday_school WHERE id = ? AND transferred_to_member_id IS NULL');
+        $target_stmt->bind_param('i', $target_sunday_school_id);
+        $target_stmt->execute();
+        $target_result = $target_stmt->get_result();
+        if ($target_result->num_rows > 0) {
+            $final_church_id = $target_result->fetch_assoc()['church_id'];
+        } else {
+            throw new RuntimeException('The selected Sunday School beneficiary is unavailable.');
+        }
+        log_debug("Payment attributed to Sunday School ID: $target_sunday_school_id");
+    } elseif ($target_member_id) {
         $final_member_id = $target_member_id;
         // Get church_id for target member
         $target_stmt = $conn->prepare('SELECT church_id FROM members WHERE id = ? AND status = "active"');
@@ -350,11 +367,9 @@ try {
         log_debug("Payment attributed to phone lookup member ID: $member_id");
     }
     
-    // Step 4: Record payment
-    $paymentModel = new Payment();
-    
-    if ($final_member_id) {
-        // Get payment type name for description
+    // Step 4: Capture successful fulfillment for authorized approval. The
+    // approval service is the only gateway path allowed to write payments.
+    if ($final_member_id || $final_sunday_school_id) {
         $payment_type_name = 'Payment';
         $type_stmt = $conn->prepare('SELECT name FROM payment_types WHERE id = ?');
         $type_stmt->bind_param('i', $payment_type_id);
@@ -363,105 +378,27 @@ try {
         if ($type_result->num_rows > 0) {
             $payment_type_name = $type_result->fetch_assoc()['name'];
         }
-        
-        // Format description like Hubtel payments: "Payment for [period] [type]"
+        $type_stmt->close();
         $formatted_description = "Payment for " . ($payment_period_description ?: date('F Y')) . " " . $payment_type_name;
-        
-        // Member identified - record as regular payment
-        $payment_data = [
-            'member_id' => $final_member_id,
-            'amount' => floatval($amount),
-            'description' => $formatted_description,
-            'payment_date' => $transaction_date,
-            'payment_period' => $payment_period,
-            'payment_period_description' => $payment_period_description,
+        $gatewayService = new PaymentGatewayCallbackService($conn);
+        $capture = $gatewayService->record([
             'client_reference' => $reference,
+            'transaction_id' => $order_id,
             'status' => $payment_status,
+            'amount' => (float) $amount,
+            'description' => $formatted_description,
+            'customer_name' => $order_info['CustomerName'] ?? $phone,
+            'customer_phone' => $phone,
+            'member_id' => $final_member_id,
+            'sundayschool_id' => $final_sunday_school_id,
             'church_id' => $final_church_id,
             'payment_type_id' => $payment_type_id,
-            'recorded_by' => 'USSD',
-            'mode' => 'Mobile Money'
-        ];
-        
-        log_debug('Recording payment for identified member: '.json_encode($payment_data));
-        $result = $paymentModel->add($conn, $payment_data);
-        
-        if ($result) {
-            log_debug("Payment recorded successfully with ID: $result");
-            
-            require_once __DIR__.'/../includes/sms.php';
-            $order_info = $data['OrderInfo'] ?? [];
-            $customer_phone = $phone;
-            $payer_name = normalize_payment_sms_value($order_info['CustomerName'] ?? $customer_phone);
-            $church_name = fetch_active_church_name($conn, $final_church_id);
-
-            $target_profile = !empty($target_member_id) ? fetch_active_member_profile($conn, (int) $target_member_id) : null;
-            $payer_profile = !empty($payer_member_id) ? fetch_active_member_profile($conn, (int) $payer_member_id) : null;
-
-            if ($payer_profile && !empty($payer_profile['full_name'])) {
-                $payer_name = $payer_profile['full_name'];
-            } elseif (!empty($member_info['full_name']) && $member_id && $member_id === $payer_member_id) {
-                $payer_name = $member_info['full_name'];
-            }
-
-            $beneficiary_name = $target_profile['full_name'] ?? ($member_info['full_name'] ?? $payer_name);
-            $beneficiary_phone = $target_profile['phone'] ?? $customer_phone;
-            $is_cross_payment = !empty($target_member_id) && !empty($payer_member_id) && (int) $target_member_id !== (int) $payer_member_id;
-
-            log_debug("SMS check: phone=$customer_phone, status=" . ($order_info['Status'] ?? 'none'));
-            if (!empty($beneficiary_phone) && strtolower($order_info['Status'] ?? '') === 'paid') {
-                $show_by_sender = $is_cross_payment
-                    || (!empty($target_member_id) && empty($payer_member_id))
-                    || (!empty($customer_phone) && !phones_match_shortcode($customer_phone, $beneficiary_phone));
-                $sender_name_for_message = $show_by_sender ? $payer_name : '';
-
-                $harvest_year = null;
-                $harvest_total = null;
-                if (is_harvest_payment_type($donation_type)) {
-                    $harvest_year = get_payment_period_year($payment_period, $payment_period_description, $transaction_date);
-                    $harvest_member_id = $target_member_id ?: $final_member_id;
-                    $harvest_total = get_member_yearly_harvest_total($conn, (int) $harvest_member_id, $harvest_year, (int) $payment_type_id);
-                }
-
-                $beneficiary_sms = build_hubtel_ussd_member_payment_sms(
-                    $beneficiary_name,
-                    $amount,
-                    $payment_period_description,
-                    $donation_type,
-                    $sender_name_for_message,
-                    $church_name,
-                    $harvest_year,
-                    $harvest_total,
-                    $payment_period,
-                    $transaction_date
-                );
-
-                log_debug("Sending beneficiary SMS to: $beneficiary_phone");
-                log_sms($beneficiary_phone, $beneficiary_sms, null, 'ussd_payment_target');
-
-                if ($is_cross_payment && !empty($customer_phone) && $customer_phone !== $beneficiary_phone) {
-                    $payer_sms = build_hubtel_ussd_payer_confirmation_sms(
-                        $payer_name,
-                        $amount,
-                        $payment_period_description,
-                        $donation_type,
-                        $beneficiary_name,
-                        $church_name,
-                        $payment_period,
-                        $transaction_date
-                    );
-
-                    log_debug("Sending payer SMS to: $customer_phone");
-                    log_sms($customer_phone, $payer_sms, null, 'ussd_payment');
-                }
-            } else {
-                log_debug("SMS conditions not met, skipping SMS");
-            }
-            
-        } else {
-            log_debug('Failed to record payment: '.json_encode($result));
-        }
-        
+            'payment_period' => $payment_period,
+            'payment_period_description' => $payment_period_description,
+            'payment_source' => 'ussd',
+            'raw_payload' => $raw_input,
+        ]);
+        log_debug('USSD payment queued for approval: ' . json_encode($capture));
     } else {
         // Member not identified - record as unmatched payment for manual assignment
         log_debug('Member not identified, recording as unmatched payment');

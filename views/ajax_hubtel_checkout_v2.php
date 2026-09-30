@@ -70,7 +70,13 @@ if ($result['success']) {
     // This is important to track the payment status later
     try {
         require_once __DIR__.'/../config/database.php';
-        $stmt = $conn->prepare('INSERT INTO payment_intents (client_reference, hubtel_transaction_id, amount, description, customer_name, customer_phone, checkout_id, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())');
+        $stmt = $conn->prepare(
+            "INSERT INTO payment_intents
+                (client_reference, hubtel_transaction_id, amount, description,
+                 customer_name, customer_phone, checkout_id, status,
+                 payment_source, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', 'online_checkout', NOW(), NOW())"
+        );
         $checkoutId = $result['checkoutId'] ?? '';
         $hubtelTransactionId = $result['transaction_id'] ?? null;
         
@@ -82,7 +88,7 @@ if ($result['success']) {
         ];
         file_put_contents(__DIR__.'/../logs/hubtel_debug.log', date('c') . " - Payment Creation Debug: " . json_encode($debugData) . "\n", FILE_APPEND);
         
-        $stmt->bind_param('ssdsss', $clientReference, $hubtelTransactionId, $amount, $description, $customerName, $customerPhone, $checkoutId);
+        $stmt->bind_param('ssdssss', $clientReference, $hubtelTransactionId, $amount, $description, $customerName, $customerPhone, $checkoutId);
         $stmt->execute();
     } catch (Exception $e) {
         // Log error but continue - don't block payment flow due to DB issues

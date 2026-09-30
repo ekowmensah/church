@@ -32,7 +32,7 @@ $can_delete = $is_super_admin || has_permission('delete_sunday_school');
 $can_view = true; // Already validated above
 
 // Build WHERE clause with filters
-$where_conditions = [];
+$where_conditions = ['ss.is_duplicate_archived = 0'];
 $params = [];
 $param_types = "";
 

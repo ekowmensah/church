@@ -26,6 +26,7 @@ final class PaymentGatewayIntegrityService {
                FROM payment_intents intent
                LEFT JOIN payments payment ON payment.client_reference = intent.client_reference
               WHERE LOWER(intent.status) = 'completed'
+                AND intent.approval_status = 'approved'
               GROUP BY intent.id, intent.amount HAVING COUNT(payment.id) = 0
              ON DUPLICATE KEY UPDATE expected_amount=VALUES(expected_amount), observed_amount=VALUES(observed_amount), details=VALUES(details)"
         );
@@ -37,6 +38,7 @@ final class PaymentGatewayIntegrityService {
                FROM payment_intents intent
                JOIN payments payment ON payment.client_reference = intent.client_reference
               WHERE LOWER(intent.status) = 'completed'
+                AND intent.approval_status = 'approved'
               GROUP BY intent.id, intent.amount
              HAVING ABS(intent.amount-COALESCE(SUM(payment.amount),0)) > 0.01
              ON DUPLICATE KEY UPDATE expected_amount=VALUES(expected_amount), observed_amount=VALUES(observed_amount), details=VALUES(details)"

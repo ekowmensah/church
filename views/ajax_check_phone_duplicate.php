@@ -53,7 +53,9 @@ if ($id) {
     $params[] = $id;
 }
 
-$sql = "SELECT id FROM sunday_school WHERE $where_sunday UNION ALL SELECT id FROM members WHERE $where_member LIMIT 1";
+$sql = "SELECT id FROM sunday_school WHERE is_duplicate_archived = 0 AND ($where_sunday)
+        UNION ALL
+        SELECT id FROM members WHERE is_archived = 0 AND ($where_member) LIMIT 1";
 $stmt = $conn->prepare($sql);
 if ($id) {
     $stmt->bind_param('sis', $phone9, $id, $phone9);

@@ -3,6 +3,7 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../services/UnifiedAttendanceReportService.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -31,27 +32,32 @@ $can_add = $is_super_admin || has_permission('create_visitor');
 $can_edit = $is_super_admin || has_permission('edit_visitor');
 $can_delete = $is_super_admin || has_permission('delete_visitor');
 $can_convert = $is_super_admin || has_permission('convert_visitor') || has_permission('convert_visitor_to_member');
+$can_follow_up = $is_super_admin || has_permission('manage_visitor_follow_up');
 $can_view = true; // Already validated above
 
 // Add church-scoped invitation and retained conversion details.
 $visitor_sql = "SELECT v.*, invited.crn AS invited_crn,
                        CONCAT(invited.last_name, ' ', invited.first_name, ' ', invited.middle_name) AS invited_name,
                        converted.crn AS converted_crn,
-                       CONCAT(converted.first_name, ' ', converted.middle_name, ' ', converted.last_name) AS converted_name
+                       CONCAT(converted.first_name, ' ', converted.middle_name, ' ', converted.last_name) AS converted_name,
+                       follow_up_user.name AS follow_up_assigned_name
                   FROM visitors v
                   LEFT JOIN members invited ON v.invited_by = invited.id
-                  LEFT JOIN members converted ON v.converted_to_member_id = converted.id";
+                  LEFT JOIN members converted ON v.converted_to_member_id = converted.id
+                  LEFT JOIN users follow_up_user ON follow_up_user.id = v.follow_up_assigned_to_user_id
+                 WHERE v.is_duplicate_archived = 0";
 $visitor_types = '';
 $visitor_params = [];
 if (!$is_super_admin) {
-    $stmt = $conn->prepare('SELECT church_id FROM users WHERE id = ? LIMIT 1');
-    $stmt->bind_param('i', $_SESSION['user_id']);
-    $stmt->execute();
-    $visitor_church_id = (int) ($stmt->get_result()->fetch_assoc()['church_id'] ?? 0);
-    $stmt->close();
-    $visitor_sql .= ' WHERE v.church_id = ?';
-    $visitor_types = 'i';
-    $visitor_params[] = $visitor_church_id;
+    $visitorScope = UnifiedAttendanceReportService::fromSession($conn);
+    $visitorChurchIds = array_map('intval', array_column($visitorScope->getAllowedChurches(), 'id'));
+    if ($visitorChurchIds) {
+        $visitor_sql .= ' AND v.church_id IN (' . implode(',', array_fill(0, count($visitorChurchIds), '?')) . ')';
+        $visitor_types = str_repeat('i', count($visitorChurchIds));
+        $visitor_params = $visitorChurchIds;
+    } else {
+        $visitor_sql .= ' AND 1 = 0';
+    }
 }
 $visitor_sql .= ' ORDER BY v.visit_date DESC, v.id DESC';
 $visitor_stmt = $conn->prepare($visitor_sql);
@@ -73,7 +79,7 @@ $(function(){
   $('#visitorTable').DataTable({
     responsive: false, // Disable responsive to prevent column collapse
     pageLength: 10,
-    order: [[5, 'desc']], // Visit Date column index shifted by 1 due to new checkbox column
+    order: [[6, 'desc']],
     language: { search: "<i class='fas fa-search mr-1'></i> Search:" }
   });
   $('[data-toggle="tooltip"]').tooltip();
@@ -97,6 +103,7 @@ $(function(){
               <th><input type="checkbox" id="selectAllVisitors"></th>
               <th>Name</th>
               <th>Status</th>
+              <th>Follow-up</th>
               <th>Gender</th>
               <th>Phone</th>
               <th>Visit Date</th>
@@ -117,6 +124,7 @@ $(function(){
                     <span class="badge badge-success">Registered</span><br>
                     <small><?= htmlspecialchars($v['converted_crn'] ?? '') ?></small>
                 <?php else: ?><span class="badge badge-info">Visitor</span><?php endif; ?></td>
+                <td><span class="badge badge-<?= in_array($v['follow_up_status'] ?? '', ['completed'], true) ? 'success' : (in_array($v['follow_up_status'] ?? '', ['unreachable','declined'], true) ? 'secondary' : 'warning') ?>"><?= htmlspecialchars(ucwords(str_replace('_', ' ', $v['follow_up_status'] ?? 'not_started'))) ?></span><?php if (!empty($v['next_follow_up_date'])): ?><br><small class="<?= $v['next_follow_up_date'] < date('Y-m-d') ? 'text-danger font-weight-bold' : 'text-muted' ?>">Next: <?= htmlspecialchars($v['next_follow_up_date']) ?></small><?php endif; ?><?php if (!empty($v['follow_up_assigned_name'])): ?><br><small class="text-muted"><?= htmlspecialchars($v['follow_up_assigned_name']) ?></small><?php endif; ?></td>
                 <td><?= $v['gender'] ? htmlspecialchars(ucfirst($v['gender'])) : '-' ?></td>
                 <td><a href="tel:<?= htmlspecialchars($v['phone']) ?>" class="text-dark" data-toggle="tooltip" title="Call"><?= htmlspecialchars($v['phone']) ?></a></td>
 
@@ -134,6 +142,7 @@ $(function(){
 
                 <td class="visitor-action-btns text-nowrap">
                   <button type="button" class="btn btn-sm btn-outline-primary visitor-sms-btn" data-toggle="tooltip" title="Send SMS" data-id="<?= $v['id'] ?>" data-name="<?= htmlspecialchars($v['name']) ?>" data-phone="<?= htmlspecialchars($v['phone']) ?>" data-email="<?= htmlspecialchars($v['email']) ?>"><i class="fas fa-sms"></i></button>
+                  <?php if ($can_follow_up): ?><a href="visitor_follow_up.php?id=<?= (int) $v['id'] ?>" class="btn btn-sm btn-outline-success" data-toggle="tooltip" title="Visitor follow-up"><i class="fas fa-people-arrows"></i></a><?php endif; ?>
                   <?php if (($v['conversion_status'] ?? 'visitor') === 'registered' && !empty($v['converted_to_member_id'])): ?>
                     <a href="member_view.php?id=<?= (int) $v['converted_to_member_id'] ?>" class="btn btn-sm btn-success" data-toggle="tooltip" title="View registered member"><i class="fas fa-user-check"></i></a>
                   <?php elseif ($can_convert): ?>
@@ -152,7 +161,7 @@ $(function(){
                 </td>
               </tr>
             <?php endwhile; else: ?>
-              <tr><td colspan="9" class="text-center">No visitors found.</td></tr>
+              <tr><td colspan="10" class="text-center">No visitors found.</td></tr>
             <?php endif; ?>
           </tbody>
         </table>
