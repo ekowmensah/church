@@ -157,7 +157,114 @@ final class OnlinePaymentApprovalService
         }
     }
 
-    private function paymentLines(array $intent): array
+    /** Post a definitive Hubtel shortcode fulfillment without human approval. */
+    public function autoPostSuccessfulUssd(int $intentId, string $notes = 'Definitive Hubtel USSD fulfillment automatically posted.'): array
+    {
+        return $this->autoPostDefinitiveGatewayPayment($intentId, ['ussd'], $notes);
+    }
+
+    /**
+     * Post a definitive gateway fulfillment without human approval.
+     * Status-check callers must never use this method: a success discovered by
+     * reconciliation stays pending until an authorized user approves it.
+     *
+     * @param string[] $allowedSources
+     */
+    public function autoPostDefinitiveGatewayPayment(
+        int $intentId,
+        array $allowedSources = ['online_checkout', 'paystack', 'ussd'],
+        string $notes = 'Definitive gateway fulfillment automatically posted.'
+    ): array {
+        $notes = mb_substr(trim($notes), 0, 500);
+        $this->conn->begin_transaction();
+        try {
+            $stmt = $this->conn->prepare('SELECT * FROM payment_intents WHERE id = ? FOR UPDATE');
+            $stmt->bind_param('i', $intentId);
+            $stmt->execute();
+            $intent = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            $source = (string) ($intent['payment_source'] ?? '');
+            if (!$intent || !in_array($source, $allowedSources, true)) {
+                throw new RuntimeException('This gateway source is not eligible for automatic posting.');
+            }
+            if (!in_array(strtolower(trim((string) $intent['status'])), ['completed', 'paid', 'success', 'successful', 'approved'], true)) {
+                throw new RuntimeException('The payment cannot be posted automatically until the gateway confirms success.');
+            }
+            if ((string) $intent['approval_status'] === 'rejected') {
+                throw new RuntimeException('A rejected gateway intent requires manual reconciliation.');
+            }
+            if ((string) ($intent['success_confirmation_source'] ?? '') !== 'gateway_callback') {
+                throw new RuntimeException('A success discovered by status checking requires authorized approval.');
+            }
+
+            $existing = $this->conn->prepare('SELECT id, amount FROM payments WHERE client_reference = ? ORDER BY id');
+            $existing->bind_param('s', $intent['client_reference']);
+            $existing->execute();
+            $existingRows = $existing->get_result()->fetch_all(MYSQLI_ASSOC);
+            $paymentIds = array_map('intval', array_column($existingRows, 'id'));
+            $existing->close();
+            if ($paymentIds) {
+                $existingTotal = array_sum(array_map('floatval', array_column($existingRows, 'amount')));
+                if (abs($existingTotal - (float) $intent['amount']) > 0.01) {
+                    throw new RuntimeException('Existing payment rows do not match the fulfilled gateway amount. Reconcile them before approval.');
+                }
+                if ((string) $intent['approval_status'] !== 'approved') {
+                    $update = $this->conn->prepare(
+                        "UPDATE payment_intents
+                            SET approval_status = 'approved', approved_by_user_id = NULL,
+                                approved_at = COALESCE(approved_at, NOW()),
+                                approval_notes = ?, updated_at = NOW()
+                          WHERE id = ?"
+                    );
+                    $update->bind_param('si', $notes, $intentId);
+                    $update->execute();
+                    $update->close();
+                }
+                $this->conn->commit();
+                return ['decision' => 'auto_posted', 'payment_ids' => $paymentIds, 'already_posted' => true];
+            }
+
+            $recorder = $source === 'ussd' ? 'USSD' : 'Online';
+            $lines = $this->paymentLines($intent, $recorder, 'Completed');
+            $lineTotal = array_sum(array_column($lines, 'amount'));
+            if (abs($lineTotal - (float) $intent['amount']) > 0.01) {
+                throw new RuntimeException('The gateway payment-line total does not match the fulfilled amount.');
+            }
+
+            $paymentModel = new Payment();
+            foreach ($lines as $line) {
+                $paymentId = $paymentModel->add($this->conn, $line);
+                if (!$paymentId) {
+                    throw new RuntimeException('A fulfilled gateway payment line could not be posted.');
+                }
+                $paymentIds[] = (int) $paymentId;
+            }
+
+            $update = $this->conn->prepare(
+                "UPDATE payment_intents
+                    SET approval_status = 'approved', approved_by_user_id = NULL,
+                        approved_at = NOW(), approval_notes = ?, updated_at = NOW()
+                  WHERE id = ? AND approval_status <> 'rejected'"
+            );
+            $update->bind_param('si', $notes, $intentId);
+            $update->execute();
+            $update->close();
+            $this->audit($intentId, 'auto_posted', (string) $intent['status'], $notes);
+            $this->conn->commit();
+
+            if ($this->sendReceipts) {
+                foreach ($lines as $index => $line) {
+                    $this->sendReceipt($line, $paymentIds[$index] ?? null, $intent);
+                }
+            }
+            return ['decision' => 'auto_posted', 'payment_ids' => $paymentIds, 'already_posted' => false];
+        } catch (Throwable $error) {
+            $this->conn->rollback();
+            throw $error;
+        }
+    }
+
+    private function paymentLines(array $intent, ?string $recordedBy = null, string $paymentStatus = 'Approved'): array
     {
         $items = [];
         if (trim((string) ($intent['bulk_breakdown'] ?? '')) !== '') {
@@ -200,12 +307,16 @@ final class OnlinePaymentApprovalService
                 'description' => $description,
                 'payment_date' => $paymentDate,
                 'client_reference' => $intent['client_reference'],
-                'status' => 'Approved',
+                'status' => $paymentStatus,
                 'church_id' => $churchId,
                 'payment_type_id' => $paymentTypeId,
                 'payment_period' => $paymentPeriod,
                 'payment_period_description' => $periodDescription,
-                'recorded_by' => 'Gateway Approval',
+                // payments.recorded_by is a legacy VARCHAR column, but the
+                // rest of the application treats numeric values as user IDs.
+                // Retain the actual approver so scoped payment lists can show
+                // the posted row and the recorder name remains auditable.
+                'recorded_by' => $recordedBy ?? (string) $this->actorUserId,
                 'mode' => $intent['payment_source'] === 'ussd' ? 'Mobile Money' : 'Online',
             ];
         }
@@ -234,7 +345,8 @@ final class OnlinePaymentApprovalService
                 (payment_intent_id, action, gateway_status, notes, performed_by_user_id)
              VALUES (?, ?, ?, ?, ?)'
         );
-        $stmt->bind_param('isssi', $intentId, $action, $gatewayStatus, $notes, $this->actorUserId);
+        $actorUserId = $this->actorUserId > 0 ? $this->actorUserId : null;
+        $stmt->bind_param('isssi', $intentId, $action, $gatewayStatus, $notes, $actorUserId);
         $stmt->execute();
         $stmt->close();
     }

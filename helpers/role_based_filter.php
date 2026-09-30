@@ -283,13 +283,16 @@ function is_sunday_school_role($user_id = null) {
  * @param string $member_table_alias Table alias for members table (e.g., 'm')
  * @return array ['sql' => string, 'params' => array, 'types' => string]
  */
-function apply_sunday_school_filter($member_table_alias = 'm') {
+function apply_sunday_school_filter($member_table_alias = 'm', $sunday_school_table_alias = null) {
     if (!is_sunday_school_role()) {
         return ['sql' => '', 'params' => [], 'types' => ''];
     }
     
     // Filter to junior members: age < 18 OR the governed status is explicit.
-    $sql = "({$member_table_alias}.membership_status = 'Junior Member' OR TIMESTAMPDIFF(YEAR, {$member_table_alias}.dob, CURDATE()) < 18)";
+    $memberScope = "({$member_table_alias}.membership_status = 'Junior Member' OR TIMESTAMPDIFF(YEAR, {$member_table_alias}.dob, CURDATE()) < 18)";
+    $sql = $sunday_school_table_alias
+        ? "({$sunday_school_table_alias}.id IS NOT NULL OR {$memberScope})"
+        : $memberScope;
     
     return [
         'sql' => $sql,

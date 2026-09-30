@@ -62,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get pending payment intents for display - debug the created_at issue
+// Show unresolved Hubtel intents that are eligible for status checking.
 $pending_stmt = $conn->prepare("
     SELECT pi.*, m.crn, CONCAT(m.first_name, ' ', m.last_name) as member_name, c.name as church_name,
            pi.created_at as debug_created_at,
@@ -70,7 +70,9 @@ $pending_stmt = $conn->prepare("
     FROM payment_intents pi 
     LEFT JOIN members m ON pi.member_id = m.id 
     LEFT JOIN churches c ON pi.church_id = c.id 
-    WHERE pi.status = 'Pending' 
+    WHERE pi.status IN ('Pending', 'Failed')
+      AND pi.approval_status = 'not_required'
+      AND pi.payment_source IN ('ussd', 'online_checkout', 'legacy_callback')
     ORDER BY pi.created_at DESC 
     LIMIT 20
 ");
@@ -254,6 +256,12 @@ ob_start();
                                     <strong><?= htmlspecialchars($check_result['new_status']) ?></strong>
                                 </div>
                                 <?php endif; ?>
+                                <?php if (($check_result['approval_status'] ?? '') === 'pending'): ?>
+                                <div class="alert alert-warning alert-sm">
+                                    <i class="fas fa-user-check"></i>
+                                    Success was confirmed by status checking. An authorized approval is required before posting.
+                                </div>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -322,7 +330,7 @@ ob_start();
                 </div>
                 <div>
                     <h5 class="m-0 font-weight-bold text-white">Bulk Status Check</h5>
-                    <p class="m-0 text-white opacity-75">Update multiple pending payments</p>
+                    <p class="m-0 text-white opacity-75">Check multiple pending or failed payments</p>
                 </div>
             </div>
         </div>
@@ -345,7 +353,7 @@ ob_start();
                         </select>
                     </div>
                     <small class="form-text text-muted mt-2">
-                        <i class="fas fa-clock mr-1"></i>Process the most recent pending payment transactions
+                        <i class="fas fa-clock mr-1"></i>Process the most recent unresolved Hubtel transactions
                     </small>
                 </div>
                 <div class="col-md-4 mb-4 d-flex align-items-end">
@@ -452,7 +460,7 @@ ob_start();
         </div>
     </div>
 
-    <!-- Pending Payment Intents -->
+    <!-- Unresolved Payment Intents -->
     <div class="card border-0 shadow-lg mb-4">
         <div class="card-header border-0 py-4" style="background: linear-gradient(90deg, #a8edea 0%, #fed6e3 100%);">
             <div class="d-flex align-items-center justify-content-between">
@@ -461,12 +469,12 @@ ob_start();
                         <i class="fas fa-clock fa-lg"></i>
                     </div>
                     <div>
-                        <h5 class="m-0 font-weight-bold text-dark">Pending Payments</h5>
+                        <h5 class="m-0 font-weight-bold text-dark">Pending and Failed Payments</h5>
                         <p class="m-0 text-muted">Recent transactions awaiting confirmation</p>
                     </div>
                 </div>
                 <div class="badge badge-pill badge-primary badge-lg px-3 py-2">
-                    <?= count($pending_intents) ?> pending
+                    <?= count($pending_intents) ?> unresolved
                 </div>
             </div>
         </div>
@@ -477,7 +485,7 @@ ob_start();
                         <i class="fas fa-check-circle text-success" style="font-size: 4rem;"></i>
                     </div>
                     <h4 class="text-success font-weight-bold">All Clear!</h4>
-                    <p class="text-muted lead">No pending payment transactions found.</p>
+                    <p class="text-muted lead">No pending or failed Hubtel transactions found.</p>
                     <div class="mt-4">
                         <span class="badge badge-success badge-pill px-4 py-2">
                             <i class="fas fa-thumbs-up mr-2"></i>System Up to Date

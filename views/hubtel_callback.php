@@ -1,9 +1,10 @@
 <?php
 
-// Hubtel checkout callback. Successful gateway responses are queued for
-// authorized approval and are not posted directly to the payments ledger.
+// Hubtel checkout callback. A definitive success posts immediately. Failed or
+// uncertain results post nothing; a later status-check success requires review.
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../services/PaymentGatewayCallbackService.php';
+require_once __DIR__ . '/../services/OnlinePaymentApprovalService.php';
 
 $debugLog = __DIR__ . '/../logs/hubtel_callback_debug.log';
 $rawInput = file_get_contents('php://input');
@@ -88,11 +89,22 @@ try {
         'payment_source' => 'online_checkout',
         'raw_payload' => $rawInput,
     ]);
+    if (($result['status'] ?? '') === 'Completed'
+        && ($result['previous_status'] ?? null) !== 'Failed'
+        && ($result['confirmation_source'] ?? null) === 'gateway_callback') {
+        $postingService = new OnlinePaymentApprovalService($conn, 0, true, true);
+        $posting = $postingService->autoPostDefinitiveGatewayPayment(
+            (int) $result['intent_id'],
+            ['online_checkout'],
+            'Automatically posted from a definitive Hubtel online-checkout callback.'
+        );
+        $result['posting'] = $posting;
+    }
     file_put_contents($debugLog, date('c') . ' Captured: ' . json_encode($result) . "\n", FILE_APPEND);
-    http_response_code(500);
-    echo 'Capture failed';
-} catch (Throwable $error) {
-    file_put_contents($debugLog, date('c') . ' Error: ' . $error->getMessage() . "\n", FILE_APPEND);
     http_response_code(200);
     echo 'OK';
+} catch (Throwable $error) {
+    file_put_contents($debugLog, date('c') . ' Error: ' . $error->getMessage() . "\n", FILE_APPEND);
+    http_response_code(500);
+    echo 'Capture failed';
 }

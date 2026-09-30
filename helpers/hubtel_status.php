@@ -32,6 +32,7 @@ function define_env_constant($key) {
 }
 define_env_constant('HUBTEL_API_KEY');
 define_env_constant('HUBTEL_API_SECRET');
+require_once __DIR__ . '/../services/PaymentGatewayCallbackService.php';
 
 /**
  * Check Hubtel transaction status using the transaction status API
@@ -241,30 +242,42 @@ function check_transaction_by_reference($conn, $client_reference, $transaction_i
             // Log status mapping for debugging
             file_put_contents(__DIR__.'/../logs/hubtel_debug.log', date('c') . " - Status Mapping: '{$hubtel_status}' -> '{$local_status}' (was: '{$intent['status']}')\n", FILE_APPEND);
             
-            if ($local_status !== $intent['status']) {
-                $update_stmt = $conn->prepare("UPDATE payment_intents SET status = ?, updated_at = NOW() WHERE client_reference = ?");
-                $update_stmt->bind_param('ss', $local_status, $client_reference);
-                $update_stmt->execute();
-                
-                return [
-                    'success' => true,
-                    'status_updated' => true,
-                    'old_status' => $intent['status'],
-                    'new_status' => $local_status,
-                    'hubtel_data' => $status_result['data'],
-                    'transaction_id' => $transaction_id,
-                    'method' => 'hubtel_api'
-                ];
-            } else {
-                return [
-                    'success' => true,
-                    'status_updated' => false,
-                    'current_status' => $local_status,
-                    'hubtel_data' => $status_result['data'],
-                    'transaction_id' => $transaction_id,
-                    'method' => 'hubtel_api'
-                ];
-            }
+            // Reuse the canonical capture path so a success discovered during
+            // reconciliation is auditable and enters the approval queue. A
+            // status check must never write directly to the payments ledger.
+            $captureService = new PaymentGatewayCallbackService($conn);
+            $capture = $captureService->record([
+                'client_reference' => $client_reference,
+                'transaction_id' => $status_result['transaction_id'] ?? $transaction_id,
+                'status' => $local_status,
+                'amount' => $status_result['amount'] ?? $intent['amount'],
+                'description' => $intent['description'] ?? 'Hubtel payment',
+                'customer_name' => $intent['customer_name'] ?? 'Hubtel customer',
+                'customer_phone' => $intent['customer_phone'] ?? '',
+                'member_id' => $intent['member_id'] ?? null,
+                'sundayschool_id' => $intent['sundayschool_id'] ?? null,
+                'church_id' => $intent['church_id'] ?? null,
+                'payment_type_id' => $intent['payment_type_id'] ?? null,
+                'payment_period' => $intent['payment_period'] ?? null,
+                'payment_period_description' => $intent['payment_period_description'] ?? null,
+                'bulk_breakdown' => $intent['bulk_breakdown'] ?? null,
+                'payment_source' => $intent['payment_source'] ?? 'legacy_callback',
+                'confirmation_source' => 'status_check',
+                'raw_payload' => json_encode($status_result['data'] ?? $status_result),
+            ]);
+
+            return [
+                'success' => true,
+                'status_updated' => $local_status !== $intent['status'],
+                'old_status' => $intent['status'],
+                'new_status' => $capture['status'],
+                'current_status' => $capture['status'],
+                'approval_status' => $capture['approval_status'],
+                'confirmation_source' => $capture['confirmation_source'],
+                'hubtel_data' => $status_result['data'],
+                'transaction_id' => $transaction_id,
+                'method' => 'hubtel_api'
+            ];
         }
     }
     
@@ -282,13 +295,20 @@ function check_transaction_by_reference($conn, $client_reference, $transaction_i
 }
 
 /**
- * Bulk check status for all pending payment intents
+ * Bulk check status for recent pending or failed Hubtel payment intents.
  * @param object $conn Database connection
  * @param int $limit Maximum number of records to check
  * @return array Results of bulk status check
  */
 function bulk_check_pending_payments($conn, $limit = 50) {
-    $stmt = $conn->prepare("SELECT client_reference, created_at FROM payment_intents WHERE status = 'Pending' ORDER BY created_at DESC LIMIT ?");
+    $stmt = $conn->prepare(
+        "SELECT client_reference, created_at
+           FROM payment_intents
+          WHERE status IN ('Pending', 'Failed')
+            AND approval_status = 'not_required'
+            AND payment_source IN ('ussd', 'online_checkout', 'legacy_callback')
+          ORDER BY created_at DESC LIMIT ?"
+    );
     $stmt->bind_param('i', $limit);
     $stmt->execute();
     $pending_intents = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);

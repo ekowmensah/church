@@ -31,6 +31,7 @@
 if (session_status() === PHP_SESSION_NONE) session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../services/PaymentGatewayCallbackService.php';
+require_once __DIR__.'/../services/OnlinePaymentApprovalService.php';
 require_once __DIR__.'/../includes/payment_sms_template.php';
 
 // Set up logging
@@ -164,14 +165,13 @@ if (strlen($phone) === 9 && !str_starts_with($phone, '0')) {
 
 log_debug("Processed payment data - Amount: $amount, Phone: $phone, Reference: $reference, Status: $status");
 
-// Convert Hubtel status to our system status
-$payment_status = 'Completed'; // Service fulfillment only sends successful payments
-
-// Only process successful payments
-if (strtolower($status) !== 'paid' || !$is_successful) {
-    log_debug("Payment not successful. Status: $status, IsSuccessful: " . ($is_successful ? 'true' : 'false'));
-    echo json_encode(['status' => 'pending', 'message' => 'Payment not successful']);
-    exit;
+// A Paid + IsSuccessful fulfillment is authoritative and may be posted
+// automatically. Failed/uncertain notifications are retained as intents only;
+// a later status check can move them into the manual approval queue.
+$is_definitive_success = strtolower(trim((string) $status)) === 'paid' && (bool) $is_successful;
+$payment_status = $is_definitive_success ? 'Completed' : (string) $status;
+if (!$is_definitive_success) {
+    log_debug("USSD fulfillment is not definitively successful. Status: $status, IsSuccessful: " . ($is_successful ? 'true' : 'false'));
 }
 
 try {
@@ -367,8 +367,9 @@ try {
         log_debug("Payment attributed to phone lookup member ID: $member_id");
     }
     
-    // Step 4: Capture successful fulfillment for authorized approval. The
-    // approval service is the only gateway path allowed to write payments.
+    // Step 4: Capture every attributable result. A definitive first success
+    // posts immediately; a failed/uncertain result posts nothing, and a later
+    // status-confirmed recovery remains pending for authorized approval.
     if ($final_member_id || $final_sunday_school_id) {
         $payment_type_name = 'Payment';
         $type_stmt = $conn->prepare('SELECT name FROM payment_types WHERE id = ?');
@@ -398,7 +399,18 @@ try {
             'payment_source' => 'ussd',
             'raw_payload' => $raw_input,
         ]);
-        log_debug('USSD payment queued for approval: ' . json_encode($capture));
+        if ($is_definitive_success
+            && ($capture['previous_status'] ?? null) !== 'Failed'
+            && ($capture['confirmation_source'] ?? null) === 'gateway_callback') {
+            $postingService = new OnlinePaymentApprovalService($conn, 0, true, true);
+            $posting = $postingService->autoPostSuccessfulUssd(
+                (int) $capture['intent_id'],
+                'Automatically posted from a definitive Hubtel shortcode fulfillment.'
+            );
+            log_debug('USSD payment automatically posted: ' . json_encode($posting));
+        } else {
+            log_debug('USSD intent retained for status checking or authorized approval: ' . json_encode($capture));
+        }
     } else {
         // Member not identified - record as unmatched payment for manual assignment
         log_debug('Member not identified, recording as unmatched payment');
@@ -420,7 +432,16 @@ try {
         // You can implement admin notification logic here
     }
     
-    // SMS will be sent after payment is recorded
+    if (!$is_definitive_success) {
+        http_response_code(200);
+        echo json_encode([
+            'status' => 'pending_verification',
+            'message' => 'USSD status retained for verification; no payment was posted.'
+        ]);
+        exit;
+    }
+
+    // The posting service sends receipts only after the payment is committed.
     // Send callback confirmation to Hubtel
     $callback_payload = [
         'SessionId' => $session_id,

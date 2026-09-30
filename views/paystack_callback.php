@@ -1,9 +1,11 @@
 <?php
 
-// Paystack return handler. Paystack is verified server-to-server, then the
-// successful intent enters the same authorized approval queue as Hubtel.
+// Paystack return handler. A definitive server-verified success posts
+// immediately. A success discovered only after an earlier failure stays in
+// the approval queue for an authorized decision.
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../services/PaymentGatewayCallbackService.php';
+require_once __DIR__ . '/../services/OnlinePaymentApprovalService.php';
 
 $reference = trim((string) ($_GET['reference'] ?? ''));
 if ($reference === '') {
@@ -84,7 +86,18 @@ try {
         'raw_payload' => $rawResponse,
     ]);
 
-    if ($capture['approval_status'] === 'pending') {
+    if (($capture['status'] ?? '') === 'Completed'
+        && ($capture['previous_status'] ?? null) !== 'Failed'
+        && ($capture['confirmation_source'] ?? null) === 'gateway_callback') {
+        $postingService = new OnlinePaymentApprovalService($conn, 0, true, true);
+        $posting = $postingService->autoPostDefinitiveGatewayPayment(
+            (int) $capture['intent_id'],
+            ['paystack'],
+            'Automatically posted after definitive Paystack server verification.'
+        );
+        echo '<h2>Payment confirmed</h2><p>Your verified transaction has been posted. Reference: '
+            . htmlspecialchars($verifiedReference, ENT_QUOTES, 'UTF-8') . '.</p>';
+    } elseif ($capture['approval_status'] === 'pending') {
         echo '<h2>Payment received</h2><p>Your transaction was verified and is awaiting authorized posting. Reference: '
             . htmlspecialchars($verifiedReference, ENT_QUOTES, 'UTF-8') . '.</p>';
     } elseif ($capture['approval_status'] === 'approved') {

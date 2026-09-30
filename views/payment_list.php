@@ -34,6 +34,16 @@ $can_add = $is_super_admin || has_permission('create_payment');
 $can_edit = $is_super_admin || has_permission('edit_payment');
 $can_delete = $is_super_admin || has_permission('delete_payment');
 $can_view_all = $is_super_admin || has_permission('view_all_payments');
+$can_review_gateway = $is_super_admin || has_permission('review_payment_gateway_integrity');
+$user_church_id = 0;
+if (!$is_super_admin && isset($_SESSION['user_id'])) {
+    $church_stmt = $conn->prepare('SELECT church_id FROM users WHERE id = ? LIMIT 1');
+    $session_user_id = (int) $_SESSION['user_id'];
+    $church_stmt->bind_param('i', $session_user_id);
+    $church_stmt->execute();
+    $user_church_id = (int) ($church_stmt->get_result()->fetch_assoc()['church_id'] ?? 0);
+    $church_stmt->close();
+}
 
 // Enhanced filter values
 $filter_class = $_GET['class_id'] ?? '';
@@ -143,7 +153,7 @@ FROM payments p
     LEFT JOIN members m ON p.member_id = m.id
     LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
     LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
-    LEFT JOIN churches c ON m.church_id = c.id
+    LEFT JOIN churches c ON p.church_id = c.id
     LEFT JOIN bible_classes bc ON m.class_id = bc.id
     LEFT JOIN member_organizations mo ON mo.member_id = m.id
     LEFT JOIN organizations org ON mo.organization_id = org.id
@@ -177,7 +187,7 @@ if (!empty($org_filter['sql'])) {
     $types .= $org_filter['types'];
 }
 
-$ss_filter = apply_sunday_school_filter('m');
+$ss_filter = apply_sunday_school_filter('m', 'ss');
 if (!empty($ss_filter['sql'])) {
     $sql .= " AND " . $ss_filter['sql'];
     foreach ($ss_filter['params'] as $param) {
@@ -203,14 +213,15 @@ if (($is_super_admin || $can_view_all) && $filter_user_id) {
 }
 
 if ($filter_church) {
-    $sql .= " AND m.church_id = ?";
+    $sql .= " AND p.church_id = ?";
     $params[] = $filter_church;
     $types .= 'i';
 }
 if ($filter_class) {
-    $sql .= " AND m.class_id = ?";
+    $sql .= " AND (m.class_id = ? OR ss.class_id = ?)";
     $params[] = $filter_class;
-    $types .= 'i';
+    $params[] = $filter_class;
+    $types .= 'ii';
 }
 if ($filter_org) {
     $sql .= " AND mo.organization_id = ?";
@@ -218,7 +229,7 @@ if ($filter_org) {
     $types .= 'i';
 }
 if ($filter_gender) {
-    $sql .= " AND m.gender = ?";
+    $sql .= " AND COALESCE(m.gender, ss.gender) = ?";
     $params[] = $filter_gender;
     $types .= 's';
 }
@@ -286,9 +297,22 @@ if ($amount_max) {
 
 $is_leader = ($class_ids !== null || get_user_organization_ids() !== null);
 if (!$can_view_all && $user_id && !$is_leader) {
-    $sql .= " AND p.recorded_by = ?";
-    $params[] = $user_id;
-    $types .= 'i';
+    if ($can_review_gateway && $user_church_id > 0) {
+        $sql .= " AND (p.recorded_by = ? OR (
+            p.church_id = ? AND EXISTS (
+                SELECT 1 FROM payment_intents gateway_intent
+                WHERE gateway_intent.client_reference = p.client_reference
+                  AND gateway_intent.approval_status = 'approved'
+            )
+        ))";
+        $params[] = (string) $user_id;
+        $params[] = $user_church_id;
+        $types .= 'si';
+    } else {
+        $sql .= " AND p.recorded_by = ?";
+        $params[] = $user_id;
+        $types .= 'i';
+    }
 }
 
 // Get total count
@@ -296,7 +320,7 @@ $count_sql = "SELECT COUNT(DISTINCT p.id) as total FROM payments p
     LEFT JOIN members m ON p.member_id = m.id
     LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
     LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
-    LEFT JOIN churches c ON m.church_id = c.id
+    LEFT JOIN churches c ON p.church_id = c.id
     LEFT JOIN bible_classes bc ON m.class_id = bc.id
     LEFT JOIN member_organizations mo ON mo.member_id = m.id
     LEFT JOIN organizations org ON mo.organization_id = org.id
@@ -351,14 +375,15 @@ if (($is_super_admin || $can_view_all) && $filter_user_id) {
 }
 
 if ($filter_church) {
-    $count_sql .= " AND m.church_id = ?";
+    $count_sql .= " AND p.church_id = ?";
     $count_params[] = $filter_church;
     $count_types .= 'i';
 }
 if ($filter_class) {
-    $count_sql .= " AND m.class_id = ?";
+    $count_sql .= " AND (m.class_id = ? OR ss.class_id = ?)";
     $count_params[] = $filter_class;
-    $count_types .= 'i';
+    $count_params[] = $filter_class;
+    $count_types .= 'ii';
 }
 if ($filter_org) {
     $count_sql .= " AND mo.organization_id = ?";
@@ -366,7 +391,7 @@ if ($filter_org) {
     $count_types .= 'i';
 }
 if ($filter_gender) {
-    $count_sql .= " AND m.gender = ?";
+    $count_sql .= " AND COALESCE(m.gender, ss.gender) = ?";
     $count_params[] = $filter_gender;
     $count_types .= 's';
 }
@@ -432,9 +457,22 @@ if ($amount_max) {
 }
 
 if (!$can_view_all && $user_id && !$is_leader) {
-    $count_sql .= " AND p.recorded_by = ?";
-    $count_params[] = $user_id;
-    $count_types .= 'i';
+    if ($can_review_gateway && $user_church_id > 0) {
+        $count_sql .= " AND (p.recorded_by = ? OR (
+            p.church_id = ? AND EXISTS (
+                SELECT 1 FROM payment_intents gateway_intent
+                WHERE gateway_intent.client_reference = p.client_reference
+                  AND gateway_intent.approval_status = 'approved'
+            )
+        ))";
+        $count_params[] = (string) $user_id;
+        $count_params[] = $user_church_id;
+        $count_types .= 'si';
+    } else {
+        $count_sql .= " AND p.recorded_by = ?";
+        $count_params[] = $user_id;
+        $count_types .= 'i';
+    }
 }
 
 if ($count_types) {
@@ -503,6 +541,35 @@ while ($row = $payments->fetch_assoc()) {
 }
 
 $avg_amount = $payment_count > 0 ? $total_amount / $payment_count : 0;
+
+// Status-confirmed or legacy pending USSD charges are deliberately not ledger
+// rows until an authorized reviewer approves them. Definitive new successes
+// are posted immediately by the fulfillment webhook.
+$pending_ussd_count = 0;
+$pending_ussd_total = 0.0;
+if ($can_review_gateway) {
+    $pending_sql = "SELECT COUNT(*) AS total_count, COALESCE(SUM(amount), 0) AS total_amount
+                      FROM payment_intents
+                     WHERE payment_source = 'ussd'
+                       AND approval_status = 'pending'
+                       AND LOWER(TRIM(status)) IN ('completed','paid','success','successful','approved')";
+    if (!$is_super_admin) {
+        if ($user_church_id > 0) {
+            $pending_sql .= ' AND church_id = ?';
+            $pending_stmt = $conn->prepare($pending_sql);
+            $pending_stmt->bind_param('i', $user_church_id);
+            $pending_stmt->execute();
+            $pending_result = $pending_stmt->get_result()->fetch_assoc();
+            $pending_stmt->close();
+        } else {
+            $pending_result = ['total_count' => 0, 'total_amount' => 0];
+        }
+    } else {
+        $pending_result = $conn->query($pending_sql)->fetch_assoc();
+    }
+    $pending_ussd_count = (int) ($pending_result['total_count'] ?? 0);
+    $pending_ussd_total = (float) ($pending_result['total_amount'] ?? 0);
+}
 
 ob_start();
 ?>
@@ -893,6 +960,20 @@ ob_start();
         <div class="alert alert-success alert-dismissible fade show" role="alert">
             <i class="fas fa-check-circle mr-2"></i>Payment deleted successfully!
             <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($pending_ussd_count > 0): ?>
+        <div class="alert alert-warning no-print d-flex justify-content-between align-items-center flex-wrap" role="alert">
+            <div>
+                <i class="fas fa-mobile-alt mr-2"></i>
+                <strong><?= number_format($pending_ussd_count) ?> USSD payment(s) requiring review</strong>
+                totalling <strong>GH&#8373;<?= number_format($pending_ussd_total, 2) ?></strong>
+                were confirmed by status checking or retained from the earlier workflow. They will appear here after approval.
+            </div>
+            <a class="btn btn-sm btn-warning mt-2 mt-md-0" href="payment_gateway_integrity.php">
+                Review USSD payments
+            </a>
         </div>
     <?php endif; ?>
 
