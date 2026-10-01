@@ -60,10 +60,11 @@ function hubtel_ussd_separate_amounts(array $orderInfo): array
     }
     $itemTotal = $pricedItems > 0 ? round($itemTotal, 2) : null;
 
-    // Item pricing is the best evidence of what the member selected. On the
-    // live shortcode payload AmountAfterCharges represents that contribution
-    // while Subtotal/AmountPaid may include the customer-borne Hubtel fee.
-    $contribution = $itemTotal ?? $afterCharges ?? $subtotal ?? $customerPaid;
+    // Preserve the original, proven shortcode behavior: Hubtel's
+    // AmountAfterCharges is the church contribution, while AmountPaid may
+    // include the customer-borne charge. Item pricing is only a fallback for
+    // payload variants that omit AmountAfterCharges.
+    $contribution = $afterCharges ?? $itemTotal ?? $subtotal ?? $customerPaid;
     $contribution = $contribution !== null ? round(max(0, $contribution), 2) : null;
 
     $charge = 0.0;

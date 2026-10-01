@@ -74,6 +74,22 @@ function fetch_active_member_profile($conn, $member_id) {
     return $member ?: null;
 }
 
+function fetch_active_sunday_school_profile($conn, $child_id) {
+    $stmt = $conn->prepare("
+        SELECT contact AS phone,
+               TRIM(CONCAT_WS(' ', first_name, middle_name, last_name)) AS full_name,
+               srn, church_id
+          FROM sunday_school
+         WHERE id = ? AND transferred_to_member_id IS NULL
+         LIMIT 1
+    ");
+    $stmt->bind_param('i', $child_id);
+    $stmt->execute();
+    $child = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $child ?: null;
+}
+
 function fetch_active_church_name($conn, $church_id) {
     if (empty($church_id)) {
         return 'Freeman Methodist Church - KM';
@@ -423,12 +439,86 @@ try {
             && ($capture['previous_status'] ?? null) !== 'Failed'
             && ($capture['confirmation_source'] ?? null) === 'gateway_callback'
             && ($capture['gateway_verification_status'] ?? null) === 'verified') {
-            $postingService = new OnlinePaymentApprovalService($conn, 0, true, true);
+            // The shortcode has beneficiary/payer context needed by the
+            // established USSD templates, so suppress the service's generic
+            // gateway receipt and send the proper messages below.
+            $postingService = new OnlinePaymentApprovalService($conn, 0, true, false);
             $posting = $postingService->autoPostSuccessfulUssd(
                 (int) $capture['intent_id'],
                 'Automatically posted from a definitive Hubtel shortcode fulfillment.'
             );
             log_debug('USSD payment automatically posted: ' . json_encode($posting));
+
+            if (empty($posting['already_posted']) && !empty($posting['payment_ids'])) {
+                require_once __DIR__.'/../includes/sms.php';
+                $customer_phone = $phone;
+                $payer_name = normalize_payment_sms_value($order_info['CustomerName'] ?? $customer_phone);
+                $payer_profile = $payer_member_id ? fetch_active_member_profile($conn, (int) $payer_member_id) : null;
+                if ($payer_profile && !empty($payer_profile['full_name'])) {
+                    $payer_name = $payer_profile['full_name'];
+                }
+
+                $beneficiary_profile = $final_sunday_school_id
+                    ? fetch_active_sunday_school_profile($conn, (int) $final_sunday_school_id)
+                    : fetch_active_member_profile($conn, (int) $final_member_id);
+                $beneficiary_name = $beneficiary_profile['full_name'] ?? $payer_name;
+                $beneficiary_phone = $beneficiary_profile['phone'] ?? $customer_phone;
+                $church_name = fetch_active_church_name($conn, $final_church_id);
+                $show_by_sender = !phones_match_shortcode($customer_phone, $beneficiary_phone);
+                $sender_name_for_message = $show_by_sender ? $payer_name : '';
+
+                $harvest_year = null;
+                $harvest_total = null;
+                if ($final_member_id && is_harvest_payment_type($payment_type_name)) {
+                    $harvest_year = get_payment_period_year($payment_period, $payment_period_description, $transaction_date);
+                    $harvest_total = get_member_yearly_harvest_total(
+                        $conn,
+                        (int) $final_member_id,
+                        $harvest_year,
+                        (int) $payment_type_id
+                    );
+                }
+
+                if (!empty($beneficiary_phone)) {
+                    $beneficiary_sms = build_hubtel_ussd_member_payment_sms(
+                        $beneficiary_name,
+                        $amount,
+                        $payment_period_description,
+                        $payment_type_name,
+                        $sender_name_for_message,
+                        $church_name,
+                        $harvest_year,
+                        $harvest_total,
+                        $payment_period,
+                        $transaction_date
+                    );
+                    log_sms(
+                        $beneficiary_phone,
+                        $beneficiary_sms,
+                        (int) $posting['payment_ids'][0],
+                        'ussd_payment_target'
+                    );
+                }
+
+                if ($show_by_sender && !empty($customer_phone)) {
+                    $payer_sms = build_hubtel_ussd_payer_confirmation_sms(
+                        $payer_name,
+                        $amount,
+                        $payment_period_description,
+                        $payment_type_name,
+                        $beneficiary_name,
+                        $church_name,
+                        $payment_period,
+                        $transaction_date
+                    );
+                    log_sms(
+                        $customer_phone,
+                        $payer_sms,
+                        (int) $posting['payment_ids'][0],
+                        'ussd_payment'
+                    );
+                }
+            }
         } else {
             log_debug('USSD intent retained for status checking or authorized approval: ' . json_encode($capture));
         }
