@@ -34,6 +34,7 @@ require_once __DIR__.'/../services/PaymentGatewayCallbackService.php';
 require_once __DIR__.'/../services/OnlinePaymentApprovalService.php';
 require_once __DIR__.'/../includes/payment_sms_template.php';
 require_once __DIR__.'/../helpers/hubtel_status.php';
+require_once __DIR__.'/../helpers/hubtel_ussd_amount_helper.php';
 
 // Set up logging
 $debug_log = __DIR__.'/../logs/shortcode_webhook_debug.log';
@@ -133,23 +134,10 @@ $subtotal = $order_info['Subtotal'] ?? null;
 
 // Extract payment details
 $payment_info = $order_info['Payment'] ?? null;
-$customer_paid_amount = isset($payment_info['AmountPaid']) && is_numeric($payment_info['AmountPaid'])
-    ? (float) $payment_info['AmountPaid']
-    : null;
-$amount_after_charges = isset($payment_info['AmountAfterCharges']) && is_numeric($payment_info['AmountAfterCharges'])
-    ? (float) $payment_info['AmountAfterCharges']
-    : null;
-$subtotal_amount = is_numeric($subtotal) ? (float) $subtotal : null;
-// The order subtotal is the contribution entered by the member. Hubtel may
-// collect its charge on top of that amount, so AmountPaid must never inflate
-// the member's church ledger credit.
-$amount = $subtotal_amount ?? $amount_after_charges ?? $customer_paid_amount;
-$gateway_charge_amount = 0.0;
-if ($customer_paid_amount !== null && $amount_after_charges !== null) {
-    $gateway_charge_amount = max(0.0, $customer_paid_amount - $amount_after_charges);
-} elseif ($customer_paid_amount !== null && $amount !== null) {
-    $gateway_charge_amount = max(0.0, $customer_paid_amount - (float) $amount);
-}
+$separated_amounts = hubtel_ussd_separate_amounts($order_info);
+$amount = $separated_amounts['contribution_amount'];
+$customer_paid_amount = $separated_amounts['customer_paid_amount'];
+$gateway_charge_amount = $separated_amounts['gateway_charge_amount'];
 $payment_type = $payment_info['PaymentType'] ?? 'mobilemoney';
 $payment_date = $payment_info['PaymentDate'] ?? $order_date;
 $is_successful = $payment_info['IsSuccessful'] ?? false;
