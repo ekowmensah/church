@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../models/Payment.php';
+require_once __DIR__ . '/../includes/payment_sms_template.php';
 
 final class OnlinePaymentApprovalService
 {
@@ -375,13 +376,15 @@ final class OnlinePaymentApprovalService
             }
             if (!empty($line['member_id'])) {
                 $stmt = $this->conn->prepare(
-                    "SELECT phone, TRIM(CONCAT_WS(' ', first_name, middle_name, last_name)) AS full_name
+                    "SELECT phone, crn AS subject_reference,
+                            TRIM(CONCAT_WS(' ', first_name, middle_name, last_name)) AS full_name
                        FROM members WHERE id = ? LIMIT 1"
                 );
                 $subjectId = (int) $line['member_id'];
             } else {
                 $stmt = $this->conn->prepare(
-                    "SELECT contact AS phone, TRIM(CONCAT_WS(' ', first_name, middle_name, last_name)) AS full_name
+                    "SELECT contact AS phone, srn AS subject_reference,
+                            TRIM(CONCAT_WS(' ', first_name, middle_name, last_name)) AS full_name
                        FROM sunday_school WHERE id = ? AND is_duplicate_archived = 0 LIMIT 1"
                 );
                 $subjectId = (int) $line['sundayschool_id'];
@@ -393,25 +396,88 @@ final class OnlinePaymentApprovalService
             if (!$subject || trim((string) $subject['phone']) === '') {
                 return;
             }
-            $message = sprintf(
-                'Dear %s, your payment of GHS %.2f has been verified and posted. Reference: %s.',
-                $subject['full_name'] ?: 'member',
-                (float) $line['amount'],
-                (string) $intent['client_reference']
-            );
-            log_sms((string) $subject['phone'], $message, $paymentId, 'gateway_payment_approved');
 
+            $context = $this->conn->prepare(
+                'SELECT payment_type.name AS payment_type_name, church.name AS church_name
+                   FROM payment_types payment_type
+                   LEFT JOIN churches church ON church.id = ?
+                  WHERE payment_type.id = ? LIMIT 1'
+            );
+            $churchId = (int) ($line['church_id'] ?? 0);
+            $paymentTypeId = (int) ($line['payment_type_id'] ?? 0);
+            $context->bind_param('ii', $churchId, $paymentTypeId);
+            $context->execute();
+            $receiptContext = $context->get_result()->fetch_assoc() ?: [];
+            $context->close();
+
+            $paymentTypeName = (string) ($receiptContext['payment_type_name'] ?? $line['description'] ?? 'Payment');
+            $churchName = (string) ($receiptContext['church_name'] ?? 'Freeman Methodist Church - KM');
+            $fallbackDate = (string) ($line['payment_date'] ?? date('Y-m-d H:i:s'));
+            $harvestYear = null;
+            $harvestTotal = null;
+            if (!empty($line['member_id']) && is_harvest_payment_type($paymentTypeName)) {
+                $harvestYear = get_payment_period_year(
+                    $line['payment_period'] ?? null,
+                    $line['payment_period_description'] ?? null,
+                    $fallbackDate
+                );
+                $harvestTotal = get_member_yearly_harvest_total(
+                    $this->conn,
+                    (int) $line['member_id'],
+                    $harvestYear,
+                    $paymentTypeId
+                );
+            }
+
+            $source = (string) ($intent['payment_source'] ?? 'online_checkout');
             $payerPhone = trim((string) ($intent['customer_phone'] ?? ''));
-            if ($payerPhone !== '' && $this->normalizePhone($payerPhone) !== $this->normalizePhone((string) $subject['phone'])) {
+            $phonesDiffer = $payerPhone !== ''
+                && $this->normalizePhone($payerPhone) !== $this->normalizePhone((string) $subject['phone']);
+            if ($source === 'ussd') {
+                $senderName = $phonesDiffer ? (string) ($intent['customer_name'] ?? '') : '';
+                $message = build_hubtel_ussd_member_payment_sms(
+                    $subject['full_name'] ?: 'Member',
+                    (float) $line['amount'],
+                    $line['payment_period_description'] ?? null,
+                    $paymentTypeName,
+                    $senderName,
+                    $churchName,
+                    $harvestYear,
+                    $harvestTotal,
+                    $line['payment_period'] ?? null,
+                    $fallbackDate
+                );
+                $smsType = 'ussd_payment_target';
+            } else {
+                $message = build_hubtel_portal_payment_sms(
+                    $subject['full_name'] ?: 'Member',
+                    (float) $line['amount'],
+                    $line['payment_period_description'] ?? null,
+                    $paymentTypeName,
+                    (string) ($subject['subject_reference'] ?? ''),
+                    $churchName,
+                    $harvestYear,
+                    $harvestTotal,
+                    $line['payment_period'] ?? null,
+                    $fallbackDate
+                );
+                $smsType = 'online_payment_target';
+            }
+            log_sms((string) $subject['phone'], $message, $paymentId, $smsType);
+
+            if ($source === 'ussd' && $phonesDiffer) {
                 $payerName = trim((string) ($intent['customer_name'] ?? '')) ?: 'Payer';
-                $payerMessage = sprintf(
-                    'Dear %s, your payment of GHS %.2f for %s has been verified and posted. Reference: %s.',
+                $payerMessage = build_hubtel_ussd_payer_confirmation_sms(
                     $payerName,
                     (float) $line['amount'],
+                    $line['payment_period_description'] ?? null,
+                    $paymentTypeName,
                     $subject['full_name'] ?: 'the beneficiary',
-                    (string) $intent['client_reference']
+                    $churchName,
+                    $line['payment_period'] ?? null,
+                    $fallbackDate
                 );
-                log_sms($payerPhone, $payerMessage, $paymentId, 'gateway_payment_payer_approved');
+                log_sms($payerPhone, $payerMessage, $paymentId, 'ussd_payment_payer');
             }
         } catch (Throwable $error) {
             error_log('Approved gateway payment SMS failed: ' . $error->getMessage());

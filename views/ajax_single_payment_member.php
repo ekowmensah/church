@@ -98,34 +98,32 @@ if ($payment_type_id && $amount > 0) {
             $member_name = trim($member_data['first_name'] . ' ' . $member_data['last_name']);
             $church_name = $church_data['name'] ?? 'Freeman Methodist Church - KM';
             
-            // Check if this is a harvest payment (payment_type_id = 4) and send special SMS
-            if ($payment_type_id == 4) {
-                $yearly_total = get_member_yearly_harvest_total($conn, $member_id);
-                
-                // Generate harvest SMS message
-                $sms_message = get_harvest_payment_sms_message(
-                    $member_name,
-                    $amount,
-                    $church_name,
-                    $description,
-                    $yearly_total
+            $harvest_year = null;
+            $harvest_total = null;
+            if (is_harvest_payment_type($payment_type_name)) {
+                $harvest_year = get_payment_period_year($payment_period, $payment_period_description, $date);
+                $harvest_total = get_member_yearly_harvest_total(
+                    $conn,
+                    $member_id,
+                    $harvest_year,
+                    $payment_type_id
                 );
-                
-                // Send SMS
-                $sms_result = log_sms($member_data['phone'], $sms_message, $payment_id, 'harvest_payment');
-                
-                // Log SMS attempt
-                error_log('Harvest SMS sent to ' . $member_data['phone'] . ': ' . json_encode($sms_result));
-            } else {
-                // Generate regular payment SMS message
-                $sms_message = get_payment_sms_message($member_name, $amount, $payment_type_name, $date);
-                
-                // Send SMS
-                $sms_result = log_sms($member_data['phone'], $sms_message, $payment_id, 'payment');
-                
-                // Log SMS attempt
-                error_log('Payment SMS sent to ' . $member_data['phone'] . ' for ' . $payment_type_name . ': ' . json_encode($sms_result));
             }
+            $sms_message = build_manual_payment_sms(
+                $member_name,
+                $amount,
+                $payment_period_description,
+                $payment_type_name,
+                $church_name,
+                $harvest_year,
+                $harvest_total,
+                $payment_period,
+                $date,
+                $description
+            );
+            $sms_type = $harvest_year !== null ? 'harvest_payment' : 'payment';
+            $sms_result = log_sms($member_data['phone'], $sms_message, $payment_id, $sms_type);
+            error_log('Payment SMS sent to ' . $member_data['phone'] . ' for ' . $payment_type_name . ': ' . json_encode($sms_result));
         }
         
         echo json_encode(['success' => true, 'message' => 'Payment recorded successfully.']);

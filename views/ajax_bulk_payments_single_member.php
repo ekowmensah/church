@@ -54,7 +54,7 @@ try {
             require_once __DIR__ . '/../includes/sms.php';
             $lookup = $conn->prepare(
             "SELECT payment.id, payment.member_id, payment.amount, payment.mode,
-                    payment.payment_date, payment.payment_period_description,
+                    payment.payment_date, payment.payment_period, payment.payment_period_description,
                     payment.description, payment.payment_type_id,
                     type.name AS payment_type, church.name AS church_name,
                     COALESCE(member.first_name, child.first_name) AS first_name,
@@ -73,23 +73,35 @@ try {
                 $payment = $lookup->get_result()->fetch_assoc();
                 if (!$payment || $payment['mode'] !== 'Cash' || trim((string) $payment['phone']) === '') continue;
                 $name = trim($payment['first_name'] . ' ' . $payment['last_name']);
-                if ((int) $payment['payment_type_id'] === 4 && (int) $payment['member_id'] > 0) {
-                    $message = get_harvest_payment_sms_message(
-                        $name, (float) $payment['amount'],
-                        $payment['church_name'] ?: 'Freeman Methodist Church',
-                        (string) $payment['description'],
-                        get_member_yearly_harvest_total($conn, (int) $payment['member_id'])
+                $paymentTypeName = $payment['payment_type'] ?: 'Payment';
+                $harvestYear = null;
+                $harvestTotal = null;
+                if (is_harvest_payment_type($paymentTypeName) && (int) $payment['member_id'] > 0) {
+                    $harvestYear = get_payment_period_year(
+                        $payment['payment_period'],
+                        $payment['payment_period_description'],
+                        $payment['payment_date']
                     );
-                    $smsType = 'harvest_payment';
-                } else {
-                    $message = get_payment_sms_message(
-                        $name, (float) $payment['amount'],
-                        $payment['payment_type'] ?: 'Payment',
-                        $payment['payment_period_description'] ?: date('F Y', strtotime($payment['payment_date'])),
-                        (string) $payment['description']
+                    $harvestTotal = get_member_yearly_harvest_total(
+                        $conn,
+                        (int) $payment['member_id'],
+                        $harvestYear,
+                        (int) $payment['payment_type_id']
                     );
-                    $smsType = 'payment';
                 }
+                $message = build_manual_payment_sms(
+                    $name,
+                    (float) $payment['amount'],
+                    $payment['payment_period_description'],
+                    $paymentTypeName,
+                    $payment['church_name'] ?: 'Freeman Methodist Church - KM',
+                    $harvestYear,
+                    $harvestTotal,
+                    $payment['payment_period'],
+                    $payment['payment_date'],
+                    (string) $payment['description']
+                );
+                $smsType = $harvestYear !== null ? 'harvest_payment' : 'payment';
                 $delivery = log_sms((string) $payment['phone'], $message, (int) $payment['id'], $smsType);
                 $smsSent = $smsSent || (($delivery['status'] ?? '') === 'success');
             }

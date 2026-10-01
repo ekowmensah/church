@@ -143,6 +143,8 @@ tests/payment_cheque_verification_smoke.php
 tests/payment_reporting_gateway_integrity_smoke.php
 tests/dashboard_period_summary_smoke.php
 tests/in_app_messaging_smoke.php
+tests/application_timezone_smoke.php
+tests/payment_sms_consistency_smoke.php
 tests/report_export_branding_smoke.php
 tests/report_export_branding_browser_fixture.html
 tests/report_export_endpoint_runner.php

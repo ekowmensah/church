@@ -67,12 +67,10 @@ try {
         $full_name = trim(($person['first_name'] ?? '').' '.($person['middle_name'] ?? '').' '.($person['last_name'] ?? ''));
         $sms_message = get_payment_sms_message($full_name, $amount, $payment_type_name, $date);
         
-        // Send SMS
-        $sms_result = send_sms($person['phone'], $sms_message);
-        
-        // Log the SMS attempt
+        // log_sms performs the single provider delivery and records the same
+        // attempt. Calling send_sms first would deliver twice.
         try {
-            log_sms(
+            $sms_result = log_sms(
                 $person['phone'], 
                 $sms_message,
                 $payment_id,

@@ -188,22 +188,30 @@ class BulkPaymentProcessor {
                             $pt_result = $pt_stmt->get_result();
                             $payment_type_name = ($pt_result && $pt_result->num_rows > 0) ? $pt_result->fetch_assoc()['name'] : 'Payment';
                             $pt_stmt->close();
-                            if ($ptid == 4) {
-                                $yearly_total = get_member_yearly_harvest_total($this->conn, $mid);
-                                $sms_message = get_harvest_payment_sms_message(
-                                    $member_name,
-                                    $amount,
-                                    $church_name,
-                                    $desc,
-                                    $yearly_total
+                            $harvest_year = null;
+                            $harvest_total = null;
+                            if (is_harvest_payment_type($payment_type_name)) {
+                                $harvest_year = get_payment_period_year($period, $period_description, $payment_date);
+                                $harvest_total = get_member_yearly_harvest_total(
+                                    $this->conn,
+                                    $mid,
+                                    $harvest_year,
+                                    $ptid
                                 );
-                                $sms_type = 'harvest_payment';
-                            } else {
-                                // Use payment_period_description if available, else fallback to payment_date
-                                $period_text = !empty($period_description) ? $period_description : date('F Y', strtotime($payment_date));
-                                $sms_message = get_payment_sms_message($member_name, $amount, $payment_type_name, $period_text, $desc);
-                                $sms_type = 'payment';
                             }
+                            $sms_message = build_manual_payment_sms(
+                                $member_name,
+                                $amount,
+                                $period_description,
+                                $payment_type_name,
+                                $church_name,
+                                $harvest_year,
+                                $harvest_total,
+                                $period,
+                                $payment_date,
+                                $desc
+                            );
+                            $sms_type = $harvest_year !== null ? 'harvest_payment' : 'payment';
                             // Send SMS
                             $sms_result = log_sms($member_data['phone'], $sms_message, $payment_id, $sms_type);
                             error_log('Bulk Payment SMS sent to ' . $member_data['phone'] . ': ' . json_encode($sms_result));
@@ -309,7 +317,7 @@ class BulkPaymentProcessor {
         
         // Use cURL to make non-blocking request to SMS queue
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, BASE_URL . '/ajax_queue_sms.php');
+        curl_setopt($ch, CURLOPT_URL, BASE_URL . '/views/ajax_queue_sms.php');
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($sms_queue_data));
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
