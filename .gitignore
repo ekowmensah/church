@@ -169,6 +169,6 @@ tests/report_export_document_smoke.php
 tests/statistical_registers_visitor_follow_up_smoke.php
 tests/ussd_payment_list_visibility_smoke.php
 # Local secrets. Keep the template, never the populated file.
-#.env
+.env
 .env.*
 !.env.example
