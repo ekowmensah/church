@@ -3,6 +3,7 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/hubtel_status.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -30,12 +31,22 @@ $check_result = null;
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['action'])) {
-        switch ($_POST['action']) {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        http_response_code(419);
+        $message = 'Your form expired. Refresh the page and try again.';
+        $message_type = 'danger';
+    } elseif (isset($_POST['action'])) {
+        try {
+            switch ($_POST['action']) {
             case 'check_single':
                 $client_reference = trim($_POST['client_reference'] ?? '');
                 if ($client_reference) {
-                    $check_result = check_transaction_by_reference($conn, $client_reference);
+                    $check_result = check_transaction_by_reference(
+                        $conn,
+                        $client_reference,
+                        null,
+                        (int) ($_SESSION['user_id'] ?? 0)
+                    );
                     if ($check_result['success']) {
                         $message = 'Status check completed successfully.';
                         $message_type = 'success';
@@ -53,11 +64,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $limit = intval($_POST['limit'] ?? 50);
                 $limit = max(1, min(100, $limit)); // Limit between 1-100
                 
-                $bulk_result = bulk_check_pending_payments($conn, $limit);
-                $message = "Bulk check completed. Checked: {$bulk_result['total_checked']}, Updated: {$bulk_result['updated_count']}, Failed: {$bulk_result['failed_count']}";
+                $bulk_result = bulk_check_pending_payments($conn, $limit, (int) ($_SESSION['user_id'] ?? 0));
+                $message = "Bulk check completed. Checked: {$bulk_result['total_checked']}, Updated: {$bulk_result['updated_count']}, Failed: {$bulk_result['failed_count']}, Archived: {$bulk_result['archived_count']}";
                 $message_type = $bulk_result['failed_count'] > 0 ? 'warning' : 'success';
                 $check_result = $bulk_result;
                 break;
+
+            case 'restore_archived':
+                restore_archived_hubtel_status_check(
+                    $conn,
+                    (int) ($_POST['payment_intent_id'] ?? 0),
+                    (int) ($_SESSION['user_id'] ?? 0)
+                );
+                $message = 'The archived transaction was restored with a fresh three-check allowance.';
+                $message_type = 'success';
+                break;
+            }
+        } catch (Throwable $error) {
+            $message = $error->getMessage();
+            $message_type = 'danger';
         }
     }
 }
@@ -73,11 +98,27 @@ $pending_stmt = $conn->prepare("
     WHERE pi.status IN ('Pending', 'Failed')
       AND pi.approval_status = 'not_required'
       AND pi.payment_source IN ('ussd', 'online_checkout', 'legacy_callback')
+      AND pi.status_check_state IN ('unchecked', 'retrying')
     ORDER BY pi.created_at DESC 
     LIMIT 20
 ");
 $pending_stmt->execute();
 $pending_intents = $pending_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+$archived_stmt = $conn->prepare("
+    SELECT pi.*, m.crn,
+           TRIM(CONCAT_WS(' ', m.first_name, m.middle_name, m.last_name)) AS member_name,
+           c.name AS church_name
+      FROM payment_intents pi
+      LEFT JOIN members m ON m.id = pi.member_id
+      LEFT JOIN churches c ON c.id = pi.church_id
+     WHERE pi.status_check_state = 'archived'
+     ORDER BY pi.status_check_archived_at DESC, pi.id DESC
+     LIMIT 50
+");
+$archived_stmt->execute();
+$archived_intents = $archived_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$archived_stmt->close();
 
 // Debug: Log the first few records to see what's in created_at
 if (!empty($pending_intents)) {
@@ -137,6 +178,7 @@ ob_start();
         </div>
         <div class="card-body p-4">
             <form method="POST" class="row">
+                <?= csrf_input() ?>
                 <input type="hidden" name="action" value="check_single">
                 <div class="col-md-8 mb-4">
                     <label for="client_reference" class="form-label font-weight-bold text-dark">Payment Reference</label>
@@ -256,7 +298,7 @@ ob_start();
                                     <strong><?= htmlspecialchars($check_result['new_status']) ?></strong>
                                 </div>
                                 <?php endif; ?>
-                                <?php if (($check_result['approval_status'] ?? '') === 'pending'): ?>
+                <?php if (($check_result['approval_status'] ?? '') === 'pending'): ?>
                                 <div class="alert alert-warning alert-sm">
                                     <i class="fas fa-user-check"></i>
                                     Success was confirmed by status checking. An authorized approval is required before posting.
@@ -316,6 +358,20 @@ ob_start();
                     <strong>Check Failed:</strong> <?= htmlspecialchars($check_result['error'] ?? 'Unknown error') ?>
                 </div>
                 <?php endif; ?>
+                <?php if (!empty($check_result['countable_failure'])): ?>
+                <div class="alert alert-<?= !empty($check_result['status_check_archived']) ? 'secondary' : 'warning' ?> alert-sm">
+                    <i class="fas fa-archive mr-1"></i>
+                    Counted verification failure <?= (int) ($check_result['status_check_attempts'] ?? 0) ?> of 3.
+                    <?= !empty($check_result['status_check_archived'])
+                        ? 'This transaction is now archived and has left the active queue.'
+                        : 'It remains available for another check.' ?>
+                </div>
+                <?php elseif (isset($check_result['status_check_attempts']) && !$check_result['success']): ?>
+                <div class="alert alert-info alert-sm">
+                    <i class="fas fa-shield-alt mr-1"></i>
+                    This infrastructure or configuration failure did not consume a transaction check attempt.
+                </div>
+                <?php endif; ?>
             </div>
             <?php endif; ?>
         </div>
@@ -336,6 +392,7 @@ ob_start();
         </div>
         <div class="card-body p-4">
             <form method="POST" class="row">
+                <?= csrf_input() ?>
                 <input type="hidden" name="action" value="bulk_check">
                 <div class="col-md-8 mb-4">
                     <label for="limit" class="form-label font-weight-bold text-dark">Batch Size</label>
@@ -400,7 +457,13 @@ ob_start();
                         </div>
                     </div>
                 </div>
-                
+                <?php if (!empty($check_result['archived_count'])): ?>
+                <div class="alert alert-secondary mt-3 mb-0">
+                    <i class="fas fa-archive mr-1"></i>
+                    <?= number_format((int) $check_result['archived_count']) ?> transaction(s) reached three counted failures and were archived.
+                </div>
+                <?php endif; ?>
+
                 <?php if (!empty($check_result['details'])): ?>
                 <div class="mt-3">
                     <h6>Detailed Results:</h6>
@@ -516,6 +579,9 @@ ob_start();
                                     <i class="fas fa-calendar mr-2 text-danger"></i>Created
                                 </th>
                                 <th class="border-0 font-weight-bold text-dark py-3 text-center">
+                                    <i class="fas fa-check-double mr-2 text-warning"></i>Checks
+                                </th>
+                                <th class="border-0 font-weight-bold text-dark py-3 text-center">
                                     <i class="fas fa-cogs mr-2 text-dark"></i>Actions
                                 </th>
                             </tr>
@@ -569,7 +635,13 @@ ob_start();
                                     <?php endif; ?>
                                 </td>
                                 <td class="py-3 text-center">
+                                    <span class="badge badge-<?= (int) $intent['status_check_attempts'] >= 2 ? 'warning' : 'light' ?> px-3 py-2">
+                                        <?= (int) $intent['status_check_attempts'] ?> / 3
+                                    </span>
+                                </td>
+                                <td class="py-3 text-center">
                                     <form method="POST" class="d-inline">
+                                        <?= csrf_input() ?>
                                         <input type="hidden" name="action" value="check_single">
                                         <input type="hidden" name="client_reference" value="<?= htmlspecialchars($intent['client_reference']) ?>">
                                         <button type="submit" class="btn btn-sm btn-primary shadow-sm rounded-pill" title="Check Status">
@@ -583,6 +655,46 @@ ob_start();
                     </table>
                 </div>
             <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- Archived status-check intents -->
+    <div class="card border-0 shadow-lg mb-4">
+        <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="mb-1"><i class="fas fa-archive mr-2"></i>Archived Status Checks</h5>
+                <small>Retained after three transaction-specific verification failures</small>
+            </div>
+            <span class="badge badge-light"><?= number_format(count($archived_intents)) ?></span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="thead-light"><tr><th>Reference</th><th>Member</th><th>Amount</th><th>Reason</th><th>Archived</th><th>Action</th></tr></thead>
+                <tbody>
+                <?php foreach ($archived_intents as $intent): ?>
+                    <tr>
+                        <td><code><?= htmlspecialchars($intent['client_reference']) ?></code><br><small><?= (int) $intent['status_check_attempts'] ?> counted checks</small></td>
+                        <td><?= htmlspecialchars($intent['member_name'] ?: 'Unknown member') ?><br><small><?= htmlspecialchars($intent['crn'] ?: '') ?></small></td>
+                        <td>GH&#8373;<?= number_format((float) $intent['amount'], 2) ?></td>
+                        <td><small><?= htmlspecialchars($intent['status_check_archive_reason'] ?: 'Three failed verification attempts.') ?></small></td>
+                        <td><?= htmlspecialchars($intent['status_check_archived_at'] ?: '-') ?></td>
+                        <td>
+                            <form method="post" class="d-inline">
+                                <?= csrf_input() ?>
+                                <input type="hidden" name="action" value="restore_archived">
+                                <input type="hidden" name="payment_intent_id" value="<?= (int) $intent['id'] ?>">
+                                <button type="submit" class="btn btn-sm btn-outline-secondary" onclick="return confirm('Restore this transaction for a fresh three-check cycle?');">
+                                    <i class="fas fa-undo mr-1"></i>Restore
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if (!$archived_intents): ?>
+                    <tr><td colspan="6" class="text-center text-muted py-4">No status-check transactions are archived.</td></tr>
+                <?php endif; ?>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

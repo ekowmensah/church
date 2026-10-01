@@ -4,6 +4,7 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/hubtel_status.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -29,6 +30,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $input = json_decode(file_get_contents('php://input'), true);
+$csrfToken = is_array($input) ? ($input['csrf_token'] ?? null) : null;
+if (!csrf_is_valid($csrfToken)) {
+    http_response_code(419);
+    echo json_encode(['success' => false, 'error' => 'Your request expired. Refresh and retry.']);
+    exit;
+}
 $action = $input['action'] ?? '';
 
 switch ($action) {
@@ -39,7 +46,7 @@ switch ($action) {
             exit;
         }
         
-        $result = check_transaction_by_reference($conn, $client_reference);
+        $result = check_transaction_by_reference($conn, $client_reference, null, (int) ($_SESSION['user_id'] ?? 0));
         echo json_encode($result);
         break;
         
@@ -47,7 +54,7 @@ switch ($action) {
         $limit = intval($input['limit'] ?? 25);
         $limit = max(1, min(100, $limit));
         
-        $result = bulk_check_pending_payments($conn, $limit);
+        $result = bulk_check_pending_payments($conn, $limit, (int) ($_SESSION['user_id'] ?? 0));
         echo json_encode(['success' => true, 'data' => $result]);
         break;
         
