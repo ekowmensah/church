@@ -303,6 +303,53 @@ final class InAppMessagingService
         return $rows;
     }
 
+    /**
+     * Return one notification only when it belongs to the signed-in actor.
+     * The detail projection intentionally exposes a small, non-sensitive
+     * subset of the source record rather than forwarding members to a staff
+     * administration page.
+     */
+    public function getNotification(int $notificationId, bool $markRead = true): array
+    {
+        if ($notificationId <= 0) {
+            throw new InvalidArgumentException('Choose a valid notification.');
+        }
+
+        $column = $this->actorType === 'user' ? 'notification.target_user_id' : 'notification.target_member_id';
+        $stmt = $this->db->prepare("SELECT notification.*,
+                event.event_code, event.entity_type, event.entity_id,
+                event.recipient_permission, event.status AS delivery_status,
+                event.created_at AS event_created_at,
+                actor.name AS actor_name, church.name AS church_name
+            FROM dashboard_notifications notification
+            LEFT JOIN system_notification_events event ON event.id = notification.source_event_id
+            LEFT JOIN users actor ON actor.id = event.actor_user_id
+            LEFT JOIN churches church ON church.id = event.church_id
+            WHERE notification.id = ? AND {$column} = ?
+              AND notification.archived_at IS NULL LIMIT 1");
+        $stmt->bind_param('ii', $notificationId, $this->actorId);
+        $stmt->execute();
+        $notification = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        if (!$notification) {
+            throw new RuntimeException('This notification is unavailable or does not belong to your account.');
+        }
+        if ($markRead) {
+            $this->markNotificationRead($notificationId);
+            $notification['is_read'] = 1;
+            $notification['read_at'] = $notification['read_at'] ?: date('Y-m-d H:i:s');
+        }
+
+        $notification['metadata'] = $this->decodeNotificationMetadata((string) ($notification['meta_json'] ?? ''));
+        $notification['details'] = $this->notificationEntityDetails(
+            (string) ($notification['entity_type'] ?? ''),
+            (int) ($notification['entity_id'] ?? 0)
+        );
+
+        return $notification;
+    }
+
     public function markNotificationRead(int $notificationId): void
     {
         $column = $this->actorType === 'user' ? 'target_user_id' : 'target_member_id';
@@ -335,6 +382,140 @@ final class InAppMessagingService
         $stmt->bind_param('ii', $notificationId, $this->actorId);
         $stmt->execute();
         $stmt->close();
+    }
+
+    private function decodeNotificationMetadata(string $json): array
+    {
+        if (trim($json) === '') {
+            return [];
+        }
+        $value = json_decode($json, true);
+        return is_array($value) ? $value : [];
+    }
+
+    private function notificationEntityDetails(string $entityType, int $entityId): array
+    {
+        if ($entityId <= 0) {
+            return [];
+        }
+
+        $sql = '';
+        switch ($entityType) {
+            case 'payment':
+                $sql = "SELECT payment.member_id AS owner_member_id,
+                        payment.amount AS Amount, payment_type.name AS `Payment type`,
+                        payment.payment_date AS `Payment date`, payment.mode AS Method,
+                        payment.payment_period_description AS Period,
+                        payment.description AS Description,
+                        payment.client_reference AS Reference, payment.status AS Status
+                    FROM payments payment
+                    LEFT JOIN payment_types payment_type ON payment_type.id = payment.payment_type_id
+                    WHERE payment.id = ? LIMIT 1";
+                break;
+            case 'member_profile_change_request':
+                $sql = "SELECT request.member_id AS owner_member_id, request.status AS Status,
+                        request.created_at AS `Submitted at`, request.reviewed_at AS `Reviewed at`,
+                        request.review_notes AS `Review notes`
+                    FROM member_profile_change_requests request WHERE request.id = ? LIMIT 1";
+                break;
+            case 'event_registration':
+                $sql = "SELECT registration.member_id AS owner_member_id,
+                        event.name AS Event, event.event_date AS `Event date`,
+                        event.location AS Location, registration.registration_status AS Status,
+                        registration.registration_source AS Source,
+                        registration.registered_at AS `Registered at`, registration.notes AS Notes
+                    FROM event_registrations registration
+                    LEFT JOIN events event ON event.id = registration.event_id
+                    WHERE registration.id = ? LIMIT 1";
+                break;
+            case 'event':
+                $sql = "SELECT 0 AS owner_member_id, event.name AS Event,
+                        event.event_date AS `Event date`, event.event_time AS `Event time`,
+                        event.location AS Location, event.description AS Description,
+                        event.registration_deadline AS `Registration deadline`, event.status AS Status
+                    FROM events event WHERE event.id = ? LIMIT 1";
+                break;
+            case 'member':
+                $sql = "SELECT member.id AS owner_member_id,
+                        TRIM(CONCAT_WS(' ', member.first_name, member.middle_name, member.last_name)) AS Member,
+                        member.crn AS CRN, member.dob AS Birthday
+                    FROM members member WHERE member.id = ? LIMIT 1";
+                break;
+            case 'visitor':
+                $sql = "SELECT 0 AS owner_member_id, visitor.name AS Visitor,
+                        visitor.visit_date AS `Visit date`, visitor.purpose AS Purpose,
+                        visitor.want_member AS `Interested in membership`
+                    FROM visitors visitor WHERE visitor.id = ? LIMIT 1";
+                break;
+            case 'sunday_school':
+                $sql = "SELECT 0 AS owner_member_id,
+                        TRIM(CONCAT_WS(' ', child.first_name, child.middle_name, child.last_name)) AS Learner,
+                        child.srn AS SRN, child.dob AS Birthday
+                    FROM sunday_school child WHERE child.id = ? LIMIT 1";
+                break;
+            case 'member_transfer':
+                $sql = "SELECT transfer.member_id AS owner_member_id,
+                        transfer.transfer_date AS `Transfer date`, transfer.old_crn AS `Previous CRN`,
+                        origin.name AS `From class`, destination.name AS `To class`
+                    FROM member_transfers transfer
+                    LEFT JOIN bible_classes origin ON origin.id = transfer.from_class_id
+                    LEFT JOIN bible_classes destination ON destination.id = transfer.to_class_id
+                    WHERE transfer.id = ? LIMIT 1";
+                break;
+            case 'health_record':
+                $sql = "SELECT record.member_id AS owner_member_id,
+                        record.recorded_at AS `Recorded at`,
+                        CASE WHEN record.notes IS NULL OR TRIM(record.notes) = ''
+                             THEN 'No follow-up note' ELSE record.notes END AS `Follow-up note`
+                    FROM health_records record WHERE record.id = ? LIMIT 1";
+                break;
+            case 'church_statistical_event':
+                $sql = "SELECT 0 AS owner_member_id, event.person_name AS Person,
+                        event.event_type AS Type, event.event_date AS `Event date`,
+                        event.gender AS Gender, event.status AS Status, event.notes AS Notes
+                    FROM church_statistical_events event WHERE event.id = ? LIMIT 1";
+                break;
+            case 'asset_use_request':
+                $sql = "SELECT request.requested_by_member_id AS owner_member_id,
+                        asset.item_name AS Asset, request.quantity_requested AS Quantity,
+                        request.purpose AS Purpose, request.borrow_start_date AS `Date needed`,
+                        request.expected_return_date AS `Expected return`, request.status AS Status,
+                        request.approval_note AS `Decision note`
+                    FROM asset_use_requests request
+                    LEFT JOIN assets asset ON asset.id = request.asset_id
+                    WHERE request.id = ? LIMIT 1";
+                break;
+            case 'member_lifecycle_audit':
+                $sql = "SELECT audit.original_member_id AS owner_member_id,
+                        audit.member_name AS Member, audit.member_crn AS CRN,
+                        audit.action AS Action, audit.reason AS Reason,
+                        audit.reason_code AS `Reason code`, audit.created_at AS `Action date`
+                    FROM member_lifecycle_audit audit WHERE audit.id = ? LIMIT 1";
+                break;
+            default:
+                return [];
+        }
+
+        try {
+            $stmt = $this->db->prepare($sql);
+            $stmt->bind_param('i', $entityId);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc() ?: [];
+            $stmt->close();
+        } catch (mysqli_sql_exception $exception) {
+            // Older installations may receive a notification before its
+            // matching feature migration is deployed. The notification still
+            // remains readable without source-record enrichment.
+            return [];
+        }
+
+        $ownerMemberId = (int) ($row['owner_member_id'] ?? 0);
+        unset($row['owner_member_id']);
+        if ($this->actorType === 'member' && $ownerMemberId > 0 && $ownerMemberId !== $this->actorId) {
+            return [];
+        }
+
+        return array_filter($row, static fn($value): bool => $value !== null && $value !== '');
     }
 
     private function resolveChurchId(): int

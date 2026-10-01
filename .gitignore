@@ -172,3 +172,7 @@ tests/ussd_payment_list_visibility_smoke.php
 .env
 .env.*
 !.env.example
+tests/audience_specific_notifications_smoke.php
+tests/conversational_ai_assistant_smoke.php
+tests/member_notification_detail_smoke.php
+tests/role_aware_notifications_smoke.php

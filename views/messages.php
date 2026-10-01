@@ -93,15 +93,6 @@ if ($available && $openThreadId > 0) {
     }
 }
 
-function messaging_action_url(string $url): string
-{
-    $url = trim($url);
-    if ($url === '' || preg_match('/^[a-z][a-z0-9+.-]*:/i', $url) || str_starts_with($url, '//')) {
-        return '';
-    }
-    return BASE_URL . '/' . ltrim($url, '/');
-}
-
 ob_start();
 ?>
 <div class="container-fluid py-3">
@@ -235,7 +226,6 @@ ob_start();
         <div class="list-group list-group-flush">
           <?php if (!$notifications): ?><div class="p-4 text-muted text-center">No notifications.</div><?php endif; ?>
           <?php foreach ($notifications as $notification):
-              $actionUrl = messaging_action_url((string) ($notification['action_url'] ?? ''));
               $severity = in_array(($notification['severity'] ?? 'info'), ['info','success','warning','danger'], true)
                   ? $notification['severity'] : 'info';
               $icon = preg_match('/^fa[bsr]? fa-[a-z0-9-]+$/', (string) ($notification['icon'] ?? ''))
@@ -247,9 +237,9 @@ ob_start();
                 <div class="flex-grow-1 min-width-0">
                   <div class="d-flex justify-content-between flex-wrap"><strong><?= htmlspecialchars($notification['title']) ?></strong><small class="text-muted"><?= htmlspecialchars(date('M j, Y g:i A', strtotime($notification['created_at']))) ?></small></div>
                   <span class="badge badge-light text-uppercase mb-2"><?= htmlspecialchars((string) ($notification['category'] ?? 'system')) ?></span>
-                  <p class="mb-2"><?= nl2br(htmlspecialchars($notification['message'])) ?></p>
+                  <p class="mb-2"><?= htmlspecialchars(mb_strimwidth((string) $notification['message'], 0, 220, '…')) ?></p>
               <div class="d-flex align-items-center flex-wrap">
-                <?php if ($actionUrl !== ''): ?><a class="btn btn-sm btn-outline-primary mr-2" href="<?= htmlspecialchars($actionUrl) ?>">Open</a><?php endif; ?>
+                <a class="btn btn-sm btn-outline-primary mr-2" href="notification_detail.php?id=<?= (int) $notification['id'] ?>">View details</a>
                 <?php if (!$notification['is_read']): ?>
                   <form method="post" class="m-0"><?= csrf_input() ?><input type="hidden" name="action" value="mark_notification_read"><input type="hidden" name="notification_id" value="<?= (int) $notification['id'] ?>"><button class="btn btn-sm btn-outline-secondary" type="submit">Mark read</button></form>
                 <?php else: ?><span class="text-muted small"><i class="fas fa-check mr-1"></i>Read</span><?php endif; ?>
