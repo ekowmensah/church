@@ -42,6 +42,17 @@ final class InAppMessagingService
         return $this->actorId;
     }
 
+    public function isGroupChatAvailable(): bool
+    {
+        $row = $this->db->query("SELECT
+            (SELECT COUNT(*) FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'chat_threads'
+               AND COLUMN_NAME IN ('scope_type','scope_id','scope_key')) AS scope_columns,
+            (SELECT COUNT(*) FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'chat_actor_presence') AS presence_table")->fetch_assoc();
+        return (int) ($row['scope_columns'] ?? 0) === 3 && (int) ($row['presence_table'] ?? 0) === 1;
+    }
+
     public function isAvailable(): bool
     {
         if ($this->available !== null) {
@@ -112,6 +123,10 @@ final class InAppMessagingService
         $senderColumn = $this->actorType === 'user' ? 'message.sender_user_id' : 'message.sender_member_id';
         $sql = "SELECT thread.id, thread.subject, thread.thread_type, thread.updated_at,
                        COALESCE(MAX(message.created_at), thread.created_at) AS last_activity,
+                       (SELECT latest.message_text
+                        FROM chat_messages latest
+                        WHERE latest.thread_id = thread.id AND latest.is_deleted = 0
+                        ORDER BY latest.id DESC LIMIT 1) AS last_message,
                        COALESCE(SUM(CASE
                            WHEN message.is_deleted = 0
                             AND message.id > COALESCE(membership.last_read_message_id, 0)
@@ -131,12 +146,210 @@ final class InAppMessagingService
         $stmt->close();
 
         foreach ($rows as &$row) {
-            $row['display_name'] = $row['subject'] ?: $this->participantLabel((int) $row['id']);
+            if (($row['thread_type'] ?? '') === 'direct') {
+                $identity = $this->participantIdentity((int) $row['id']);
+                $row = array_merge($row, $identity);
+                $row['display_name'] = $identity['participant_name'] ?: 'Conversation';
+            } else {
+                $row['participant_name'] = '';
+                $row['participant_photo'] = '';
+                $row['participant_photo_type'] = '';
+                $row['display_name'] = $row['subject'] ?: $this->participantLabel((int) $row['id']);
+            }
             $row['unread_count'] = (int) $row['unread_count'];
         }
         unset($row);
 
         return $rows;
+    }
+
+    public function listAvailableGroupChats(): array
+    {
+        if (!$this->isGroupChatAvailable()) {
+            return [];
+        }
+        $memberId = $this->linkedMemberId();
+        $isAdmin = $this->actorType === 'user' && $this->isAdministrativeUser();
+        $userId = $this->actorType === 'user' ? $this->actorId : 0;
+        $groups = [];
+
+        $stmt = $this->db->prepare("SELECT DISTINCT class.id, class.name
+            FROM bible_classes class
+            LEFT JOIN members member ON member.class_id = class.id AND member.id = ?
+            LEFT JOIN bible_class_leaders leader ON leader.class_id = class.id AND leader.status = 'active'
+                AND (leader.member_id = ? OR leader.user_id = ?)
+            WHERE class.church_id = ? AND (? = 1 OR member.id IS NOT NULL OR leader.id IS NOT NULL)
+            ORDER BY class.name");
+        $stmt->bind_param('iiiii', $memberId, $memberId, $userId, $this->churchId, $isAdmin);
+        $stmt->execute();
+        foreach ($stmt->get_result()->fetch_all(MYSQLI_ASSOC) as $row) {
+            $groups[] = ['key' => 'bible_class:' . $row['id'], 'label' => $row['name'] . ' Bible Class', 'icon' => 'fas fa-book-open'];
+        }
+        $stmt->close();
+
+        $stmt = $this->db->prepare("SELECT DISTINCT organization.id, organization.name
+            FROM organizations organization
+            LEFT JOIN member_organizations membership
+              ON membership.organization_id = organization.id AND membership.member_id = ?
+            LEFT JOIN organization_leaders leader ON leader.organization_id = organization.id AND leader.status = 'active'
+              AND (leader.member_id = ? OR leader.user_id = ?)
+            WHERE organization.church_id = ?
+              AND (? = 1 OR membership.id IS NOT NULL OR leader.id IS NOT NULL)
+            ORDER BY organization.name");
+        $stmt->bind_param('iiiii', $memberId, $memberId, $userId, $this->churchId, $isAdmin);
+        $stmt->execute();
+        foreach ($stmt->get_result()->fetch_all(MYSQLI_ASSOC) as $row) {
+            $groups[] = ['key' => 'organization:' . $row['id'], 'label' => $row['name'], 'icon' => 'fas fa-users'];
+        }
+        $stmt->close();
+
+        if ($memberId > 0 || $isAdmin) {
+            $stmt = $this->db->prepare("SELECT DISTINCT unit.id, unit.name, organization.name AS organization_name
+                FROM organization_units unit
+                JOIN organizations organization ON organization.id = unit.organization_id
+                LEFT JOIN organization_unit_assignments assignment ON assignment.unit_id = unit.id
+                LEFT JOIN member_organizations membership ON membership.id = assignment.member_organization_id
+                    AND membership.member_id = ?
+                WHERE organization.church_id = ? AND unit.is_active = 1
+                  AND (? = 1 OR membership.id IS NOT NULL OR EXISTS (
+                      SELECT 1 FROM organization_leaders leader
+                      WHERE leader.organization_id = organization.id AND leader.status = 'active'
+                        AND ((? > 0 AND leader.member_id = ?) OR (? > 0 AND leader.user_id = ?))
+                  ))
+                ORDER BY organization.name, unit.name");
+            $stmt->bind_param('iiiiiii', $memberId, $this->churchId, $isAdmin,
+                $memberId, $memberId, $userId, $userId);
+            $stmt->execute();
+            foreach ($stmt->get_result()->fetch_all(MYSQLI_ASSOC) as $row) {
+                $groups[] = ['key' => 'organization_unit:' . $row['id'], 'label' => $row['organization_name'] . ' · ' . $row['name'], 'icon' => 'fas fa-user-friends'];
+            }
+            $stmt->close();
+        }
+
+        if ($isAdmin || $this->isLeader($memberId)) {
+            $groups[] = ['key' => 'leaders:' . $this->churchId, 'label' => 'Church Leaders', 'icon' => 'fas fa-user-tie'];
+        }
+        return $groups;
+    }
+
+    public function startGroupConversation(string $scopeKey, string $messageText): int
+    {
+        $this->requireAvailable();
+        if (!$this->isGroupChatAvailable()) {
+            throw new RuntimeException('Group chat is unavailable until database Phase 0050 is installed.');
+        }
+        $available = [];
+        foreach ($this->listAvailableGroupChats() as $group) {
+            $available[$group['key']] = $group;
+        }
+        if (!isset($available[$scopeKey]) || !preg_match('/^(bible_class|organization|organization_unit|leaders):(\d+)$/', $scopeKey, $match)) {
+            throw new RuntimeException('You do not have access to that group conversation.');
+        }
+        $scopeType = $match[1];
+        $scopeId = (int) $match[2];
+        $subject = (string) $available[$scopeKey]['label'];
+        $messageText = $this->validateMessage($messageText);
+        $createdByUser = $this->actorType === 'user' ? $this->actorId : null;
+        $createdByMember = $this->actorType === 'member' ? $this->actorId : null;
+
+        $this->db->begin_transaction();
+        try {
+            $stmt = $this->db->prepare("INSERT INTO chat_threads
+                (thread_type, subject, scope_type, scope_id, scope_key,
+                 created_by_user_id, created_by_member_id, is_active)
+                VALUES ('group', ?, ?, ?, ?, ?, ?, 1)
+                ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), subject = VALUES(subject), is_active = 1");
+            $stmt->bind_param('ssisii', $subject, $scopeType, $scopeId, $scopeKey, $createdByUser, $createdByMember);
+            $stmt->execute();
+            $threadId = (int) $this->db->insert_id;
+            $stmt->close();
+            $this->syncGroupParticipants($threadId, $scopeType, $scopeId);
+            $this->insertParticipant($threadId, $this->actorType, $this->actorId, 'owner');
+            $this->insertMessage($threadId, $messageText);
+            $this->db->commit();
+            return $threadId;
+        } catch (Throwable $exception) {
+            $this->db->rollback();
+            throw $exception;
+        }
+    }
+
+    public function heartbeat(string $status = 'online'): void
+    {
+        if (!$this->isGroupChatAvailable()) {
+            return;
+        }
+        if (!in_array($status, ['online','away','invisible'], true)) {
+            $status = 'online';
+        }
+        $stmt = $this->db->prepare("INSERT INTO chat_actor_presence
+            (actor_type, actor_id, presence_status, last_seen_at) VALUES (?, ?, ?, NOW())
+            ON DUPLICATE KEY UPDATE presence_status = VALUES(presence_status), last_seen_at = NOW()");
+        $stmt->bind_param('sis', $this->actorType, $this->actorId, $status);
+        $stmt->execute();
+        $stmt->close();
+    }
+
+    public function threadParticipants(int $threadId): array
+    {
+        $this->assertThreadMembership($threadId);
+        $stmt = $this->db->prepare("SELECT participant.member_role,
+                COALESCE(user_account.name,
+                    TRIM(CONCAT_WS(' ', member.first_name, member.middle_name, member.last_name))) AS display_name,
+                CASE WHEN presence.presence_status = 'invisible' THEN 'offline'
+                     WHEN presence.last_seen_at >= NOW() - INTERVAL 2 MINUTE THEN 'online'
+                     WHEN presence.last_seen_at >= NOW() - INTERVAL 15 MINUTE THEN 'away'
+                     ELSE 'offline' END AS presence_status,
+                presence.last_seen_at
+            FROM chat_thread_members participant
+            LEFT JOIN users user_account ON user_account.id = participant.user_id
+            LEFT JOIN members member ON member.id = participant.member_id
+            LEFT JOIN chat_actor_presence presence
+              ON presence.actor_type = IF(participant.user_id IS NULL, 'member', 'user')
+             AND presence.actor_id = COALESCE(participant.user_id, participant.member_id)
+            WHERE participant.thread_id = ?
+            ORDER BY (presence.last_seen_at >= NOW() - INTERVAL 2 MINUTE) DESC, display_name");
+        $stmt->bind_param('i', $threadId);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        return $rows;
+    }
+
+    public function onlineContacts(int $limit = 30): array
+    {
+        if (!$this->isGroupChatAvailable()) return [];
+        $limit = max(1, min(50, $limit));
+        if ($this->actorType === 'member') {
+            $stmt = $this->db->prepare("SELECT 'user' AS recipient_type, user_account.id,
+                    user_account.name AS display_name, presence.last_seen_at,
+                    COALESCE(NULLIF(user_account.photo, ''), NULLIF(linked_member.photo, '')) AS participant_photo,
+                    IF(NULLIF(user_account.photo, '') IS NOT NULL, 'user', 'member') AS participant_photo_type
+                FROM chat_actor_presence presence
+                JOIN users user_account ON presence.actor_type = 'user' AND user_account.id = presence.actor_id
+                LEFT JOIN members linked_member ON linked_member.id = user_account.member_id
+                WHERE presence.presence_status <> 'invisible'
+                  AND presence.last_seen_at >= NOW() - INTERVAL 2 MINUTE
+                  AND user_account.status = 'active'
+                  AND COALESCE(user_account.church_id, linked_member.church_id) = ?
+                ORDER BY user_account.name LIMIT ?");
+        } else {
+            $stmt = $this->db->prepare("SELECT 'member' AS recipient_type, member.id,
+                    TRIM(CONCAT_WS(' ', member.first_name, member.middle_name, member.last_name)) AS display_name,
+                    presence.last_seen_at, member.photo AS participant_photo,
+                    'member' AS participant_photo_type
+                FROM chat_actor_presence presence
+                JOIN members member ON presence.actor_type = 'member' AND member.id = presence.actor_id
+                WHERE presence.presence_status <> 'invisible'
+                  AND presence.last_seen_at >= NOW() - INTERVAL 2 MINUTE
+                  AND member.church_id = ? AND member.status = 'active' AND member.is_archived = 0
+                ORDER BY member.first_name, member.last_name LIMIT ?");
+        }
+        $stmt->bind_param('ii', $this->churchId, $limit); $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC); $stmt->close();
+        return array_values(array_filter($rows, function (array $row): bool {
+            return $this->directRecipientAllowed((string) $row['recipient_type'], (int) $row['id']);
+        }));
     }
 
     public function getThread(int $threadId): array
@@ -151,7 +364,13 @@ final class InAppMessagingService
         if (!$thread) {
             throw new RuntimeException('Conversation not found.');
         }
-        $thread['display_name'] = $thread['subject'] ?: $this->participantLabel($threadId);
+        if (($thread['thread_type'] ?? '') === 'direct') {
+            $identity = $this->participantIdentity($threadId);
+            $thread = array_merge($thread, $identity);
+            $thread['display_name'] = $identity['participant_name'] ?: 'Conversation';
+        } else {
+            $thread['display_name'] = $thread['subject'] ?: $this->participantLabel($threadId);
+        }
 
         return $thread;
     }
@@ -164,9 +383,14 @@ final class InAppMessagingService
                     message.sender_user_id, message.sender_member_id,
                     COALESCE(user_account.name,
                         TRIM(CONCAT_WS(' ', member.first_name, member.middle_name, member.last_name)),
-                        'System') AS sender_name
+                        'System') AS sender_name,
+                    COALESCE(NULLIF(user_account.photo, ''), NULLIF(user_member.photo, ''),
+                             NULLIF(member.photo, '')) AS sender_photo,
+                    CASE WHEN NULLIF(user_account.photo, '') IS NOT NULL THEN 'user'
+                         ELSE 'member' END AS sender_photo_type
              FROM chat_messages message
              LEFT JOIN users user_account ON user_account.id = message.sender_user_id
+             LEFT JOIN members user_member ON user_member.id = user_account.member_id
              LEFT JOIN members member ON member.id = message.sender_member_id
              WHERE message.thread_id = ? AND message.is_deleted = 0
              ORDER BY message.id ASC LIMIT 500"
@@ -218,8 +442,9 @@ final class InAppMessagingService
         $stmt->execute();
         $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
-
-        return $rows;
+        return array_values(array_filter($rows, function (array $row): bool {
+            return $this->directRecipientAllowed((string) $row['recipient_type'], (int) $row['id']);
+        }));
     }
 
     public function startConversation(string $targetType, int $targetId, string $messageText, string $subject = ''): int
@@ -518,6 +743,109 @@ final class InAppMessagingService
         return array_filter($row, static fn($value): bool => $value !== null && $value !== '');
     }
 
+    private function linkedMemberId(): int
+    {
+        if ($this->actorType === 'member') return $this->actorId;
+        $stmt = $this->db->prepare('SELECT member_id FROM users WHERE id = ? LIMIT 1');
+        $stmt->bind_param('i', $this->actorId); $stmt->execute();
+        $memberId = (int) ($stmt->get_result()->fetch_assoc()['member_id'] ?? 0);
+        $stmt->close();
+        return $memberId;
+    }
+
+    private function isAdministrativeUser(): bool
+    {
+        if ($this->actorType !== 'user') return false;
+        if ($this->actorId === 1) return true;
+        $stmt = $this->db->prepare("SELECT 1
+            FROM user_roles role_link
+            JOIN roles access_role ON access_role.id = role_link.role_id
+            WHERE role_link.user_id = ? AND role_link.is_active = 1
+              AND access_role.is_active = 1
+              AND (access_role.id IN (1,2)
+                   OR LOWER(access_role.name) IN ('super admin','super administrator','admin','administrator'))
+            LIMIT 1");
+        $stmt->bind_param('i', $this->actorId); $stmt->execute();
+        $isAdmin = (bool) $stmt->get_result()->fetch_row(); $stmt->close();
+        return $isAdmin;
+    }
+
+    private function isLeader(int $memberId): bool
+    {
+        $userId = $this->actorType === 'user' ? $this->actorId : 0;
+        $stmt = $this->db->prepare("SELECT 1 FROM (
+                SELECT member_id, user_id, status FROM bible_class_leaders
+                UNION ALL SELECT member_id, user_id, status FROM organization_leaders
+            ) leader WHERE leader.status = 'active'
+              AND ((? > 0 AND leader.member_id = ?) OR (? > 0 AND leader.user_id = ?)) LIMIT 1");
+        $stmt->bind_param('iiii', $memberId, $memberId, $userId, $userId); $stmt->execute();
+        $isLeader = (bool) $stmt->get_result()->fetch_row(); $stmt->close();
+        return $isLeader;
+    }
+
+    private function syncGroupParticipants(int $threadId, string $scopeType, int $scopeId): void
+    {
+        if ($scopeType === 'bible_class') {
+            $stmt = $this->db->prepare("INSERT IGNORE INTO chat_thread_members (thread_id, member_id, member_role)
+                SELECT ?, member.id, 'member' FROM members member
+                WHERE member.class_id = ? AND member.church_id = ? AND member.status = 'active' AND member.is_archived = 0");
+            $stmt->bind_param('iii', $threadId, $scopeId, $this->churchId); $stmt->execute(); $stmt->close();
+            $stmt = $this->db->prepare("INSERT IGNORE INTO chat_thread_members (thread_id, user_id, member_id, member_role)
+                SELECT ?, leader.user_id, IF(leader.user_id IS NULL, leader.member_id, NULL), 'admin'
+                FROM bible_class_leaders leader JOIN bible_classes class ON class.id = leader.class_id
+                WHERE leader.class_id = ? AND class.church_id = ? AND leader.status = 'active'");
+            $stmt->bind_param('iii', $threadId, $scopeId, $this->churchId); $stmt->execute(); $stmt->close();
+            return;
+        }
+        if ($scopeType === 'organization' || $scopeType === 'organization_unit') {
+            if ($scopeType === 'organization') {
+                $organizationId = $scopeId;
+                $stmt = $this->db->prepare("INSERT IGNORE INTO chat_thread_members (thread_id, member_id, member_role)
+                    SELECT ?, membership.member_id, 'member' FROM member_organizations membership
+                    JOIN members member ON member.id = membership.member_id
+                    JOIN organizations organization ON organization.id = membership.organization_id
+                    WHERE membership.organization_id = ? AND organization.church_id = ?
+                      AND member.status = 'active' AND member.is_archived = 0");
+            } else {
+                $lookup = $this->db->prepare('SELECT organization_id FROM organization_units WHERE id = ? LIMIT 1');
+                $lookup->bind_param('i', $scopeId); $lookup->execute();
+                $organizationId = (int) ($lookup->get_result()->fetch_assoc()['organization_id'] ?? 0); $lookup->close();
+                $stmt = $this->db->prepare("INSERT IGNORE INTO chat_thread_members (thread_id, member_id, member_role)
+                    SELECT ?, membership.member_id, 'member' FROM organization_unit_assignments assignment
+                    JOIN member_organizations membership ON membership.id = assignment.member_organization_id
+                    JOIN members member ON member.id = membership.member_id
+                    JOIN organization_units unit ON unit.id = assignment.unit_id
+                    JOIN organizations organization ON organization.id = unit.organization_id
+                    WHERE assignment.unit_id = ? AND organization.church_id = ?
+                      AND member.status = 'active' AND member.is_archived = 0");
+            }
+            $stmt->bind_param('iii', $threadId, $scopeId, $this->churchId); $stmt->execute(); $stmt->close();
+            $leaders = $this->db->prepare("INSERT IGNORE INTO chat_thread_members (thread_id, user_id, member_id, member_role)
+                SELECT ?, leader.user_id, IF(leader.user_id IS NULL, leader.member_id, NULL), 'admin'
+                FROM organization_leaders leader JOIN organizations organization ON organization.id = leader.organization_id
+                WHERE leader.organization_id = ? AND organization.church_id = ? AND leader.status = 'active'");
+            $leaders->bind_param('iii', $threadId, $organizationId, $this->churchId); $leaders->execute(); $leaders->close();
+            return;
+        }
+        if ($scopeType === 'leaders' && $scopeId === $this->churchId) {
+            foreach ([['bible_class_leaders','bible_classes','class_id'], ['organization_leaders','organizations','organization_id']] as $source) {
+                [$leaderTable, $parentTable, $parentKey] = $source;
+                $sql = "INSERT IGNORE INTO chat_thread_members (thread_id, user_id, member_id, member_role)
+                    SELECT ?, leader.user_id, IF(leader.user_id IS NULL, leader.member_id, NULL), 'member'
+                    FROM {$leaderTable} leader JOIN {$parentTable} parent ON parent.id = leader.{$parentKey}
+                    WHERE parent.church_id = ? AND leader.status = 'active'";
+                $stmt = $this->db->prepare($sql); $stmt->bind_param('ii', $threadId, $this->churchId); $stmt->execute(); $stmt->close();
+            }
+            $admins = $this->db->prepare("INSERT IGNORE INTO chat_thread_members (thread_id, user_id, member_role)
+                SELECT DISTINCT ?, user_account.id, 'admin' FROM users user_account
+                JOIN user_roles user_role ON user_role.user_id = user_account.id AND user_role.is_active = 1
+                LEFT JOIN members member ON member.id = user_account.member_id
+                WHERE user_role.role_id IN (1,2) AND user_account.status = 'active'
+                  AND COALESCE(user_account.church_id, member.church_id) = ?");
+            $admins->bind_param('ii', $threadId, $this->churchId); $admins->execute(); $admins->close();
+        }
+    }
+
     private function resolveChurchId(): int
     {
         if ($this->actorType === 'member') {
@@ -567,6 +895,51 @@ final class InAppMessagingService
         if (!$valid) {
             throw new RuntimeException('The recipient is unavailable or outside your church.');
         }
+        if (!$this->directRecipientAllowed($targetType, $targetId)) {
+            throw new RuntimeException('You may message only your assigned leaders, members, or authorized church administrators.');
+        }
+    }
+
+    private function directRecipientAllowed(string $targetType, int $targetId): bool
+    {
+        if ($this->actorType === 'user') {
+            if ($targetType !== 'member') return false;
+            if ($this->isAdministrativeUser()) return true;
+            $actorMemberId = $this->linkedMemberId();
+            $stmt = $this->db->prepare("SELECT 1 FROM members target
+                WHERE target.id = ? AND (
+                  EXISTS (SELECT 1 FROM bible_class_leaders leader
+                          WHERE leader.class_id = target.class_id AND leader.status = 'active'
+                            AND (leader.user_id = ? OR (? > 0 AND leader.member_id = ?)))
+                  OR EXISTS (SELECT 1 FROM member_organizations target_membership
+                       JOIN organization_leaders leader ON leader.organization_id = target_membership.organization_id
+                       WHERE target_membership.member_id = target.id AND leader.status = 'active'
+                         AND (leader.user_id = ? OR (? > 0 AND leader.member_id = ?)))
+                ) LIMIT 1");
+            $stmt->bind_param('iiiiiii', $targetId, $this->actorId, $actorMemberId, $actorMemberId,
+                $this->actorId, $actorMemberId, $actorMemberId);
+        } else {
+            if ($targetType !== 'user') return false;
+            $stmt = $this->db->prepare("SELECT 1 FROM users recipient
+                LEFT JOIN members recipient_member ON recipient_member.id = recipient.member_id
+                WHERE recipient.id = ? AND (
+                  EXISTS (SELECT 1 FROM user_roles role_link
+                          WHERE role_link.user_id = recipient.id AND role_link.role_id IN (1,2) AND role_link.is_active = 1)
+                  OR EXISTS (SELECT 1 FROM members actor_member
+                       JOIN bible_class_leaders leader ON leader.class_id = actor_member.class_id AND leader.status = 'active'
+                       WHERE actor_member.id = ?
+                         AND (leader.user_id = recipient.id OR leader.member_id = recipient.member_id))
+                  OR EXISTS (SELECT 1 FROM member_organizations actor_membership
+                       JOIN organization_leaders leader ON leader.organization_id = actor_membership.organization_id AND leader.status = 'active'
+                       WHERE actor_membership.member_id = ?
+                         AND (leader.user_id = recipient.id OR leader.member_id = recipient.member_id))
+                ) LIMIT 1");
+            $stmt->bind_param('iii', $targetId, $this->actorId, $this->actorId);
+        }
+        $stmt->execute();
+        $allowed = (bool) $stmt->get_result()->fetch_row();
+        $stmt->close();
+        return $allowed;
     }
 
     private function assertThreadMembership(int $threadId): void
@@ -576,15 +949,22 @@ final class InAppMessagingService
             throw new InvalidArgumentException('Choose a valid conversation.');
         }
         $column = $this->actorType === 'user' ? 'user_id' : 'member_id';
-        $stmt = $this->db->prepare("SELECT 1 FROM chat_thread_members membership
+        $scopeProjection = $this->isGroupChatAvailable() ? 'thread.scope_key' : 'NULL AS scope_key';
+        $stmt = $this->db->prepare("SELECT thread.thread_type, {$scopeProjection} FROM chat_thread_members membership
             JOIN chat_threads thread ON thread.id = membership.thread_id AND thread.is_active = 1
             WHERE membership.thread_id = ? AND membership.{$column} = ? LIMIT 1");
         $stmt->bind_param('ii', $threadId, $this->actorId);
         $stmt->execute();
-        $valid = (bool) $stmt->get_result()->fetch_row();
+        $thread = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$valid) {
+        if (!$thread) {
             throw new RuntimeException('You do not have access to this conversation.');
+        }
+        if (($thread['thread_type'] ?? '') === 'group') {
+            $allowedKeys = array_column($this->listAvailableGroupChats(), 'key');
+            if (!in_array((string) ($thread['scope_key'] ?? ''), $allowedKeys, true)) {
+                throw new RuntimeException('Your current class, organization, group, or leadership assignment no longer grants access to this conversation.');
+            }
         }
     }
 
@@ -607,6 +987,120 @@ final class InAppMessagingService
         $stmt->close();
 
         return $label !== '' ? $label : 'Conversation';
+    }
+
+    private function participantIdentity(int $threadId): array
+    {
+        $presenceSelect = "'offline' AS presence_status, NULL AS last_seen_at";
+        $presenceJoin = '';
+        if ($this->isGroupChatAvailable()) {
+            $presenceSelect = "CASE WHEN presence.presence_status = 'invisible' THEN 'offline'
+                         WHEN presence.last_seen_at >= NOW() - INTERVAL 2 MINUTE THEN 'online'
+                         WHEN presence.last_seen_at >= NOW() - INTERVAL 15 MINUTE THEN 'away'
+                         ELSE 'offline' END AS presence_status, presence.last_seen_at";
+            $presenceJoin = "LEFT JOIN chat_actor_presence presence
+               ON presence.actor_type = IF(participant.user_id IS NULL, 'member', 'user')
+              AND presence.actor_id = COALESCE(participant.user_id, participant.member_id)";
+        }
+        $stmt = $this->db->prepare(
+            "SELECT COALESCE(NULLIF(TRIM(user_account.name), ''),
+                        NULLIF(TRIM(CONCAT_WS(' ', linked_member.first_name,
+                            linked_member.middle_name, linked_member.last_name)), ''),
+                        NULLIF(TRIM(CONCAT_WS(' ', participant_member.first_name,
+                            participant_member.middle_name, participant_member.last_name)), '')) AS participant_name,
+                    COALESCE(NULLIF(user_account.photo, ''), NULLIF(linked_member.photo, ''),
+                             NULLIF(participant_member.photo, '')) AS participant_photo,
+                    CASE WHEN NULLIF(user_account.photo, '') IS NOT NULL THEN 'user'
+                         ELSE 'member' END AS participant_photo_type,
+                    {$presenceSelect}
+             FROM chat_thread_members participant
+             LEFT JOIN users user_account ON user_account.id = participant.user_id
+             LEFT JOIN members linked_member ON linked_member.id = user_account.member_id
+             LEFT JOIN members participant_member ON participant_member.id = participant.member_id
+             {$presenceJoin}
+             WHERE participant.thread_id = ?
+               AND NOT ((? = 'user' AND participant.user_id = ?)
+                     OR (? = 'member' AND participant.member_id = ?))
+             ORDER BY participant.id LIMIT 1"
+        );
+        $stmt->bind_param('isisi', $threadId, $this->actorType, $this->actorId, $this->actorType, $this->actorId);
+        $stmt->execute();
+        $identity = $stmt->get_result()->fetch_assoc() ?: [];
+        $stmt->close();
+
+        if (trim((string) ($identity['participant_name'] ?? '')) === '') {
+            $identity = $this->participantIdentityFromDirectKey($threadId);
+        }
+        return [
+            'participant_name' => trim((string) ($identity['participant_name'] ?? '')),
+            'participant_photo' => (string) ($identity['participant_photo'] ?? ''),
+            'participant_photo_type' => (string) ($identity['participant_photo_type'] ?? ''),
+            'presence_status' => (string) ($identity['presence_status'] ?? 'offline'),
+            'last_seen_at' => $identity['last_seen_at'] ?? null,
+        ];
+    }
+
+    private function participantIdentityFromDirectKey(int $threadId): array
+    {
+        $stmt = $this->db->prepare('SELECT direct_key FROM chat_threads WHERE id = ? LIMIT 1');
+        $stmt->bind_param('i', $threadId);
+        $stmt->execute();
+        $directKey = (string) ($stmt->get_result()->fetch_assoc()['direct_key'] ?? '');
+        $stmt->close();
+
+        $selfKey = $this->actorType . ':' . $this->actorId;
+        $target = '';
+        foreach (explode('|', $directKey) as $actorKey) {
+            if ($actorKey !== '' && $actorKey !== $selfKey) {
+                $target = $actorKey;
+                break;
+            }
+        }
+        if (!preg_match('/^(user|member):(\d+)$/', $target, $matches)) {
+            return [];
+        }
+
+        $targetId = (int) $matches[2];
+        $presenceSelect = "'offline' AS presence_status, NULL AS last_seen_at";
+        $presenceJoin = '';
+        if ($this->isGroupChatAvailable()) {
+            $presenceSelect = "CASE WHEN presence.presence_status = 'invisible' THEN 'offline'
+                         WHEN presence.last_seen_at >= NOW() - INTERVAL 2 MINUTE THEN 'online'
+                         WHEN presence.last_seen_at >= NOW() - INTERVAL 15 MINUTE THEN 'away'
+                         ELSE 'offline' END AS presence_status, presence.last_seen_at";
+        }
+        if ($matches[1] === 'user') {
+            if ($this->isGroupChatAvailable()) {
+                $presenceJoin = "LEFT JOIN chat_actor_presence presence
+                  ON presence.actor_type = 'user' AND presence.actor_id = user_account.id";
+            }
+            $stmt = $this->db->prepare("SELECT COALESCE(NULLIF(TRIM(user_account.name), ''),
+                        NULLIF(TRIM(CONCAT_WS(' ', member.first_name, member.middle_name, member.last_name)), ''),
+                        CONCAT('User #', user_account.id)) AS participant_name,
+                    COALESCE(NULLIF(user_account.photo, ''), NULLIF(member.photo, '')) AS participant_photo,
+                    IF(NULLIF(user_account.photo, '') IS NOT NULL, 'user', 'member') AS participant_photo_type,
+                    {$presenceSelect}
+                FROM users user_account LEFT JOIN members member ON member.id = user_account.member_id
+                {$presenceJoin}
+                WHERE user_account.id = ? LIMIT 1");
+        } else {
+            if ($this->isGroupChatAvailable()) {
+                $presenceJoin = "LEFT JOIN chat_actor_presence presence
+                  ON presence.actor_type = 'member' AND presence.actor_id = member.id";
+            }
+            $stmt = $this->db->prepare("SELECT COALESCE(
+                        NULLIF(TRIM(CONCAT_WS(' ', member.first_name, member.middle_name, member.last_name)), ''),
+                        CONCAT('Member #', member.id)) AS participant_name,
+                    member.photo AS participant_photo, 'member' AS participant_photo_type,
+                    {$presenceSelect}
+                FROM members member {$presenceJoin}
+                WHERE member.id = ? LIMIT 1");
+        }
+        $stmt->bind_param('i', $targetId);
+        $stmt->execute();
+        $identity = $stmt->get_result()->fetch_assoc() ?: [];
+        $stmt->close();
+        return $identity;
     }
 
     private function insertParticipant(int $threadId, string $type, int $id, string $role): void

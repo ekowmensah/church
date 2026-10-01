@@ -24,8 +24,9 @@ if (!empty($messageCanUse) && !empty($messageActorType) && !empty($messageActorI
 ?>
 <?php if (!empty($messageCanUse)): ?>
 <li class="nav-item">
-  <a class="nav-link" href="<?= BASE_URL ?>/views/messages.php" aria-label="Messages: <?= (int) $inAppUnreadMessages ?> unread">
-    <i class="far fa-envelope"></i>
+  <a class="nav-link d-flex align-items-center" id="mfChatLauncher" href="<?= BASE_URL ?>/views/messages.php" title="Open Church Chat" aria-label="Church Chat: <?= (int) $inAppUnreadMessages ?> unread">
+    <i class="fas fa-comments" aria-hidden="true"></i>
+    <span class="d-none d-md-inline ml-1 font-weight-bold">Chat</span>
     <?php if ($inAppUnreadMessages > 0): ?><span class="badge badge-danger navbar-badge"><?= $inAppUnreadMessages > 99 ? '99+' : (int) $inAppUnreadMessages ?></span><?php endif; ?>
   </a>
 </li>

@@ -79,9 +79,9 @@ if (isset($_SESSION['member_id'])) {
         <li class="nav-item">
           <a class="nav-link modern-nav-link" href="<?php echo BASE_URL; ?>/views/messages.php">
             <div class="nav-icon-wrapper">
-              <i class="nav-icon fas fa-envelope"></i>
+              <i class="nav-icon fas fa-comments"></i>
             </div>
-            <span class="nav-text">Messages</span>
+            <span class="nav-text">Church Chat</span>
             <?php if (!empty($inAppUnreadMessages)): ?><span class="badge badge-danger ml-auto"><?= (int) $inAppUnreadMessages ?></span><?php endif; ?>
             <div class="nav-indicator"></div>
           </a>

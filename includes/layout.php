@@ -458,6 +458,8 @@ $(document).ready(function() {
 </script>
 
 <?php require __DIR__ . '/ai_assistant_widget.php'; ?>
+<?php require __DIR__ . '/chat_drawer_widget.php'; ?>
+<?php require __DIR__ . '/chat_presence_heartbeat.php'; ?>
 <?php if (isset($modal_html)) echo $modal_html; ?>
 <?php if (isset($additional_js)) echo $additional_js; ?>
 <?php if (isset($additional_css)) echo $additional_css; ?>
