@@ -70,15 +70,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $check_result = $bulk_result;
                 break;
 
-            case 'restore_archived':
-                restore_archived_hubtel_status_check(
-                    $conn,
-                    (int) ($_POST['payment_intent_id'] ?? 0),
-                    (int) ($_SESSION['user_id'] ?? 0)
-                );
-                $message = 'The archived transaction was restored with a fresh three-check allowance.';
-                $message_type = 'success';
-                break;
             }
         } catch (Throwable $error) {
             $message = $error->getMessage();
@@ -105,19 +96,25 @@ $pending_stmt = $conn->prepare("
 $pending_stmt->execute();
 $pending_intents = $pending_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-$archived_stmt = $conn->prepare("
-    SELECT pi.*, m.crn,
-           TRIM(CONCAT_WS(' ', m.first_name, m.middle_name, m.last_name)) AS member_name,
-           c.name AS church_name
-      FROM payment_intents pi
-      LEFT JOIN members m ON m.id = pi.member_id
-      LEFT JOIN churches c ON c.id = pi.church_id
-     WHERE pi.status_check_state = 'archived'
-     ORDER BY pi.status_check_archived_at DESC, pi.id DESC
-     LIMIT 50
-");
+$archiveChurchId = 0;
+if (!$is_super_admin) {
+    $archiveUserId = (int) ($_SESSION['user_id'] ?? 0);
+    $archiveChurchStmt = $conn->prepare('SELECT church_id FROM users WHERE id = ? LIMIT 1');
+    $archiveChurchStmt->bind_param('i', $archiveUserId);
+    $archiveChurchStmt->execute();
+    $archiveChurchId = (int) ($archiveChurchStmt->get_result()->fetch_assoc()['church_id'] ?? 0);
+    $archiveChurchStmt->close();
+}
+$archived_stmt = $conn->prepare(
+    $is_super_admin
+        ? "SELECT COUNT(*) AS archived_count FROM payment_intents WHERE status_check_state = 'archived'"
+        : "SELECT COUNT(*) AS archived_count FROM payment_intents WHERE status_check_state = 'archived' AND church_id = ?"
+);
+if (!$is_super_admin) {
+    $archived_stmt->bind_param('i', $archiveChurchId);
+}
 $archived_stmt->execute();
-$archived_intents = $archived_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$archived_count = (int) ($archived_stmt->get_result()->fetch_assoc()['archived_count'] ?? 0);
 $archived_stmt->close();
 
 // Debug: Log the first few records to see what's in created_at
@@ -143,7 +140,11 @@ ob_start();
                             </h1>
                             <p class="mb-0 opacity-75 lead">Real-time payment verification and status management</p>
                         </div>
-                        <div class="text-right">
+                        <div class="text-right d-flex flex-wrap justify-content-end">
+                            <a href="hubtel_status_archive.php" class="btn btn-outline-light btn-lg shadow-sm mr-2 mb-2 mb-md-0">
+                                <i class="fas fa-archive mr-2"></i>Archived Checks
+                                <span class="badge badge-light text-dark ml-1"><?= number_format($archived_count) ?></span>
+                            </a>
                             <a href="payment_list.php" class="btn btn-light btn-lg shadow-sm">
                                 <i class="fas fa-arrow-left mr-2"></i>Back to Payments
                             </a>
@@ -365,6 +366,9 @@ ob_start();
                     <?= !empty($check_result['status_check_archived'])
                         ? 'This transaction is now archived and has left the active queue.'
                         : 'It remains available for another check.' ?>
+                    <?php if (!empty($check_result['status_check_archived'])): ?>
+                        <a href="hubtel_status_archive.php" class="alert-link ml-1">Open archived checks</a>
+                    <?php endif; ?>
                 </div>
                 <?php elseif (isset($check_result['status_check_attempts']) && !$check_result['success']): ?>
                 <div class="alert alert-info alert-sm">
@@ -658,45 +662,6 @@ ob_start();
         </div>
     </div>
 
-    <!-- Archived status-check intents -->
-    <div class="card border-0 shadow-lg mb-4">
-        <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
-            <div>
-                <h5 class="mb-1"><i class="fas fa-archive mr-2"></i>Archived Status Checks</h5>
-                <small>Retained after three transaction-specific verification failures</small>
-            </div>
-            <span class="badge badge-light"><?= number_format(count($archived_intents)) ?></span>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-sm table-hover mb-0">
-                <thead class="thead-light"><tr><th>Reference</th><th>Member</th><th>Amount</th><th>Reason</th><th>Archived</th><th>Action</th></tr></thead>
-                <tbody>
-                <?php foreach ($archived_intents as $intent): ?>
-                    <tr>
-                        <td><code><?= htmlspecialchars($intent['client_reference']) ?></code><br><small><?= (int) $intent['status_check_attempts'] ?> counted checks</small></td>
-                        <td><?= htmlspecialchars($intent['member_name'] ?: 'Unknown member') ?><br><small><?= htmlspecialchars($intent['crn'] ?: '') ?></small></td>
-                        <td>GH&#8373;<?= number_format((float) $intent['amount'], 2) ?></td>
-                        <td><small><?= htmlspecialchars($intent['status_check_archive_reason'] ?: 'Three failed verification attempts.') ?></small></td>
-                        <td><?= htmlspecialchars($intent['status_check_archived_at'] ?: '-') ?></td>
-                        <td>
-                            <form method="post" class="d-inline">
-                                <?= csrf_input() ?>
-                                <input type="hidden" name="action" value="restore_archived">
-                                <input type="hidden" name="payment_intent_id" value="<?= (int) $intent['id'] ?>">
-                                <button type="submit" class="btn btn-sm btn-outline-secondary" onclick="return confirm('Restore this transaction for a fresh three-check cycle?');">
-                                    <i class="fas fa-undo mr-1"></i>Restore
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-                <?php if (!$archived_intents): ?>
-                    <tr><td colspan="6" class="text-center text-muted py-4">No status-check transactions are archived.</td></tr>
-                <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
 </div>
 
 <?php
