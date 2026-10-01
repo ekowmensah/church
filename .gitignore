@@ -159,6 +159,7 @@ migrations/2026_upgrade/2026_03_21_0101_add_member_spouse_marriage_fields.sql
 tests/attendance_subject_reporting_smoke.php
 tests/definitive_gateway_auto_posting_smoke.php
 tests/verified_gateway_posting_smoke.php
+tests/hubtel_status_check_lifecycle_smoke.php
 tests/member_payment_cart_smoke.php
 tests/bible_class_navigation_grouping_smoke.php
 tests/identity_organization_governance_smoke.php
@@ -167,3 +168,7 @@ tests/payment_list_totals_smoke.php
 tests/report_export_document_smoke.php
 tests/statistical_registers_visitor_follow_up_smoke.php
 tests/ussd_payment_list_visibility_smoke.php
+# Local secrets. Keep the template, never the populated file.
+.env
+.env.*
+!.env.example

@@ -1,5 +1,16 @@
 <?php
 //session_start();
+// Load server-local secrets before any service reads getenv(). The unsafe
+// factory name refers to putenv() support; the file itself remains server-side
+// and must never be committed or exposed to the browser.
+$projectRoot = dirname(__DIR__);
+$composerAutoload = $projectRoot . '/vendor/autoload.php';
+if (file_exists($composerAutoload)) {
+    require_once $composerAutoload;
+    if (class_exists('Dotenv\\Dotenv') && file_exists($projectRoot . '/.env')) {
+        Dotenv\Dotenv::createUnsafeMutable($projectRoot)->safeLoad();
+    }
+}
 // Base URL for the application
 if (!defined('BASE_URL')) {
     define('BASE_URL', 'http://localhost/myfreemanchurchgit/church');
