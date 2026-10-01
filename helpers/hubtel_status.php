@@ -32,6 +32,12 @@ function define_env_constant($key) {
 }
 define_env_constant('HUBTEL_API_KEY');
 define_env_constant('HUBTEL_API_SECRET');
+define_env_constant('HUBTEL_MERCHANT_ACCOUNT');
+define_env_constant('HUBTEL_STATUS_CLIENT_ID');
+define_env_constant('HUBTEL_STATUS_CLIENT_SECRET');
+define_env_constant('HUBTEL_COLLECTION_ACCOUNT_NUMBER');
+define_env_constant('HUBTEL_CLIENT_ID');
+define_env_constant('HUBTEL_CLIENT_SECRET');
 require_once __DIR__ . '/../services/PaymentGatewayCallbackService.php';
 
 /**
@@ -51,12 +57,20 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
         return ($val === false || $val === '') ? null : $val;
     };
 
-    $api_key = $readEnv('HUBTEL_API_KEY', 'HUBTEL_API_KEY');
-    $api_secret = $readEnv('HUBTEL_API_SECRET', 'HUBTEL_API_SECRET');
-    $merchant_account = $readEnv('HUBTEL_MERCHANT_ACCOUNT', 'HUBTEL_MERCHANT_ACCOUNT');
-    
-    // Debug credentials loading
-    $auth_string = base64_encode($api_key . ':' . $api_secret);
+    // Hubtel's transaction-status service uses the Client ID/Client Secret
+    // issued for that service and the collection account number in the URL.
+    // Keep the legacy checkout variables as a compatibility fallback only;
+    // installations with dedicated status credentials should set the three
+    // HUBTEL_STATUS/HUBTEL_COLLECTION variables below.
+    $statusClientId = $readEnv('HUBTEL_STATUS_CLIENT_ID', 'HUBTEL_STATUS_CLIENT_ID')
+        ?: $readEnv('HUBTEL_CLIENT_ID', 'HUBTEL_CLIENT_ID')
+        ?: $readEnv('HUBTEL_API_KEY', 'HUBTEL_API_KEY');
+    $statusClientSecret = $readEnv('HUBTEL_STATUS_CLIENT_SECRET', 'HUBTEL_STATUS_CLIENT_SECRET')
+        ?: $readEnv('HUBTEL_CLIENT_SECRET', 'HUBTEL_CLIENT_SECRET')
+        ?: $readEnv('HUBTEL_API_SECRET', 'HUBTEL_API_SECRET');
+    $collectionAccount = $readEnv('HUBTEL_COLLECTION_ACCOUNT_NUMBER', 'HUBTEL_COLLECTION_ACCOUNT_NUMBER')
+        ?: $readEnv('HUBTEL_MERCHANT_ACCOUNT', 'HUBTEL_MERCHANT_ACCOUNT');
+    $usesDedicatedStatusCredentials = (bool) $readEnv('HUBTEL_STATUS_CLIENT_ID', 'HUBTEL_STATUS_CLIENT_ID');
     
     // Ensure logs directory exists
     $logs_dir = __DIR__.'/../logs';
@@ -64,127 +78,132 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
         mkdir($logs_dir, 0755, true);
     }
     
-    file_put_contents($logs_dir.'/hubtel_debug.log', date('c') . " - Auth Debug: " . json_encode([
-        'api_key_length' => strlen($api_key ?? ''),
-        'api_secret_length' => strlen($api_secret ?? ''),
-        'auth_header' => 'Basic ' . substr($auth_string, 0, 20) . '...',
-        'merchant_account' => $merchant_account
+    file_put_contents($logs_dir.'/hubtel_debug.log', date('c') . " - Status configuration: " . json_encode([
+        'credential_profile' => $usesDedicatedStatusCredentials ? 'dedicated_status' : 'legacy_checkout_fallback',
+        'client_id_present' => $statusClientId !== null,
+        'client_secret_present' => $statusClientSecret !== null,
+        'collection_account_present' => $collectionAccount !== null,
     ]) . "\n", FILE_APPEND);
-    
-    if (!$api_key || !$api_secret) {
+
+    if (!$statusClientId || !$statusClientSecret || !$collectionAccount) {
         return [
-            'success' => false, 
-            'error' => 'Hubtel API credentials not complete',
-            'debug' => [
-                'api_key_set' => !empty($api_key),
-                'api_secret_set' => !empty($api_secret),
-                'merchant_account_set' => !empty($merchant_account),
-                'api_key_length' => strlen($api_key ?? ''),
-                'api_secret_length' => strlen($api_secret ?? '')
-            ]
+            'success' => false,
+            'verification_status' => 'not_checked',
+            'error' => 'Hubtel status configuration is incomplete. Set HUBTEL_STATUS_CLIENT_ID, HUBTEL_STATUS_CLIENT_SECRET, and HUBTEL_COLLECTION_ACCOUNT_NUMBER.',
         ];
     }
 
-    // Use the correct Hubtel transaction status API endpoint from documentation
-    // Try using merchant account as POS_Sales_ID since transaction_id lookup fails
-    $url = "https://api-txnstatus.hubtel.com/transactions/{$merchant_account}/status";
-    
-    // Add clientReference as mandatory query parameter (preferred by Hubtel)
-    $url .= "?clientReference=" . urlencode($client_reference);
-    
-    // Also try hubtelTransactionId as query parameter
-    if ($transaction_id && $transaction_id !== $client_reference) {
-        $url .= "&hubtelTransactionId=" . urlencode($transaction_id);
+    $client_reference = trim((string) $client_reference);
+    if ($client_reference === '') {
+        return [
+            'success' => false,
+            'verification_status' => 'not_checked',
+            'error' => 'A client reference is required for Hubtel status checking.',
+        ];
     }
-    
-    // Try different authentication methods since transaction status API may differ from checkout API
-    $auth_methods = [
-        // Method 1: Basic auth with API key:secret
-        'Authorization: Basic ' . base64_encode($api_key . ':' . $api_secret),
-        // Method 2: Basic auth with merchant account:API key (some Hubtel APIs use this)
-        'Authorization: Basic ' . base64_encode($merchant_account . ':' . $api_key),
-        // Method 3: API key as bearer token
-        'Authorization: Bearer ' . $api_key
-    ];
-    
-    $last_response = null;
-    $last_http_code = null;
-    
-    foreach ($auth_methods as $auth_header) {
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            $auth_header,
-            'Accept: application/json'
-        ]);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Church Management System/1.0');
-        
-        $response = curl_exec($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curl_error = curl_errno($ch) ? curl_error($ch) : null;
-        curl_close($ch);
-        
-        // Store for debugging
-        $last_response = $response;
-        $last_http_code = $http_code;
-        
-        // Log each auth attempt with raw response
-        file_put_contents($logs_dir.'/hubtel_debug.log', date('c') . " - Auth Method: " . substr($auth_header, 0, 30) . "... HTTP: $http_code\n", FILE_APPEND);
-        file_put_contents($logs_dir.'/hubtel_debug.log', date('c') . " - Raw Response: " . $response . "\n", FILE_APPEND);
-        
-        if (!$curl_error && $http_code === 200) {
-            $data = $response ? json_decode($response, true) : null;
-            
-            // Log the full response for debugging
-            file_put_contents($logs_dir.'/hubtel_debug.log', date('c') . " - Full API Response: " . json_encode($data, JSON_PRETTY_PRINT) . "\n", FILE_APPEND);
-            
-            if ($data) {
-                // Handle different response structures
-                $transactionData = $data['data'] ?? $data;
-                $responseCode = $data['responseCode'] ?? $data['ResponseCode'] ?? null;
-                
-                // Extract status from various possible locations
-                $status = $transactionData['status'] ?? 
-                         $transactionData['Status'] ?? 
-                         $transactionData['transactionStatus'] ?? 
-                         $data['status'] ?? 
-                         'unknown';
-                
-                return [
-                    'success' => true,
-                    'data' => $data,
-                    'http_code' => $http_code,
-                    'status' => $status,
-                    'amount' => $transactionData['amount'] ?? $transactionData['Amount'] ?? null,
-                    'reference' => $transactionData['clientReference'] ?? $transactionData['ClientReference'] ?? null,
-                    'transaction_id' => $transactionData['transactionId'] ?? $transactionData['TransactionId'] ?? null,
-                    'external_transaction_id' => $transactionData['externalTransactionId'] ?? null,
-                    'payment_method' => $transactionData['paymentMethod'] ?? null,
-                    'charges' => $transactionData['charges'] ?? null,
-                    'amount_after_charges' => $transactionData['amountAfterCharges'] ?? null,
-                    'date' => $transactionData['date'] ?? null,
-                    'endpoint_used' => $url,
-                    'auth_method_used' => $auth_header,
-                    'response_code' => $responseCode
-                ];
-            }
-        }
+
+    $query = ['clientReference' => $client_reference];
+    $transaction_id = trim((string) $transaction_id);
+    if ($transaction_id !== '' && $transaction_id !== $client_reference) {
+        $query['hubtelTransactionId'] = $transaction_id;
     }
-    
-    // If all auth methods failed
+
+    $url = 'https://api-txnstatus.hubtel.com/transactions/'
+        . rawurlencode((string) $collectionAccount)
+        . '/status?'
+        . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
+        CURLOPT_USERPWD => $statusClientId . ':' . $statusClientSecret,
+        CURLOPT_HTTPHEADER => ['Accept: application/json'],
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_USERAGENT => 'MyFreeman Church Management/1.0',
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_errno($ch) ? curl_error($ch) : null;
+    curl_close($ch);
+
+    $decoded = is_string($response) && $response !== '' ? json_decode($response, true) : null;
+    file_put_contents($logs_dir.'/hubtel_debug.log', date('c') . " - Status request result: " . json_encode([
+        'http_code' => $httpCode,
+        'curl_error' => $curlError,
+        'client_reference' => $client_reference,
+        'credential_profile' => $usesDedicatedStatusCredentials ? 'dedicated_status' : 'legacy_checkout_fallback',
+    ]) . "\n", FILE_APPEND);
+
+    if ($curlError) {
+        return [
+            'success' => false,
+            'verification_status' => 'not_checked',
+            'http_code' => $httpCode,
+            'error' => 'Hubtel status request could not connect: ' . $curlError,
+        ];
+    }
+    if ($httpCode === 401) {
+        return [
+            'success' => false,
+            'verification_status' => 'not_checked',
+            'http_code' => $httpCode,
+            'error' => 'Hubtel rejected the transaction-status Client ID or Client Secret (HTTP 401). Configure HUBTEL_STATUS_CLIENT_ID and HUBTEL_STATUS_CLIENT_SECRET with the credentials enabled for Transaction Status.',
+        ];
+    }
+    if ($httpCode === 403) {
+        return [
+            'success' => false,
+            'verification_status' => 'not_checked',
+            'http_code' => $httpCode,
+            'error' => 'Hubtel denied the status request (HTTP 403). Ask Hubtel to whitelist this server\'s public outbound IP for Transaction Status.',
+        ];
+    }
+    if ($httpCode === 429) {
+        return [
+            'success' => false,
+            'verification_status' => 'not_checked',
+            'http_code' => $httpCode,
+            'error' => 'Hubtel status checking is temporarily rate-limited. Wait and retry.',
+        ];
+    }
+    if ($httpCode !== 200 || !is_array($decoded)) {
+        $gatewayMessage = is_array($decoded)
+            ? trim((string) ($decoded['message'] ?? $decoded['Message'] ?? ''))
+            : '';
+        return [
+            'success' => false,
+            'verification_status' => 'not_checked',
+            'http_code' => $httpCode,
+            'error' => 'Hubtel status request failed with HTTP ' . $httpCode
+                . ($gatewayMessage !== '' ? ': ' . $gatewayMessage : '.'),
+        ];
+    }
+
+    $transactionData = is_array($decoded['data'] ?? null) ? $decoded['data'] : $decoded;
+    $status = $transactionData['status']
+        ?? $transactionData['Status']
+        ?? $transactionData['transactionStatus']
+        ?? $decoded['status']
+        ?? 'unknown';
+
     return [
-        'success' => false,
-        'error' => 'All authentication methods failed. HTTP ' . $last_http_code . ' error from Hubtel API',
-        'debug' => [
-            'url' => $url,
-            'last_http_code' => $last_http_code,
-            'last_response' => $last_response,
-            'auth_methods_tried' => count($auth_methods),
-            'transaction_id' => $transaction_id,
-            'client_reference' => $client_reference
-        ]
+        'success' => true,
+        'data' => $decoded,
+        'http_code' => $httpCode,
+        'status' => $status,
+        'amount' => $transactionData['amount'] ?? $transactionData['Amount'] ?? null,
+        'reference' => $transactionData['clientReference'] ?? $transactionData['ClientReference'] ?? null,
+        'transaction_id' => $transactionData['transactionId']
+            ?? $transactionData['TransactionId']
+            ?? $transactionData['hubtelTransactionId']
+            ?? null,
+        'external_transaction_id' => $transactionData['externalTransactionId'] ?? null,
+        'payment_method' => $transactionData['paymentMethod'] ?? null,
+        'charges' => $transactionData['charges'] ?? null,
+        'amount_after_charges' => $transactionData['amountAfterCharges'] ?? null,
+        'date' => $transactionData['date'] ?? null,
+        'response_code' => $decoded['responseCode'] ?? $decoded['ResponseCode'] ?? null,
     ];
 }
 
@@ -324,16 +343,20 @@ function check_transaction_by_reference($conn, $client_reference, $transaction_i
     
     // If API fails or we're using client_reference as transaction_id, 
     // return current status from database (webhook-based system)
+    $apiError = isset($status_result)
+        ? ($status_result['error'] ?? 'Gateway response was not verified.')
+        : 'No Hubtel transaction identifier was available for verification.';
     return [
-        'success' => true,
+        'success' => false,
+        'error' => $apiError,
         'status_updated' => false,
         'current_status' => $intent['status'],
-        'note' => 'Status retrieved from local database. Hubtel updates status via webhook callbacks.',
+        'note' => 'The displayed status is local only; Hubtel did not verify it.',
         'transaction_id' => $transaction_id,
         'method' => 'database_only',
         'verified' => false,
         'verification_status' => $status_result['verification_status'] ?? 'not_checked',
-        'api_error' => isset($status_result) ? ($status_result['error'] ?? 'Gateway response was not verified') : 'Transaction ID is client reference - API not attempted'
+        'api_error' => $apiError,
     ];
 }
 
