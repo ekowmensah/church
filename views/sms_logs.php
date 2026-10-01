@@ -1,5 +1,4 @@
 <?php
-ob_start();
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/auth.php';
 require_once __DIR__ . '/../helpers/permissions_v2.php';
@@ -226,6 +225,11 @@ $filterQuery = array_filter([
     'date_to' => $dateTo,
 ], static fn($value) => $value !== '');
 $page_title = 'SMS Delivery Centre';
+
+// Buffer only the rendered page body. Authentication, redirects, schema
+// checks and database failures above must remain outside an output buffer.
+$smsPageBufferLevel = ob_get_level();
+ob_start();
 ?>
 <style>
 .sms-audit-page{--sms-indigo:#4f46e5;--sms-violet:#7c3aed;--sms-green:#059669;--sms-red:#dc2626;--sms-amber:#d97706;--sms-ink:#172033;--sms-muted:#64748b;--sms-line:#e5eaf1;--sms-bg:#f6f8fc;color:var(--sms-ink)}
@@ -395,5 +399,5 @@ $(function() {
 });
 </script>
 <?php
-$page_content = ob_get_clean();
+$page_content = ob_get_level() > $smsPageBufferLevel ? ob_get_clean() : '';
 include __DIR__ . '/../includes/layout.php';
