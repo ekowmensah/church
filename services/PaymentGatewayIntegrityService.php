@@ -27,6 +27,7 @@ final class PaymentGatewayIntegrityService {
                LEFT JOIN payments payment ON payment.client_reference = intent.client_reference
               WHERE LOWER(intent.status) = 'completed'
                 AND intent.approval_status = 'approved'
+                AND intent.status_check_state <> 'archived'
               GROUP BY intent.id, intent.amount HAVING COUNT(payment.id) = 0
              ON DUPLICATE KEY UPDATE expected_amount=VALUES(expected_amount), observed_amount=VALUES(observed_amount), details=VALUES(details)"
         );
@@ -39,6 +40,7 @@ final class PaymentGatewayIntegrityService {
                JOIN payments payment ON payment.client_reference = intent.client_reference
               WHERE LOWER(intent.status) = 'completed'
                 AND intent.approval_status = 'approved'
+                AND intent.status_check_state <> 'archived'
               GROUP BY intent.id, intent.amount
              HAVING ABS(intent.amount-COALESCE(SUM(payment.amount),0)) > 0.01
              ON DUPLICATE KEY UPDATE expected_amount=VALUES(expected_amount), observed_amount=VALUES(observed_amount), details=VALUES(details)"
@@ -49,13 +51,18 @@ final class PaymentGatewayIntegrityService {
              SELECT intent.id, 'stale_pending', intent.amount, NULL,
                     'Payment intent has remained Pending for more than 24 hours; reconcile it with Hubtel.'
                FROM payment_intents intent
-              WHERE LOWER(intent.status)='pending' AND intent.created_at < NOW()-INTERVAL 1 DAY
+              WHERE LOWER(intent.status)='pending'
+                AND intent.status_check_state <> 'archived'
+                AND intent.created_at < NOW()-INTERVAL 1 DAY
              ON DUPLICATE KEY UPDATE expected_amount=VALUES(expected_amount), details=VALUES(details)"
         );
     }
 
     public function listOpen(): array {
-        $where = "review.status = 'open'";
+        // Archived status-check failures have their own retained queue and
+        // audit page. Keep the integrity record open in storage so restoring
+        // the intent makes it visible here again without losing evidence.
+        $where = "review.status = 'open' AND intent.status_check_state <> 'archived'";
         $types = '';
         $params = [];
         if (!$this->superAdmin) {

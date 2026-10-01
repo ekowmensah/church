@@ -46,9 +46,10 @@ $total = array_sum(array_map(static fn(array $row): float => (float)$row['expect
 ob_start();
 ?>
 <div class="container-fluid py-4">
- <div class="d-flex justify-content-between align-items-center mb-4"><div><h1 class="h3 mb-1"><i class="fas fa-shield-alt mr-2"></i>Payment Gateway Integrity</h1><p class="text-muted mb-0">Reconcile anomalies without turning an unverified intent into income.</p></div><a href="hubtel_status_check.php" class="btn btn-info">Hubtel Status Check</a></div>
+ <div class="d-flex flex-wrap justify-content-between align-items-center mb-4"><div><h1 class="h3 mb-1"><i class="fas fa-shield-alt mr-2"></i>Payment Gateway Integrity</h1><p class="text-muted mb-0">Reconcile anomalies without turning an unverified intent into income.</p></div><div class="mt-3 mt-md-0"><a href="hubtel_status_archive.php" class="btn btn-outline-secondary mr-2"><i class="fas fa-archive mr-1"></i>Archived Checks</a><a href="hubtel_status_check.php" class="btn btn-info">Hubtel Status Check</a></div></div>
  <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
  <?php if ($success): ?><div class="alert alert-success"><?= htmlspecialchars($success) ?></div><?php endif; ?>
+ <div class="alert alert-info"><i class="fas fa-info-circle mr-1"></i>Transactions archived after three status-check failures are retained under <a class="alert-link" href="hubtel_status_archive.php">Archived Checks</a> and are excluded from the open integrity count until restored.</div>
  <div class="card shadow-sm mb-4">
   <div class="card-header bg-primary text-white"><strong>Online payments awaiting approval (<?= number_format(count($pendingApprovals)) ?>)</strong></div>
   <div class="table-responsive"><table class="table table-bordered table-hover mb-0"><thead class="thead-light"><tr><th>Reference</th><th>Beneficiary</th><th>Source</th><th>Amount</th><th>Gateway</th><th style="min-width:300px">Decision</th></tr></thead><tbody>
