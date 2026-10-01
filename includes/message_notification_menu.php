@@ -3,6 +3,8 @@ $inAppUnreadMessages = 0;
 $inAppUnreadNotifications = 0;
 if (!empty($messageCanUse) && !empty($messageActorType) && !empty($messageActorId)) {
     try {
+        require_once __DIR__ . '/../services/SystemNotificationService.php';
+        (new SystemNotificationService($conn))->dispatchPending(40);
         require_once __DIR__ . '/../services/InAppMessagingService.php';
         $messageMenuService = new InAppMessagingService(
             $conn,

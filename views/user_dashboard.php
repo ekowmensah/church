@@ -1205,36 +1205,6 @@ ob_start();
         <?php endif; ?>
     </section>
 
-    <?php if ($can_use_dashboard_insights): ?>
-        <section class="dashboard-insights-card" aria-labelledby="dashboardInsightsTitle">
-            <div class="dashboard-insights-heading">
-                <span class="icon" aria-hidden="true"><i class="fas fa-comment-dots"></i></span>
-                <div>
-                    <h2 id="dashboardInsightsTitle">Dashboard Insights Assistant</h2>
-                    <small class="text-muted">Ask about information your account is already permitted to view.</small>
-                </div>
-            </div>
-            <p class="dashboard-insights-copy">Try payments, attendance, membership, health, events, or birthdays. Answers use current dashboard data and your existing access scope.</p>
-            <form id="dashboardInsightsForm" class="dashboard-insights-form" autocomplete="off">
-                <label for="dashboardInsightsQuestion" class="sr-only">Ask a dashboard question</label>
-                <input id="dashboardInsightsQuestion" class="form-control" name="question" maxlength="250" required
-                       placeholder="For example: How much was received this month?">
-                <button id="dashboardInsightsSubmit" class="btn btn-primary" type="submit">
-                    <i class="fas fa-paper-plane mr-1"></i> Ask
-                </button>
-            </form>
-            <div id="dashboardInsightsAnswer" class="dashboard-insights-answer" role="status" aria-live="polite"></div>
-            <div class="dashboard-insights-suggestions" aria-label="Suggested questions">
-                <?php if ($can_view_payment_dashboard): ?><button type="button" class="dashboard-insights-suggestion">How much was received this month?</button><?php endif; ?>
-                <?php if ($can_view_attendance_dashboard): ?><button type="button" class="dashboard-insights-suggestion">What was attendance this week?</button><?php endif; ?>
-                <?php if ($can_view_membership_dashboard): ?><button type="button" class="dashboard-insights-suggestion">How many active members are there?</button><?php endif; ?>
-                <?php if ($can_view_event_dashboard): ?><button type="button" class="dashboard-insights-suggestion">How many upcoming events are there?</button><?php endif; ?>
-                <?php if ($can_view_birthdays): ?><button type="button" class="dashboard-insights-suggestion">How many birthdays are today?</button><?php endif; ?>
-            </div>
-            <small class="dashboard-insights-privacy"><i class="fas fa-shield-alt mr-1"></i>Processed locally. Questions and answer text are not retained or sent to an external AI service.</small>
-        </section>
-    <?php endif; ?>
-
     <?php if ($is_cashier && $can_view_payment_dashboard): ?>
         <section class="dashboard-stat-grid">
             <article class="dashboard-stat-card success">
@@ -1806,71 +1776,6 @@ ob_start();
     </div>
     <?php endif; ?>
 </div>
-
-<?php if ($can_use_dashboard_insights): ?>
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    const form = document.getElementById('dashboardInsightsForm');
-    const input = document.getElementById('dashboardInsightsQuestion');
-    const submit = document.getElementById('dashboardInsightsSubmit');
-    const answer = document.getElementById('dashboardInsightsAnswer');
-    if (!form || !input || !submit || !answer) return;
-
-    document.querySelectorAll('.dashboard-insights-suggestion').forEach(function (button) {
-        button.addEventListener('click', function () {
-            input.value = button.textContent.trim();
-            form.requestSubmit();
-        });
-    });
-
-    form.addEventListener('submit', async function (event) {
-        event.preventDefault();
-        const question = input.value.trim();
-        if (question.length < 3) {
-            input.focus();
-            return;
-        }
-
-        const original = submit.innerHTML;
-        submit.disabled = true;
-        submit.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Thinking';
-        answer.classList.remove('is-error');
-        answer.classList.add('is-visible');
-        answer.textContent = 'Reviewing your authorized dashboard data...';
-
-        const body = new URLSearchParams();
-        body.append('csrf_token', <?= json_encode(csrf_token()) ?>);
-        body.append('question', question);
-
-        try {
-            const response = await fetch(<?= json_encode(BASE_URL . '/views/ajax_dashboard_insights.php') ?>, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'},
-                body: body.toString(),
-                credentials: 'same-origin'
-            });
-            const responseText = await response.text();
-            let payload;
-            try {
-                payload = JSON.parse(responseText);
-            } catch (parseError) {
-                throw new Error('The dashboard insights endpoint returned an invalid response. Refresh the page and try again.');
-            }
-            if (!response.ok || !payload.success) {
-                throw new Error(payload.error || 'Dashboard insights are unavailable.');
-            }
-            answer.textContent = payload.answer;
-        } catch (error) {
-            answer.classList.add('is-error');
-            answer.textContent = error.message || 'Dashboard insights are unavailable.';
-        } finally {
-            submit.disabled = false;
-            submit.innerHTML = original;
-        }
-    });
-});
-</script>
-<?php endif; ?>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>

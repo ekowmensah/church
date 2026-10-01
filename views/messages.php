@@ -65,6 +65,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header('Location: messages.php?tab=notifications&message=' . rawurlencode('All notifications marked as read.'));
                 exit;
             }
+            if ($action === 'archive_notification') {
+                $service->archiveNotification((int) ($_POST['notification_id'] ?? 0));
+                header('Location: messages.php?tab=notifications&message=' . rawurlencode('Notification archived.'));
+                exit;
+            }
             throw new InvalidArgumentException('Unknown messaging action.');
         } catch (Throwable $exception) {
             $error = $exception->getMessage();
@@ -229,15 +234,28 @@ ob_start();
         </div>
         <div class="list-group list-group-flush">
           <?php if (!$notifications): ?><div class="p-4 text-muted text-center">No notifications.</div><?php endif; ?>
-          <?php foreach ($notifications as $notification): $actionUrl = messaging_action_url((string) ($notification['action_url'] ?? '')); ?>
-            <div class="list-group-item <?= !$notification['is_read'] ? 'list-group-item-warning' : '' ?>">
-              <div class="d-flex justify-content-between"><strong><?= htmlspecialchars($notification['title']) ?></strong><small><?= htmlspecialchars(date('M j, Y g:i A', strtotime($notification['created_at']))) ?></small></div>
-              <p class="mb-2"><?= nl2br(htmlspecialchars($notification['message'])) ?></p>
-              <div class="d-flex align-items-center">
+          <?php foreach ($notifications as $notification):
+              $actionUrl = messaging_action_url((string) ($notification['action_url'] ?? ''));
+              $severity = in_array(($notification['severity'] ?? 'info'), ['info','success','warning','danger'], true)
+                  ? $notification['severity'] : 'info';
+              $icon = preg_match('/^fa[bsr]? fa-[a-z0-9-]+$/', (string) ($notification['icon'] ?? ''))
+                  ? $notification['icon'] : 'far fa-bell';
+          ?>
+            <div class="list-group-item <?= !$notification['is_read'] ? 'border-left border-' . $severity : '' ?>" style="border-left-width:4px!important">
+              <div class="d-flex">
+                <span class="rounded-circle bg-<?= $severity ?> text-white d-inline-flex align-items-center justify-content-center mr-3" style="width:40px;height:40px;flex:0 0 40px"><i class="<?= htmlspecialchars($icon) ?>"></i></span>
+                <div class="flex-grow-1 min-width-0">
+                  <div class="d-flex justify-content-between flex-wrap"><strong><?= htmlspecialchars($notification['title']) ?></strong><small class="text-muted"><?= htmlspecialchars(date('M j, Y g:i A', strtotime($notification['created_at']))) ?></small></div>
+                  <span class="badge badge-light text-uppercase mb-2"><?= htmlspecialchars((string) ($notification['category'] ?? 'system')) ?></span>
+                  <p class="mb-2"><?= nl2br(htmlspecialchars($notification['message'])) ?></p>
+              <div class="d-flex align-items-center flex-wrap">
                 <?php if ($actionUrl !== ''): ?><a class="btn btn-sm btn-outline-primary mr-2" href="<?= htmlspecialchars($actionUrl) ?>">Open</a><?php endif; ?>
                 <?php if (!$notification['is_read']): ?>
                   <form method="post" class="m-0"><?= csrf_input() ?><input type="hidden" name="action" value="mark_notification_read"><input type="hidden" name="notification_id" value="<?= (int) $notification['id'] ?>"><button class="btn btn-sm btn-outline-secondary" type="submit">Mark read</button></form>
                 <?php else: ?><span class="text-muted small"><i class="fas fa-check mr-1"></i>Read</span><?php endif; ?>
+                <form method="post" class="m-0 ml-2"><?= csrf_input() ?><input type="hidden" name="action" value="archive_notification"><input type="hidden" name="notification_id" value="<?= (int) $notification['id'] ?>"><button class="btn btn-sm btn-link text-muted" type="submit" title="Archive"><i class="fas fa-archive"></i></button></form>
+              </div>
+                </div>
               </div>
             </div>
           <?php endforeach; ?>

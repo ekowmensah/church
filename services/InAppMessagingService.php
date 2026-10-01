@@ -96,7 +96,7 @@ final class InAppMessagingService
     {
         $column = $this->actorType === 'user' ? 'target_user_id' : 'target_member_id';
         $stmt = $this->db->prepare("SELECT COUNT(*) AS unread_count
-            FROM dashboard_notifications WHERE {$column} = ? AND is_read = 0");
+            FROM dashboard_notifications WHERE {$column} = ? AND is_read = 0 AND archived_at IS NULL");
         $stmt->bind_param('i', $this->actorId);
         $stmt->execute();
         $count = (int) ($stmt->get_result()->fetch_assoc()['unread_count'] ?? 0);
@@ -291,9 +291,9 @@ final class InAppMessagingService
     {
         $limit = max(1, min(100, $limit));
         $column = $this->actorType === 'user' ? 'target_user_id' : 'target_member_id';
-        $stmt = $this->db->prepare("SELECT id, notification_type, title, message, action_url,
-                is_read, created_at, read_at
-            FROM dashboard_notifications WHERE {$column} = ?
+        $stmt = $this->db->prepare("SELECT id, notification_type, category, severity, icon,
+                title, message, action_url, is_read, created_at, read_at
+            FROM dashboard_notifications WHERE {$column} = ? AND archived_at IS NULL
             ORDER BY is_read ASC, created_at DESC, id DESC LIMIT ?");
         $stmt->bind_param('ii', $this->actorId, $limit);
         $stmt->execute();
@@ -321,6 +321,18 @@ final class InAppMessagingService
             SET is_read = 1, read_at = COALESCE(read_at, NOW())
             WHERE {$column} = ? AND is_read = 0");
         $stmt->bind_param('i', $this->actorId);
+        $stmt->execute();
+        $stmt->close();
+    }
+
+    public function archiveNotification(int $notificationId): void
+    {
+        $column = $this->actorType === 'user' ? 'target_user_id' : 'target_member_id';
+        $stmt = $this->db->prepare("UPDATE dashboard_notifications
+            SET archived_at = COALESCE(archived_at, NOW()), is_read = 1,
+                read_at = COALESCE(read_at, NOW())
+            WHERE id = ? AND {$column} = ?");
+        $stmt->bind_param('ii', $notificationId, $this->actorId);
         $stmt->execute();
         $stmt->close();
     }
