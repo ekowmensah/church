@@ -25,7 +25,7 @@ final class OnlinePaymentApprovalService
 
     public function listPending(): array
     {
-        $where = 'approval.approval_status = \'pending\'';
+        $where = "approval.approval_status = 'pending' AND lifecycle.status_check_state <> 'archived'";
         $types = '';
         $params = [];
         if (!$this->superAdmin) {
@@ -37,7 +37,10 @@ final class OnlinePaymentApprovalService
             $params[] = $this->churchId;
         }
         $stmt = $this->conn->prepare(
-            "SELECT approval.*, church.name AS church_name,
+            "SELECT approval.*,
+                    lifecycle.gateway_customer_paid_amount,
+                    lifecycle.gateway_charge_amount,
+                    church.name AS church_name,
                     payment_type.name AS payment_type_name,
                     CASE
                         WHEN approval.sundayschool_id IS NOT NULL
@@ -46,6 +49,7 @@ final class OnlinePaymentApprovalService
                     END AS beneficiary_name,
                     CASE WHEN approval.sundayschool_id IS NOT NULL THEN child.srn ELSE member.crn END AS beneficiary_reference
                FROM v_pending_online_payment_approvals approval
+               JOIN payment_intents lifecycle ON lifecycle.id = approval.payment_intent_id
                LEFT JOIN churches church ON church.id = approval.church_id
                LEFT JOIN payment_types payment_type ON payment_type.id = approval.payment_type_id
                LEFT JOIN members member ON member.id = approval.member_id

@@ -133,9 +133,23 @@ $subtotal = $order_info['Subtotal'] ?? null;
 
 // Extract payment details
 $payment_info = $order_info['Payment'] ?? null;
-// Credit the member with the gross amount paid. Gateway charges affect the
-// settlement, not the member's contribution, and must not reduce the ledger.
-$amount = $payment_info['AmountPaid'] ?? $subtotal ?? $payment_info['AmountAfterCharges'];
+$customer_paid_amount = isset($payment_info['AmountPaid']) && is_numeric($payment_info['AmountPaid'])
+    ? (float) $payment_info['AmountPaid']
+    : null;
+$amount_after_charges = isset($payment_info['AmountAfterCharges']) && is_numeric($payment_info['AmountAfterCharges'])
+    ? (float) $payment_info['AmountAfterCharges']
+    : null;
+$subtotal_amount = is_numeric($subtotal) ? (float) $subtotal : null;
+// The order subtotal is the contribution entered by the member. Hubtel may
+// collect its charge on top of that amount, so AmountPaid must never inflate
+// the member's church ledger credit.
+$amount = $subtotal_amount ?? $amount_after_charges ?? $customer_paid_amount;
+$gateway_charge_amount = 0.0;
+if ($customer_paid_amount !== null && $amount_after_charges !== null) {
+    $gateway_charge_amount = max(0.0, $customer_paid_amount - $amount_after_charges);
+} elseif ($customer_paid_amount !== null && $amount !== null) {
+    $gateway_charge_amount = max(0.0, $customer_paid_amount - (float) $amount);
+}
 $payment_type = $payment_info['PaymentType'] ?? 'mobilemoney';
 $payment_date = $payment_info['PaymentDate'] ?? $order_date;
 $is_successful = $payment_info['IsSuccessful'] ?? false;
@@ -166,7 +180,8 @@ if (strlen($phone) === 9 && !str_starts_with($phone, '0')) {
     $phone = '0' . $phone;
 }
 
-log_debug("Processed payment data - Amount: $amount, Phone: $phone, Reference: $reference, Status: $status");
+log_debug("Processed payment data - Contribution: $amount, Customer paid: "
+    . ($customer_paid_amount ?? 'unknown') . ", Gateway charge: $gateway_charge_amount, Phone: $phone, Reference: $reference, Status: $status");
 
 // A Paid + IsSuccessful fulfillment is authoritative and may be posted
 // automatically. Failed/uncertain notifications are retained as intents only;
@@ -412,6 +427,8 @@ try {
             'payment_period_description' => $payment_period_description,
             'payment_source' => 'ussd',
             'gateway_verification_status' => $verificationStatus,
+            'gateway_customer_paid_amount' => $customer_paid_amount,
+            'gateway_charge_amount' => $gateway_charge_amount,
             'raw_payload' => $raw_input,
         ]);
         if ($is_definitive_success

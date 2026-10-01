@@ -3,6 +3,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/auth.php';
 require_once __DIR__ . '/../helpers/permissions_v2.php';
 require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../helpers/hubtel_status.php';
 require_once __DIR__ . '/../services/PaymentGatewayIntegrityService.php';
 require_once __DIR__ . '/../services/OnlinePaymentApprovalService.php';
 
@@ -22,7 +23,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) { http_response_code(419); $error = 'Your form expired. Refresh and retry.'; }
     else {
         try {
-            if (isset($_POST['payment_intent_id'])) {
+            if (($_POST['action'] ?? '') === 'verify_gateway') {
+                $intentId = (int) ($_POST['payment_intent_id'] ?? 0);
+                $scopeSql = "SELECT intent.client_reference, intent.payment_source
+                               FROM payment_intents intent
+                              WHERE intent.id = ? AND intent.approval_status = 'pending'
+                                AND intent.status_check_state <> 'archived'";
+                if (!$isSuper) {
+                    $scopeSql .= ' AND intent.church_id = (SELECT church_id FROM users WHERE id = ? LIMIT 1)';
+                }
+                $scopeStmt = $conn->prepare($scopeSql);
+                if ($isSuper) {
+                    $scopeStmt->bind_param('i', $intentId);
+                } else {
+                    $actorId = (int) $_SESSION['user_id'];
+                    $scopeStmt->bind_param('ii', $intentId, $actorId);
+                }
+                $scopeStmt->execute();
+                $intentToVerify = $scopeStmt->get_result()->fetch_assoc();
+                $scopeStmt->close();
+                if (!$intentToVerify) {
+                    throw new RuntimeException('This pending payment is unavailable or outside your church scope.');
+                }
+                if (!in_array($intentToVerify['payment_source'], ['online_checkout', 'ussd', 'legacy_callback'], true)) {
+                    throw new RuntimeException('This payment source cannot be verified through Hubtel Status Check.');
+                }
+
+                $verification = check_transaction_by_reference(
+                    $conn,
+                    (string) $intentToVerify['client_reference'],
+                    null,
+                    (int) $_SESSION['user_id']
+                );
+                if (empty($verification['success'])) {
+                    throw new RuntimeException('Gateway verification failed: ' . ($verification['error'] ?? 'Unknown gateway response.'));
+                }
+                $freshStatus = strtolower(trim((string) ($verification['gateway_status_checked'] ?? '')));
+                if (!in_array($freshStatus, ['completed', 'paid', 'success', 'successful', 'approved'], true)) {
+                    $verificationState = in_array($freshStatus, ['failed', 'cancelled', 'canceled', 'declined', 'error'], true)
+                        ? 'failed'
+                        : 'not_checked';
+                    $verificationUpdate = $conn->prepare(
+                        'UPDATE payment_intents
+                            SET gateway_verification_status = ?, gateway_verified_at = NULL
+                          WHERE id = ?'
+                    );
+                    $verificationUpdate->bind_param('si', $verificationState, $intentId);
+                    $verificationUpdate->execute();
+                    $verificationUpdate->close();
+                    throw new RuntimeException(
+                        'Hubtel returned ' . ($freshStatus !== '' ? strtoupper($freshStatus) : 'UNKNOWN')
+                        . '. Approval remains locked until Hubtel confirms success.'
+                    );
+                }
+                header('Location: payment_gateway_integrity.php?message=' . rawurlencode(
+                    'Gateway reference, amount, and successful status verified. Add a decision note, then approve and post.'
+                ));
+                exit;
+            } elseif (isset($_POST['payment_intent_id'])) {
                 $result = $approvalService->decide(
                     (int) $_POST['payment_intent_id'],
                     (string) ($_POST['approval_decision'] ?? ''),
@@ -57,9 +115,9 @@ ob_start();
    <td><code><?= htmlspecialchars($row['client_reference']) ?></code><?php if ($isSuper): ?><br><small><?= htmlspecialchars($row['church_name'] ?: 'No church') ?></small><?php endif; ?></td>
    <td><?= htmlspecialchars($row['beneficiary_name'] ?: 'Needs beneficiary review') ?><br><small><?= htmlspecialchars($row['beneficiary_reference'] ?: 'No CRN/SRN') ?><?= $row['payment_type_name'] ? ' · ' . htmlspecialchars($row['payment_type_name']) : '' ?></small></td>
    <td><?= htmlspecialchars(ucwords(str_replace('_', ' ', $row['payment_source']))) ?></td>
-   <td>GH&#8373;<?= number_format((float) $row['amount'], 2) ?></td>
+   <td><strong>Credit: GH&#8373;<?= number_format((float) $row['amount'], 2) ?></strong><?php if ($row['gateway_customer_paid_amount'] !== null): ?><br><small>Customer paid: GH&#8373;<?= number_format((float) $row['gateway_customer_paid_amount'], 2) ?><br>Gateway charge: GH&#8373;<?= number_format((float) ($row['gateway_charge_amount'] ?? 0), 2) ?></small><?php endif; ?></td>
    <td><?= htmlspecialchars($row['gateway_status']) ?><br><span class="badge badge-<?= $row['gateway_verification_status'] === 'verified' ? 'success' : 'warning' ?>"><?= htmlspecialchars(str_replace('_', ' ', strtoupper($row['gateway_verification_status']))) ?></span><br><small><?= htmlspecialchars($row['approval_requested_at'] ?: $row['created_at']) ?></small></td>
-   <td><form method="post"><?= csrf_input() ?><input type="hidden" name="payment_intent_id" value="<?= (int) $row['payment_intent_id'] ?>"><textarea class="form-control form-control-sm mb-2" name="approval_notes" maxlength="500" required placeholder="State what was verified with the gateway."></textarea><button class="btn btn-sm btn-success mr-1" name="approval_decision" value="approved" <?= $row['gateway_verification_status'] === 'verified' ? '' : 'disabled title="Run a gateway status check first"' ?>>Approve &amp; post</button><button class="btn btn-sm btn-danger" name="approval_decision" value="rejected">Reject</button></form></td>
+   <td><form method="post"><?= csrf_input() ?><input type="hidden" name="payment_intent_id" value="<?= (int) $row['payment_intent_id'] ?>"><label class="small font-weight-bold mb-1">Decision note (required for approval/rejection)</label><textarea class="form-control form-control-sm mb-2" name="approval_notes" maxlength="500" required placeholder="State what was verified with the gateway."></textarea><?php if ($row['gateway_verification_status'] === 'verified'): ?><button class="btn btn-sm btn-success mr-1" name="approval_decision" value="approved">Approve &amp; post</button><?php else: ?><button class="btn btn-sm btn-warning mr-1" name="action" value="verify_gateway" formnovalidate><i class="fas fa-sync-alt mr-1"></i>Verify with Gateway</button><?php endif; ?><button class="btn btn-sm btn-danger" name="approval_decision" value="rejected">Reject</button><?php if ($row['gateway_verification_status'] !== 'verified'): ?><small class="form-text text-muted">Approval unlocks only after a fresh successful gateway verification.</small><?php endif; ?></form></td>
   </tr><?php endforeach; ?>
   <?php if (!$pendingApprovals): ?><tr><td colspan="6" class="text-center text-muted py-4">No successful online payments are awaiting approval.</td></tr><?php endif; ?>
   </tbody></table></div>

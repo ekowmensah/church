@@ -570,6 +570,7 @@ function check_transaction_by_reference($conn, $client_reference, $transaction_i
 
             return array_merge([
                 'success' => true,
+                'gateway_status_checked' => $hubtel_status,
                 'status_updated' => $local_status !== $intent['status'],
                 'old_status' => $intent['status'],
                 'new_status' => $capture['status'],

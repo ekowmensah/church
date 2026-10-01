@@ -44,6 +44,14 @@ final class PaymentGatewayCallbackService
         $payloadHash = isset($callback['raw_payload'])
             ? hash('sha256', (string) $callback['raw_payload'])
             : null;
+        $customerPaidAmount = isset($callback['gateway_customer_paid_amount'])
+            && is_numeric($callback['gateway_customer_paid_amount'])
+            ? max(0, (float) $callback['gateway_customer_paid_amount'])
+            : null;
+        $gatewayChargeAmount = isset($callback['gateway_charge_amount'])
+            && is_numeric($callback['gateway_charge_amount'])
+            ? max(0, (float) $callback['gateway_charge_amount'])
+            : null;
 
         $this->conn->begin_transaction();
         try {
@@ -184,6 +192,18 @@ final class PaymentGatewayCallbackService
                 );
                 $update->execute();
                 $update->close();
+            }
+
+            if ($customerPaidAmount !== null || $gatewayChargeAmount !== null) {
+                $gatewayAmounts = $this->conn->prepare(
+                    'UPDATE payment_intents
+                        SET gateway_customer_paid_amount = COALESCE(?, gateway_customer_paid_amount),
+                            gateway_charge_amount = COALESCE(?, gateway_charge_amount)
+                      WHERE id = ?'
+                );
+                $gatewayAmounts->bind_param('ddi', $customerPaidAmount, $gatewayChargeAmount, $intentId);
+                $gatewayAmounts->execute();
+                $gatewayAmounts->close();
             }
 
             $captureAction = $locallyInitialized ? 'intent_initialized' : 'callback_received';
