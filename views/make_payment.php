@@ -876,13 +876,22 @@ include __DIR__ . '/bulk_paystack_email_prompt.php';
     |--------------------------------------------------------------------------
     */
 
+    function cleanText(value) {
+
+        return String(value || '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+    }
+
+
     function descriptionFor(line) {
 
         return (
             'Payment for ' +
-            line.periodText +
+            cleanText(line.periodText) +
             ' ' +
-            line.typeName
+            cleanText(line.typeName)
         );
 
     }
@@ -1014,6 +1023,12 @@ include __DIR__ . '/bulk_paystack_email_prompt.php';
                             value:
                                 line.description,
 
+                            readonly:
+                                true,
+
+                            'aria-label':
+                                'Automatically generated payment description',
+
                             maxlength:
                                 255
 
@@ -1087,7 +1102,8 @@ include __DIR__ . '/bulk_paystack_email_prompt.php';
 
                 const typeName =
                     $('#payment_type_id option:selected')
-                        .text();
+                        .text()
+                        .trim();
 
 
                 const amount =
@@ -1104,7 +1120,8 @@ include __DIR__ . '/bulk_paystack_email_prompt.php';
 
                 const periodText =
                     $('#payment_period option:selected')
-                        .text();
+                        .text()
+                        .trim();
 
 
                 if (
@@ -1207,11 +1224,13 @@ include __DIR__ . '/bulk_paystack_email_prompt.php';
 
 
                 paymentLines[index].typeName =
-                    $row
-                        .find(
-                            '.line-type option:selected'
-                        )
-                        .text();
+                    cleanText(
+                        $row
+                            .find(
+                                '.line-type option:selected'
+                            )
+                            .text()
+                    );
 
 
                 paymentLines[index].period =
@@ -1221,11 +1240,13 @@ include __DIR__ . '/bulk_paystack_email_prompt.php';
 
 
                 paymentLines[index].periodText =
-                    $row
-                        .find(
-                            '.line-period option:selected'
-                        )
-                        .text();
+                    cleanText(
+                        $row
+                            .find(
+                                '.line-period option:selected'
+                            )
+                            .text()
+                    );
 
 
                 paymentLines[index].description =
@@ -1307,35 +1328,6 @@ include __DIR__ . '/bulk_paystack_email_prompt.php';
 
     /*
     |--------------------------------------------------------------------------
-    | EDIT DESCRIPTION
-    |--------------------------------------------------------------------------
-    */
-
-    $('#paymentLinesTable')
-        .on(
-            'input',
-            '.line-description',
-            function () {
-
-                const index =
-                    Number(
-                        $(this)
-                            .closest('tr')
-                            .attr('data-index')
-                    );
-
-
-                paymentLines[index]
-                    .description =
-                    $(this).val();
-
-            }
-        );
-
-
-
-    /*
-    |--------------------------------------------------------------------------
     | REMOVE PAYMENT LINE
     |--------------------------------------------------------------------------
     */
@@ -1379,6 +1371,26 @@ include __DIR__ . '/bulk_paystack_email_prompt.php';
             function () {
 
 
+                paymentLines.forEach(
+                    function (line) {
+
+                        line.typeName =
+                            cleanText(line.typeName);
+
+                        line.periodText =
+                            cleanText(line.periodText);
+
+                        const normalizedDescription =
+                            cleanText(line.description);
+
+                        line.description =
+                            normalizedDescription ||
+                            descriptionFor(line);
+
+                    }
+                );
+
+
                 const invalidLine =
                     paymentLines.some(
                         function (line) {
@@ -1397,7 +1409,9 @@ include __DIR__ . '/bulk_paystack_email_prompt.php';
 
                                 Number(
                                     line.amount
-                                ) < 1
+                                ) < 1 ||
+
+                                !line.description
 
                             );
 
@@ -1421,6 +1435,9 @@ include __DIR__ . '/bulk_paystack_email_prompt.php';
 
                 }
 
+
+
+                renderLines();
 
 
                 /*
