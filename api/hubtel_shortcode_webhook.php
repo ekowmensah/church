@@ -384,17 +384,17 @@ try {
         }
         $type_stmt->close();
         $formatted_description = "Payment for " . ($payment_period_description ?: date('F Y')) . " " . $payment_type_name;
-        $verificationStatus = 'not_checked';
-        if ($is_definitive_success) {
-            $verification = verify_hubtel_transaction_status($order_id, $reference, (float) $amount);
-            $verificationStatus = (string) ($verification['verification_status'] ?? 'not_checked');
-            if (!empty($verification['verified'])) {
-                $payment_status = (string) ($verification['status'] ?? $payment_status);
-                $amount = (float) $verification['amount'];
-            } else {
-                log_debug('USSD server verification did not pass: ' . ($verification['error'] ?? 'unknown verification error'));
-            }
-        }
+        // Hubtel's shortcode Service Fulfillment notification is the
+        // server-to-server confirmation for this channel. Its OrderId is not
+        // an online-checkout clientReference and therefore cannot be used as a
+        // hard dependency on the transaction-status endpoint. Doing so caused
+        // valid Paid + IsSuccessful fulfillments to remain unposted whenever
+        // that separate endpoint rejected the lookup.
+        //
+        // Only the definitive success combination is trusted here. Every
+        // other result remains unverified and can become payable only through
+        // the existing status-check plus authorized-approval workflow.
+        $verificationStatus = $is_definitive_success ? 'verified' : 'not_checked';
         $gatewayService = new PaymentGatewayCallbackService($conn);
         $capture = $gatewayService->record([
             'client_reference' => $reference,
