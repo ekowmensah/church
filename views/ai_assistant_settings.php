@@ -6,6 +6,7 @@ require_once __DIR__ . '/../helpers/auth.php';
 require_once __DIR__ . '/../helpers/permissions_v2.php';
 require_once __DIR__ . '/../helpers/csrf.php';
 require_once __DIR__ . '/../services/AiAssistantSettingsService.php';
+require_once __DIR__ . '/../services/OpenAiResponsesService.php';
 
 if (!is_logged_in() || !is_super_admin()) {
     http_response_code(403);
@@ -19,15 +20,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message = '<div class="alert alert-danger">Your session token expired. Refresh and try again.</div>';
     } else {
         try {
-            $service->update($_POST, (int) $_SESSION['user_id']);
-            $message = '<div class="alert alert-success">Assistant settings saved.</div>';
+            $action = (string) ($_POST['action'] ?? 'save');
+            if ($action === 'test_agent') {
+                $model = $service->validateModel((string) ($_POST['agent_model'] ?? ''));
+                $test = (new OpenAiResponsesService())->testConnection($model);
+                $requestId = trim((string) ($test['request_id'] ?? ''));
+                $requestNote = $requestId !== ''
+                    ? ' Request ID: ' . htmlspecialchars($requestId, ENT_QUOTES, 'UTF-8') . '.'
+                    : '';
+                $message = '<div class="alert alert-success"><strong>Agent connection successful.</strong>'
+                    . ' OpenAI accepted a Responses API request using ' . htmlspecialchars($model, ENT_QUOTES, 'UTF-8')
+                    . '.' . $requestNote . '</div>';
+            } else {
+                $service->update($_POST, (int) $_SESSION['user_id']);
+                $message = '<div class="alert alert-success">Assistant settings saved.</div>';
+            }
         } catch (Throwable $exception) {
-            $message = '<div class="alert alert-danger">' . htmlspecialchars($exception->getMessage()) . '</div>';
+            $message = '<div class="alert alert-danger">' . htmlspecialchars(
+                $exception->getMessage(), ENT_QUOTES, 'UTF-8'
+            ) . '</div>';
         }
     }
 }
 $settings = $service->get();
 $hasApiKey = $service->hasApiKey();
+$supportedModels = $service->supportedModels();
 $page_title = 'AI Assistant Settings';
 ob_start();
 ?>
@@ -66,9 +83,15 @@ ob_start();
                     <div class="form-row">
                         <div class="form-group col-md-6">
                             <label for="agent_model">OpenAI model</label>
-                            <input class="form-control" id="agent_model" name="agent_model"
-                                   value="<?= htmlspecialchars((string) $settings['agent_model']) ?>" maxlength="80">
-                            <small class="form-text text-muted">Model identifiers can be changed without code deployment.</small>
+                            <select class="form-control" id="agent_model" name="agent_model">
+                                <?php foreach ($supportedModels as $modelId => $modelLabel): ?>
+                                    <option value="<?= htmlspecialchars($modelId, ENT_QUOTES, 'UTF-8') ?>"
+                                        <?= $settings['agent_model'] === $modelId ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($modelLabel, ENT_QUOTES, 'UTF-8') ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small class="form-text text-muted">GPT-6 Luna is the lowest-cost focused model and the recommended starter.</small>
                         </div>
                         <div class="form-group col-md-3">
                             <label for="max_output_tokens">Max output tokens</label>
@@ -87,7 +110,13 @@ ob_start();
                                <?= !empty($settings['is_enabled']) ? 'checked' : '' ?>>
                         <label class="custom-control-label" for="is_enabled">Enable the assistant</label>
                     </div>
-                    <button class="btn btn-primary"><i class="fas fa-save mr-1"></i>Save Settings</button>
+                    <button class="btn btn-primary" type="submit" name="action" value="save">
+                        <i class="fas fa-save mr-1"></i>Save Settings
+                    </button>
+                    <button class="btn btn-outline-secondary ml-2" type="submit" name="action" value="test_agent"
+                            <?= $hasApiKey ? '' : 'disabled' ?>>
+                        <i class="fas fa-plug mr-1"></i>Test Agent Connection
+                    </button>
                 </div>
             </form>
         </div>
@@ -98,7 +127,8 @@ ob_start();
                     <p class="mb-2"><span class="badge badge-<?= $hasApiKey ? 'success' : 'warning' ?>">
                         <?= $hasApiKey ? 'OPENAI_API_KEY detected' : 'OPENAI_API_KEY not configured' ?>
                     </span></p>
-                    <p class="small text-muted mb-0">The key is read only from the server environment and is never stored in the database or exposed in the browser. If Agent mode fails, the verified Local answer is returned.</p>
+                    <p class="small text-muted mb-2">The key is read only from the server environment and is never stored in the database or exposed in the browser.</p>
+                    <p class="small text-muted mb-0">The connection test sends only a short diagnostic prompt and no church, member, health, or payment data. If Agent mode fails during normal use, the verified Local answer is returned.</p>
                 </div>
             </div>
         </div>

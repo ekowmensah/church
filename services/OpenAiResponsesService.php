@@ -31,12 +31,19 @@ final class OpenAiResponsesService
             'content' => "Question: {$question}\n\nVerified permission-scoped system result:\n{$verifiedContext}",
         ];
 
-        $payload = json_encode([
+        $requestPayload = [
             'model' => $model,
             'instructions' => 'You are the MyFreeman church management assistant. Answer concisely and professionally. Treat the supplied verified system result as authoritative. Never invent names, figures, permissions, database records, or completed actions. Explain when a request is outside the available system data. Do not reveal implementation details or secrets.',
             'input' => $input,
             'max_output_tokens' => $maxOutputTokens,
-        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        ];
+        if ($model === 'gpt-6-luna') {
+            // Luna supports reasoning effort "none". This keeps the focused
+            // assistant fast and prevents hidden reasoning tokens consuming
+            // the small output budget used by the connection test.
+            $requestPayload['reasoning'] = ['effort' => 'none'];
+        }
+        $payload = json_encode($requestPayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         if ($payload === false) {
             throw new RuntimeException('Unable to encode the AI request.');
         }
@@ -74,7 +81,7 @@ final class OpenAiResponsesService
         if ($httpCode < 200 || $httpCode >= 300) {
             $providerMessage = is_array($decoded) ? (string) ($decoded['error']['message'] ?? '') : '';
             error_log('OpenAI Responses error HTTP ' . $httpCode . ': ' . $providerMessage);
-            throw new RuntimeException('The AI Agent is temporarily unavailable.');
+            throw new RuntimeException($this->safeHttpError($httpCode));
         }
 
         $text = '';
@@ -97,5 +104,30 @@ final class OpenAiResponsesService
             'text' => $text,
             'request_id' => (string) ($responseHeaders['x-request-id'] ?? ''),
         ];
+    }
+
+    public function testConnection(string $model): array
+    {
+        return $this->respond(
+            $model,
+            16,
+            [],
+            'Reply with exactly OK.',
+            'This is an administrator connection test. No church or member data is included.'
+        );
+    }
+
+    private function safeHttpError(int $httpCode): string
+    {
+        return match ($httpCode) {
+            400 => 'OpenAI rejected the test request. Check the selected model and request settings.',
+            401 => 'OpenAI rejected the API key. Replace the revoked or invalid server key.',
+            403 => 'This OpenAI project is not permitted to use the selected model.',
+            404 => 'The selected OpenAI model is unavailable to this project.',
+            429 => 'OpenAI rejected the request because of a rate limit, quota, or billing restriction.',
+            default => $httpCode >= 500
+                ? 'OpenAI is temporarily unavailable. Try again later.'
+                : 'The OpenAI connection test failed (HTTP ' . $httpCode . ').',
+        };
     }
 }

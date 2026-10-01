@@ -33,7 +33,7 @@ final class DashboardInsightsService
         $this->permissions = $permissions;
     }
 
-    public function ask(string $question): array
+    public function ask(string $question, array $conversationHistory = []): array
     {
         $question = trim($question);
         if ($question === '' || mb_strlen($question) < 3) {
@@ -47,7 +47,25 @@ final class DashboardInsightsService
         $normalized = preg_replace('/[^a-z0-9\s-]+/u', ' ', $normalized) ?: '';
         $normalized = preg_replace('/\s+/', ' ', trim($normalized)) ?: '';
         $domain = $this->detectDomain($normalized);
-        $period = $this->detectPeriod($normalized, $domain);
+        $explicitPeriod = $this->detectExplicitPeriod($normalized);
+        $context = null;
+        if ($domain === 'unknown' && $this->looksLikeFollowUp($normalized)) {
+            $context = $this->conversationContext($conversationHistory);
+            if ($context !== null) {
+                $domain = $context['domain'];
+            }
+        }
+        $period = $explicitPeriod
+            ?? ($context['period'] ?? null)
+            ?? $this->defaultPeriod($domain);
+        $semanticQuestion = $normalized;
+        if ($context !== null && !empty($context['question'])) {
+            $semanticQuestion .= ' ' . $context['question'];
+        }
+        $wantsList = (bool) preg_match(
+            '/\b(who|whose|name|names|list|show|identify|which people|which members|which events)\b/',
+            $normalized
+        );
         $intent = $domain . '_' . ($period ?: 'summary');
         $answered = false;
 
@@ -64,19 +82,21 @@ final class DashboardInsightsService
                 $answer = $this->periodMetricAnswer($domain, $period ?: 'overall');
                 $answered = true;
             } elseif ($domain === 'membership') {
-                $membership = $this->membershipAnswer($normalized);
+                $membership = $this->membershipAnswer($semanticQuestion, $wantsList);
                 $answer = $membership['answer'];
                 $intent = $membership['intent'];
                 $period = null;
                 $answered = true;
             } elseif ($domain === 'events') {
-                $event = $this->eventAnswer($period ?: 'upcoming');
+                $event = $this->eventAnswer($period ?: 'upcoming', $wantsList);
                 $answer = $event['answer'];
+                $intent = $event['intent'];
                 $period = $event['period'];
                 $answered = true;
             } elseif ($domain === 'birthdays') {
-                $birthday = $this->birthdayAnswer($period ?: 'today');
+                $birthday = $this->birthdayAnswer($period ?: 'today', $wantsList);
                 $answer = $birthday['answer'];
+                $intent = $birthday['intent'];
                 $period = $birthday['period'];
                 $answered = true;
             } else {
@@ -153,7 +173,7 @@ final class DashboardInsightsService
         );
     }
 
-    private function membershipAnswer(string $question): array
+    private function membershipAnswer(string $question, bool $wantsList = false): array
     {
         if (empty($this->permissions['membership'])) {
             throw new DomainException('You do not have permission to view membership dashboard information.');
@@ -193,7 +213,9 @@ final class DashboardInsightsService
             $total = $memberCount + $childCount;
             return [
                 'intent' => $intent,
-                'answer' => sprintf('There are %s %s within your authorized scope.', number_format($total), $label),
+                'answer' => $wantsList
+                    ? $this->combinedJuniorMemberNames($memberCondition, $label, $total)
+                    : sprintf('There are %s %s within your authorized scope.', number_format($total), $label),
             ];
         } elseif (strpos($question, 'christian community') !== false || strpos($question, 'community size') !== false) {
             $label = 'people in the Christian Community total';
@@ -203,14 +225,18 @@ final class DashboardInsightsService
             $total = $memberCount + $this->sundaySchoolCount();
             return [
                 'intent' => $intent,
-                'answer' => sprintf('There are %s %s within your authorized scope.', number_format($total), $label),
+                'answer' => $wantsList
+                    ? $this->combinedJuniorMemberNames($condition, $label, $total)
+                    : sprintf('There are %s %s within your authorized scope.', number_format($total), $label),
             ];
         }
 
         $total = $this->scalar("SELECT COUNT(*) AS total FROM members member WHERE {$condition} AND {$scope}");
         return [
-            'intent' => $intent,
-            'answer' => sprintf('There are %s %s within your authorized scope.', number_format($total), $label),
+            'intent' => $intent . ($wantsList ? '_names' : ''),
+            'answer' => $wantsList
+                ? $this->memberNamesAnswer($condition, $label, $total)
+                : sprintf('There are %s %s within your authorized scope.', number_format($total), $label),
         ];
     }
 
@@ -261,7 +287,7 @@ final class DashboardInsightsService
         return sprintf('Your posted payments %s total GHS %s.', $labels[$period], number_format($total, 2));
     }
 
-    private function eventAnswer(string $period): array
+    private function eventAnswer(string $period, bool $wantsList = false): array
     {
         if (empty($this->permissions['events'])) {
             throw new DomainException('You do not have permission to view event dashboard information.');
@@ -280,48 +306,76 @@ final class DashboardInsightsService
             $condition .= ' AND event.event_date >= CURDATE()';
         }
         $total = $this->scalar("SELECT COUNT(*) AS total FROM events event WHERE {$condition} AND {$scope}");
+        $answer = sprintf('There are %s active events %s within your authorized scope.', number_format($total), $label);
+        if ($wantsList) {
+            $rows = $this->rows(
+                "SELECT event.name, event.event_date, event.event_time, event.location
+                   FROM events event
+                  WHERE {$condition} AND {$scope}
+                  ORDER BY event.event_date, event.event_time, event.name
+                  LIMIT 26"
+            );
+            $items = array_map(static function (array $row): string {
+                $date = date('j M Y', strtotime((string) $row['event_date']));
+                $location = trim((string) ($row['location'] ?? ''));
+                return trim((string) $row['name']) . ' (' . $date
+                    . ($location !== '' ? ', ' . $location : '') . ')';
+            }, array_slice($rows, 0, 25));
+            $answer = $this->listAnswer('Active events ' . $label, $total, $items, count($rows) > 25);
+        }
         return [
             'period' => $period,
-            'answer' => sprintf('There are %s active events %s within your authorized scope.', number_format($total), $label),
+            'intent' => 'events_' . $period . ($wantsList ? '_list' : ''),
+            'answer' => $answer,
         ];
     }
 
-    private function birthdayAnswer(string $period): array
+    private function birthdayAnswer(string $period, bool $wantsList = false): array
     {
         if (empty($this->permissions['birthdays'])) {
             throw new DomainException('You do not have permission to view birthday information.');
         }
         $scope = $this->memberScope('member');
         if ($period === 'tomorrow') {
-            $dateExpression = "DATE_FORMAT(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '%m-%d')";
+            $dateCondition = "DATE_FORMAT(member.dob, '%m-%d') = DATE_FORMAT(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '%m-%d')";
             $label = 'tomorrow';
         } elseif ($period === 'yesterday') {
-            $dateExpression = "DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '%m-%d')";
+            $dateCondition = "DATE_FORMAT(member.dob, '%m-%d') = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 DAY), '%m-%d')";
             $label = 'yesterday';
         } elseif ($period === 'this_month') {
-            $total = $this->scalar(
-                "SELECT COUNT(*) AS total FROM members member
-                 WHERE member.status = 'active' AND COALESCE(member.is_archived, 0) = 0
-                   AND member.dob IS NOT NULL AND MONTH(member.dob) = MONTH(CURDATE()) AND {$scope}"
-            );
-            return [
-                'period' => 'this_month',
-                'answer' => sprintf('%s members have birthdays this month within your authorized scope.', number_format($total)),
-            ];
+            $dateCondition = 'MONTH(member.dob) = MONTH(CURDATE())';
+            $label = 'this month';
         } else {
             $period = 'today';
-            $dateExpression = "DATE_FORMAT(CURDATE(), '%m-%d')";
+            $dateCondition = "DATE_FORMAT(member.dob, '%m-%d') = DATE_FORMAT(CURDATE(), '%m-%d')";
             $label = 'today';
         }
+        $condition = "member.status = 'active' AND COALESCE(member.is_archived, 0) = 0"
+            . " AND member.dob >= '1900-01-01' AND {$dateCondition} AND {$scope}";
         $total = $this->scalar(
-            "SELECT COUNT(*) AS total FROM members member
-             WHERE member.status = 'active' AND COALESCE(member.is_archived, 0) = 0
-               AND member.dob IS NOT NULL AND DATE_FORMAT(member.dob, '%m-%d') = {$dateExpression}
-               AND {$scope}"
+            "SELECT COUNT(*) AS total FROM members member WHERE {$condition}"
         );
+        $answer = sprintf('%s members have birthdays %s within your authorized scope.', number_format($total), $label);
+        if ($wantsList) {
+            $rows = $this->rows(
+                "SELECT TRIM(CONCAT_WS(' ', member.first_name, member.middle_name, member.last_name)) AS full_name,
+                        DATE_FORMAT(member.dob, '%d %b') AS birthday
+                   FROM members member
+                  WHERE {$condition}
+                  ORDER BY DATE_FORMAT(member.dob, '%m-%d'), member.last_name, member.first_name
+                  LIMIT 51"
+            );
+            $items = array_map(
+                static fn (array $row): string => trim((string) $row['full_name'])
+                    . ($period === 'this_month' ? ' (' . $row['birthday'] . ')' : ''),
+                array_slice($rows, 0, 50)
+            );
+            $answer = $this->listAnswer('Birthdays ' . $label, $total, $items, count($rows) > 50);
+        }
         return [
             'period' => $period,
-            'answer' => sprintf('%s members have birthdays %s within your authorized scope.', number_format($total), $label),
+            'intent' => 'birthdays_' . $period . ($wantsList ? '_names' : ''),
+            'answer' => $answer,
         ];
     }
 
@@ -339,6 +393,11 @@ final class DashboardInsightsService
 
     private function detectPeriod(string $question, string $domain): ?string
     {
+        return $this->detectExplicitPeriod($question) ?? $this->defaultPeriod($domain);
+    }
+
+    private function detectExplicitPeriod(string $question): ?string
+    {
         $patterns = [
             'last_year' => '/\blast year\b/', 'this_year' => '/\b(this|current) year\b/',
             'last_month' => '/\blast month\b/', 'this_month' => '/\b(this|current) month\b/',
@@ -350,16 +409,64 @@ final class DashboardInsightsService
         foreach ($patterns as $period => $pattern) {
             if (preg_match($pattern, $question)) return $period;
         }
+        return null;
+    }
+
+    private function defaultPeriod(string $domain): string
+    {
         if ($domain === 'birthdays') return 'today';
         if ($domain === 'events') return 'upcoming';
         return 'overall';
+    }
+
+    private function looksLikeFollowUp(string $question): bool
+    {
+        return (bool) preg_match(
+            '/\b(their|them|those|they|who|whose|names?|list|which|what about|how about|and|today|tomorrow|yesterday)\b/',
+            $question
+        );
+    }
+
+    private function conversationContext(array $history): ?array
+    {
+        $domain = null;
+        $period = null;
+        $priorQuestion = null;
+        $allowed = ['payments', 'attendance', 'health', 'membership', 'events', 'birthdays'];
+
+        for ($index = count($history) - 1; $index >= 0; $index--) {
+            $message = (array) $history[$index];
+            $text = mb_strtolower(trim((string) ($message['message_text'] ?? '')));
+            $text = preg_replace('/[^a-z0-9\s-]+/u', ' ', $text) ?: '';
+            $text = preg_replace('/\s+/', ' ', trim($text)) ?: '';
+            if ($text === '') continue;
+
+            if ($period === null) $period = $this->detectExplicitPeriod($text);
+            if ($priorQuestion === null && ($message['sender'] ?? '') === 'user') {
+                $priorQuestion = $text;
+            }
+            if ($domain === null) {
+                $candidate = (string) ($message['data_domain'] ?? '');
+                if (!in_array($candidate, $allowed, true)) $candidate = $this->detectDomain($text);
+                if (in_array($candidate, $allowed, true)) $domain = $candidate;
+            }
+            if ($domain !== null && $priorQuestion !== null) break;
+        }
+
+        if ($domain === null) return null;
+        return [
+            'domain' => $domain,
+            'period' => $period ?? $this->defaultPeriod($domain),
+            'question' => $priorQuestion,
+        ];
     }
 
     private function helpAnswer(): string
     {
         $suggestions = $this->suggestions();
         if (!$suggestions) return 'No dashboard data domains are currently available to your account.';
-        return 'You can ask questions such as: ' . implode('; ', $suggestions) . '.';
+        return 'You can ask questions such as: ' . implode('; ', $suggestions)
+            . '. After a count, you can follow up with “Who are they?”, “What are their names?”, or “List them.”';
     }
 
     private function suggestions(): array
@@ -367,10 +474,10 @@ final class DashboardInsightsService
         $items = [];
         if (!empty($this->permissions['payments'])) $items[] = 'How much was received this month?';
         if (!empty($this->permissions['attendance'])) $items[] = 'What was attendance this week?';
-        if (!empty($this->permissions['membership'])) $items[] = 'How many active members are there?';
+        if (!empty($this->permissions['membership'])) $items[] = 'How many active members are there, and who are they?';
         if (!empty($this->permissions['health'])) $items[] = 'How many health records were added this year?';
-        if (!empty($this->permissions['events'])) $items[] = 'How many upcoming events are there?';
-        if (!empty($this->permissions['birthdays'])) $items[] = 'How many birthdays are today?';
+        if (!empty($this->permissions['events'])) $items[] = 'List the upcoming events.';
+        if (!empty($this->permissions['birthdays'])) $items[] = 'Who has a birthday today?';
         return array_slice($items, 0, 6);
     }
 
@@ -398,19 +505,88 @@ final class DashboardInsightsService
 
     private function sundaySchoolCount(): int
     {
-        if ($this->superAdmin) {
-            $scope = '1=1';
-        } elseif ($this->classIds !== null || $this->organizationIds !== null) {
-            $scope = $this->classIds
-                ? 'child.class_id IN (' . implode(',', $this->classIds) . ')'
-                : '1=0';
-        } else {
-            $scope = $this->churchId ? 'child.church_id = ' . $this->churchId : '1=0';
-        }
+        $scope = $this->sundaySchoolScope('child');
         return $this->scalar(
             "SELECT COUNT(*) AS total FROM sunday_school child
              WHERE child.transferred_to_member_id IS NULL AND {$scope}"
         );
+    }
+
+    private function sundaySchoolScope(string $alias): string
+    {
+        if ($this->superAdmin) return '1=1';
+        if ($this->classIds !== null || $this->organizationIds !== null) {
+            return $this->classIds
+                ? $alias . '.class_id IN (' . implode(',', $this->classIds) . ')'
+                : '1=0';
+        }
+        return $this->churchId ? $alias . '.church_id = ' . $this->churchId : '1=0';
+    }
+
+    private function memberNamesAnswer(string $condition, string $label, int $total): string
+    {
+        $scope = $this->memberScope('member');
+        $rows = $this->rows(
+            "SELECT TRIM(CONCAT_WS(' ', member.first_name, member.middle_name, member.last_name)) AS full_name,
+                    member.crn
+               FROM members member
+              WHERE {$condition} AND {$scope}
+              ORDER BY member.last_name, member.first_name, member.middle_name
+              LIMIT 26"
+        );
+        $items = array_map(static function (array $row): string {
+            $name = trim((string) $row['full_name']);
+            $reference = trim((string) ($row['crn'] ?? ''));
+            return $name . ($reference !== '' ? ' [' . $reference . ']' : '');
+        }, array_slice($rows, 0, 25));
+        return $this->listAnswer($label, $total, $items, count($rows) > 25);
+    }
+
+    private function combinedJuniorMemberNames(string $memberCondition, string $label, int $total): string
+    {
+        $memberScope = $this->memberScope('member');
+        $childScope = $this->sundaySchoolScope('child');
+        $rows = $this->rows(
+            "SELECT full_name, reference_number, register_type
+               FROM (
+                    SELECT TRIM(CONCAT_WS(' ', member.first_name, member.middle_name, member.last_name)) AS full_name,
+                           member.crn AS reference_number, 'Member' AS register_type
+                      FROM members member
+                     WHERE {$memberCondition} AND {$memberScope}
+                    UNION ALL
+                    SELECT TRIM(CONCAT_WS(' ', child.first_name, child.middle_name, child.last_name)),
+                           child.srn, 'Sunday School'
+                      FROM sunday_school child
+                     WHERE child.transferred_to_member_id IS NULL AND {$childScope}
+               ) people
+              ORDER BY full_name
+              LIMIT 26"
+        );
+        $items = array_map(static function (array $row): string {
+            $reference = trim((string) ($row['reference_number'] ?? ''));
+            return trim((string) $row['full_name'])
+                . ($reference !== '' ? ' [' . $reference . ']' : '')
+                . ' — ' . $row['register_type'];
+        }, array_slice($rows, 0, 25));
+        return $this->listAnswer($label, $total, $items, count($rows) > 25 || $total > 25);
+    }
+
+    private function listAnswer(string $label, int $total, array $items, bool $truncated): string
+    {
+        if ($total < 1 || !$items) {
+            return 'No ' . mb_strtolower($label) . ' were found within your authorized scope.';
+        }
+        $answer = $label . ' (' . number_format($total) . '): ' . implode('; ', $items) . '.';
+        if ($truncated || $total > count($items)) {
+            $answer .= ' Showing the first ' . number_format(count($items)) . ' results.';
+        }
+        return $answer;
+    }
+
+    private function rows(string $sql): array
+    {
+        $result = $this->conn->query($sql);
+        return $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
     }
 
     private function scalar(string $sql): int

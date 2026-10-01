@@ -35,8 +35,8 @@ final class AiAssistantChatService
             throw new DomainException('The assistant is currently disabled.');
         }
         $question = trim($question);
-        if ($question === '' || mb_strlen($question) < 3 || mb_strlen($question) > 500) {
-            throw new InvalidArgumentException('Enter a question between 3 and 500 characters.');
+        if ($question === '' || mb_strlen($question) > 500) {
+            throw new InvalidArgumentException('Enter a message of no more than 500 characters.');
         }
 
         if ($conversationId) {
@@ -49,7 +49,19 @@ final class AiAssistantChatService
         $this->conversations->addMessage($conversationId, 'user', $question, null, null);
         $this->conversations->setTitleFromQuestion($conversationId, (string) $conversation['title'], $question);
 
-        $localResult = $this->local->ask($question);
+        $normalizedQuestion = mb_strtolower(trim($question));
+        $isGreeting = (bool) preg_match(
+            '/^(hi|hey|hello|good morning|good afternoon|good evening)[!. ]*$/u',
+            $normalizedQuestion
+        );
+        // The local insights engine intentionally requires three characters.
+        // Route short conversational greetings through its help intent so every
+        // valid chat message still has a verified local fallback/context.
+        $localResult = $this->local->ask($isGreeting ? 'help' : $question, $history);
+        if ($isGreeting) {
+            $localResult['answer'] = 'Hello! I can help with information you are authorized to view. '
+                . $localResult['answer'];
+        }
         $localAnswer = (string) $localResult['answer'];
         $mode = (string) $config['assistant_mode'];
         $answer = $localAnswer;
