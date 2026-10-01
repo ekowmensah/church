@@ -22,7 +22,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $message_body = isset($_POST['message_body']) ? trim($_POST['message_body']) : '';
     if ($member_id && $phone && $message_body) {
         // Optionally, validate phone format
-        $result = log_sms($phone, $message_body, null, 'manual', $_SESSION['user_id'] ?? null, ['member_id'=>$member_id, 'sent_by'=>$_SESSION['user_id']??null]);
+        $result = log_sms(
+            $phone,
+            $message_body,
+            null,
+            'manual',
+            null,
+            ['member_id' => $member_id, 'sent_by' => $_SESSION['user_id'] ?? null]
+        );
         if (isset($result['status']) && $result['status'] === 'success') {
             $_SESSION['flash_success'] = 'Message sent successfully!';
         } else {
