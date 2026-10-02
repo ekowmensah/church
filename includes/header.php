@@ -17,7 +17,7 @@ if (isset($_SESSION['user_id'])) {
     $user = $stmt->get_result()->fetch_assoc();
     if ($user) {
         $user_name = htmlspecialchars($user['name'] ?? $user['username']);
-        $is_super_admin = ($uid == 1) || (isset($user['role_id']) && $user['role_id'] == 1);
+        $is_super_admin = is_super_admin();
         if ($is_super_admin) {
             $user_roles_arr[] = 'Super Admin';
         } else {

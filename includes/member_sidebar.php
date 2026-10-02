@@ -145,7 +145,9 @@ if (isset($_SESSION['member_id'])) {
         <?php if ($org_leader): ?>
         <?php 
         $org_count = count($org_leader);
-        $org_url = $org_count > 1 ? 'my_organizations_leader.php' : 'my_organization_leader.php';
+        // The deployed dashboard provides an organization selector for leaders
+        // with multiple assignments; there is no plural route.
+        $org_url = 'my_organization_leader.php';
         $org_label = $org_count > 1 ? 'My Organizations' : 'My Organization';
         ?>
         <li class="nav-item">

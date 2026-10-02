@@ -22,9 +22,9 @@ if (isset($_SESSION['user_id'])) {
             exit;
         }
         
-        // Check permission
-        $is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                          (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+        // Check permission. Super administrator access follows roles and
+        // permissions rather than a deployment-specific account ID.
+        $is_super_admin = is_super_admin();
         
         if (!$is_super_admin && !has_permission('view_payment_list')) {
             http_response_code(403);
@@ -47,11 +47,33 @@ if (!$is_admin) {
     $member_id = intval($_SESSION['member_id']);
 }
 
-// Get member info for display
-$member_stmt = $conn->prepare("SELECT first_name, last_name, crn, phone FROM members WHERE id = ?");
-$member_stmt->bind_param('i', $member_id);
+// Get member info for display. Ordinary staff may not cross church scope by
+// changing the member_id query parameter.
+if ($is_admin && !$is_super_admin) {
+    $staff_church_id = (int) ($_SESSION['church_id'] ?? 0);
+    if ($staff_church_id < 1) {
+        $church_stmt = $conn->prepare('SELECT church_id FROM users WHERE id = ? LIMIT 1');
+        $staff_user_id = (int) $_SESSION['user_id'];
+        $church_stmt->bind_param('i', $staff_user_id);
+        $church_stmt->execute();
+        $staff_church_id = (int) ($church_stmt->get_result()->fetch_assoc()['church_id'] ?? 0);
+        $church_stmt->close();
+    }
+    $member_stmt = $conn->prepare(
+        'SELECT first_name, last_name, crn, phone FROM members WHERE id = ? AND church_id = ?'
+    );
+    $member_stmt->bind_param('ii', $member_id, $staff_church_id);
+} else {
+    $member_stmt = $conn->prepare("SELECT first_name, last_name, crn, phone FROM members WHERE id = ?");
+    $member_stmt->bind_param('i', $member_id);
+}
 $member_stmt->execute();
 $member_info = $member_stmt->get_result()->fetch_assoc();
+$member_stmt->close();
+if (!$member_info) {
+    http_response_code(404);
+    exit('<div class="alert alert-danger m-4">Member not found within your authorized church.</div>');
+}
 
 // Handle filters
 $start_date = $_GET['start_date'] ?? '';
@@ -709,6 +731,9 @@ ob_start();
     <div class="filter-panel no-print">
         <h5><i class="fas fa-sliders-h"></i>Advanced Filters & Sorting</h5>
         <form action="" method="get" id="filterForm">
+            <?php if ($is_admin): ?>
+                <input type="hidden" name="member_id" value="<?= (int) $member_id ?>">
+            <?php endif; ?>
             <div class="row mb-3">
                 <div class="col-md-3 mb-3">
                     <label class="form-label fw-bold">Start Date</label>
@@ -776,7 +801,7 @@ ob_start();
                     <button type="submit" class="btn btn-primary-modern btn-modern">
                         <i class="fas fa-search mr-2"></i>Apply Filters
                     </button>
-                    <a href="payment_history_v2.php" class="btn btn-secondary-modern btn-modern">
+                    <a href="payment_history.php<?= $is_admin ? '?member_id=' . (int) $member_id : '' ?>" class="btn btn-secondary-modern btn-modern">
                         <i class="fas fa-times mr-2"></i>Clear All
                     </a>
                     <button type="submit" name="sort_order" value="<?= $sort_order == 'ASC' ? 'DESC' : 'ASC' ?>" 

@@ -12,8 +12,7 @@ if (!is_logged_in()) {
 }
 
 // Robust super admin bypass and permission check
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 
 // Check if editing or creating
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;

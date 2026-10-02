@@ -12,8 +12,7 @@ if (!is_logged_in()) {
 }
 
 // Check permissions - only super admin or users with payment management permissions
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 
 if (!$is_super_admin && !has_permission('manage_payments')) {
     http_response_code(403);

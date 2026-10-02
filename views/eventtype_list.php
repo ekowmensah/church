@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -9,9 +10,7 @@ if (!is_logged_in()) {
     exit;
 }
 
-// Robust super admin bypass and permission check
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 
 if (!$is_super_admin && !has_permission('view_event_type_list')) {
     http_response_code(403);
@@ -32,6 +31,9 @@ $can_delete = $is_super_admin || has_permission('delete_event_type');
 $can_view = true; // Already validated above
 
 $types = $conn->query("SELECT * FROM event_types ORDER BY name");
+$successMessage = (string) ($_SESSION['event_type_success'] ?? '');
+$errorMessage = (string) ($_SESSION['event_type_error'] ?? '');
+unset($_SESSION['event_type_success'], $_SESSION['event_type_error']);
 ob_start();
 ?>
 <div class="container mt-4">
@@ -41,6 +43,12 @@ ob_start();
     <a href="eventtype_form.php" class="btn btn-primary"><i class="fas fa-plus mr-1"></i>Add Event Type</a>
     <?php endif; ?>
   </div>
+  <?php if ($successMessage !== ''): ?>
+    <div class="alert alert-success"><?= htmlspecialchars($successMessage) ?></div>
+  <?php endif; ?>
+  <?php if ($errorMessage !== ''): ?>
+    <div class="alert alert-danger"><?= htmlspecialchars($errorMessage) ?></div>
+  <?php endif; ?>
   <div class="card card-body shadow-sm">
     <div class="table-responsive">
       <table class="table table-bordered table-hover">
@@ -61,7 +69,14 @@ ob_start();
                 <a href="eventtype_form.php?id=<?= $t['id'] ?>" class="btn btn-sm btn-warning" title="Edit"><i class="fas fa-edit"></i></a>
                 <?php endif; ?>
                 <?php if ($can_delete): ?>
-                <a href="eventtype_delete.php?id=<?= $t['id'] ?>" class="btn btn-sm btn-danger" title="Delete" onclick="return confirm('Delete this event type?');"><i class="fas fa-trash"></i></a>
+                <form method="post" action="eventtype_delete.php" class="d-inline"
+                      onsubmit="return confirm('Delete this event type? This is allowed only when no event uses it.');">
+                  <?= csrf_input() ?>
+                  <input type="hidden" name="id" value="<?= (int) $t['id'] ?>">
+                  <button type="submit" class="btn btn-sm btn-danger" title="Delete">
+                    <i class="fas fa-trash"></i>
+                  </button>
+                </form>
                 <?php endif; ?>
               </td>
             </tr>

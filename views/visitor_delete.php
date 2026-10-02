@@ -7,7 +7,7 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 if (!$is_super_admin && !has_permission('delete_visitor')) {
     http_response_code(403);
     exit('Forbidden: You do not have permission to access this resource.');

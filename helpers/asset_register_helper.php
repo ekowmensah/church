@@ -66,7 +66,7 @@ if (!function_exists('asset_acquisition_mode_descriptions')) {
 
 if (!function_exists('asset_is_super_admin')) {
     function asset_is_super_admin(): bool {
-        return (isset($_SESSION['user_id']) && (int) $_SESSION['user_id'] === 3)
+        return is_super_admin()
             || (isset($_SESSION['role_id']) && (int) $_SESSION['role_id'] === 1)
             || (isset($_SESSION['is_super_admin']) && $_SESSION['is_super_admin']);
     }

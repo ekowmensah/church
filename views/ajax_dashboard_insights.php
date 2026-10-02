@@ -17,9 +17,7 @@ if (!is_logged_in()) {
     exit;
 }
 
-$isSuperAdmin = function_exists('is_super_admin')
-    ? is_super_admin()
-    : (((int) ($_SESSION['user_id'] ?? 0) === 3) || ((int) ($_SESSION['role_id'] ?? 0) === 1));
+$isSuperAdmin = is_super_admin();
 if (!$isSuperAdmin && !has_permission('use_dashboard_insights')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'You do not have permission to use dashboard insights.']);

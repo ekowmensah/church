@@ -17,7 +17,7 @@ if (!is_logged_in()) {
 $role_ids = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
 if (isset($_SESSION['role_id'])) $role_ids[] = (int) $_SESSION['role_id'];
 $is_super_admin = !empty($_SESSION['is_super_admin'])
-    || (int) ($_SESSION['user_id'] ?? 0) === 3
+    || is_super_admin()
     || in_array(1, $role_ids, true);
 
 if (!$is_super_admin

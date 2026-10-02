@@ -16,7 +16,7 @@ if (!is_logged_in()) {
 }
 
 // Canonical permission check with robust super admin bypass
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 if (!$is_super_admin && !has_permission('access_ajax_get_classes_by_church')) {
     http_response_code(403);
     echo '<option value="">-- Permission Denied --</option>';

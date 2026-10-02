@@ -14,72 +14,76 @@
  * @date 2025-11-18
  */
 
-function get_role_based_filter($user_id = null) {
+/**
+ * Resolve Super Administrator access from active RBAC assignments. Account
+ * numbers are data, not roles, and must never grant a global-scope bypass.
+ */
+function role_filter_is_super_admin($user_id = null) {
     global $conn;
-    
+
+    $user_id = (int) ($user_id ?: ($_SESSION['user_id'] ?? 0));
+    if ($user_id < 1) {
+        return false;
+    }
+
+    static $cache = [];
+    if (array_key_exists($user_id, $cache)) {
+        return $cache[$user_id];
+    }
+
+    $stmt = $conn->prepare(
+        "SELECT 1
+           FROM user_roles user_role
+           JOIN roles role ON role.id = user_role.role_id
+          WHERE user_role.user_id = ?
+            AND user_role.is_active = 1
+            AND (user_role.expires_at IS NULL OR user_role.expires_at >= NOW())
+            AND (role.id = 1 OR LOWER(TRIM(role.name)) = 'super admin')
+          LIMIT 1"
+    );
+    $stmt->bind_param('i', $user_id);
+    $stmt->execute();
+    $cache[$user_id] = $stmt->get_result()->num_rows > 0;
+    $stmt->close();
+
+    return $cache[$user_id];
+}
+
+function get_role_based_filter($user_id = null) {
     if (!$user_id) {
         $user_id = $_SESSION['user_id'] ?? 0;
     }
-    
-    // Super admin sees everything
-    $is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                      (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
-    
-    if ($is_super_admin) {
+
+    if (role_filter_is_super_admin($user_id)) {
         return ['where' => '', 'params' => [], 'types' => ''];
     }
-    
-    // Get user's role and associated bible class
-    $stmt = $conn->prepare("
-        SELECT u.role_id, r.name as role_name, u.member_id,
-               m.class_id, bc.name as class_name
-        FROM users u 
-        LEFT JOIN roles r ON u.role_id = r.id
-        LEFT JOIN members m ON u.member_id = m.id
-        LEFT JOIN bible_classes bc ON m.class_id = bc.id
-        WHERE u.id = ?
-    ");
-    $stmt->bind_param('i', $user_id);
-    $stmt->execute();
-    $user_data = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    
-    if (!$user_data) {
+
+    if ((int) $user_id < 1) {
         return ['where' => 'AND 1=0', 'params' => [], 'types' => '']; // No access
     }
-    
-    $role_name = strtolower($user_data['role_name'] ?? '');
-    $class_id = $user_data['class_id'];
-    
-    // Class Leader: Only see members of their bible class
-    if (strpos($role_name, 'class leader') !== false && $class_id) {
+
+    $classIds = get_user_class_ids($user_id);
+    if ($classIds !== null) {
+        $placeholders = implode(',', array_fill(0, count($classIds), '?'));
         return [
-            'where' => 'AND m.class_id = ?',
-            'params' => [$class_id],
-            'types' => 'i',
-            'class_id' => $class_id,
-            'class_name' => $user_data['class_name']
+            'where' => "AND m.class_id IN ({$placeholders})",
+            'params' => $classIds,
+            'types' => str_repeat('i', count($classIds)),
+            'class_ids' => $classIds,
         ];
     }
-    
-    // Church Leader: Only see members of their church
-    if (strpos($role_name, 'church leader') !== false) {
-        $church_stmt = $conn->prepare("SELECT church_id FROM members WHERE id = ?");
-        $church_stmt->bind_param('i', $user_data['member_id']);
-        $church_stmt->execute();
-        $church_result = $church_stmt->get_result()->fetch_assoc();
-        $church_stmt->close();
-        
-        if ($church_result) {
-            return [
-                'where' => 'AND m.church_id = ?',
-                'params' => [$church_result['church_id']],
-                'types' => 'i',
-                'church_id' => $church_result['church_id']
-            ];
-        }
+
+    $organizationIds = get_user_organization_ids($user_id);
+    if ($organizationIds !== null) {
+        $placeholders = implode(',', array_fill(0, count($organizationIds), '?'));
+        return [
+            'where' => "AND m.id IN (SELECT member_id FROM member_organizations WHERE organization_id IN ({$placeholders}))",
+            'params' => $organizationIds,
+            'types' => str_repeat('i', count($organizationIds)),
+            'organization_ids' => $organizationIds,
+        ];
     }
-    
+
     // Default: No additional filtering (regular users see everything they have permission for)
     return ['where' => '', 'params' => [], 'types' => ''];
 }
@@ -119,9 +123,12 @@ function get_user_class_ids($user_id = null) {
     }
     
     $stmt = $conn->prepare("
-        SELECT class_id 
-        FROM bible_class_leaders 
-        WHERE user_id = ? AND status = 'active'
+        SELECT DISTINCT leader.class_id
+          FROM users user_account
+          JOIN bible_class_leaders leader
+            ON leader.user_id = user_account.id
+            OR (leader.member_id IS NOT NULL AND leader.member_id = user_account.member_id)
+         WHERE user_account.id = ? AND leader.status = 'active'
     ");
     $stmt->bind_param('i', $user_id);
     $stmt->execute();
@@ -190,9 +197,12 @@ function get_user_organization_ids($user_id = null) {
     }
     
     $stmt = $conn->prepare("
-        SELECT organization_id 
-        FROM organization_leaders 
-        WHERE user_id = ? AND status = 'active'
+        SELECT DISTINCT leader.organization_id
+          FROM users user_account
+          JOIN organization_leaders leader
+            ON leader.user_id = user_account.id
+            OR (leader.member_id IS NOT NULL AND leader.member_id = user_account.member_id)
+         WHERE user_account.id = ? AND leader.status = 'active'
     ");
     $stmt->bind_param('i', $user_id);
     $stmt->execute();
@@ -267,7 +277,9 @@ function is_sunday_school_role($user_id = null) {
     $stmt = $conn->prepare("
         SELECT 1 FROM user_roles ur
         JOIN roles r ON ur.role_id = r.id
-        WHERE ur.user_id = ? AND r.name = 'Sunday School'
+        WHERE ur.user_id = ? AND ur.is_active = 1
+          AND (ur.expires_at IS NULL OR ur.expires_at >= NOW())
+          AND r.name = 'Sunday School'
     ");
     $stmt->bind_param('i', $user_id);
     $stmt->execute();
@@ -283,8 +295,8 @@ function is_sunday_school_role($user_id = null) {
  * @param string $member_table_alias Table alias for members table (e.g., 'm')
  * @return array ['sql' => string, 'params' => array, 'types' => string]
  */
-function apply_sunday_school_filter($member_table_alias = 'm', $sunday_school_table_alias = null) {
-    if (!is_sunday_school_role()) {
+function apply_sunday_school_filter($member_table_alias = 'm', $sunday_school_table_alias = null, $user_id = null) {
+    if (!is_sunday_school_role($user_id)) {
         return ['sql' => '', 'params' => [], 'types' => ''];
     }
     
@@ -324,7 +336,9 @@ function is_steward($user_id = null) {
     $stmt = $conn->prepare("
         SELECT 1 FROM user_roles ur
         JOIN roles r ON ur.role_id = r.id
-        WHERE ur.user_id = ? AND r.name = 'Steward'
+        WHERE ur.user_id = ? AND ur.is_active = 1
+          AND (ur.expires_at IS NULL OR ur.expires_at >= NOW())
+          AND r.name = 'Steward'
     ");
     $stmt->bind_param('i', $user_id);
     $stmt->execute();
@@ -357,7 +371,9 @@ function is_cashier($user_id = null) {
     $stmt = $conn->prepare("
         SELECT 1 FROM user_roles ur
         JOIN roles r ON ur.role_id = r.id
-        WHERE ur.user_id = ? AND r.name = 'Cashier'
+        WHERE ur.user_id = ? AND ur.is_active = 1
+          AND (ur.expires_at IS NULL OR ur.expires_at >= NOW())
+          AND r.name = 'Cashier'
     ");
     $stmt->bind_param('i', $user_id);
     $stmt->execute();
@@ -379,11 +395,7 @@ function apply_cashier_filter($payment_table_alias = 'p', $user_id = null) {
         $user_id = $_SESSION['user_id'] ?? 0;
     }
     
-    // Super admin sees all payments
-    $is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                      (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
-    
-    if ($is_super_admin || !is_cashier($user_id)) {
+    if (role_filter_is_super_admin($user_id) || !is_cashier($user_id)) {
         return ['sql' => '', 'params' => [], 'types' => ''];
     }
     
@@ -409,31 +421,11 @@ function apply_cashier_filter($payment_table_alias = 'p', $user_id = null) {
  * @return array ['sql' => string, 'params' => array, 'types' => string, 'role' => string]
  */
 function apply_all_role_filters($member_table_alias = 'm', $payment_table_alias = 'p', $user_id = null) {
-    global $conn;
-    
     if (!$user_id) {
         $user_id = $_SESSION['user_id'] ?? 0;
     }
-    
-    // Super admin bypass - check both session and passed user_id
-    $is_super_admin = ($user_id == 3) || 
-                      (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                      (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
-    
-    // Also check if user has super admin role in database
-    if ($user_id && !$is_super_admin) {
-        $stmt = $conn->prepare("
-            SELECT 1 FROM user_roles ur
-            JOIN roles r ON ur.role_id = r.id
-            WHERE ur.user_id = ? AND r.id = 1
-        ");
-        $stmt->bind_param('i', $user_id);
-        $stmt->execute();
-        $is_super_admin = $stmt->get_result()->num_rows > 0;
-        $stmt->close();
-    }
-    
-    if ($is_super_admin) {
+
+    if (role_filter_is_super_admin($user_id)) {
         return ['sql' => '', 'params' => [], 'types' => '', 'role' => 'super_admin'];
     }
     
@@ -450,7 +442,7 @@ function apply_all_role_filters($member_table_alias = 'm', $payment_table_alias 
     }
     
     // Check Sunday School
-    $ss_filter = apply_sunday_school_filter($member_table_alias);
+    $ss_filter = apply_sunday_school_filter($member_table_alias, null, $user_id);
     if (!empty($ss_filter['sql'])) {
         return array_merge($ss_filter, ['role' => 'sunday_school']);
     }

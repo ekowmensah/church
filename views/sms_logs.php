@@ -10,7 +10,7 @@ if (!is_logged_in()) {
 }
 
 $isSuperAdmin = (int) ($_SESSION['role_id'] ?? 0) === 1
-    || (int) ($_SESSION['user_id'] ?? 0) === 3;
+    || is_super_admin();
 if (!$isSuperAdmin && !has_permission('view_sms_logs')) {
     http_response_code(403);
     include __DIR__ . '/errors/403.php';

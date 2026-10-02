@@ -18,7 +18,7 @@ if (!is_logged_in()) {
 $roleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
 if (isset($_SESSION['role_id'])) $roleIds[] = (int) $_SESSION['role_id'];
 $isSuperAdmin = !empty($_SESSION['is_super_admin'])
-    || (int) ($_SESSION['user_id'] ?? 0) === 3
+    || is_super_admin()
     || in_array(1, $roleIds, true);
 if (!$isSuperAdmin && !has_permission('create_payment')) {
     http_response_code(403);

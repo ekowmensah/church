@@ -14,8 +14,7 @@ try {
     }
 
     // Check permissions
-    $is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                      (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+    $is_super_admin = is_super_admin();
 
     if (!$is_super_admin && !has_permission('edit_member')) {
         http_response_code(403);

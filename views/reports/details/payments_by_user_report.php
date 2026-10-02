@@ -10,8 +10,7 @@ if (!is_logged_in()) {
 }
 
 // Super admin and permission check
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 
 if (!$is_super_admin && !has_permission('view_payments_by_user_report') && !has_permission('view_payment_list')) {
     http_response_code(403);

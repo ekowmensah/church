@@ -17,7 +17,7 @@ if (!is_logged_in()) {
 
 // Canonical permission check for Bulk Payment (AJAX)
 require_once __DIR__.'/../helpers/permissions_v2.php';
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 if (!$is_super_admin && !has_permission('create_payment')) {
     echo json_encode(['error' => 'Permission denied - requires payment management access']);
     http_response_code(403);

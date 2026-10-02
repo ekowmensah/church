@@ -98,9 +98,15 @@ function payment_report_current_church_id(mysqli $conn): int
 
 function payment_report_is_super_admin(): bool
 {
-    return (int) ($_SESSION['user_id'] ?? 0) === 3
-        || (int) ($_SESSION['role_id'] ?? 0) === 1
-        || !empty($_SESSION['is_super_admin']);
+    if (function_exists('is_super_admin')) {
+        return is_super_admin();
+    }
+
+    $roleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
+    if (isset($_SESSION['role_id'])) {
+        $roleIds[] = (int) $_SESSION['role_id'];
+    }
+    return !empty($_SESSION['is_super_admin']) || in_array(1, $roleIds, true);
 }
 
 function payment_report_member_scope_condition(mysqli $conn, string $memberAlias = 'm'): string

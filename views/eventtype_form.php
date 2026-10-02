@@ -1,20 +1,21 @@
 <?php
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
 
-// Permission check
-if (!has_permission('view_event_list')) {
-    http_response_code(403);
-    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
-    exit;
-}
-
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 $editing = $id > 0;
+$requiredPermission = $editing ? 'edit_event_type' : 'create_event_type';
+if (!is_super_admin() && !has_permission($requiredPermission)) {
+    http_response_code(403);
+    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to manage event types.</p></div>';
+    exit;
+}
 $name = '';
 $errors = [];
 if ($editing) {
@@ -29,6 +30,10 @@ if ($editing) {
     }
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        http_response_code(419);
+        $errors[] = 'Your form expired. Refresh the page and try again.';
+    }
     $name = trim($_POST['name'] ?? '');
     if ($name == '') $errors[] = 'Name is required.';
     // Check for duplicate name
@@ -67,6 +72,7 @@ ob_start();
     </div>
   <?php endif; ?>
   <form method="post" class="card card-body shadow-sm" autocomplete="off">
+    <?= csrf_input() ?>
     <div class="form-group">
       <label for="name">Name <span class="text-danger">*</span></label>
       <input type="text" class="form-control" name="name" id="name" value="<?= htmlspecialchars($name) ?>" required>

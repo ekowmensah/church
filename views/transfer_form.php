@@ -15,7 +15,7 @@ if (!is_logged_in()) {
 
 $roleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
 if (isset($_SESSION['role_id'])) $roleIds[] = (int) $_SESSION['role_id'];
-$is_super_admin = in_array(1, $roleIds, true) || (int) ($_SESSION['user_id'] ?? 0) === 3;
+$is_super_admin = in_array(1, $roleIds, true) || is_super_admin();
 if (!$is_super_admin && !has_permission('create_transfer')) {
     http_response_code(403);
     echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';

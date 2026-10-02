@@ -4,6 +4,7 @@ ob_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/audit_log_view.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -11,9 +12,7 @@ if (!is_logged_in()) {
     exit;
 }
 
-// Robust super admin bypass and permission check
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 
 if (!$is_super_admin && !has_permission('view_audit_log')) {
     http_response_code(403);
@@ -33,34 +32,17 @@ $can_edit = $is_super_admin || has_permission('edit_audit');
 $can_delete = $is_super_admin || has_permission('delete_audit');
 $can_view = true; // Already validated above
 
-// Filters
-$user = $_GET['user'] ?? '';
-$action = $_GET['action'] ?? '';
-$date_from = $_GET['date_from'] ?? '';
-$date_to = $_GET['date_to'] ?? '';
-$where = [];
-$params = [];
-$typestr = '';
-if ($user) { $where[] = 'username LIKE ?'; $params[] = "%$user%"; $typestr.='s'; }
-if ($action) { $where[] = 'action LIKE ?'; $params[] = "%$action%"; $typestr.='s'; }
-if ($date_from && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
-    $where[] = 'DATE(created_at) >= ?'; $params[] = $date_from; $typestr.='s';
-}
-if ($date_to && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
-    $where[] = 'DATE(created_at) <= ?'; $params[] = $date_to; $typestr.='s';
-}
-$sql = 'SELECT * FROM audit_log';
-if ($where) $sql .= ' WHERE ' . implode(' AND ', $where);
-$sql .= ' ORDER BY created_at DESC';
-$stmt = $conn->prepare($sql);
-if ($typestr) {
-    $stmt->bind_param($typestr, ...$params);
-}
-$stmt->execute();
-$res = $stmt->get_result();
-$audit_logs = [];
-while ($row = $res->fetch_assoc()) $audit_logs[] = $row;
-$stmt->close();
+$filters = audit_log_view_filters($_GET);
+$user = $filters['user'];
+$action = $filters['action'];
+$date_from = $filters['date_from'];
+$date_to = $filters['date_to'];
+$audit_logs = audit_log_view_rows(
+    $conn,
+    $filters,
+    $is_super_admin,
+    $is_super_admin ? null : audit_log_view_church_id($conn)
+);
 ?>
 <main class="container-fluid py-4 animate__animated animate__fadeIn">
     <div class="row mb-3">
@@ -93,7 +75,7 @@ $stmt->close();
                             <?php foreach ($audit_logs as $row): ?>
                                 <tr>
                                     <td><?=htmlspecialchars($row['created_at'])?></td>
-                                    <td><?=htmlspecialchars($row['username'] ?? $row['user'] ?? '')?></td>
+                                    <td><?=htmlspecialchars($row['actor_name'])?></td>
                                     <td><?=htmlspecialchars($row['action'])?></td>
                                     <td><?=htmlspecialchars($row['ip_address'] ?? '')?></td>
                                     <td style="max-width:320px;overflow:auto;word-break:break-word;">

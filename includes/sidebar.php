@@ -1,10 +1,11 @@
 <?php
 require_once __DIR__.'/../config/config.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 global $conn;
 //if (session_status() === PHP_SESSION_NONE) session_start();
 
 // Super admin detection
-$is_super_admin = isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1;
+$is_super_admin = is_super_admin();
 
 // Fetch menu items from DB
 $stmt = $conn->prepare("SELECT * FROM menu_items WHERE is_active = 1 ORDER BY menu_group, sort_order");
@@ -258,10 +259,12 @@ $current_url = $_SERVER['REQUEST_URI'] ?? '';
         $is_active = strpos($current_url, 'my_organization') !== false;
         $org_count = count($org_leader);
         
-        // If multiple organizations, link to selector; if one, link directly to dashboard
+        // The organization dashboard contains its own selector when a leader
+        // serves more than one organization, so both paths use the deployed
+        // singular route.
         if ($org_count > 1) {
           echo '<li class="nav-item">';
-          echo '<a href="' . BASE_URL . '/views/my_organizations_leader.php" class="nav-link' . ($is_active ? ' active' : '') . '">';
+          echo '<a href="' . BASE_URL . '/views/my_organization_leader.php" class="nav-link' . ($is_active ? ' active' : '') . '">';
           echo '<i class="nav-icon fas fa-users-cog"></i>';
           echo '<p>My Organizations <span class="badge badge-info right">' . $org_count . '</span></p>';
           echo '</a>';

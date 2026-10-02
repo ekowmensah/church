@@ -10,7 +10,7 @@ if (!is_logged_in()) {
     exit;
 }
 
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3)
+$is_super_admin = is_super_admin()
     || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
 
 if (!$is_super_admin && !has_permission('view_payment_report') && !has_permission('view_payment_made_report') && !has_permission('view_payment_list')) {

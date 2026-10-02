@@ -10,7 +10,7 @@ if (!is_logged_in()) {
 }
 
 // Permission check with super admin bypass
-if (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) {
+if (is_super_admin()) {
     // Super admin access
 } elseif (!has_permission('manage_menu_items')) {
     http_response_code(403);
