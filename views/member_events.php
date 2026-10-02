@@ -77,6 +77,38 @@ if ($events && $events->num_rows > 0) {
     $events = [];
 }
 
+// The list and calendar intentionally share this already-authorized dataset.
+// Keeping one source prevents a separate AJAX permission/session failure from
+// making an event visible in the list but absent from the calendar.
+$calendar_events = [];
+foreach ($events as $event) {
+    $start = (string) $event['event_date'];
+    if (!empty($event['event_time'])) {
+        $start .= 'T' . $event['event_time'];
+    }
+
+    $photo_url = null;
+    $photo_name = basename((string) ($event['photo'] ?? ''));
+    if ($photo_name !== '' && file_exists(__DIR__ . '/../uploads/events/' . $photo_name)) {
+        $photo_url = BASE_URL . '/uploads/events/' . rawurlencode($photo_name);
+    }
+
+    $calendar_events[] = [
+        'id' => (int) $event['id'],
+        'title' => (string) $event['name'],
+        'start' => $start,
+        'allDay' => empty($event['event_time']),
+        'url' => BASE_URL . '/views/event_register.php?event_id=' . (int) $event['id'],
+        'backgroundColor' => getEventTypeColor($event['type_name'] ?? null, $event_type_colors),
+        'borderColor' => getEventTypeColor($event['type_name'] ?? null, $event_type_colors),
+        'extendedProps' => [
+            'location' => (string) ($event['location'] ?? ''),
+            'photo_url' => $photo_url,
+            'is_registered' => !empty($event['is_registered']),
+        ],
+    ];
+}
+
 ob_start();
 ?>
 

@@ -14,11 +14,20 @@ if (!is_logged_in()) {
     exit;
 }
 
-// Allow both admin users and members to access events
-$is_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+// Allow members and staff with the appropriate event/AJAX permission. Never
+// infer administrative authority from a particular user record ID.
+$role_ids = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
+if (isset($_SESSION['role_id'])) {
+    $role_ids[] = (int) $_SESSION['role_id'];
+}
+$is_admin = !empty($_SESSION['is_super_admin']) || in_array(1, $role_ids, true);
 $is_member = isset($_SESSION['member_id']);
+$can_access_events = $is_admin
+    || has_permission('access_ajax_events')
+    || has_permission('view_event_list')
+    || has_permission('view_dashboard_event_summary');
 
-if (!$is_admin && !$is_member && !has_permission('access_ajax_events')) {
+if (!$is_member && !$can_access_events) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Permission denied']);
     exit;

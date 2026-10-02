@@ -4,6 +4,7 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
 require_once __DIR__.'/../helpers/spouse_link_helper.php';
 require_once __DIR__.'/../helpers/member_transfer_origin.php';
+require_once __DIR__.'/../helpers/role_of_serving_registration.php';
 require_once __DIR__.'/../services/RoleOfServingAccessService.php';
 
 function normalize_user_sync_email(string $email): ?string
@@ -109,6 +110,11 @@ if ($token !== '') {
     $error = 'Missing registration token.';
 } 
 
+$assignedServingRoles = $member_id > 0
+    ? role_of_serving_member_assignments($conn, $member_id)
+    : [];
+$assignedServingRoleIds = array_map('intval', array_column($assignedServingRoles, 'id'));
+
 $relationship_options = [];
 $relationship_defaults = ['Husband', 'Wife', 'Son', 'Daughter', 'Mother', 'Father', 'Brother', 'Sister', 'Uncle', 'Auntie', 'Grandfather', 'Grandmother', 'Other'];
 $relationship_query = $conn->query("SELECT name FROM relationship_types WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
@@ -182,10 +188,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
     $organizations = array_values(array_filter(array_map('intval', (array) ($_POST['organizations'] ?? [])), static function ($id) {
         return $id > 0;
     }));
-    // Roles of Serving multiple select
-    $roles_of_serving = array_values(array_filter(array_map('intval', (array) ($_POST['roles_of_serving'] ?? [])), static function ($id) {
-        return $id > 0;
-    }));
+    // Roles of Serving are assigned by authorized staff before the registration
+    // link is sent. Never trust a member-submitted role id here.
+    $roles_of_serving = $assignedServingRoleIds;
     // Emergency contacts (dynamic)
     $emergency_contacts = $_POST['emergency_contacts'] ?? [];
     // Photo upload
@@ -285,18 +290,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
                     $approval_stmt->execute();
                 }
                 $approval_stmt->close();
-            }
-
-            // Update roles of serving (delete old, insert new)
-            $conn->query("DELETE FROM member_roles_of_serving WHERE member_id=" . $member_id);
-            if (!empty($roles_of_serving)) {
-                $role_stmt = $conn->prepare("INSERT INTO member_roles_of_serving (member_id, role_id) VALUES (?, ?)");
-                foreach ($roles_of_serving as $role_id) {
-                    $serving_role_id = (int) $role_id;
-                    $role_stmt->bind_param('ii', $member_id, $serving_role_id);
-                    $role_stmt->execute();
-                }
-                $role_stmt->close();
             }
 
             $roleAccessService = new RoleOfServingAccessService($conn);
@@ -772,20 +765,17 @@ ob_start();
         <small class="form-text text-muted">Selected organizations will require approval from Organization Leaders before membership is confirmed.</small>
       </div>
       <div class="form-group col-md-4">
-        <label for="roles_of_serving">Roles of Serving</label>
-        <select class="form-control" name="roles_of_serving[]" id="roles_of_serving" multiple>
-          <?php
-          $roles = $conn->query("SELECT id, name FROM roles_of_serving ORDER BY name ASC");
-          $member_roles = [];
-          if ($member_id > 0) {
-            $roleq = $conn->query("SELECT role_id FROM member_roles_of_serving WHERE member_id=".$member_id);
-            while($ro = $roleq->fetch_assoc()) $member_roles[] = $ro['role_id'];
-          }
-          while($role = $roles->fetch_assoc()): ?>
-            <option value="<?=$role['id']?>" <?=in_array($role['id'], $member_roles)?'selected':''?>><?=htmlspecialchars($role['name'])?></option>
-          <?php endwhile; ?>
-        </select>
-        <small class="form-text text-muted">Hold Ctrl or use search to select multiple roles of serving.</small>
+        <label>Roles of Serving <span class="badge badge-secondary">Assigned by Church Office</span></label>
+        <div class="form-control h-auto bg-light" aria-live="polite">
+          <?php if ($assignedServingRoles): ?>
+            <?php foreach ($assignedServingRoles as $assignedRole): ?>
+              <span class="badge badge-primary mr-1 mb-1"><?= htmlspecialchars($assignedRole['name']) ?></span>
+            <?php endforeach; ?>
+          <?php else: ?>
+            <span class="text-muted">No Role of Serving has been assigned yet.</span>
+          <?php endif; ?>
+        </div>
+        <small class="form-text text-muted">You can complete registration without a role. For account safety, only authorized staff can assign leadership or administrative roles.</small>
       </div>
     </div>
   </div>
@@ -816,15 +806,9 @@ $(function(){
             }, 1200);
         });
     });
-    // Enable Select2 for organizations and roles of serving with identical options
+    // Roles of Serving are intentionally read-only on member self-completion.
     $('#organizations').select2({
         placeholder: 'Select organizations',
-        allowClear: true,
-        width: '100%',
-        minimumResultsForSearch: 0
-    });
-    $('#roles_of_serving').select2({
-        placeholder: 'Select roles of serving',
         allowClear: true,
         width: '100%',
         minimumResultsForSearch: 0

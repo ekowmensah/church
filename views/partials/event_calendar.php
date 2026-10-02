@@ -42,33 +42,27 @@ document.addEventListener('DOMContentLoaded', function() {
     var errorEl = document.getElementById('calendarError');
     var loadingEl = document.getElementById('calendarLoading');
     var emptyEl = document.getElementById('calendarEmpty');
+    var events = <?= json_encode(
+        $calendar_events ?? [],
+        JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES
+    ) ?>;
     
     if (!calendarEl) return;
-    
-    // Show loading state
-    if (loadingEl) loadingEl.style.display = 'inline-block';
-    
-    fetch('ajax_events.php')
-        .then(function(response) {
-            if (!response.ok) {
-                throw new Error('Network response was not ok: ' + response.status);
-            }
-            return response.json();
-        })
-        .then(function(data) {
-            // Hide loading state
-            if (loadingEl) loadingEl.style.display = 'none';
-            
-            // Handle different response formats
-            var events = Array.isArray(data) ? data : (data.events || []);
-            
-            if (events.length === 0) {
-                if (emptyEl) emptyEl.style.display = 'block';
-                return;
-            }
+
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (events.length === 0) {
+        if (emptyEl) emptyEl.style.display = 'block';
+        return;
+    }
+
+    try {
+        if (typeof FullCalendar === 'undefined') {
+            throw new Error('The calendar library did not load.');
+        }
+
             var calendar = new FullCalendar.Calendar(calendarEl, {
                 initialView: 'dayGridMonth',
-                initialDate: new Date().toISOString().slice(0,10),
+                initialDate: <?= json_encode(date('Y-m-d')) ?>,
                 height: 'auto',
                 events: events,
                 
@@ -79,13 +73,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Event interaction
                 eventClick: function(info) {
-                    var ev = info.event;
-                    var eventId = ev.id || ev.extendedProps.id;
-                    
-                    if (eventId) {
-                        // Create a modal or redirect to event details
-                        var url = '<?= BASE_URL ?>/views/event_register.php?event_id=' + eventId;
-                        window.open(url, '_blank');
+                    if (info.event.url) {
+                        info.jsEvent.preventDefault();
+                        window.location.href = info.event.url;
                     }
                 },
                 
@@ -97,31 +87,45 @@ document.addEventListener('DOMContentLoaded', function() {
                     var location = event.extendedProps.location;
                     var isRegistered = event.extendedProps.is_registered;
                     
-                    var html = '<div class="fc-event-content-wrapper">';
-                    
+                    var wrapper = document.createElement('div');
+                    wrapper.className = 'fc-event-content-wrapper';
+
                     if (photo) {
-                        html += '<div class="fc-event-photo mb-1" style="text-align:center;">';
-                        html += '<img src="' + photo + '" style="height:24px;width:24px;object-fit:cover;border-radius:4px;">';
-                        html += '</div>';
+                        var photoWrapper = document.createElement('div');
+                        photoWrapper.className = 'fc-event-photo mb-1 text-center';
+                        var image = document.createElement('img');
+                        image.src = photo;
+                        image.alt = '';
+                        image.width = 24;
+                        image.height = 24;
+                        image.style.objectFit = 'cover';
+                        image.style.borderRadius = '4px';
+                        photoWrapper.appendChild(image);
+                        wrapper.appendChild(photoWrapper);
                     }
-                    
-                    html += '<div class="fc-event-title font-weight-bold" style="font-size: 0.85em;">' + title + '</div>';
-                    
+
+                    var titleElement = document.createElement('div');
+                    titleElement.className = 'fc-event-title font-weight-bold';
+                    titleElement.style.fontSize = '0.85em';
+                    titleElement.textContent = title;
+                    wrapper.appendChild(titleElement);
+
                     if (location) {
-                        html += '<div class="fc-event-location text-muted" style="font-size: 0.75em;">';
-                        html += '<i class="fas fa-map-marker-alt mr-1"></i>' + location;
-                        html += '</div>';
+                        var locationElement = document.createElement('div');
+                        locationElement.className = 'fc-event-location';
+                        locationElement.style.fontSize = '0.75em';
+                        locationElement.textContent = '\uD83D\uDCCD ' + location;
+                        wrapper.appendChild(locationElement);
                     }
-                    
+
                     if (isRegistered) {
-                        html += '<div class="fc-event-status mt-1">';
-                        html += '<span class="badge badge-success badge-sm"><i class="fas fa-check"></i></span>';
-                        html += '</div>';
+                        var statusElement = document.createElement('span');
+                        statusElement.className = 'badge badge-success badge-sm mt-1';
+                        statusElement.textContent = '\u2713 Registered';
+                        wrapper.appendChild(statusElement);
                     }
-                    
-                    html += '</div>';
-                    
-                    return { html: html };
+
+                    return { domNodes: [wrapper] };
                 },
                 
                 // Responsive toolbar
@@ -169,26 +173,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
             calendar.render();
-        })
-        .catch(function(error) {
-            // Hide loading state
-            if (loadingEl) loadingEl.style.display = 'none';
-            
-            // Show error message
-            if (errorEl) {
-                var errorMessage = document.getElementById('errorMessage');
-                if (errorMessage) {
-                    if (error.message) {
-                        errorMessage.textContent = 'Error loading events: ' + error.message;
-                    } else {
-                        errorMessage.textContent = 'Failed to load events. Please check your connection and try again.';
-                    }
-                }
-                errorEl.style.display = 'block';
+    } catch (error) {
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (errorEl) {
+            var errorMessage = document.getElementById('errorMessage');
+            if (errorMessage) {
+                errorMessage.textContent = error.message
+                    ? 'Error loading events: ' + error.message
+                    : 'Failed to load events. Please check your connection and try again.';
             }
-            
-            console.error('Calendar error:', error);
-        });
+            errorEl.style.display = 'block';
+        }
+        console.error('Calendar error:', error);
+    }
 });
 </script>
 

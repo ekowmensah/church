@@ -6,7 +6,9 @@ require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/bible_class_capacity.php';
 require_once __DIR__.'/../helpers/csrf.php';
 require_once __DIR__.'/../helpers/member_transfer_origin.php';
+require_once __DIR__.'/../helpers/role_of_serving_registration.php';
 require_once __DIR__.'/../services/RegistrationDuplicateService.php';
+require_once __DIR__.'/../services/RoleOfServingAccessService.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -71,6 +73,15 @@ if ($editing) {
 $churches = $conn->query("SELECT id, name FROM churches ORDER BY name ASC");
 // Classes loaded dynamically by church selection
 $users = $conn->query("SELECT id, name FROM users ORDER BY name ASC");
+$roleOptionsResult = $conn->query("SELECT id, name FROM roles_of_serving ORDER BY name ASC");
+$roleOptions = $roleOptionsResult ? $roleOptionsResult->fetch_all(MYSQLI_ASSOC) : [];
+$selectedRoleIds = [];
+if ($editing && !empty($id)) {
+    $selectedRoleIds = array_map(
+        'intval',
+        array_column(role_of_serving_member_assignments($conn, (int) $id), 'id')
+    );
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
@@ -84,6 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email'] ?? '');
     $class_id = intval($_POST['class_id'] ?? 0);
     $church_id = intval($_POST['church_id'] ?? 0);
+    $selectedRoleIds = role_of_serving_normalize_ids((array) ($_POST['roles_of_serving'] ?? []));
     $transferOrigin = member_transfer_origin_from_input($_POST);
     member_transfer_origin_apply($member, $transferOrigin);
     $transfer_from_other_chapel = $transferOrigin['transfer_from_other_chapel'];
@@ -103,6 +115,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Please fill in all required fields.';
     } elseif ($transferError !== '') {
         $error = $transferError;
+    } elseif (($roleError = role_of_serving_registration_validation_error($conn, $selectedRoleIds)) !== '') {
+        $error = $roleError;
     } else {
         $registration_token = bin2hex(random_bytes(16));
         $current_member_id = $editing ? (int) $id : 0;
@@ -129,15 +143,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if (!$error) {
-                $stmt = $conn->prepare('UPDATE members SET first_name=?, middle_name=?, last_name=?, crn=?, phone=?, email=?, class_id=?, church_id=?, transfer_from_other_chapel=?, transfer_diocese=?, transfer_circuit=?, transfer_society=?, removal_note_provided=?, superintendent_name=? WHERE id=?');
-                $stmt->bind_param('ssssssiiisssisi', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $transfer_from_other_chapel, $transfer_diocese, $transfer_circuit, $transfer_society, $removal_note_provided, $superintendent_name, $id);
-                $ok = $stmt->execute();
-                if ($ok && $stmt->affected_rows >= 0) {
+                try {
+                    $conn->begin_transaction();
+                    $stmt = $conn->prepare('UPDATE members SET first_name=?, middle_name=?, last_name=?, crn=?, phone=?, email=?, class_id=?, church_id=?, transfer_from_other_chapel=?, transfer_diocese=?, transfer_circuit=?, transfer_society=?, removal_note_provided=?, superintendent_name=? WHERE id=?');
+                    $stmt->bind_param('ssssssiiisssisi', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $transfer_from_other_chapel, $transfer_diocese, $transfer_circuit, $transfer_society, $removal_note_provided, $superintendent_name, $id);
+                    if (!$stmt->execute()) {
+                        throw new RuntimeException($stmt->error ?: 'Unable to update the member.');
+                    }
+                    $stmt->close();
+                    role_of_serving_replace_member_assignments($conn, (int) $id, $selectedRoleIds);
+                    $roleAccessService = new RoleOfServingAccessService($conn);
+                    $roleAccessService->syncMember((int) $id, (int) ($_SESSION['user_id'] ?? 0), 'Authorized registration form updated Roles of Serving.');
+                    $conn->commit();
                     $success = 'Member updated. (Notification would be sent here)';
-                } else if (is_bible_class_capacity_error($stmt->error)) {
-                    $error = 'Member update blocked: ' . bible_class_capacity_error_message();
-                } else {
-                    $error = 'Database error. Please try again.';
+                } catch (Throwable $e) {
+                    $conn->rollback();
+                    $error = is_bible_class_capacity_error($e->getMessage())
+                        ? ('Member update blocked: ' . bible_class_capacity_error_message())
+                        : $e->getMessage();
                 }
             }
         } else {
@@ -158,17 +181,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = 'Possible duplicate found. Review the matches below. To create a separate member, confirm and enter a reason.';
                 }
                 if (!$error) {
-                $stmt = $conn->prepare("INSERT INTO members (first_name, middle_name, last_name, crn, phone, email, class_id, church_id, registration_token, transfer_from_other_chapel, transfer_diocese, transfer_circuit, transfer_society, removal_note_provided, superintendent_name, status, deactivated_at, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '')");
-                $stmt->bind_param('ssssssiisisssis', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $registration_token, $transfer_from_other_chapel, $transfer_diocese, $transfer_circuit, $transfer_society, $removal_note_provided, $superintendent_name);
-                $ok = $stmt->execute();
-                if ($ok && $stmt->affected_rows > 0) {
+                $newMemberId = 0;
+                try {
+                    $conn->begin_transaction();
+                    $stmt = $conn->prepare("INSERT INTO members (first_name, middle_name, last_name, crn, phone, email, class_id, church_id, registration_token, transfer_from_other_chapel, transfer_diocese, transfer_circuit, transfer_society, removal_note_provided, superintendent_name, status, deactivated_at, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '')");
+                    $stmt->bind_param('ssssssiisisssis', $first_name, $middle_name, $last_name, $crn, $phone, $email, $class_id, $church_id, $registration_token, $transfer_from_other_chapel, $transfer_diocese, $transfer_circuit, $transfer_society, $removal_note_provided, $superintendent_name);
+                    if (!$stmt->execute() || $stmt->affected_rows < 1) {
+                        throw new RuntimeException($stmt->error ?: 'Unable to create the member.');
+                    }
                     $newMemberId = (int) $stmt->insert_id;
+                    $stmt->close();
+                    role_of_serving_replace_member_assignments($conn, $newMemberId, $selectedRoleIds);
                     if ($duplicate_matches) {
                         $duplicateService->recordMatches(
                             'member', $newMemberId, $church_id, $duplicate_matches,
                             'registration', $duplicateReason
                         );
                     }
+                    $conn->commit();
+                } catch (Throwable $e) {
+                    $conn->rollback();
+                    $error = is_bible_class_capacity_error($e->getMessage())
+                        ? ('Member creation blocked: ' . bible_class_capacity_error_message())
+                        : $e->getMessage();
+                }
+                if (!$error && $newMemberId > 0) {
                     $registration_link = rtrim(BASE_URL, '/') . '/views/complete_registration.php?token=' . urlencode($registration_token);
                     $success = 'Member added successfully!<br>Registration link: <a href="' . $registration_link . '" target="_blank">' . htmlspecialchars($registration_link) . '</a>';
                     // Send registration SMS if phone is provided
@@ -202,10 +239,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $success = 'Member added, but an error occurred while sending SMS: ' . $e->getMessage() . '<br>Please send the registration link manually: <a href="' . $registration_link . '" target="_blank">' . htmlspecialchars($registration_link) . '</a>';
                         }
                     }
-                } else if (is_bible_class_capacity_error($stmt->error)) {
-                    $error = 'Member creation blocked: ' . bible_class_capacity_error_message();
-                } else {
-                    $error = 'Database error. Please try again.';
                 }
                 }
             }
@@ -287,6 +320,15 @@ ob_start();
     <input type="hidden" name="class_id" value="<?=htmlspecialchars($member['class_id'])?>">
 <?php endif; ?>
                         </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="roles_of_serving">Roles of Serving <span class="text-danger">*</span></label>
+                        <select class="form-control" name="roles_of_serving[]" id="roles_of_serving" multiple required style="width:100%" aria-describedby="roles-of-serving-help">
+                            <?php foreach ($roleOptions as $roleOption): ?>
+                                <option value="<?= (int) $roleOption['id'] ?>" <?= in_array((int) $roleOption['id'], $selectedRoleIds, true) ? 'selected' : '' ?>><?= htmlspecialchars($roleOption['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small class="form-text text-muted" id="roles-of-serving-help">Select every current role. Choose <strong>NONE</strong> when the member has no assigned office.</small>
                     </div>
                     <div class="form-group">
                         <label for="crn">CRN <span class="text-danger">*</span></label>
@@ -378,6 +420,10 @@ $(document).ready(function() {
     $('#class_id').select2({
         placeholder: '-- Select Class --',
         allowClear: true,
+        width: '100%'
+    });
+    $('#roles_of_serving').select2({
+        placeholder: '-- Select at least one role --',
         width: '100%'
     });
 

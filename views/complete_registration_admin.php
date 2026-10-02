@@ -8,6 +8,7 @@ require_once __DIR__.'/../helpers/bible_class_capacity.php';
 require_once __DIR__.'/../helpers/leader_helpers.php';
 require_once __DIR__.'/../helpers/spouse_link_helper.php';
 require_once __DIR__.'/../helpers/member_transfer_origin.php';
+require_once __DIR__.'/../helpers/role_of_serving_registration.php';
 require_once __DIR__.'/../services/RoleOfServingAccessService.php';
 
 if (!is_logged_in()) {
@@ -424,9 +425,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
         return $id > 0;
     }));
     // Roles of Serving multiple select
-    $roles_of_serving = array_values(array_filter(array_map('intval', (array) ($_POST['roles_of_serving'] ?? [])), static function ($id) {
-        return $id > 0;
-    }));
+    $roles_of_serving = role_of_serving_normalize_ids((array) ($_POST['roles_of_serving'] ?? []));
     // Emergency contacts (dynamic)
     $emergency_contacts = $_POST['emergency_contacts'] ?? [];
     // Photo upload
@@ -499,6 +498,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
         $error = 'Please fill in all required fields (at least one emergency contact).';
     } elseif (($transferError = member_transfer_origin_validation_error($transferOrigin)) !== '') {
         $error = $transferError;
+    } elseif (($roleError = role_of_serving_registration_validation_error($conn, $roles_of_serving)) !== '') {
+        $error = $roleError;
     } else {
         // Enforce phone uniqueness at member level.
         $stmt_phone_member = $conn->prepare('SELECT id, crn, first_name, last_name FROM members WHERE phone = ? AND id <> ? LIMIT 1');
@@ -678,23 +679,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
             }
 
             // Update roles of serving (delete old, insert new)
-            if (!$conn->query("DELETE FROM member_roles_of_serving WHERE member_id=" . $member_id)) {
-                throw new Exception($conn->error ?: 'Failed to clear existing roles of serving.');
-            }
-            if (!empty($roles_of_serving)) {
-                $role_stmt = $conn->prepare("INSERT INTO member_roles_of_serving (member_id, role_id) VALUES (?, ?)");
-                if (!$role_stmt) {
-                    throw new Exception($conn->error ?: 'Failed to prepare role-of-serving insert.');
-                }
-                foreach ($roles_of_serving as $role_id) {
-                    $serving_role_id = (int) $role_id;
-                    $role_stmt->bind_param('ii', $member_id, $serving_role_id);
-                    if (!$role_stmt->execute()) {
-                        throw new Exception($role_stmt->error ?: 'Failed to save a role of serving.');
-                    }
-                }
-                $role_stmt->close();
-            }
+            role_of_serving_replace_member_assignments($conn, $member_id, $roles_of_serving);
 
             $roleAccessService = new RoleOfServingAccessService($conn);
             $roleAccessService->syncMember(
@@ -1183,20 +1168,22 @@ ob_start();
         <small class="form-text text-muted">Selected organizations will be assigned immediately.</small>
       </div>
       <div class="form-group col-md-4">
-        <label for="roles_of_serving">Roles of Serving</label>
-        <select class="form-control" name="roles_of_serving[]" id="roles_of_serving" multiple>
+        <label for="roles_of_serving">Roles of Serving <span class="text-danger">*</span></label>
+        <select class="form-control" name="roles_of_serving[]" id="roles_of_serving" multiple required>
           <?php
           $roles = $conn->query("SELECT id, name FROM roles_of_serving ORDER BY name ASC");
-          $member_roles = [];
-          if ($member_id > 0) {
+          $member_roles = $_SERVER['REQUEST_METHOD'] === 'POST'
+            ? role_of_serving_normalize_ids((array) ($_POST['roles_of_serving'] ?? []))
+            : [];
+          if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $member_id > 0) {
             $roleq = $conn->query("SELECT role_id FROM member_roles_of_serving WHERE member_id=".$member_id);
-            while($ro = $roleq->fetch_assoc()) $member_roles[] = $ro['role_id'];
+            while($ro = $roleq->fetch_assoc()) $member_roles[] = (int) $ro['role_id'];
           }
           while($role = $roles->fetch_assoc()): ?>
-            <option value="<?=$role['id']?>" <?=in_array($role['id'], $member_roles)?'selected':''?>><?=htmlspecialchars($role['name'])?></option>
+            <option value="<?=$role['id']?>" <?=in_array((int) $role['id'], $member_roles, true)?'selected':''?>><?=htmlspecialchars($role['name'])?></option>
           <?php endwhile; ?>
         </select>
-        <small class="form-text text-muted">Hold Ctrl or use search to select multiple roles of serving.</small>
+        <small class="form-text text-muted">Select every current role. Choose <strong>NONE</strong> when the member has no assigned office.</small>
       </div>
     </div>
   </div>

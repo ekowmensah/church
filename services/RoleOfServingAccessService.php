@@ -30,6 +30,9 @@ final class RoleOfServingAccessService {
     public function saveMapping(int $servingRoleId, int $accessRoleId, bool $isActive, ?int $actorUserId): int {
         $this->assertRoleExists('roles_of_serving', $servingRoleId, 'Role of Serving');
         $this->assertRoleExists('roles', $accessRoleId, 'system access role');
+        if ($isActive) {
+            $this->assertServingRoleCanGrantAccess($servingRoleId);
+        }
         $active = $isActive ? 1 : 0;
         $this->conn->begin_transaction();
         try {
@@ -558,5 +561,16 @@ final class RoleOfServingAccessService {
         $exists = (bool) $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$exists) throw new RuntimeException('Choose a valid ' . $label . '.');
+    }
+
+    private function assertServingRoleCanGrantAccess(int $servingRoleId): void {
+        $stmt = $this->conn->prepare('SELECT name FROM roles_of_serving WHERE id = ? LIMIT 1');
+        $stmt->bind_param('i', $servingRoleId);
+        $stmt->execute();
+        $name = strtolower(trim((string) ($stmt->get_result()->fetch_assoc()['name'] ?? '')));
+        $stmt->close();
+        if ($name === 'none') {
+            throw new RuntimeException('The NONE serving role cannot grant back-office access.');
+        }
     }
 }
