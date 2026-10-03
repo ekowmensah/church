@@ -200,8 +200,19 @@ body.bible-class-attendance-open .modal-backdrop { z-index: 20050 !important; }
         setLoading(true);
         fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
             .then(function (response) {
-                return response.json().then(function (body) {
-                    if (!response.ok || !body.ok) throw new Error(body.message || 'Unable to load attendance work.');
+                return response.text().then(function (rawBody) {
+                    var body;
+                    try {
+                        body = JSON.parse(rawBody);
+                    } catch (parseError) {
+                        var returnedHtml = response.redirected || /<!doctype\s+html|<html[\s>]/i.test(rawBody);
+                        throw new Error(returnedHtml
+                            ? 'The attendance session returned a web page instead of data. Refresh the dashboard and sign in again.'
+                            : 'The attendance session returned an invalid response. Refresh the dashboard and try again.');
+                    }
+                    if (!response.ok || !body || !body.ok) {
+                        throw new Error((body && body.message) || 'Unable to load attendance work.');
+                    }
                     return body.queue;
                 });
             })
