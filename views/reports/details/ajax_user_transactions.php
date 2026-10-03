@@ -1,21 +1,28 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
+require_once __DIR__.'/../../../helpers/permissions.php';
 require_once __DIR__.'/../../../helpers/payment_report_context.php';
 
 if (!is_logged_in()) {
     http_response_code(403);
     exit('Unauthorized');
 }
-// Permission check
-if (!has_permission('view_dashboard')) {
+// Match the parent Payments by User report instead of requiring an unrelated
+// dashboard permission for its transaction-detail drawer.
+if (!is_super_admin()
+    && !has_permission('view_payments_by_user_report')
+    && !has_permission('view_payment_list')) {
     http_response_code(403);
-    echo json_encode(['success' => false, 'error' => 'Forbidden']);
-    exit;
+    exit('Forbidden');
 }
 
-
 $user_id = intval($_GET['user_id'] ?? 0);
+if ($user_id <= 0) {
+    http_response_code(422);
+    exit('Select a valid user.');
+}
+
 $payment_type_id = intval($_GET['payment_type_id'] ?? 0);
 $date_from = $_GET['date_from'] ?? '';
 $date_to = $_GET['date_to'] ?? '';

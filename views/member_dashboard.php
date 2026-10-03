@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__.'/../includes/member_auth.php';
+require_once __DIR__.'/../services/BibleClassAttendanceScheduleService.php';
 if (!empty($_SESSION['login_success']) && !empty($_SESSION['login_fullname'])): ?>
 <!-- Login Success Modal -->
 <div id="loginSuccessModal" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;">
@@ -54,6 +55,15 @@ if ($member_id) {
     $email = $m['email'] ?? '';
     $phone = $m['phone'] ?? '';
     $dob_val = $m['dob'] ?? '';
+}
+
+$due_bible_class_attendance = [];
+try {
+    $bibleClassScheduleService = BibleClassAttendanceScheduleService::fromSession($conn);
+    $due_bible_class_attendance = $bibleClassScheduleService->getDueSessionsForDate(date('Y-m-d'));
+} catch (Throwable $attendancePromptException) {
+    // Missing schedule configuration must not prevent member self-service.
+    $due_bible_class_attendance = [];
 }
 
 $show_birthday_toast = false;
@@ -700,6 +710,7 @@ function hideWelcomeHeader() {
     }
 }
 </script>
+<?php include __DIR__ . '/../includes/bible_class_attendance_prompt.php'; ?>
 <?php if ($show_birthday_toast): ?>
 
 <!--<div class="alert alert-warning d-flex align-items-center mb-3 shadow" style="font-size:1.15rem; border-left:6px solid #ff9800;">

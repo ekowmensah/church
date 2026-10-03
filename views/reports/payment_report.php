@@ -102,20 +102,49 @@ foreach ($period_values as $period_value) {
     $params[] = $period_value;
     $bind_types .= 's';
 }
+
+$allowed_page_sizes = [25, 50, 100];
+$per_page = (int) ($_GET['per_page'] ?? 50);
+if (!in_array($per_page, $allowed_page_sizes, true)) {
+    $per_page = 50;
+}
+$page = max(1, (int) ($_GET['page'] ?? 1));
+
+$count_sql = "SELECT COUNT(*) AS total
+              FROM v_posted_payments p
+              LEFT JOIN members m ON p.member_id = m.id
+              LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
+              $where";
+$count_stmt = $conn->prepare($count_sql);
+if ($params) {
+    $count_stmt->bind_param($bind_types, ...$params);
+}
+$count_stmt->execute();
+$total_rows = (int) ($count_stmt->get_result()->fetch_assoc()['total'] ?? 0);
+$count_stmt->close();
+$total_pages = max(1, (int) ceil($total_rows / $per_page));
+$page = min($page, $total_pages);
+$offset = ($page - 1) * $per_page;
+
 $sql = "SELECT p.*, pt.name AS payment_type, 
     m.crn, m.last_name, m.first_name, m.middle_name, m.class_id, bc.name AS class_name, m.church_id, ch.name AS church_name, 
-    ss.srn, ss.first_name AS ss_first_name, ss.last_name AS ss_last_name, ss.middle_name AS ss_middle_name, ss.class_id AS ss_class_id, ss.church_id AS ss_church_id
+    ss.srn, ss.first_name AS ss_first_name, ss.last_name AS ss_last_name, ss.middle_name AS ss_middle_name,
+    ss.class_id AS ss_class_id, ss.church_id AS ss_church_id,
+    ssbc.name AS ss_class_name, ssch.name AS ss_church_name
 FROM v_posted_payments p
     LEFT JOIN payment_types pt ON p.payment_type_id = pt.id 
     LEFT JOIN members m ON p.member_id = m.id 
     LEFT JOIN bible_classes bc ON m.class_id = bc.id 
     LEFT JOIN churches ch ON m.church_id = ch.id 
-    LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id 
-$where ORDER BY p.payment_date DESC, p.id DESC";
+    LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
+    LEFT JOIN bible_classes ssbc ON ss.class_id = ssbc.id
+    LEFT JOIN churches ssch ON ss.church_id = ssch.id
+    $where ORDER BY p.payment_date DESC, p.id DESC
+    LIMIT ? OFFSET ?";
 $stmt = $conn->prepare($sql);
-if ($params) {
-    $stmt->bind_param($bind_types, ...$params);
-}
+$data_params = array_merge($params, [$per_page, $offset]);
+$data_bind_types = $bind_types . 'ii';
+$stmt->bind_param($data_bind_types, ...$data_params);
 $stmt->execute();
 $payments = $stmt->get_result();
 
@@ -137,6 +166,20 @@ while ($row = $trend_res->fetch_assoc()) {
     $trend_labels[] = $row['ym'];
     $trend_totals[] = $row['total'] ? floatval($row['total']) : 0;
 }
+
+$page_url = static function (int $targetPage) use ($per_page): string {
+    $query = $_GET;
+    unset($query['export']);
+    $query['page'] = max(1, $targetPage);
+    $query['per_page'] = $per_page;
+    return '?' . http_build_query($query);
+};
+$pagination_pages = [1, $total_pages];
+for ($candidate = max(1, $page - 2); $candidate <= min($total_pages, $page + 2); $candidate++) {
+    $pagination_pages[] = $candidate;
+}
+$pagination_pages = array_values(array_unique($pagination_pages));
+sort($pagination_pages);
 ?>
 <div class="container-fluid mt-4">
   <h2 class="mb-4">Payment Report</h2>
@@ -197,6 +240,14 @@ while ($row = $trend_res->fetch_assoc()) {
       <label>Payment Period To</label>
       <input type="month" name="period_to" class="form-control" value="<?= htmlspecialchars($period_to) ?>" title="Month the payment belongs to">
     </div>
+    <div class="form-group col-md-2">
+      <label>Rows per page</label>
+      <select name="per_page" class="form-control">
+        <?php foreach ($allowed_page_sizes as $page_size): ?>
+          <option value="<?= $page_size ?>" <?= $per_page === $page_size ? 'selected' : '' ?>><?= $page_size ?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
     <div class="form-group col-md-2 align-self-end">
       <button type="submit" class="btn btn-primary btn-block">Filter</button>
     </div>
@@ -252,8 +303,15 @@ while ($row = $trend_res->fetch_assoc()) {
   </div>
 
   <div class="card shadow mb-4">
-    <div class="card-header py-3">
+    <div class="card-header py-3 d-flex flex-wrap justify-content-between align-items-center">
       <h6 class="m-0 font-weight-bold text-primary">Payment Records</h6>
+      <small class="text-muted mt-1 mt-sm-0">
+        <?php if ($total_rows > 0): ?>
+          Showing <?= number_format($offset + 1) ?>&ndash;<?= number_format(min($offset + $per_page, $total_rows)) ?> of <?= number_format($total_rows) ?>
+        <?php else: ?>
+          No matching records
+        <?php endif; ?>
+      </small>
     </div>
     <div class="card-body">
       <div class="table-responsive">
@@ -271,7 +329,9 @@ while ($row = $trend_res->fetch_assoc()) {
             </tr>
           </thead>
           <tbody>
-            <?php while($row = $payments->fetch_assoc()): ?>
+            <?php if ($payments->num_rows === 0): ?>
+            <tr><td colspan="8" class="text-center text-muted py-5">No payments found for the selected filters.</td></tr>
+            <?php else: while($row = $payments->fetch_assoc()): ?>
             <tr>
               <td><?=htmlspecialchars($row['payment_date'])?></td>
               <td>
@@ -296,21 +356,7 @@ while ($row = $trend_res->fetch_assoc()) {
     <?php if (!empty($row['member_id'])): ?>
         <?=htmlspecialchars($row['class_name'])?>
     <?php elseif (!empty($row['sundayschool_id'])): ?>
-        <?php 
-        // Lookup class name for SRN if not already present
-        if (!empty($row['ss_class_id'])) {
-            $ss_class_name = '';
-            $ss_class_id = $row['ss_class_id'];
-            $ss_class_q = $conn->query("SELECT name FROM bible_classes WHERE id=".intval($ss_class_id));
-            if ($ss_class_q && $ss_class_q->num_rows > 0) {
-                $ss_class_row = $ss_class_q->fetch_assoc();
-                $ss_class_name = $ss_class_row['name'];
-            }
-            echo htmlspecialchars($ss_class_name);
-        } else {
-            echo '<span class="text-muted">N/A</span>';
-        }
-        ?>
+        <?= !empty($row['ss_class_name']) ? htmlspecialchars($row['ss_class_name']) : '<span class="text-muted">N/A</span>' ?>
     <?php else: ?>
         <span class="text-muted">N/A</span>
     <?php endif; ?>
@@ -319,21 +365,7 @@ while ($row = $trend_res->fetch_assoc()) {
     <?php if (!empty($row['member_id'])): ?>
         <?=htmlspecialchars($row['church_name'])?>
     <?php elseif (!empty($row['sundayschool_id'])): ?>
-        <?php 
-        // Lookup church name for SRN if not already present
-        if (!empty($row['ss_church_id'])) {
-            $ss_church_name = '';
-            $ss_church_id = $row['ss_church_id'];
-            $ss_church_q = $conn->query("SELECT name FROM churches WHERE id=".intval($ss_church_id));
-            if ($ss_church_q && $ss_church_q->num_rows > 0) {
-                $ss_church_row = $ss_church_q->fetch_assoc();
-                $ss_church_name = $ss_church_row['name'];
-            }
-            echo htmlspecialchars($ss_church_name);
-        } else {
-            echo '<span class="text-muted">N/A</span>';
-        }
-        ?>
+        <?= !empty($row['ss_church_name']) ? htmlspecialchars($row['ss_church_name']) : '<span class="text-muted">N/A</span>' ?>
     <?php else: ?>
         <span class="text-muted">N/A</span>
     <?php endif; ?>
@@ -346,10 +378,32 @@ while ($row = $trend_res->fetch_assoc()) {
               )) ?></td>
               <td>₵<?=number_format($row['amount'],2)?></td>
             </tr>
-            <?php endwhile; ?>
+            <?php endwhile; endif; ?>
           </tbody>
         </table>
       </div>
+      <?php if ($total_pages > 1): ?>
+      <nav class="mt-3" aria-label="Payment report pages">
+        <ul class="pagination justify-content-center flex-wrap mb-0">
+          <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
+            <a class="page-link" href="<?= $page <= 1 ? '#' : htmlspecialchars($page_url($page - 1)) ?>" aria-label="Previous">&laquo;</a>
+          </li>
+          <?php $previous_page_number = null; ?>
+          <?php foreach ($pagination_pages as $page_number): ?>
+            <?php if ($previous_page_number !== null && $page_number > $previous_page_number + 1): ?>
+              <li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+            <?php endif; ?>
+            <li class="page-item <?= $page_number === $page ? 'active' : '' ?>">
+              <a class="page-link" href="<?= htmlspecialchars($page_url($page_number)) ?>"><?= $page_number ?></a>
+            </li>
+            <?php $previous_page_number = $page_number; ?>
+          <?php endforeach; ?>
+          <li class="page-item <?= $page >= $total_pages ? 'disabled' : '' ?>">
+            <a class="page-link" href="<?= $page >= $total_pages ? '#' : htmlspecialchars($page_url($page + 1)) ?>" aria-label="Next">&raquo;</a>
+          </li>
+        </ul>
+      </nav>
+      <?php endif; ?>
     </div>
   </div>
 </div>
@@ -372,7 +426,10 @@ while ($row = $trend_res->fetch_assoc()) {
 <script>
 $(document).ready(function() {
     $('#paymentTable').DataTable({
-        dom: 'Bfrtip',
+        paging: false,
+        searching: false,
+        info: false,
+        dom: 'Brt',
         buttons: [
             'copy', 'csv', 'excel', 'pdf', 'print'
         ]

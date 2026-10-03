@@ -1786,50 +1786,11 @@ ob_start();
     <?php endif; ?>
 </div>
 
-<?php if ($due_bible_class_attendance): ?>
-<div class="modal fade" id="bibleClassAttendancePrompt" tabindex="-1" role="dialog" aria-labelledby="bibleClassAttendancePromptTitle" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
-        <div class="modal-content border-0 shadow-lg" style="border-radius:20px;overflow:hidden;">
-            <div class="modal-header text-white border-0" style="background:linear-gradient(135deg,#0f766e,#2563eb);">
-                <div>
-                    <div class="small text-uppercase" style="letter-spacing:.08em;opacity:.8;">Scheduled for today</div>
-                    <h5 class="modal-title" id="bibleClassAttendancePromptTitle"><i class="fas fa-clipboard-check mr-2"></i>Bible Class attendance is ready</h5>
-                </div>
-                <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
-            </div>
-            <div class="modal-body p-0">
-                <div class="px-4 py-3 bg-light border-bottom text-muted">
-                    Sessions were created from each Class Group's configured meeting day. Select a class to mark attendance.
-                </div>
-                <div class="list-group list-group-flush">
-                    <?php foreach ($due_bible_class_attendance as $dueSession): ?>
-                        <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-4 py-3"
-                           href="<?= BASE_URL ?>/views/my_bible_class_attendance.php?class_id=<?= (int) $dueSession['class_id'] ?>&session_id=<?= (int) $dueSession['session_id'] ?>">
-                            <span>
-                                <strong class="d-block text-dark"><?= htmlspecialchars($dueSession['class_name']) ?></strong>
-                                <small class="text-muted"><?= htmlspecialchars($dueSession['group_name']) ?> &middot; <?= htmlspecialchars(date('j M Y', strtotime($dueSession['attendance_date']))) ?></small>
-                            </span>
-                            <span class="btn btn-sm btn-primary">Mark now <i class="fas fa-arrow-right ml-1"></i></span>
-                        </a>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-            <div class="modal-footer border-0 bg-light">
-                <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Remind me on the next dashboard visit</button>
-            </div>
-        </div>
-    </div>
-</div>
-<?php endif; ?>
+<?php include __DIR__ . '/../includes/bible_class_attendance_prompt.php'; ?>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    <?php if ($due_bible_class_attendance): ?>
-    if (window.jQuery && typeof window.jQuery.fn.modal === 'function') {
-        window.jQuery('#bibleClassAttendancePrompt').modal('show');
-    }
-    <?php endif; ?>
     if (typeof Chart === 'undefined') {
         return;
     }
