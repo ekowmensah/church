@@ -18,7 +18,7 @@ while ($row = $result->fetch_assoc()) {
 $stmt->close();
 
 // Get user permissions
-$user_permissions = $is_super_admin ? null : ($_SESSION['permissions'] ?? []);
+$user_permissions = $is_super_admin ? null : array_values(array_filter(array_column(get_user_permissions(), 'name')));
 
 // Branding: logo, name, address
 $logo_path = BASE_URL . '/uploads/logo.png';
@@ -213,6 +213,26 @@ $current_url = $_SERVER['REQUEST_URI'] ?? '';
         echo '</ul>';
       }
     }
+
+    // Reports are discovered inside one searchable, permission-aware centre.
+    // Keep this as a standalone destination instead of rendering a long
+    // accordion containing every individual report route.
+    if (isset($menu['Reports'])) {
+      foreach ($menu['Reports'] as $item) {
+        if ($item['url'] !== 'views/reports.php') continue;
+        if (!$is_super_admin && (!is_array($user_permissions) || !in_array($item['permission_name'], $user_permissions, true))) continue;
+        $is_active = strpos($current_url, '/views/reports') !== false;
+        echo '<ul class="nav nav-pills nav-sidebar flex-column" role="menu" style="margin-bottom: 1em;">';
+        echo '<li class="nav-item">';
+        echo '<a href="' . BASE_URL . '/' . $item['url'] . '" class="nav-link' . ($is_active ? ' active' : '') . '">';
+        echo '<i class="nav-icon ' . htmlspecialchars($item['icon']) . '"></i>';
+        echo '<p>' . htmlspecialchars($item['label']) . '</p>';
+        echo '</a>';
+        echo '</li>';
+        echo '</ul>';
+        break;
+      }
+    }
     
     // Add Leader Navigation Links (Bible Class & Organization Leaders)
     require_once __DIR__.'/../helpers/leader_helpers.php';
@@ -295,8 +315,8 @@ $current_url = $_SERVER['REQUEST_URI'] ?? '';
     
     // Then render other groups as collapsible accordion
     foreach ($menu as $group => $items): 
-      // Skip Dashboard group as it's already rendered above
-      if ($group === 'Dashboard') continue;
+      // Dashboard and Reports are rendered as standalone destinations above.
+      if ($group === 'Dashboard' || $group === 'Reports') continue;
       
       $visible_items = [];
       foreach ($items as $item) {
