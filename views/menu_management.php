@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 // Check authentication
 if (!is_logged_in()) {
@@ -227,6 +228,7 @@ $modal_html = <<<HTML
 
 <script>
 $(document).ready(function() {
+    const menuCsrfToken = <?= json_encode(csrf_token()) ?>;
     // Initialize DataTable
     $('#menuTable').DataTable({
         "order": [[ 4, "asc" ], [ 6, "asc" ]]
@@ -238,7 +240,7 @@ $(document).ready(function() {
         $.ajax({
             url: '../controllers/menu_api.php',
             method: 'POST',
-            data: $(this).serialize() + '&action=create',
+            data: $(this).serialize() + '&action=create&csrf_token=' + encodeURIComponent(menuCsrfToken),
             dataType: 'json',
             success: function(response) {
                 if (response.success) {
@@ -275,7 +277,7 @@ $(document).ready(function() {
         $.ajax({
             url: '../controllers/menu_api.php',
             method: 'POST',
-            data: $(this).serialize() + '&action=update',
+            data: $(this).serialize() + '&action=update&csrf_token=' + encodeURIComponent(menuCsrfToken),
             dataType: 'json',
             success: function(response) {
                 if (response.success) {
@@ -299,7 +301,7 @@ $(document).ready(function() {
             $.ajax({
                 url: '../controllers/menu_api.php',
                 method: 'POST',
-                data: {action: 'delete', id: id},
+                data: {action: 'delete', id: id, csrf_token: menuCsrfToken},
                 dataType: 'json',
                 success: function(response) {
                     if (response.success) {

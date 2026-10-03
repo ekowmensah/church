@@ -3,6 +3,7 @@ session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -65,6 +66,7 @@ $AJAX_BASE = isset($parsed['path']) ? rtrim($parsed['path'], '/') : '';
 ?>
 <script>
 const BASE_URL = "<?= $AJAX_BASE ?>";
+const PERMISSION_CSRF_TOKEN = <?= json_encode(csrf_token()) ?>;
     $(document).ready(function() {
         loadPermissions();
         
@@ -79,7 +81,7 @@ const BASE_URL = "<?= $AJAX_BASE ?>";
             $.ajax({
                 type: 'POST',
                 url: BASE_URL + '/controllers/permission_api.php',
-                data: {name: permissionName},
+                data: {name: permissionName, csrf_token: PERMISSION_CSRF_TOKEN},
                 success: function(data) {
                     loadPermissions();
                     $('#addPermissionModal').modal('hide');
@@ -103,7 +105,7 @@ const BASE_URL = "<?= $AJAX_BASE ?>";
             $.ajax({
                 type: 'PUT',
                 url: BASE_URL + '/controllers/permission_api.php',
-                data: {id: permissionId, name: permissionName},
+                data: {id: permissionId, name: permissionName, csrf_token: PERMISSION_CSRF_TOKEN},
                 success: function(data) {
                     loadPermissions();
                     $('#editPermissionModal').modal('hide');
@@ -119,7 +121,7 @@ const BASE_URL = "<?= $AJAX_BASE ?>";
             $.ajax({
                 type: 'DELETE',
                 url: BASE_URL + '/controllers/permission_api.php',
-                data: {id: permissionId},
+                data: {id: permissionId, csrf_token: PERMISSION_CSRF_TOKEN},
                 success: function(data) {
                     loadPermissions();
                     $('#deletePermissionModal').modal('hide');
@@ -139,15 +141,24 @@ const BASE_URL = "<?= $AJAX_BASE ?>";
             success: function(data) {
                 $('#loadingState').hide();
                 $('#permissionTableBody').empty();
-                $.each(data.permissions, function(index, permission) {
-                    $('#permissionTableBody').append('<tr>' +
-                        '<td>' + permission.id + '</td>' +
-                        '<td>' + permission.name + '</td>' +
-                        '<td>' +
-                            '<button class="btn btn-sm btn-warning mr-1" onclick="editPermission(' + permission.id + ', \'' + permission.name + '\')">Edit</button>' +
-                            '<button class="btn btn-sm btn-danger" onclick="deletePermission(' + permission.id + ')">Delete</button>' +
-                        '</td>' +
-                    '</tr>');
+                $.each(data.permissions || [], function(index, permission) {
+                    const isSystem = Number(permission.is_system) === 1;
+                    const row = $('<tr>');
+                    $('<td>').text(permission.id).appendTo(row);
+                    const nameCell = $('<td>').text(permission.name).appendTo(row);
+                    if (isSystem) {
+                        $('<span class="badge badge-secondary ml-2">System</span>').appendTo(nameCell);
+                    }
+                    const actions = $('<td>').appendTo(row);
+                    $('<button type="button" class="btn btn-sm btn-warning mr-1">Edit</button>')
+                        .prop('disabled', isSystem)
+                        .on('click', function() { editPermission(permission.id, permission.name); })
+                        .appendTo(actions);
+                    $('<button type="button" class="btn btn-sm btn-danger">Delete</button>')
+                        .prop('disabled', isSystem)
+                        .on('click', function() { deletePermission(permission.id); })
+                        .appendTo(actions);
+                    $('#permissionTableBody').append(row);
                 });
 
                 // --- Static reference: Ensure these permissions exist in the DB for all report pages ---
@@ -191,7 +202,7 @@ const BASE_URL = "<?= $AJAX_BASE ?>";
                 ];
                 // Optionally, display these as a reference for admins:
                 $('#permissionTableBody').append('<tr class="table-info"><td colspan="3"><strong>Reference: Ensure the following permissions exist for all reports:</strong><br>' + reportPermissions.join(', ') + '</td></tr>');
-                $('#permissionCount').text(data.length);
+                $('#permissionCount').text((data.permissions || []).length);
             },
             error: function(xhr, status, error) {
                 $('#loadingState').hide();

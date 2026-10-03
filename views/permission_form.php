@@ -3,6 +3,7 @@ session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 // Authentication check
 if (!is_logged_in()) {
@@ -16,18 +17,18 @@ if (!has_permission('manage_permissions')) {
     echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
     exit;
 }
-?>
 // Permission create/edit form view (AJAX, modal-friendly)
 $editing = isset($_GET['id']) && intval($_GET['id']) > 0;
 $perm = ['name' => '', 'id' => 0];
 if ($editing) {
-    // For modal use, fetch via AJAX in the modal, but fallback for direct access
-    require_once __DIR__.'/../config/config.php';
     $id = intval($_GET['id']);
-    $res = $conn->query("SELECT * FROM permissions WHERE id = $id");
-    if ($row = $res->fetch_assoc()) {
+    $stmt = $conn->prepare('SELECT id, name FROM permissions WHERE id = ?');
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    if ($row = $stmt->get_result()->fetch_assoc()) {
         $perm = $row;
     }
+    $stmt->close();
 }
 ?>
 <form id="permissionForm" autocomplete="off">
@@ -55,9 +56,9 @@ document.getElementById('permissionForm').addEventListener('submit', function(e)
         saveBtn.disabled = false;
         return;
     }
-    const data = { name: name };
+    const data = { name: name, csrf_token: <?= json_encode(csrf_token()) ?> };
     let method = 'POST';
-    let url = 'controllers/permission_api.php';
+    let url = <?= json_encode(rtrim(BASE_URL, '/') . '/controllers/permission_api.php') ?>;
     if (id && parseInt(id) > 0) {
         data.id = id;
         method = 'PUT';
@@ -68,7 +69,11 @@ document.getElementById('permissionForm').addEventListener('submit', function(e)
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
     })
-    .then(res => res.json())
+    .then(async res => {
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error || 'Permission request failed.');
+        return payload;
+    })
     .then(data => {
         if (data.success) {
             showPermAlert('Permission saved successfully.', 'success');
@@ -84,8 +89,8 @@ document.getElementById('permissionForm').addEventListener('submit', function(e)
             showPermAlert(data.error || 'Failed to save permission.', 'danger');
         }
     })
-    .catch(() => {
-        showPermAlert('Error saving permission.', 'danger');
+    .catch(error => {
+        showPermAlert(error.message || 'Error saving permission.', 'danger');
     })
     .finally(() => { saveBtn.disabled = false; });
 });

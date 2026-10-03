@@ -6,6 +6,7 @@ session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 header('Content-Type: application/json');
 
@@ -17,8 +18,7 @@ if (!is_logged_in()) {
 }
 
 // Robust super admin bypass and permission check (consistent with other files)
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 
 if (!$is_super_admin && !has_permission('manage_roles')) {
     http_response_code(403);
@@ -54,6 +54,11 @@ if ($method === 'GET') {
 }
 
 if ($method === 'POST') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        http_response_code(419);
+        echo json_encode(['success' => false, 'error' => 'Your session token expired. Refresh the page and try again.']);
+        exit;
+    }
     // Assign permissions to a role
     $role_id = isset($_POST['role_id']) ? intval($_POST['role_id']) : 0;
     if (!$role_id) {

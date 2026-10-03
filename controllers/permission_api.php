@@ -1,135 +1,99 @@
 <?php
-// AJAX/API endpoint for advanced permission management
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../helpers/auth.php';
+require_once __DIR__ . '/../helpers/permissions_v2.php';
+require_once __DIR__ . '/../helpers/csrf.php';
 require_once __DIR__ . '/PermissionController.php';
 
-// Start session for audit logging
-session_start();
-require_once __DIR__ . '/../helpers/auth.php';
-if (!is_logged_in()) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'error' => 'Not authenticated']);
-    exit;
-}
+header('Content-Type: application/json; charset=utf-8');
 
-header('Content-Type: application/json');
-
-$controller = new PermissionController($conn);
-$method = $_SERVER['REQUEST_METHOD'];
-
-// Robust super admin bypass and permission check (consistent with other files)
-$is_super_admin = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == 3) || 
-                  (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
-if ($is_super_admin) {
-    switch ($method) {
-        case 'GET':
-            if (isset($_GET['id'])) {
-                $perm = $controller->read($_GET['id']);
-                if ($perm) {
-                    json_response(['success' => true, 'permission' => $perm]);
-                } else {
-                    json_response(['success' => false, 'error' => 'Permission not found'], 404);
-                }
-            } else {
-                $perms = $controller->list();
-                json_response(['success' => true, 'permissions' => $perms]);
-            }
-            break;
-        case 'POST':
-            $input = json_decode(file_get_contents('php://input'), true) ?? $_POST;
-            $created = $controller->create($input);
-            if ($created) {
-                json_response(['success' => true, 'permission' => $created], 201);
-            } else {
-                json_response(['success' => false, 'error' => 'Failed to create permission'], 400);
-            }
-            break;
-        case 'PUT':
-            parse_str(file_get_contents('php://input'), $put_vars);
-            $input = json_decode(file_get_contents('php://input'), true) ?? $put_vars;
-            $id = $input['id'] ?? $_GET['id'] ?? null;
-            if (!$id) json_response(['success' => false, 'error' => 'Missing permission id'], 400);
-            $updated = $controller->update($id, $input);
-            if ($updated) {
-                json_response(['success' => true, 'permission' => $updated]);
-            } else {
-                json_response(['success' => false, 'error' => 'Failed to update permission'], 400);
-            }
-            break;
-        case 'DELETE':
-            parse_str(file_get_contents('php://input'), $del_vars);
-            $id = $del_vars['id'] ?? $_GET['id'] ?? null;
-            if (!$id) json_response(['success' => false, 'error' => 'Missing permission id'], 400);
-            $deleted = $controller->delete($id);
-            if ($deleted) {
-                json_response(['success' => true]);
-            } else {
-                json_response(['success' => false, 'error' => 'Failed to delete permission'], 400);
-            }
-            break;
-        default:
-            json_response(['success' => false, 'error' => 'Invalid request method'], 405);
-    }
-    exit;
-}
-
-
-function json_response($data, $status = 200) {
+function permission_api_response(array $data, int $status = 200): void
+{
     http_response_code($status);
     echo json_encode($data);
     exit;
 }
 
-switch ($method) {
-    case 'GET':
-        // List all permissions, or get one if id is set
-        if (isset($_GET['id'])) {
-            $perm = $controller->read($_GET['id']);
-            if ($perm) {
-                json_response(['success' => true, 'permission' => $perm]);
-            } else {
-                json_response(['success' => false, 'error' => 'Permission not found'], 404);
+if (!is_logged_in()) {
+    permission_api_response(['success' => false, 'error' => 'Authentication required.'], 401);
+}
+
+if (!is_super_admin() && !has_permission('manage_permissions')) {
+    permission_api_response(['success' => false, 'error' => 'You do not have permission to manage permissions.'], 403);
+}
+
+$method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+$rawBody = file_get_contents('php://input');
+$input = [];
+if ($rawBody !== '') {
+    $decoded = json_decode($rawBody, true);
+    if (is_array($decoded)) {
+        $input = $decoded;
+    } else {
+        parse_str($rawBody, $input);
+    }
+}
+if ($method === 'POST') {
+    $input = array_merge($_POST, $input);
+}
+
+if ($method !== 'GET' && !csrf_is_valid($input['csrf_token'] ?? null)) {
+    permission_api_response(['success' => false, 'error' => 'Your session token expired. Refresh the page and try again.'], 419);
+}
+
+$controller = new PermissionController($conn);
+
+try {
+    switch ($method) {
+        case 'GET':
+            $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
+            if ($id > 0) {
+                $permission = $controller->read($id);
+                if (!$permission) {
+                    permission_api_response(['success' => false, 'error' => 'Permission not found.'], 404);
+                }
+                permission_api_response(['success' => true, 'permission' => $permission]);
             }
-        } else {
-            $perms = $controller->list();
-            json_response(['success' => true, 'permissions' => $perms]);
-        }
-        break;
-    case 'POST':
-        // Create new permission
-        $input = json_decode(file_get_contents('php://input'), true) ?? $_POST;
-        $created = $controller->create($input);
-        if ($created) {
-            json_response(['success' => true, 'permission' => $created], 201);
-        } else {
-            json_response(['success' => false, 'error' => 'Failed to create permission'], 400);
-        }
-        break;
-    case 'PUT':
-        // Update permission
-        parse_str(file_get_contents('php://input'), $put_vars);
-        $input = json_decode(file_get_contents('php://input'), true) ?? $put_vars;
-        $id = $input['id'] ?? $_GET['id'] ?? null;
-        if (!$id) json_response(['success' => false, 'error' => 'Missing permission id'], 400);
-        $updated = $controller->update($id, $input);
-        if ($updated) {
-            json_response(['success' => true, 'permission' => $updated]);
-        } else {
-            json_response(['success' => false, 'error' => 'Failed to update permission'], 400);
-        }
-        break;
-    case 'DELETE':
-        // Delete permission
-        parse_str(file_get_contents('php://input'), $del_vars);
-        $id = $del_vars['id'] ?? $_GET['id'] ?? null;
-        if (!$id) json_response(['success' => false, 'error' => 'Missing permission id'], 400);
-        $deleted = $controller->delete($id);
-        if ($deleted) {
-            json_response(['success' => true]);
-        } else {
-            json_response(['success' => false, 'error' => 'Failed to delete permission'], 400);
-        }
-        break;
-    default:
-        json_response(['success' => false, 'error' => 'Unsupported method'], 405);
+            permission_api_response(['success' => true, 'permissions' => $controller->list()]);
+
+        case 'POST':
+            $created = $controller->create($input);
+            if (!$created) {
+                permission_api_response(['success' => false, 'error' => 'Unable to create the permission.'], 400);
+            }
+            permission_api_response(['success' => true, 'permission' => $created], 201);
+
+        case 'PUT':
+            $id = (int) ($input['id'] ?? $_GET['id'] ?? 0);
+            if ($id < 1) {
+                permission_api_response(['success' => false, 'error' => 'A valid permission ID is required.'], 400);
+            }
+            $updated = $controller->update($id, $input);
+            if (!$updated) {
+                permission_api_response(['success' => false, 'error' => 'Unable to update the permission.'], 400);
+            }
+            permission_api_response(['success' => true, 'permission' => $updated]);
+
+        case 'DELETE':
+            $id = (int) ($input['id'] ?? $_GET['id'] ?? 0);
+            if ($id < 1) {
+                permission_api_response(['success' => false, 'error' => 'A valid permission ID is required.'], 400);
+            }
+            if (!$controller->delete($id)) {
+                permission_api_response(['success' => false, 'error' => 'Unable to delete this permission. It may be a protected system permission or still assigned.'], 409);
+            }
+            permission_api_response(['success' => true]);
+
+        default:
+            permission_api_response(['success' => false, 'error' => 'Unsupported request method.'], 405);
+    }
+} catch (InvalidArgumentException $e) {
+    permission_api_response(['success' => false, 'error' => $e->getMessage()], 422);
+} catch (Throwable $e) {
+    error_log('PERMISSION API ERROR: ' . $e->getMessage());
+    permission_api_response(['success' => false, 'error' => 'The permission operation could not be completed.'], 500);
 }

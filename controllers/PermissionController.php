@@ -8,9 +8,29 @@ class PermissionController {
     public function __construct($conn) {
         $this->conn = $conn;
     }
+
+    private function normalizedName($value) {
+        $name = strtolower(trim((string) $value));
+        if ($name === '' || strlen($name) > 100 || !preg_match('/^[a-z][a-z0-9_]*$/', $name)) {
+            throw new InvalidArgumentException('Use a lowercase permission name containing only letters, numbers, and underscores.');
+        }
+        return $name;
+    }
+
+    private function nameExists($name, $excludeId = 0) {
+        $stmt = $this->conn->prepare('SELECT id FROM permissions WHERE name = ? AND id <> ? LIMIT 1');
+        $stmt->bind_param('si', $name, $excludeId);
+        $stmt->execute();
+        $exists = (bool) $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $exists;
+    }
+
     public function create($data) {
-        $name = trim($data['name'] ?? '');
-        if (!$name) return false;
+        $name = $this->normalizedName($data['name'] ?? '');
+        if ($this->nameExists($name)) {
+            throw new InvalidArgumentException('That permission name already exists.');
+        }
         $stmt = $this->conn->prepare('INSERT INTO permissions (name) VALUES (?)');
         $stmt->bind_param('s', $name);
         if ($stmt->execute()) {
@@ -23,15 +43,22 @@ class PermissionController {
         return false;
     }
     public function read($id) {
-        $stmt = $this->conn->prepare('SELECT id, name FROM permissions WHERE id=?');
+        $stmt = $this->conn->prepare('SELECT id, name, is_system, is_active FROM permissions WHERE id=?');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $result = $stmt->get_result();
         return $result->fetch_assoc();
     }
     public function update($id, $data) {
-        $name = trim($data['name'] ?? '');
-        if (!$name) return false;
+        $existing = $this->read((int) $id);
+        if (!$existing) return false;
+        if ((int) $existing['is_system'] === 1) {
+            throw new InvalidArgumentException('System permission names cannot be changed.');
+        }
+        $name = $this->normalizedName($data['name'] ?? '');
+        if ($this->nameExists($name, (int) $id)) {
+            throw new InvalidArgumentException('That permission name already exists.');
+        }
         $stmt = $this->conn->prepare('UPDATE permissions SET name=? WHERE id=?');
         $stmt->bind_param('si', $name, $id);
         if ($stmt->execute()) {
@@ -43,6 +70,10 @@ class PermissionController {
         return false;
     }
     public function delete($id) {
+        $existing = $this->read((int) $id);
+        if (!$existing || (int) $existing['is_system'] === 1) {
+            return false;
+        }
         $stmt = $this->conn->prepare('DELETE FROM permissions WHERE id=?');
         $stmt->bind_param('i', $id);
         $result = $stmt->execute();
@@ -54,7 +85,7 @@ class PermissionController {
         return $result;
     }
     public function list() {
-        $result = $this->conn->query('SELECT id, name FROM permissions ORDER BY name');
+        $result = $this->conn->query('SELECT id, name, is_system, is_active FROM permissions ORDER BY name');
         $perms = [];
         while ($row = $result->fetch_assoc()) {
             $perms[] = $row;

@@ -179,3 +179,14 @@ tests/audience_specific_notifications_smoke.php
 tests/conversational_ai_assistant_smoke.php
 tests/member_notification_detail_smoke.php
 tests/role_aware_notifications_smoke.php
+tests/canonical_super_admin_detection_smoke.php
+tests/governed_serving_role_registration_smoke.php
+tests/leader_navigation_route_integrity_smoke.php
+tests/member_event_calendar_sync_smoke.php
+tests/member_service_roles_portal_smoke.php
+tests/operational_action_route_integrity_smoke.php
+tests/role_filter_rbac_integrity_smoke.php
+tests/dashboard_insights_smoke.php
+tests/organization_attendance_page_smoke.php
+tests/organization_attendance_page_smoke.php
+tests/dashboard_insights_smoke.php
