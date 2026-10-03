@@ -85,7 +85,7 @@ try {
 
     $serviceSource = file_get_contents(__DIR__ . '/../services/DashboardInsightsService.php');
     $endpointSource = file_get_contents(__DIR__ . '/../views/ajax_dashboard_insights.php');
-    $dashboardSource = file_get_contents(__DIR__ . '/../views/user_dashboard.php');
+    $assistantWidgetSource = file_get_contents(__DIR__ . '/../includes/ai_assistant_widget.php');
     expect_phase_0028(
         strpos($serviceSource, 'curl_') === false && strpos($serviceSource, "file_get_contents('http") === false,
         'Dashboard insights unexpectedly call an external service.'
@@ -99,12 +99,13 @@ try {
         'Dashboard insight requests are missing rate limiting.'
     );
     expect_phase_0028(
-        strpos($dashboardSource, "BASE_URL . '/views/ajax_dashboard_insights.php'") !== false,
-        'Dashboard insight requests do not use the application-root endpoint path.'
+        strpos($assistantWidgetSource, "BASE_URL . '/views/ajax_ai_assistant.php'") !== false,
+        'The shared assistant does not use its application-root endpoint path.'
     );
     expect_phase_0028(
-        strpos($dashboardSource, 'JSON.parse(responseText)') !== false,
-        'Dashboard insight responses are not guarded against HTML error pages.'
+        strpos($assistantWidgetSource, 'response.json()') !== false
+            && strpos($assistantWidgetSource, 'invalid response') !== false,
+        'Assistant responses are not guarded against HTML error pages.'
     );
 } finally {
     $conn->query('DELETE FROM dashboard_insight_query_audit WHERE id > ' . $beforeId . ' AND user_id = ' . $userId);

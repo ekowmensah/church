@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/csrf.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -9,6 +10,15 @@ if (!is_logged_in()) {
 if (!asset_request_lines_available($conn)) {
     header('Location: asset_request_list.php?err=' . urlencode('Run Phase 0024 before managing requests.'));
     exit;
+}
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    header('Allow: POST');
+    exit('Asset request actions must be submitted by POST.');
+}
+if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(419);
+    exit('Your form expired. Refresh the page and try again.');
 }
 
 $requestId = (int) ($_POST['id'] ?? 0);

@@ -43,7 +43,10 @@ if ($isSuper) {
 }
 
 $sql = "
-    SELECT a.*, d.name AS department_name, c.name AS church_name" . ($hasGroups ? ", g.name AS asset_group_name, g.group_code AS asset_group_code" : "") . "
+    SELECT a.*, d.name AS department_name, c.name AS church_name,
+           (SELECT GROUP_CONCAT(item.item_number ORDER BY item.item_number SEPARATOR ', ')
+              FROM asset_items item
+             WHERE item.asset_id = a.id AND item.status = 'active') AS active_item_numbers" . ($hasGroups ? ", g.name AS asset_group_name, g.group_code AS asset_group_code" : "") . "
     FROM assets a
     LEFT JOIN asset_departments d ON d.id = a.department_id
     LEFT JOIN churches c ON c.id = a.church_id
@@ -99,6 +102,7 @@ if ($q !== '') {
     if ($hasGroups) {
         $sql .= ' OR g.name LIKE ? OR g.group_code LIKE ?';
     }
+    $sql .= ' OR EXISTS (SELECT 1 FROM asset_items searched_item WHERE searched_item.asset_id = a.id AND searched_item.item_number LIKE ?)';
     $sql .= ')';
     $types .= 'ssss';
     $like = '%' . $q . '%';
@@ -119,6 +123,8 @@ if ($q !== '') {
         $params[] = $like;
         $params[] = $like;
     }
+    $types .= 's';
+    $params[] = $like;
 }
 
 $sql .= ' ORDER BY a.created_at DESC';
@@ -347,6 +353,7 @@ ob_start();
                 <thead class="thead-light">
                     <tr>
                         <th>Code</th>
+                        <th>Physical Asset Number(s)</th>
                         <th>Item Category</th>
                         <th>Item Name</th>
                         <th>Department</th>
@@ -372,6 +379,15 @@ ob_start();
                         ?>
                         <tr>
                             <td><?= htmlspecialchars((string) $asset['asset_code']) ?></td>
+                            <td>
+                                <?php if (!empty($asset['active_item_numbers'])): ?>
+                                    <?php foreach (explode(', ', (string) $asset['active_item_numbers']) as $itemNumber): ?>
+                                        <span class="badge badge-light border mr-1 mb-1"><?= htmlspecialchars($itemNumber) ?></span>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <span class="text-muted">No active physical items</span>
+                                <?php endif; ?>
+                            </td>
                             <td><?= htmlspecialchars((string) (($asset['asset_group_name'] ?? $asset['item_group'] ?? '') !== '' ? (($asset['asset_group_name'] ?? $asset['item_group'] ?? '') . (!empty($asset['asset_group_code']) ? ' (' . $asset['asset_group_code'] . ')' : '')) : '-')) ?></td>
                             <td><?= htmlspecialchars((string) $asset['item_name']) ?></td>
                             <td><?= htmlspecialchars((string) ($asset['department_name'] ?? '-')) ?></td>
@@ -404,7 +420,7 @@ ob_start();
                         </tr>
                     <?php endforeach; ?>
                     <?php if (empty($assets)): ?>
-                        <tr><td colspan="<?= 10 + ($isSuper ? 1 : 0) + ($hasAcquisitionMode ? 1 : 0) + ($hasLifecycle ? 1 : 0) ?>" class="text-center">No assets found.</td></tr>
+                        <tr><td colspan="<?= 11 + ($isSuper ? 1 : 0) + ($hasAcquisitionMode ? 1 : 0) + ($hasLifecycle ? 1 : 0) ?>" class="text-center">No assets found.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>

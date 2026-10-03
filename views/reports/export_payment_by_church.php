@@ -2,6 +2,7 @@
 require_once __DIR__.'/../../config/config.php';
 require_once __DIR__.'/../../helpers/auth.php';
 require_once __DIR__.'/../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../helpers/payment_report_context.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -31,6 +32,10 @@ $filter_type = $_GET['type_id'] ?? '';
 $filter_crn = $_GET['member_crn'] ?? '';
 $date_from = $_GET['from_date'] ?? '';
 $date_to = $_GET['to_date'] ?? '';
+[$period_from, $period_to, $period_clauses, $period_values] = payment_report_reporting_month_filter(
+    (string) ($_GET['period_from'] ?? ''),
+    (string) ($_GET['period_to'] ?? '')
+);
 
 // Build WHERE clause
 $where = "WHERE 1=1";
@@ -65,6 +70,13 @@ if ($date_from) {
 if ($date_to) {
     $where .= " AND p.payment_date <= ?";
     $params[] = $date_to;
+    $types .= 's';
+}
+foreach ($period_clauses as $period_clause) {
+    $where .= ' AND ' . $period_clause;
+}
+foreach ($period_values as $period_value) {
+    $params[] = $period_value;
     $types .= 's';
 }
 

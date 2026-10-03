@@ -2,6 +2,7 @@
 require_once __DIR__.'/../../config/config.php';
 require_once __DIR__.'/../../helpers/auth.php';
 require_once __DIR__.'/../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../helpers/payment_report_context.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -60,6 +61,10 @@ if ($preset !== '') {
 $where = "WHERE 1=1";
 $params = [];
 $bind_types = '';
+[$period_from, $period_to, $period_clauses, $period_values] = payment_report_reporting_month_filter(
+    (string) ($_GET['period_from'] ?? ''),
+    (string) ($_GET['period_to'] ?? '')
+);
 if (!empty($_GET['church_id'])) {
     $where .= " AND COALESCE(m.church_id, ss.church_id, p.church_id) = ?";
     $params[] = intval($_GET['church_id']);
@@ -88,6 +93,13 @@ if (!empty($_GET['from_date'])) {
 if (!empty($_GET['to_date'])) {
     $where .= " AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY)";
     $params[] = $_GET['to_date'];
+    $bind_types .= 's';
+}
+foreach ($period_clauses as $period_clause) {
+    $where .= ' AND ' . $period_clause;
+}
+foreach ($period_values as $period_value) {
+    $params[] = $period_value;
     $bind_types .= 's';
 }
 $sql = "SELECT p.*, pt.name AS payment_type, 
@@ -177,6 +189,14 @@ while ($row = $trend_res->fetch_assoc()) {
       <label>To Date</label>
       <input type="date" name="to_date" class="form-control" value="<?= htmlspecialchars($_GET['to_date'] ?? '') ?>">
     </div>
+    <div class="form-group col-md-2">
+      <label>Payment Period From</label>
+      <input type="month" name="period_from" class="form-control" value="<?= htmlspecialchars($period_from) ?>" title="Month the payment belongs to">
+    </div>
+    <div class="form-group col-md-2">
+      <label>Payment Period To</label>
+      <input type="month" name="period_to" class="form-control" value="<?= htmlspecialchars($period_to) ?>" title="Month the payment belongs to">
+    </div>
     <div class="form-group col-md-2 align-self-end">
       <button type="submit" class="btn btn-primary btn-block">Filter</button>
     </div>
@@ -246,6 +266,7 @@ while ($row = $trend_res->fetch_assoc()) {
               <th>Bible Class</th>
               <th>Church</th>
               <th>Payment Type</th>
+              <th>Payment Period</th>
               <th>Amount</th>
             </tr>
           </thead>
@@ -318,6 +339,11 @@ while ($row = $trend_res->fetch_assoc()) {
     <?php endif; ?>
 </td>
               <td><?=htmlspecialchars($row['payment_type'])?></td>
+              <td><?= htmlspecialchars((string) (
+                  ($row['reporting_period_label'] ?? '')
+                  ?: (($row['payment_period_description'] ?? '')
+                      ?: date('F Y', strtotime(($row['payment_period'] ?? '') ?: $row['payment_date'])))
+              )) ?></td>
               <td>₵<?=number_format($row['amount'],2)?></td>
             </tr>
             <?php endwhile; ?>

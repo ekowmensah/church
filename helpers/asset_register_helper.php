@@ -558,6 +558,35 @@ if (!function_exists('asset_replace_department_segment')) {
     }
 }
 
+if (!function_exists('asset_assert_item_number_available')) {
+    /**
+     * Refuse a movement that would give two physical items the same identity.
+     * Movement keeps every item-number segment except the department segment,
+     * so a collision must be reviewed instead of silently renumbering the item.
+     */
+    function asset_assert_item_number_available(
+        mysqli $conn,
+        int $churchId,
+        string $itemNumber,
+        int $excludeItemId = 0
+    ): void {
+        $stmt = $conn->prepare(
+            'SELECT id FROM asset_items
+              WHERE church_id = ? AND item_number = ? AND id <> ? LIMIT 1'
+        );
+        $stmt->bind_param('isi', $churchId, $itemNumber, $excludeItemId);
+        $stmt->execute();
+        $collision = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($collision) {
+            throw new RuntimeException(
+                'The destination would duplicate physical item number ' . $itemNumber
+                . '. Resolve the destination numbering conflict before approving this movement.'
+            );
+        }
+    }
+}
+
 if (!function_exists('asset_sync_parent_from_items')) {
     function asset_sync_parent_from_items(mysqli $conn, int $assetId): void {
         if (!asset_item_tracking_available($conn)) {

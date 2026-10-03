@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/csrf.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -51,6 +52,7 @@ ob_start();
     <div class="card shadow-sm"><div class="card-body">
         <div class="mb-3"><strong>Purpose:</strong> <?= htmlspecialchars((string) $request['purpose']) ?><?php if (!empty($request['request_note'])): ?><br><strong>Note:</strong> <?= htmlspecialchars((string) $request['request_note']) ?><?php endif; ?></div>
         <form method="post" action="asset_request_action.php" id="reviewForm">
+            <?= csrf_input() ?>
             <input type="hidden" name="id" value="<?= $requestId ?>">
             <input type="hidden" name="request_action" value="approve">
             <div class="d-flex justify-content-between mb-2"><strong>Request Lines</strong><span class="badge badge-primary p-2">Reviewed lines: <span id="reviewLineCount">0</span></span></div>

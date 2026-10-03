@@ -2,6 +2,7 @@
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
 require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/payment_report_context.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -50,6 +51,11 @@ if ($pt_result) {
 $selected_payment_type = isset($_GET['payment_type_id']) ? intval($_GET['payment_type_id']) : 0;
 $start_date = isset($_GET['start_date']) ? $_GET['start_date'] : '';
 $end_date = isset($_GET['end_date']) ? $_GET['end_date'] : '';
+$period_from = payment_report_valid_month((string) ($_GET['period_from'] ?? ''));
+$period_to = payment_report_valid_month((string) ($_GET['period_to'] ?? ''));
+if ($period_from !== '' && $period_to !== '' && $period_from > $period_to) {
+    [$period_from, $period_to] = [$period_to, $period_from];
+}
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
 $per_page = 25;
 $offset = ($page - 1) * $per_page;
@@ -66,6 +72,13 @@ if ($start_date) {
 if ($end_date) {
     $where[] = "p.payment_date <= '" . $conn->real_escape_string($end_date) . "'";
 }
+if ($period_from !== '') {
+    $where[] = "COALESCE(p.payment_period, p.payment_date) >= '" . $conn->real_escape_string($period_from . '-01') . "'";
+}
+if ($period_to !== '') {
+    $period_to_end = date('Y-m-d', strtotime($period_to . '-01 +1 month'));
+    $where[] = "COALESCE(p.payment_period, p.payment_date) < '" . $conn->real_escape_string($period_to_end) . "'";
+}
 $where_sql = count($where) ? 'WHERE ' . implode(' AND ', $where) : '';
 // Total
 $total_sql = "SELECT SUM(p.amount) AS total_amount FROM members m
@@ -78,7 +91,9 @@ if ($total_result && ($row = $total_result->fetch_assoc())) {
     $total_amount = $row['total_amount'] ?: 0;
 }
 // Paginated results
-$sql = "SELECT m.crn, m.last_name, m.first_name, m.dob, pt.name AS payment_type, p.amount, p.payment_date FROM members m
+$reporting_period_expression = payment_report_reporting_period_expression('p');
+$sql = "SELECT m.crn, m.last_name, m.first_name, m.dob, pt.name AS payment_type, p.amount, p.payment_date,
+               {$reporting_period_expression} AS reporting_period FROM members m
 INNER JOIN v_posted_payments p ON m.id = p.member_id
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 $where_sql
@@ -132,6 +147,14 @@ $total_pages = ceil($total_count / $per_page);
             <label for="end_date" class="mr-2 font-weight-bold">To:</label>
             <input type="date" name="end_date" id="end_date" class="form-control" value="<?php echo htmlspecialchars($end_date); ?>">
         </div>
+        <div class="form-group mr-2">
+            <label for="period_from" class="mr-2 font-weight-bold">Payment Period From:</label>
+            <input type="month" name="period_from" id="period_from" class="form-control" value="<?= htmlspecialchars($period_from) ?>">
+        </div>
+        <div class="form-group mr-2">
+            <label for="period_to" class="mr-2 font-weight-bold">Payment Period To:</label>
+            <input type="month" name="period_to" id="period_to" class="form-control" value="<?= htmlspecialchars($period_to) ?>">
+        </div>
         <button type="submit" class="btn btn-primary">Filter</button>
     </form>
     <div class="mb-3">
@@ -151,12 +174,13 @@ $total_pages = ceil($total_count / $per_page);
                     <th>Member Name</th>
                     <th>Payment Type</th>
                     <th>Amount</th>
+                    <th>Payment Period</th>
                     <th>Date</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($rows)): ?>
-                    <tr><td colspan="6" class="text-center">No records found.</td></tr>
+                    <tr><td colspan="8" class="text-center">No records found.</td></tr>
                 <?php else: ?>
                     <?php foreach ($rows as $i => $row): ?>
                         <tr>
@@ -166,6 +190,7 @@ $total_pages = ceil($total_count / $per_page);
                             <td><?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name']); ?></td>
                             <td><?php echo htmlspecialchars($row['payment_type'] ?: '-'); ?></td>
                             <td><?php echo htmlspecialchars(number_format($row['amount'], 2)); ?></td>
+                            <td><?= htmlspecialchars($row['reporting_period'] ?: '-') ?></td>
                             <td><?php echo htmlspecialchars($row['payment_date']); ?></td>
                         </tr>
                     <?php endforeach; ?>

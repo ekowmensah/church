@@ -3,6 +3,7 @@ require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
 require_once __DIR__.'/../../../helpers/permissions_v2.php';
 require_once __DIR__.'/../../../helpers/role_based_filter.php';
+require_once __DIR__.'/../../../helpers/payment_report_context.php';
 require_once __DIR__.'/../../../includes/report_ui_helpers.php';
 
 if (!is_logged_in()) {
@@ -122,6 +123,10 @@ $selected_mode_raw = isset($_GET['mode']) ? trim((string) $_GET['mode']) : '';
 $selected_mode = $selected_mode_raw === '' ? '' : normalize_payment_mode_key($selected_mode_raw);
 $selected_payment_type_id = isset($_GET['payment_type_id']) ? max(0, (int) $_GET['payment_type_id']) : 0;
 $selected_user_id = isset($_GET['user_id']) ? max(0, (int) $_GET['user_id']) : 0;
+[$period_from, $period_to, $period_clauses, $period_values] = payment_report_reporting_month_filter(
+    (string) ($_GET['period_from'] ?? ''),
+    (string) ($_GET['period_to'] ?? '')
+);
 
 $can_view_all = $is_super_admin || has_permission('view_all_payments');
 
@@ -159,6 +164,13 @@ $sql = "
 
 $params = [$start_date, $end_date];
 $types = 'ss';
+foreach ($period_clauses as $period_clause) {
+    $sql .= " AND {$period_clause}";
+}
+foreach ($period_values as $period_value) {
+    $params[] = $period_value;
+    $types .= 's';
+}
 
 $class_ids = get_user_class_ids();
 if ($class_ids !== null && count($class_ids) > 0) {
@@ -339,6 +351,14 @@ ob_start();
                 <div class="form-group col-md-2">
                     <label for="end_date" class="font-weight-bold">To</label>
                     <input type="date" class="form-control" id="end_date" name="end_date" value="<?= htmlspecialchars($end_date) ?>">
+                </div>
+                <div class="form-group col-md-2">
+                    <label for="period_from" class="font-weight-bold">Payment Period From</label>
+                    <input type="month" class="form-control" id="period_from" name="period_from" value="<?= htmlspecialchars($period_from) ?>">
+                </div>
+                <div class="form-group col-md-2">
+                    <label for="period_to" class="font-weight-bold">Payment Period To</label>
+                    <input type="month" class="form-control" id="period_to" name="period_to" value="<?= htmlspecialchars($period_to) ?>">
                 </div>
                 <div class="form-group col-md-3">
                     <label for="payment_type_id" class="font-weight-bold">Payment Type</label>

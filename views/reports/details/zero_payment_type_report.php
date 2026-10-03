@@ -41,6 +41,14 @@ $period_preset = (string) ($_GET['period'] ?? 'custom');
     (string) ($_GET['end_date'] ?? '')
 );
 $period_label = payment_report_period_label($start_date, $end_date);
+$payment_period_from = payment_report_valid_month((string) ($_GET['payment_period_from'] ?? ''));
+$payment_period_to = payment_report_valid_month((string) ($_GET['payment_period_to'] ?? ''));
+if ($payment_period_from !== '' && $payment_period_to !== '' && $payment_period_from > $payment_period_to) {
+    [$payment_period_from, $payment_period_to] = [$payment_period_to, $payment_period_from];
+}
+$allocation_period_label = ($payment_period_from || $payment_period_to)
+    ? trim(($payment_period_from ?: 'Beginning') . ' to ' . ($payment_period_to ?: 'Present'))
+    : $period_label;
 $where = ["m.status = 'active'", 'm.is_archived = 0', 'pt.active = 1'];
 $scopeCondition = payment_report_member_scope_condition($conn, 'm');
 if ($scopeCondition !== '') $where[] = $scopeCondition;
@@ -58,6 +66,8 @@ $where_sql = 'WHERE ' . implode(' AND ', $where);
 $paymentDateConditions = '';
 if ($start_date !== '') $paymentDateConditions .= " AND p.payment_date >= '" . $conn->real_escape_string($start_date) . "'";
 if ($end_date !== '') $paymentDateConditions .= " AND p.payment_date <= '" . $conn->real_escape_string($end_date) . "'";
+if ($payment_period_from !== '') $paymentDateConditions .= " AND COALESCE(p.payment_period, p.payment_date) >= '" . $conn->real_escape_string($payment_period_from . '-01') . "'";
+if ($payment_period_to !== '') $paymentDateConditions .= " AND COALESCE(p.payment_period, p.payment_date) < '" . $conn->real_escape_string(date('Y-m-d', strtotime($payment_period_to . '-01 +1 month'))) . "'";
 $organizationsExpression = payment_report_organizations_expression('m');
 $sql = "SELECT pt.name AS payment_type, m.last_name, m.first_name, m.crn,
                m.phone, bible_class.name AS class_name,
@@ -110,6 +120,8 @@ if ($result) {
             <label for="end_date" class="mr-2 font-weight-bold">To:</label>
             <input type="date" name="end_date" id="end_date" class="form-control" value="<?php echo htmlspecialchars($end_date); ?>">
         </div>
+        <div class="form-group mr-2"><label for="payment_period_from" class="mr-2 font-weight-bold">Payment Period From:</label><input type="month" name="payment_period_from" id="payment_period_from" class="form-control" value="<?= htmlspecialchars($payment_period_from) ?>"></div>
+        <div class="form-group mr-2"><label for="payment_period_to" class="mr-2 font-weight-bold">Payment Period To:</label><input type="month" name="payment_period_to" id="payment_period_to" class="form-control" value="<?= htmlspecialchars($payment_period_to) ?>"></div>
         <button type="submit" class="btn btn-primary">Filter</button>
     </form>
     <div class="mb-3">
@@ -148,7 +160,7 @@ if ($result) {
                             <td><?php echo htmlspecialchars($row['phone'] ?: '-'); ?></td>
                             <td><?php echo htmlspecialchars($row['class_name'] ?: '-'); ?></td>
                             <td><?php echo htmlspecialchars($row['organizations'] ?: '-'); ?></td>
-                            <td><?php echo htmlspecialchars($period_label); ?></td>
+                            <td><?php echo htmlspecialchars($allocation_period_label); ?></td>
                             <td>0.00</td>
                             <td><span class="badge badge-warning">No Payment</span></td>
                         </tr>

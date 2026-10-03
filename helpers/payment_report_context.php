@@ -135,3 +135,42 @@ function payment_report_period_options(): array
         'this_year' => 'This Year', 'last_year' => 'Last Year', 'overall' => 'Overall',
     ];
 }
+
+function payment_report_valid_month(string $value): string
+{
+    $value = trim($value);
+    if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $value)) return '';
+    return $value;
+}
+
+function payment_report_reporting_period_expression(string $paymentAlias = 'p'): string
+{
+    return "COALESCE(NULLIF({$paymentAlias}.reporting_period_label, ''),"
+        . " NULLIF({$paymentAlias}.payment_period_description, ''),"
+        . " DATE_FORMAT(COALESCE({$paymentAlias}.payment_period, {$paymentAlias}.payment_date), '%M %Y'))";
+}
+
+/** Return SQL clauses and values for an inclusive reporting-month range. */
+function payment_report_reporting_month_filter(
+    string $fromMonth,
+    string $toMonth,
+    string $paymentAlias = 'p'
+): array {
+    $fromMonth = payment_report_valid_month($fromMonth);
+    $toMonth = payment_report_valid_month($toMonth);
+    if ($fromMonth !== '' && $toMonth !== '' && $fromMonth > $toMonth) {
+        [$fromMonth, $toMonth] = [$toMonth, $fromMonth];
+    }
+    $clauses = [];
+    $values = [];
+    $periodDate = "COALESCE({$paymentAlias}.payment_period, {$paymentAlias}.payment_date)";
+    if ($fromMonth !== '') {
+        $clauses[] = "{$periodDate} >= CONCAT(?, '-01')";
+        $values[] = $fromMonth;
+    }
+    if ($toMonth !== '') {
+        $clauses[] = "{$periodDate} < DATE_ADD(CONCAT(?, '-01'), INTERVAL 1 MONTH)";
+        $values[] = $toMonth;
+    }
+    return [$fromMonth, $toMonth, $clauses, $values];
+}

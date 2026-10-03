@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/csrf.php';
 
 asset_require_permission('approve_asset_request');
 
@@ -9,8 +10,18 @@ if (!asset_table_exists($conn, 'asset_approval_requests')) {
     exit;
 }
 
-$requestId = isset($_GET['id']) ? (int) $_GET['id'] : 0;
-$decision = trim((string) ($_GET['decision'] ?? ''));
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    header('Allow: POST');
+    exit('Approval decisions must be submitted by POST.');
+}
+if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(419);
+    exit('Your form expired. Refresh the page and try again.');
+}
+
+$requestId = isset($_POST['id']) ? (int) $_POST['id'] : 0;
+$decision = trim((string) ($_POST['decision'] ?? ''));
 if ($requestId <= 0 || !in_array($decision, ['approve', 'reject'], true)) {
     header('Location: asset_approval_list.php?err=' . urlencode('Invalid approval request.'));
     exit;
@@ -76,6 +87,12 @@ try {
                 $destination = $stmt->get_result()->fetch_assoc(); $stmt->close();
                 if (!$destination) throw new RuntimeException('Destination department not found.');
                 $newItemNumber = asset_replace_department_segment((string) $item['item_number'], (string) ($destination['department_code'] ?? $destination['name']));
+                asset_assert_item_number_available(
+                    $conn,
+                    (int) $request['church_id'],
+                    $newItemNumber,
+                    $assetItemId
+                );
                 $stmt = $conn->prepare('UPDATE asset_items SET department_id = ?, item_number = ? WHERE id = ?');
                 $stmt->bind_param('isi', $toDepartmentId, $newItemNumber, $assetItemId); $stmt->execute(); $stmt->close();
                 asset_sync_parent_from_items($conn, $assetId);

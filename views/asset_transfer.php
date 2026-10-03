@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/csrf.php';
 
 asset_require_permission('transfer_asset');
 
@@ -51,6 +52,10 @@ $currentDepartmentId = (int) ($selectedItem['department_id'] ?? 0);
 $departments = asset_fetch_departments($conn, $churchId, false);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        http_response_code(419);
+        exit('Your form expired. Refresh the page and try again.');
+    }
     $toDepartmentId = (int) ($_POST['to_department_id'] ?? 0);
     $notes = trim((string) ($_POST['notes'] ?? ''));
 
@@ -97,6 +102,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $newItemNumber = asset_replace_department_segment(
                     (string) $selectedItem['item_number'],
                     (string) ($destination['department_code'] ?? $destination['name'])
+                );
+                asset_assert_item_number_available(
+                    $conn,
+                    $churchId,
+                    $newItemNumber,
+                    $selectedItemId
                 );
                 $stmt = $conn->prepare('UPDATE asset_items SET department_id = ?, item_number = ? WHERE id = ? AND asset_id = ?');
                 $stmt->bind_param('isii', $toDepartmentId, $newItemNumber, $selectedItemId, $id);
@@ -166,7 +177,8 @@ ob_start();
                 <?php if ($selectedItem): ?><strong>Item Number:</strong> <?= htmlspecialchars((string) $selectedItem['item_number']) ?><br><strong>Current Department:</strong> <?= htmlspecialchars((string) ($selectedItem['department_name'] ?? '-')) ?><?php endif; ?>
             </div>
 
-            <form method="post">
+                <form method="post">
+                    <?= csrf_input() ?>
                 <input type="hidden" name="id" value="<?= (int) $id ?>">
 
                 <div class="form-group">

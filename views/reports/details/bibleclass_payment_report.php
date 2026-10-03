@@ -2,6 +2,7 @@
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
 require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/payment_report_context.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -35,6 +36,10 @@ $class_id = isset($_GET['class_id']) ? intval($_GET['class_id']) : 0;
 $payment_type_id = isset($_GET['payment_type']) ? intval($_GET['payment_type']) : 0;
 $date_from = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
 $date_to = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
+[$period_from, $period_to, $period_clauses, $period_values] = payment_report_reporting_month_filter(
+    (string) ($_GET['period_from'] ?? ''),
+    (string) ($_GET['period_to'] ?? '')
+);
 $export = isset($_GET['export']) && $_GET['export'] === 'csv';
 
 // Build WHERE clause
@@ -61,8 +66,16 @@ if ($date_to) {
     $params[] = $date_to;
     $types .= 's';
 }
+foreach ($period_clauses as $period_clause) {
+    $where .= ' AND ' . $period_clause;
+}
+foreach ($period_values as $period_value) {
+    $params[] = $period_value;
+    $types .= 's';
+}
 
-$sql = "SELECT p.payment_date, m.crn, m.last_name, m.first_name, bc.name AS class_name, pt.name AS payment_type, p.amount FROM v_posted_payments p LEFT JOIN members m ON p.member_id = m.id LEFT JOIN bible_classes bc ON m.class_id = bc.id LEFT JOIN payment_types pt ON p.payment_type_id = pt.id $where ORDER BY bc.name, m.last_name, m.first_name, p.payment_date DESC";
+$reportingPeriodExpression = payment_report_reporting_period_expression('p');
+$sql = "SELECT p.payment_date, {$reportingPeriodExpression} AS reporting_period, m.crn, m.last_name, m.first_name, bc.name AS class_name, pt.name AS payment_type, p.amount FROM v_posted_payments p LEFT JOIN members m ON p.member_id = m.id LEFT JOIN bible_classes bc ON m.class_id = bc.id LEFT JOIN payment_types pt ON p.payment_type_id = pt.id $where ORDER BY bc.name, m.last_name, m.first_name, p.payment_date DESC";
 $stmt = $conn->prepare($sql);
 if ($types) {
     $stmt->bind_param($types, ...$params);
@@ -94,7 +107,7 @@ if ($export) {
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment;filename=bibleclass_payment_report.csv');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['#','CRN','Full Name','Bible Class','Payment Type','Amount (GHS)','Date']);
+    fputcsv($out, ['#','CRN','Full Name','Bible Class','Payment Type','Payment Period','Amount (GHS)','Transaction Date']);
     $csv_total = 0;
     foreach ($payments as $i => $row) {
         $csv_total += floatval($row['amount']);
@@ -104,6 +117,7 @@ if ($export) {
             $row['last_name'] . ', ' . $row['first_name'],
             $row['class_name'],
             $row['payment_type'],
+            $row['reporting_period'],
             'GHS ' . number_format($row['amount'], 2),
             $row['payment_date']
         ]);
@@ -144,6 +158,8 @@ if ($payment_type_id) {
 }
 if ($date_from) $active_filters[] = "From: $date_from";
 if ($date_to) $active_filters[] = "To: $date_to";
+if ($period_from) $active_filters[] = 'Payment period from: ' . $period_from;
+if ($period_to) $active_filters[] = 'Payment period to: ' . $period_to;
 
 ob_start();
 ?>
@@ -267,6 +283,18 @@ ob_start();
                             <input type="date" name="date_to" id="date_to" class="form-control form-control-sm" value="<?= htmlspecialchars($date_to) ?>">
                         </div>
                     </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label for="period_from">Payment Period From</label>
+                            <input type="month" name="period_from" id="period_from" class="form-control form-control-sm" value="<?= htmlspecialchars($period_from) ?>">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label for="period_to">Payment Period To</label>
+                            <input type="month" name="period_to" id="period_to" class="form-control form-control-sm" value="<?= htmlspecialchars($period_to) ?>">
+                        </div>
+                    </div>
                 </div>
                 <div class="row">
                     <div class="col-12 text-right">
@@ -296,6 +324,7 @@ ob_start();
                             <th>Full Name</th>
                             <th>Bible Class</th>
                             <th>Payment Type</th>
+                            <th>Payment Period</th>
                             <th class="text-right" style="width:130px;">Amount</th>
                             <th style="width:120px;">Date</th>
                         </tr>
@@ -303,7 +332,7 @@ ob_start();
                     <tbody>
                         <?php if (empty($payments)): ?>
                             <tr>
-                                <td colspan="7" class="text-center py-5 text-muted">
+                                <td colspan="8" class="text-center py-5 text-muted">
                                     <i class="fas fa-inbox fa-3x mb-3 d-block"></i>
                                     No payments found matching your criteria.
                                 </td>
@@ -316,6 +345,7 @@ ob_start();
                                     <td class="font-weight-bold"><?= htmlspecialchars($row['last_name'] . ', ' . $row['first_name']) ?></td>
                                     <td><span class="badge badge-light border"><?= htmlspecialchars($row['class_name'] ?: '-') ?></span></td>
                                     <td><span class="badge badge-info"><?= htmlspecialchars($row['payment_type'] ?: '-') ?></span></td>
+                                    <td><?= htmlspecialchars($row['reporting_period'] ?: '-') ?></td>
                                     <td class="text-right font-weight-bold">GHS <?= number_format($row['amount'], 2) ?></td>
                                     <td><?= date('d M Y', strtotime($row['payment_date'])) ?></td>
                                 </tr>
@@ -324,6 +354,7 @@ ob_start();
                     </tbody>
                     <tfoot>
                         <tr style="background:#f4f6f9; border-top:2px solid #3c8dbc;">
+                            <td></td>
                             <td></td>
                             <td></td>
                             <td></td>

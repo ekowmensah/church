@@ -2,6 +2,7 @@
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
 require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/payment_report_context.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -29,6 +30,10 @@ $date_from = $_GET['date_from'] ?? '';
 $date_to = $_GET['date_to'] ?? '';
 $user_id = $_GET['user_id'] ?? '';
 $payment_type_id = $_GET['payment_type_id'] ?? '';
+[$period_from, $period_to, $period_clauses, $period_values] = payment_report_reporting_month_filter(
+    (string) ($_GET['period_from'] ?? ''),
+    (string) ($_GET['period_to'] ?? '')
+);
 
 // Build filter SQL
 $where = [];
@@ -42,6 +47,13 @@ if ($date_from) {
 if ($date_to) {
     $where[] = 'p.payment_date <= ?';
     $params[] = $date_to;
+    $types .= 's';
+}
+foreach ($period_clauses as $period_clause) {
+    $where[] = $period_clause;
+}
+foreach ($period_values as $period_value) {
+    $params[] = $period_value;
     $types .= 's';
 }
 if ($user_id) {
@@ -108,6 +120,8 @@ ob_start();
         <label for="date_to" class="font-weight-bold">To</label>
         <input type="date" class="form-control" id="date_to" name="date_to" value="<?= htmlspecialchars($date_to) ?>">
     </div>
+    <div class="form-group col-md-2 mb-2"><label for="period_from" class="font-weight-bold">Payment Period From</label><input type="month" class="form-control" id="period_from" name="period_from" value="<?= htmlspecialchars($period_from) ?>"></div>
+    <div class="form-group col-md-2 mb-2"><label for="period_to" class="font-weight-bold">Payment Period To</label><input type="month" class="form-control" id="period_to" name="period_to" value="<?= htmlspecialchars($period_to) ?>"></div>
     <div class="form-group col-md-2 mb-2">
         <button type="submit" class="btn btn-primary btn-block"><i class="fas fa-filter mr-1"></i>Filter</button>
     </div>
@@ -190,7 +204,7 @@ function exportToExcel() {
       <div class="modal-body">
         <form id="user-transactions-filter" class="form-row mb-3">
           <input type="hidden" id="modal_user_id" name="user_id">
-          <div class="form-group col-md-4">
+          <div class="form-group col-md-3">
             <label for="modal_payment_type_id">Payment Type</label>
             <select class="form-control" id="modal_payment_type_id" name="payment_type_id">
               <option value="">All</option>
@@ -203,15 +217,23 @@ function exportToExcel() {
               <?php endwhile; ?>
             </select>
           </div>
-          <div class="form-group col-md-3">
+          <div class="form-group col-md-2">
             <label for="modal_date_from">From</label>
             <input type="date" class="form-control" id="modal_date_from" name="date_from">
           </div>
-          <div class="form-group col-md-3">
+          <div class="form-group col-md-2">
             <label for="modal_date_to">To</label>
             <input type="date" class="form-control" id="modal_date_to" name="date_to">
           </div>
-          <div class="form-group col-md-2 d-flex align-items-end">
+          <div class="form-group col-md-2">
+            <label for="modal_period_from">Period From</label>
+            <input type="month" class="form-control" id="modal_period_from" name="period_from">
+          </div>
+          <div class="form-group col-md-2">
+            <label for="modal_period_to">Period To</label>
+            <input type="month" class="form-control" id="modal_period_to" name="period_to">
+          </div>
+          <div class="form-group col-md-1 d-flex align-items-end">
             <button type="submit" class="btn btn-primary btn-block">Filter</button>
           </div>
         </form>
@@ -232,8 +254,10 @@ $(document).ready(function() {
     $('#userTransactionsModalLabel').text('Transactions for ' + userName);
     // Reset filters
     $('#modal_payment_type_id').val('');
-    $('#modal_date_from').val('');
-    $('#modal_date_to').val('');
+    $('#modal_date_from').val($('#date_from').val());
+    $('#modal_date_to').val($('#date_to').val());
+    $('#modal_period_from').val($('#period_from').val());
+    $('#modal_period_to').val($('#period_to').val());
     loadUserTransactions(1);
     $('#userTransactionsModal').modal('show');
   });
@@ -264,12 +288,16 @@ $(document).ready(function() {
     var paymentTypeId = $('#modal_payment_type_id').val();
     var dateFrom = $('#modal_date_from').val();
     var dateTo = $('#modal_date_to').val();
+    var periodFrom = $('#modal_period_from').val();
+    var periodTo = $('#modal_period_to').val();
     $('#user-transactions-table-area').html('<div class="text-center py-5"><span class="spinner-border"></span> Loading...</div>');
     $.get('ajax_user_transactions.php', {
       user_id: userId,
       payment_type_id: paymentTypeId,
       date_from: dateFrom,
       date_to: dateTo,
+      period_from: periodFrom,
+      period_to: periodTo,
       page: page || 1,
       per_page: perPage
     }, function(data) {

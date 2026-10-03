@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/csrf.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -189,6 +190,7 @@ ob_start();
                             <td class="text-nowrap">
                                 <?php if ((string) ($row['status'] ?? '') === 'pending' && (($isMemberPortal && (int) ($row['requested_by_member_id'] ?? 0) === (int) ($_SESSION['member_id'] ?? 0)) || (!$isMemberPortal && !$canApprove && (int) ($row['requested_by_user_id'] ?? 0) === (int) ($_SESSION['user_id'] ?? 0)))): ?>
                                     <form method="post" action="asset_request_action.php" class="d-inline">
+                                        <?= csrf_input() ?>
                                         <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
                                         <input type="hidden" name="request_action" value="cancel">
                                         <button type="submit" class="btn btn-sm btn-outline-secondary" onclick="return confirm('Cancel this request?');">Cancel</button>
@@ -199,18 +201,21 @@ ob_start();
                                     <?php if ((string) ($row['status'] ?? '') === 'pending'): ?>
                                         <a href="asset_request_review.php?id=<?= (int) $row['id'] ?>" class="btn btn-sm btn-success"><i class="fas fa-edit mr-1"></i>Review / Edit</a>
                                         <form method="post" action="asset_request_action.php" class="d-inline">
+                                            <?= csrf_input() ?>
                                             <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
                                             <input type="hidden" name="request_action" value="reject">
                                             <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Reject this request?');">Reject</button>
                                         </form>
                                     <?php elseif ((string) ($row['status'] ?? '') === 'approved'): ?>
                                         <form method="post" action="asset_request_action.php" class="d-inline">
+                                            <?= csrf_input() ?>
                                             <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
                                             <input type="hidden" name="request_action" value="checkout">
                                             <button type="submit" class="btn btn-sm btn-primary" onclick="return confirm('Mark this asset as checked out?');">Check Out</button>
                                         </form>
                                     <?php elseif (in_array((string) ($row['status'] ?? ''), ['checked_out', 'overdue'], true)): ?>
                                         <form method="post" action="asset_request_action.php" class="d-inline">
+                                            <?= csrf_input() ?>
                                             <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
                                             <input type="hidden" name="request_action" value="return">
                                             <input type="hidden" name="actual_return_date" value="<?= htmlspecialchars(date('Y-m-d')) ?>">

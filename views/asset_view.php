@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/csrf.php';
 
 if (!asset_is_super_admin() && !has_permission('view_asset_detail') && !has_permission('view_asset_register')) {
     asset_require_permission('view_asset_detail');
@@ -667,8 +668,14 @@ ob_start();
                                         <td><?= htmlspecialchars((string) ($req['reviewed_by_name'] ?? '-')) ?></td>
                                         <td class="text-nowrap">
                                             <?php if ($canApprove && (string) $req['status'] === 'pending'): ?>
-                                                <a href="asset_approval_action.php?id=<?= (int) $req['id'] ?>&decision=approve" class="btn btn-sm btn-success" onclick="return confirm('Approve this request?');">Approve</a>
-                                                <a href="asset_approval_action.php?id=<?= (int) $req['id'] ?>&decision=reject" class="btn btn-sm btn-danger" onclick="return confirm('Reject this request?');">Reject</a>
+                                                <form method="post" action="asset_approval_action.php" class="d-inline" onsubmit="return confirm('Approve this request?');">
+                                                    <?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $req['id'] ?>"><input type="hidden" name="decision" value="approve">
+                                                    <button type="submit" class="btn btn-sm btn-success">Approve</button>
+                                                </form>
+                                                <form method="post" action="asset_approval_action.php" class="d-inline" onsubmit="return confirm('Reject this request?');">
+                                                    <?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $req['id'] ?>"><input type="hidden" name="decision" value="reject">
+                                                    <button type="submit" class="btn btn-sm btn-danger">Reject</button>
+                                                </form>
                                             <?php else: ?>
                                                 <span class="text-muted">-</span>
                                             <?php endif; ?>

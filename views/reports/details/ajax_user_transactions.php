@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
+require_once __DIR__.'/../../../helpers/payment_report_context.php';
 
 if (!is_logged_in()) {
     http_response_code(403);
@@ -18,6 +19,10 @@ $user_id = intval($_GET['user_id'] ?? 0);
 $payment_type_id = intval($_GET['payment_type_id'] ?? 0);
 $date_from = $_GET['date_from'] ?? '';
 $date_to = $_GET['date_to'] ?? '';
+[$period_from, $period_to, $period_clauses, $period_values] = payment_report_reporting_month_filter(
+    (string) ($_GET['period_from'] ?? ''),
+    (string) ($_GET['period_to'] ?? '')
+);
 $page = max(1, intval($_GET['page'] ?? 1));
 $per_page = (isset($_GET['per_page']) && $_GET['per_page'] === 'all') ? null : 10;
 $offset = $per_page ? ($page - 1) * $per_page : 0;
@@ -41,9 +46,12 @@ if ($date_to) {
     $params[] = $date_to;
     $types .= 's';
 }
+foreach ($period_clauses as $period_clause) $where[] = $period_clause;
+foreach ($period_values as $period_value) { $params[] = $period_value; $types .= 's'; }
 
 // Main query with member/sunday_school join
-$sql = "SELECT p.id, p.payment_date, p.amount, p.description,
+$reportingPeriodExpression = payment_report_reporting_period_expression('p');
+$sql = "SELECT p.id, p.payment_date, {$reportingPeriodExpression} AS reporting_period, p.amount, p.description,
         m.first_name, m.last_name, m.middle_name, m.crn,
         ss.srn, ss.first_name AS ss_first_name, ss.last_name AS ss_last_name, ss.middle_name AS ss_middle_name
         FROM v_posted_payments p
@@ -193,6 +201,7 @@ if ($result->num_rows === 0) {
   <thead>
     <tr>
       <th>Date</th>
+      <th>Payment Period</th>
       <th>Member</th>
       <th>Amount</th>
       <th>Description</th>
@@ -206,6 +215,7 @@ if ($result->num_rows === 0) {
     ?>
     <tr>
       <td><?= htmlspecialchars(substr($row['payment_date'], 0, 10)) ?></td>
+      <td><?= htmlspecialchars($row['reporting_period'] ?: '-') ?></td>
       <td>
         <?php
           if ($row['first_name'] || $row['last_name']) {
@@ -226,7 +236,7 @@ if ($result->num_rows === 0) {
   </tbody>
   <tfoot>
     <tr>
-      <td colspan="2" class="text-right font-weight-bold">Total:</td>
+      <td colspan="3" class="text-right font-weight-bold">Total:</td>
       <td class="font-weight-bold text-success">₵<?= number_format($total_on_page,2) ?></td>
       <td></td>
     </tr>

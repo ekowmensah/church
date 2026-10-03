@@ -82,6 +82,7 @@ function normalize_date_input($rawDate) {
 $scope_columns_available = attendance_scope_columns_available($conn);
 $reporting_categories_available = attendance_reporting_categories_available($conn);
 $organizations_table_available = table_exists($conn, 'organizations');
+$events_table_available = table_exists($conn, 'events');
 
 $error = '';
 $title = '';
@@ -94,6 +95,7 @@ $attendance_scope = 'church';
 $scope_id = null;
 $scope_class_id = null;
 $scope_org_id = null;
+$scope_event_id = null;
 $attendance_report_category_id = null;
 $attendance_audience = 'members';
 $role_of_serving_id = null;
@@ -112,6 +114,9 @@ $churches = $conn->query("SELECT id, name FROM churches ORDER BY name ASC");
 $bible_classes = $conn->query("SELECT id, church_id, name, code FROM bible_classes ORDER BY name ASC");
 $organizations = $organizations_table_available
     ? $conn->query("SELECT id, church_id, name FROM organizations ORDER BY name ASC")
+    : false;
+$events = $events_table_available
+    ? $conn->query("SELECT id, church_id, name, event_date FROM events WHERE status = 'active' ORDER BY event_date DESC, name ASC")
     : false;
 $roles_of_serving = $conn->query("SELECT id, name FROM roles_of_serving ORDER BY name ASC");
 $attendance_categories = [];
@@ -147,9 +152,15 @@ if ($edit_id && $_SERVER['REQUEST_METHOD'] !== 'POST') {
             }
             $scope_id = isset($row['scope_id']) ? intval($row['scope_id']) : null;
             if ($attendance_scope === 'bible_class') {
-                $scope_class_id = $scope_id;
+                header(
+                    'Location: my_bible_class_attendance.php?class_id=' . (int) $scope_id
+                    . '&session_id=' . (int) $edit_id
+                );
+                exit;
             } elseif ($attendance_scope === 'organization') {
                 $scope_org_id = $scope_id;
+            } elseif ($attendance_scope === 'event') {
+                $scope_event_id = $scope_id;
             }
         }
         if ($reporting_categories_available) {
@@ -194,22 +205,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         : null;
     if ($scope_columns_available) {
         $attendance_scope = trim((string)($_POST['attendance_scope'] ?? 'church'));
-        if (!in_array($attendance_scope, ['church', 'bible_class', 'organization'], true)) {
+        if (!in_array($attendance_scope, ['church', 'organization', 'event', 'other'], true)) {
             $attendance_scope = 'church';
         }
         $scope_class_id = isset($_POST['scope_class_id']) && $_POST['scope_class_id'] !== '' ? intval($_POST['scope_class_id']) : null;
         $scope_org_id = isset($_POST['scope_org_id']) && $_POST['scope_org_id'] !== '' ? intval($_POST['scope_org_id']) : null;
-        if ($attendance_scope === 'bible_class') {
-            $scope_id = $scope_class_id;
-        } elseif ($attendance_scope === 'organization') {
+        $scope_event_id = isset($_POST['scope_event_id']) && $_POST['scope_event_id'] !== '' ? intval($_POST['scope_event_id']) : null;
+        if ($attendance_scope === 'organization') {
             $scope_id = $scope_org_id;
+        } elseif ($attendance_scope === 'event') {
+            $scope_id = $scope_event_id;
         } else {
             $scope_id = null;
         }
     }
     $classification_source = 'manual';
-    if ($reporting_categories_available && in_array($attendance_scope, ['bible_class', 'organization'], true)) {
-        $category_code = $attendance_scope === 'bible_class' ? 'bible_class' : 'organization_meeting';
+    if ($reporting_categories_available && $attendance_scope === 'organization') {
+        $category_code = 'organization_meeting';
         $category_stmt = $conn->prepare('SELECT id FROM attendance_report_categories WHERE code = ? AND is_active = 1 LIMIT 1');
         $category_stmt->bind_param('s', $category_code);
         $category_stmt->execute();
@@ -234,12 +246,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($schedule_mode === 'recurring' && $schedule_type === 'monthly'
         && ((int) $schedule_day_of_month < 1 || (int) $schedule_day_of_month > 31)) {
         $error = 'Please select a valid day of month.';
-    } elseif ($scope_columns_available && $attendance_scope === 'bible_class' && (!$scope_id || $scope_id <= 0)) {
-        $error = 'Please select a Bible class for class-scoped attendance sessions.';
     } elseif ($scope_columns_available && $attendance_scope === 'organization' && (!$scope_id || $scope_id <= 0)) {
         $error = 'Please select an organization for organization-scoped attendance sessions.';
     } elseif ($scope_columns_available && $attendance_scope === 'organization' && !$organizations_table_available) {
         $error = 'Organization scope is unavailable on this database.';
+    } elseif ($scope_columns_available && $attendance_scope === 'event' && (!$scope_id || $scope_id <= 0)) {
+        $error = 'Please select the event for this attendance session.';
+    } elseif ($scope_columns_available && $attendance_scope === 'event' && !$events_table_available) {
+        $error = 'Event scope is unavailable on this database.';
     } elseif ($reporting_categories_available && (!$attendance_report_category_id || $attendance_report_category_id <= 0)) {
         $error = 'Please select an attendance reporting type.';
     } else {
@@ -496,10 +510,11 @@ ob_start();
                                 <label for="attendance_scope">Attendance Scope <span class="text-danger">*</span></label>
                                 <select class="form-control" name="attendance_scope" id="attendance_scope" required>
                                     <option value="church" <?= $attendance_scope === 'church' ? 'selected' : '' ?>>Church-wide</option>
-                                    <option value="bible_class" <?= $attendance_scope === 'bible_class' ? 'selected' : '' ?>>Bible Class Meeting</option>
                                     <option value="organization" <?= $attendance_scope === 'organization' ? 'selected' : '' ?>>Organization Meeting</option>
+                                    <option value="event" <?= $attendance_scope === 'event' ? 'selected' : '' ?>>Church Event</option>
+                                    <option value="other" <?= $attendance_scope === 'other' ? 'selected' : '' ?>>Other Gathering</option>
                                 </select>
-                                <div class="scope-hint">Scope controls who appears on the mark-attendance page.</div>
+                                <div class="scope-hint">Bible Class sessions are created automatically from Class Group meeting days. Use this form for church, organization, event, or other sessions.</div>
                             </div>
                             <div class="col-md-8">
                                 <div class="row">
@@ -536,6 +551,20 @@ ob_start();
                                         <?php else: ?>
                                             <small class="text-muted">Only organizations in the selected church are available.</small>
                                         <?php endif; ?>
+                                    </div>
+                                    <div class="col-md-6 form-group" id="scope_event_group" style="display: <?= $attendance_scope === 'event' ? 'block' : 'none' ?>;">
+                                        <label for="scope_event_id">Event <span class="text-danger">*</span></label>
+                                        <select class="form-control" name="scope_event_id" id="scope_event_id" <?= !$events_table_available ? 'disabled' : '' ?>>
+                                            <option value="">-- Select Event --</option>
+                                            <?php if ($events_table_available && $events && $events->num_rows > 0):
+                                                $events->data_seek(0);
+                                                while($event = $events->fetch_assoc()): ?>
+                                                <option value="<?= (int) $event['id'] ?>" data-church-id="<?= (int) $event['church_id'] ?>" <?= (int) $scope_event_id === (int) $event['id'] ? 'selected' : '' ?>>
+                                                    <?= htmlspecialchars($event['name']) ?><?= !empty($event['event_date']) ? ' (' . htmlspecialchars(date('j M Y', strtotime($event['event_date']))) . ')' : '' ?>
+                                                </option>
+                                            <?php endwhile; endif; ?>
+                                        </select>
+                                        <small class="text-muted">Event attendance can be one-time, multi-day, or explicitly recurrent.</small>
                                     </div>
                                 </div>
                             </div>
@@ -776,17 +805,37 @@ ob_start();
         }
     }
 
+    function filterEventsByChurch() {
+        var churchSelect = document.getElementById('church_id');
+        var eventSelect = document.getElementById('scope_event_id');
+        if (!churchSelect || !eventSelect) return;
+        var selectedChurchId = churchSelect.value;
+        var currentValue = eventSelect.value;
+        var hasVisibleSelected = false;
+        for (var i = 0; i < eventSelect.options.length; i++) {
+            var opt = eventSelect.options[i];
+            if (!opt.value) { opt.hidden = false; continue; }
+            var visible = !selectedChurchId || opt.getAttribute('data-church-id') === selectedChurchId;
+            opt.hidden = !visible;
+            if (visible && opt.value === currentValue) hasVisibleSelected = true;
+        }
+        if (!hasVisibleSelected) eventSelect.value = '';
+    }
+
     function showScopeFields() {
         var scope = document.getElementById('attendance_scope');
         var classGroup = document.getElementById('scope_class_group');
         var orgGroup = document.getElementById('scope_org_group');
+        var eventGroup = document.getElementById('scope_event_group');
         var classSelect = document.getElementById('scope_class_id');
         var orgSelect = document.getElementById('scope_org_id');
+        var eventSelect = document.getElementById('scope_event_id');
         var reportingCategory = document.getElementById('attendance_report_category_id');
         if (!scope) return;
 
         var showClass = scope.value === 'bible_class';
         var showOrg = scope.value === 'organization';
+        var showEvent = scope.value === 'event';
 
         if (classGroup && classSelect) {
             classGroup.style.display = showClass ? 'block' : 'none';
@@ -802,6 +851,11 @@ ob_start();
                 orgSelect.value = '';
             }
         }
+        if (eventGroup && eventSelect) {
+            eventGroup.style.display = showEvent ? 'block' : 'none';
+            eventSelect.required = showEvent;
+            if (!showEvent) eventSelect.value = '';
+        }
         if (reportingCategory && (showClass || showOrg)) {
             var requiredCode = showClass ? 'bible_class' : 'organization_meeting';
             for (var i = 0; i < reportingCategory.options.length; i++) {
@@ -813,6 +867,7 @@ ob_start();
         }
         filterBibleClassesByChurch();
         filterOrganizationsByChurch();
+        filterEventsByChurch();
     }
 
     document.getElementById('one_time').addEventListener('change', showRecurrenceFields);
@@ -823,6 +878,7 @@ ob_start();
     document.getElementById('church_id').addEventListener('change', function() {
         filterBibleClassesByChurch();
         filterOrganizationsByChurch();
+        filterEventsByChurch();
     });
     <?php if ($scope_columns_available): ?>
     document.getElementById('attendance_scope').addEventListener('change', showScopeFields);
@@ -833,6 +889,7 @@ ob_start();
         showAudienceFields();
         filterBibleClassesByChurch();
         filterOrganizationsByChurch();
+        filterEventsByChurch();
         showScopeFields();
     };
 </script>

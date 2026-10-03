@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/csrf.php';
 
 if (!asset_is_super_admin() && !has_permission('approve_asset_request') && !has_permission('request_asset_approval')) {
     asset_require_permission('approve_asset_request');
@@ -153,8 +154,18 @@ ob_start();
                             <td class="text-nowrap">
                                 <a class="btn btn-sm btn-outline-primary" href="asset_view.php?id=<?= (int) $row['asset_id'] ?>&tab=approvals"><i class="fas fa-eye"></i></a>
                                 <?php if ($canApprove && (string) $row['status'] === 'pending'): ?>
-                                    <a class="btn btn-sm btn-success" href="asset_approval_action.php?id=<?= (int) $row['id'] ?>&decision=approve" onclick="return confirm('Approve this request?');">Approve</a>
-                                    <a class="btn btn-sm btn-danger" href="asset_approval_action.php?id=<?= (int) $row['id'] ?>&decision=reject" onclick="return confirm('Reject this request?');">Reject</a>
+                                    <form method="post" action="asset_approval_action.php" class="d-inline" onsubmit="return confirm('Approve this request?');">
+                                        <?= csrf_input() ?>
+                                        <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
+                                        <input type="hidden" name="decision" value="approve">
+                                        <button class="btn btn-sm btn-success" type="submit">Approve</button>
+                                    </form>
+                                    <form method="post" action="asset_approval_action.php" class="d-inline" onsubmit="return confirm('Reject this request?');">
+                                        <?= csrf_input() ?>
+                                        <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
+                                        <input type="hidden" name="decision" value="reject">
+                                        <button class="btn btn-sm btn-danger" type="submit">Reject</button>
+                                    </form>
                                 <?php endif; ?>
                             </td>
                         </tr>

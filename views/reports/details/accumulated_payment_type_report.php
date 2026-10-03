@@ -49,6 +49,11 @@ $period_preset = (string) ($_GET['period'] ?? 'custom');
     (string) ($_GET['end_date'] ?? '')
 );
 $period_label = payment_report_period_label($start_date, $end_date);
+$payment_period_from = payment_report_valid_month((string) ($_GET['payment_period_from'] ?? ''));
+$payment_period_to = payment_report_valid_month((string) ($_GET['payment_period_to'] ?? ''));
+if ($payment_period_from !== '' && $payment_period_to !== '' && $payment_period_from > $payment_period_to) {
+    [$payment_period_from, $payment_period_to] = [$payment_period_to, $payment_period_from];
+}
 $where = [];
 $scopeCondition = payment_report_member_scope_condition($conn, 'm');
 if ($scopeCondition !== '') $where[] = $scopeCondition;
@@ -63,18 +68,22 @@ if ($start_date) {
 if ($end_date) {
     $where[] = "p.payment_date <= '" . $conn->real_escape_string($end_date) . "'";
 }
+if ($payment_period_from !== '') $where[] = "COALESCE(p.payment_period, p.payment_date) >= '" . $conn->real_escape_string($payment_period_from . '-01') . "'";
+if ($payment_period_to !== '') $where[] = "COALESCE(p.payment_period, p.payment_date) < '" . $conn->real_escape_string(date('Y-m-d', strtotime($payment_period_to . '-01 +1 month'))) . "'";
 $where_sql = count($where) ? 'WHERE ' . implode(' AND ', $where) : '';
 $organizationsExpression = payment_report_organizations_expression('m');
+$reportingPeriodExpression = payment_report_reporting_period_expression('p');
 $sql = "SELECT m.id AS member_id, m.crn, m.last_name, m.first_name,
                bible_class.name AS class_name,
                $organizationsExpression AS organizations,
-               pt.name AS payment_type, SUM(p.amount) AS total_amount
+               pt.name AS payment_type, {$reportingPeriodExpression} AS reporting_period,
+               SUM(p.amount) AS total_amount
 FROM v_posted_payments p
 JOIN members m ON m.id = p.member_id
 LEFT JOIN bible_classes bible_class ON bible_class.id = m.class_id
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 $where_sql
-GROUP BY m.id, m.crn, m.last_name, m.first_name, bible_class.name, pt.id, pt.name
+GROUP BY m.id, m.crn, m.last_name, m.first_name, bible_class.name, pt.id, pt.name, reporting_period
 ORDER BY m.last_name, m.first_name, pt.name
 ";
 $result = $conn->query($sql);
@@ -125,6 +134,8 @@ if ($total_all_result && ($row = $total_all_result->fetch_assoc())) {
             <label for="end_date" class="mr-2 font-weight-bold">To:</label>
             <input type="date" name="end_date" id="end_date" class="form-control" value="<?php echo htmlspecialchars($end_date); ?>">
         </div>
+        <div class="form-group mr-2"><label for="payment_period_from" class="mr-2 font-weight-bold">Payment Period From:</label><input type="month" name="payment_period_from" id="payment_period_from" class="form-control" value="<?= htmlspecialchars($payment_period_from) ?>"></div>
+        <div class="form-group mr-2"><label for="payment_period_to" class="mr-2 font-weight-bold">Payment Period To:</label><input type="month" name="payment_period_to" id="payment_period_to" class="form-control" value="<?= htmlspecialchars($payment_period_to) ?>"></div>
         <button type="submit" class="btn btn-primary">Filter</button>
     </form>
     <div class="table-responsive">
@@ -153,7 +164,7 @@ if ($total_all_result && ($row = $total_all_result->fetch_assoc())) {
                             <td><?php echo htmlspecialchars($row['class_name'] ?: '-'); ?></td>
                             <td><?php echo htmlspecialchars($row['organizations'] ?: '-'); ?></td>
                             <td><?php echo htmlspecialchars($row['payment_type'] ?: '-'); ?></td>
-                            <td><?php echo htmlspecialchars($period_label); ?></td>
+                            <td><?php echo htmlspecialchars($row['reporting_period'] ?: '-'); ?></td>
                             <td><?php echo htmlspecialchars(number_format($row['total_amount'], 2)); ?></td>
                         </tr>
                     <?php endforeach; ?>

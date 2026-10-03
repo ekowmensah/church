@@ -133,6 +133,48 @@ final class BibleClassAttendanceScheduleService {
         return $result;
     }
 
+    /**
+     * Generate and return the signed-in leader's/admin's attendance work for
+     * the configured meeting day. Other scopes remain explicitly scheduled.
+     */
+    public function getDueSessionsForDate(string $date): array {
+        $attendanceDate = $this->normalizeDate($date);
+        $weekday = (int) (new DateTimeImmutable($attendanceDate))->format('w');
+        $due = [];
+
+        foreach ($this->getLeaderClasses() as $class) {
+            if ($class['meeting_day'] === null || (int) $class['meeting_day'] !== $weekday) {
+                continue;
+            }
+            $generated = $this->ensureForClassDate((int) $class['class_id'], $attendanceDate, 'dashboard');
+            $sessionId = (int) $generated['session_id'];
+            $stmt = $this->conn->prepare(
+                "SELECT session.approval_status,
+                        (SELECT COUNT(*) FROM attendance_records record
+                          WHERE record.session_id = session.id AND record.is_draft = 0) AS marked_count
+                   FROM attendance_sessions session WHERE session.id = ? LIMIT 1"
+            );
+            $stmt->bind_param('i', $sessionId);
+            $stmt->execute();
+            $status = $stmt->get_result()->fetch_assoc() ?: [];
+            $stmt->close();
+            if ((string) ($status['approval_status'] ?? 'draft') === 'approved'
+                && (int) ($status['marked_count'] ?? 0) > 0) {
+                continue;
+            }
+            $due[] = [
+                'class_id' => (int) $class['class_id'],
+                'class_name' => (string) $class['class_name'],
+                'group_name' => (string) $class['group_name'],
+                'session_id' => $sessionId,
+                'attendance_date' => $attendanceDate,
+                'marked_count' => (int) ($status['marked_count'] ?? 0),
+            ];
+        }
+
+        return $due;
+    }
+
     public function ensureForClassDate(int $classId, string $date, string $source = 'dashboard'): array {
         if (!in_array($source, ['dashboard', 'cron', 'admin'], true)) {
             throw new RuntimeException('Invalid attendance generation source.');

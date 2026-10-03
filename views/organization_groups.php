@@ -243,6 +243,9 @@ $organizationMemberOptions = [];
 $currentAssignments = [];
 $assignmentHistory = [];
 $mediaHistory = [];
+$isBrigadeOrganization = false;
+$assignedHistory = [];
+$reassignedHistory = [];
 $unassignedPrimary = 0;
 $unassignedLabel = 'primary group';
 if ($organizationId) {
@@ -327,7 +330,15 @@ if ($organizationId) {
         'SELECT m.id AS member_id, m.crn, m.first_name, m.middle_name, m.last_name,
                 assignment.assignment_type, assignment.assignment_method,
                 assignment.rank_or_level, assignment.effective_from,
-                unit.id AS unit_id, unit.name AS unit_name, unit.unit_type, unit.branch
+                unit.id AS unit_id, unit.name AS unit_name, unit.unit_type, unit.branch,
+                (SELECT history.reason
+                   FROM organization_unit_assignment_history history
+                  WHERE history.organization_id = membership.organization_id
+                    AND history.member_id = m.id
+                    AND history.assignment_type = assignment.assignment_type
+                    AND history.to_unit_id = assignment.unit_id
+                  ORDER BY history.created_at DESC, history.id DESC
+                  LIMIT 1) AS assignment_reason
            FROM organization_unit_assignments assignment
            INNER JOIN member_organizations membership ON membership.id = assignment.member_organization_id
            INNER JOIN members m ON m.id = membership.member_id
@@ -350,13 +361,28 @@ if ($organizationId) {
            LEFT JOIN organization_units to_unit ON to_unit.id = history.to_unit_id
            LEFT JOIN users actor ON actor.id = history.actor_user_id
           WHERE history.organization_id = ?
-          ORDER BY history.created_at DESC, history.id DESC
-          LIMIT 50'
+          ORDER BY history.created_at DESC, history.id DESC'
     );
     $historyStmt->bind_param('i', $organizationId);
     $historyStmt->execute();
     $assignmentHistory = $historyStmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $historyStmt->close();
+
+    $isBrigadeOrganization = (string) $organization['assignment_strategy'] === 'balanced_plus_section'
+        || stripos((string) $organization['name'], 'brigade') !== false
+        || (bool) array_filter($units, static function (array $unit): bool {
+            return (string) ($unit['unit_type'] ?? '') === 'brigade_section';
+        });
+    if ($isBrigadeOrganization) {
+        $assignedHistory = array_values(array_filter(
+            $assignmentHistory,
+            static fn(array $history): bool => (string) ($history['action'] ?? '') === 'assigned'
+        ));
+        $reassignedHistory = array_values(array_filter(
+            $assignmentHistory,
+            static fn(array $history): bool => (string) ($history['action'] ?? '') === 'reassigned'
+        ));
+    }
 
     $mediaStmt = $conn->prepare(
         'SELECT history.*, actor.name AS actor_name
@@ -621,19 +647,29 @@ ob_start();
       <div class="card-header"><strong>Current Assignment Roster</strong></div>
       <div class="table-responsive">
         <table class="table table-bordered table-hover mb-0">
-          <thead><tr><th>CRN</th><th>Member</th><th>Assignment</th><th>Unit</th><th>Rank / Branch</th><th>Effective</th></tr></thead>
+          <?php if ($isBrigadeOrganization): ?>
+            <thead><tr><th>CRN</th><th>Member</th><th>Assignment</th><th>Unit</th><th>Rank / Branch</th><th>Effective</th></tr></thead>
+          <?php else: ?>
+            <thead><tr><th>Member</th><th>Destination</th><th>Reason</th></tr></thead>
+          <?php endif; ?>
           <tbody>
           <?php if (!$currentAssignments): ?>
-            <tr><td colspan="6" class="text-center text-muted py-4">No members have been assigned yet.</td></tr>
+            <tr><td colspan="<?= $isBrigadeOrganization ? 6 : 3 ?>" class="text-center text-muted py-4">No members have been assigned yet.</td></tr>
           <?php else: ?>
             <?php foreach ($currentAssignments as $assignment): ?>
               <tr>
-                <td><?= htmlspecialchars($assignment['crn'] ?: '-') ?></td>
-                <td><?= htmlspecialchars(trim($assignment['first_name'] . ' ' . $assignment['middle_name'] . ' ' . $assignment['last_name'])) ?></td>
-                <td><?= htmlspecialchars($assignmentTypeLabels[$assignment['assignment_type']] ?? $assignment['assignment_type']) ?></td>
-                <td><?= htmlspecialchars($assignment['unit_name']) ?></td>
-                <td><?= htmlspecialchars($assignment['rank_or_level'] ?: ucfirst($assignment['branch'])) ?></td>
-                <td><?= htmlspecialchars($assignment['effective_from']) ?><br><small class="text-muted"><?= htmlspecialchars(ucwords(str_replace('_', ' ', $assignment['assignment_method']))) ?></small></td>
+                <?php if ($isBrigadeOrganization): ?>
+                  <td><?= htmlspecialchars($assignment['crn'] ?: '-') ?></td>
+                  <td><?= htmlspecialchars(trim($assignment['first_name'] . ' ' . $assignment['middle_name'] . ' ' . $assignment['last_name'])) ?></td>
+                  <td><?= htmlspecialchars($assignmentTypeLabels[$assignment['assignment_type']] ?? $assignment['assignment_type']) ?></td>
+                  <td><?= htmlspecialchars($assignment['unit_name']) ?></td>
+                  <td><?= htmlspecialchars($assignment['rank_or_level'] ?: ucfirst($assignment['branch'])) ?></td>
+                  <td><?= htmlspecialchars($assignment['effective_from']) ?><br><small class="text-muted"><?= htmlspecialchars(ucwords(str_replace('_', ' ', $assignment['assignment_method']))) ?></small></td>
+                <?php else: ?>
+                  <td><?= htmlspecialchars(trim($assignment['first_name'] . ' ' . $assignment['middle_name'] . ' ' . $assignment['last_name'])) ?></td>
+                  <td><?= htmlspecialchars($assignment['unit_name']) ?></td>
+                  <td><?= htmlspecialchars($assignment['assignment_reason'] ?: '-') ?></td>
+                <?php endif; ?>
               </tr>
             <?php endforeach; ?>
           <?php endif; ?>
@@ -642,30 +678,61 @@ ob_start();
       </div>
     </div>
 
-    <div class="card shadow-sm mb-4">
-      <div class="card-header"><strong>Recent Assignment History</strong> <span class="text-muted">(latest 50)</span></div>
-      <div class="table-responsive">
-        <table class="table table-bordered table-hover mb-0">
-          <thead><tr><th>Date</th><th>Member</th><th>Type</th><th>Change</th><th>Reason / Rank</th><th>Changed By</th></tr></thead>
-          <tbody>
-          <?php if (!$assignmentHistory): ?>
-            <tr><td colspan="6" class="text-center text-muted py-4">No assignment history recorded yet.</td></tr>
-          <?php else: ?>
-            <?php foreach ($assignmentHistory as $history): ?>
-              <tr>
-                <td><?= htmlspecialchars($history['created_at']) ?></td>
-                <td><?= htmlspecialchars(($history['crn'] ? $history['crn'] . ' - ' : '') . trim(($history['first_name'] ?? '') . ' ' . ($history['middle_name'] ?? '') . ' ' . ($history['last_name'] ?? ''))) ?></td>
-                <td><?= htmlspecialchars($assignmentTypeLabels[$history['assignment_type']] ?? $history['assignment_type']) ?></td>
-                <td><?= htmlspecialchars(($history['from_unit_name'] ?: 'Unassigned') . ' -> ' . ($history['to_unit_name'] ?: 'Removed')) ?></td>
-                <td><?= htmlspecialchars($history['reason'] ?: '-') ?><?php if ($history['rank_or_level']): ?><br><small>Rank: <?= htmlspecialchars($history['rank_or_level']) ?></small><?php endif; ?></td>
-                <td><?= htmlspecialchars($history['actor_name'] ?: 'System') ?></td>
-              </tr>
-            <?php endforeach; ?>
-          <?php endif; ?>
-          </tbody>
-        </table>
+    <?php if ($isBrigadeOrganization): ?>
+      <?php foreach (['Assigned' => $assignedHistory, 'Reassigned' => $reassignedHistory] as $historyHeading => $historyRows): ?>
+        <div class="card shadow-sm mb-4">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <strong><?= htmlspecialchars($historyHeading) ?></strong>
+            <span class="badge badge-light border"><?= count($historyRows) ?> recent record(s)</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-bordered table-hover mb-0">
+              <thead><tr><th>Date</th><th>Member</th><th>Assignment</th><th>From</th><th>Destination</th><th>Rank / Level</th><th>Reason</th><th>Changed By</th></tr></thead>
+              <tbody>
+              <?php if (!$historyRows): ?>
+                <tr><td colspan="8" class="text-center text-muted py-4">No <?= strtolower($historyHeading) ?> Brigade records.</td></tr>
+              <?php else: ?>
+                <?php foreach ($historyRows as $history): ?>
+                  <tr>
+                    <td><?= htmlspecialchars((string) $history['created_at']) ?></td>
+                    <td><?= htmlspecialchars(($history['crn'] ? $history['crn'] . ' - ' : '') . trim(($history['first_name'] ?? '') . ' ' . ($history['middle_name'] ?? '') . ' ' . ($history['last_name'] ?? ''))) ?></td>
+                    <td><?= htmlspecialchars($assignmentTypeLabels[$history['assignment_type']] ?? $history['assignment_type']) ?></td>
+                    <td><?= htmlspecialchars((string) ($history['from_unit_name'] ?: 'Unassigned')) ?></td>
+                    <td><?= htmlspecialchars((string) ($history['to_unit_name'] ?: 'Removed')) ?></td>
+                    <td><?= htmlspecialchars((string) ($history['rank_or_level'] ?: '-')) ?></td>
+                    <td><?= htmlspecialchars((string) ($history['reason'] ?: '-')) ?></td>
+                    <td><?= htmlspecialchars((string) ($history['actor_name'] ?: 'System')) ?></td>
+                  </tr>
+                <?php endforeach; ?>
+              <?php endif; ?>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      <?php endforeach; ?>
+    <?php else: ?>
+      <div class="card shadow-sm mb-4">
+        <div class="card-header"><strong>Assignment History</strong></div>
+        <div class="table-responsive">
+          <table class="table table-bordered table-hover mb-0">
+            <thead><tr><th>Member</th><th>Destination</th><th>Reason</th></tr></thead>
+            <tbody>
+            <?php if (!$assignmentHistory): ?>
+              <tr><td colspan="3" class="text-center text-muted py-4">No assignment history recorded yet.</td></tr>
+            <?php else: ?>
+              <?php foreach ($assignmentHistory as $history): ?>
+                <tr>
+                  <td><?= htmlspecialchars(($history['crn'] ? $history['crn'] . ' - ' : '') . trim(($history['first_name'] ?? '') . ' ' . ($history['middle_name'] ?? '') . ' ' . ($history['last_name'] ?? ''))) ?></td>
+                  <td><?= htmlspecialchars((string) ($history['to_unit_name'] ?: 'Removed')) ?></td>
+                  <td><?= htmlspecialchars((string) ($history['reason'] ?: '-')) ?></td>
+                </tr>
+              <?php endforeach; ?>
+            <?php endif; ?>
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+    <?php endif; ?>
 
     <div class="card shadow-sm mb-4">
       <div class="card-header"><strong>Logo Change History</strong> <span class="text-muted">(latest 25)</span></div>

@@ -50,6 +50,11 @@ $period_preset = (string) ($_GET['period'] ?? 'custom');
     (string) ($_GET['end_date'] ?? '')
 );
 $period_label = payment_report_period_label($start_date, $end_date);
+$payment_period_from = payment_report_valid_month((string) ($_GET['payment_period_from'] ?? ''));
+$payment_period_to = payment_report_valid_month((string) ($_GET['payment_period_to'] ?? ''));
+if ($payment_period_from !== '' && $payment_period_to !== '' && $payment_period_from > $payment_period_to) {
+    [$payment_period_from, $payment_period_to] = [$payment_period_to, $payment_period_from];
+}
 $where = ["m.status = 'active'"];
 $where[] = 'm.is_archived = 0';
 $scopeCondition = payment_report_member_scope_condition($conn, 'm');
@@ -66,6 +71,13 @@ if ($start_date) {
 }
 if ($end_date) {
     $where[] = "p.payment_date <= '" . $conn->real_escape_string($end_date) . "'";
+}
+if ($payment_period_from !== '') {
+    $where[] = "COALESCE(p.payment_period, p.payment_date) >= '" . $conn->real_escape_string($payment_period_from . '-01') . "'";
+}
+if ($payment_period_to !== '') {
+    $payment_period_to_end = date('Y-m-d', strtotime($payment_period_to . '-01 +1 month'));
+    $where[] = "COALESCE(p.payment_period, p.payment_date) < '" . $conn->real_escape_string($payment_period_to_end) . "'";
 }
 $where_sql = count($where) ? 'WHERE ' . implode(' AND ', $where) : '';
 // Total
@@ -169,6 +181,14 @@ if ($statement_member) {
         <div class="form-group mr-2">
             <label for="end_date" class="mr-2 font-weight-bold">To:</label>
             <input type="date" name="end_date" id="end_date" class="form-control" value="<?php echo htmlspecialchars($end_date); ?>">
+        </div>
+        <div class="form-group mr-2">
+            <label for="payment_period_from" class="mr-2 font-weight-bold">Payment Period From:</label>
+            <input type="month" name="payment_period_from" id="payment_period_from" class="form-control" value="<?= htmlspecialchars($payment_period_from) ?>">
+        </div>
+        <div class="form-group mr-2">
+            <label for="payment_period_to" class="mr-2 font-weight-bold">Payment Period To:</label>
+            <input type="month" name="payment_period_to" id="payment_period_to" class="form-control" value="<?= htmlspecialchars($payment_period_to) ?>">
         </div>
         <button type="submit" class="btn btn-primary">Filter</button>
     </form>
