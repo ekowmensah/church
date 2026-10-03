@@ -11,7 +11,7 @@ if (!is_logged_in()) {
 
 $isSuperAdmin = (int) ($_SESSION['role_id'] ?? 0) === 1
     || is_super_admin();
-if (!$isSuperAdmin && !has_permission('view_sms_logs')) {
+if (!$isSuperAdmin && !has_permission('view_sms_logs') && !has_permission('view_sms_report')) {
     http_response_code(403);
     include __DIR__ . '/errors/403.php';
     exit;
@@ -33,7 +33,7 @@ $missingAuditColumns = array_values(array_filter(
 ));
 $auditSchemaReady = !$missingAuditColumns;
 $canResend = $auditSchemaReady && ($isSuperAdmin || has_permission('resend_sms'));
-$canExport = $auditSchemaReady && ($isSuperAdmin || has_permission('export_sms_logs'));
+$canExport = $auditSchemaReady && ($isSuperAdmin || has_permission('export_sms_logs') || has_permission('export_sms_report'));
 $churchId = (int) ($_SESSION['church_id'] ?? 0);
 if (!$isSuperAdmin && $churchId <= 0 && !empty($_SESSION['user_id'])) {
     $scope = $conn->prepare('SELECT church_id FROM users WHERE id = ? LIMIT 1');

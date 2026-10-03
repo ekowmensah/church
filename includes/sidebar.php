@@ -25,7 +25,12 @@ $logo_path = BASE_URL . '/uploads/logo.png';
 $church_name = 'MyFreeman';
 $church_address = '';
 if (isset($_SESSION['church_id'])) {
-    $stmt = $conn->prepare('SELECT name, address, logo FROM churches WHERE id = ? LIMIT 1');
+    $addressColumnResult = $conn->query("SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'churches' AND COLUMN_NAME = 'address' LIMIT 1");
+    $addressExpression = $addressColumnResult && $addressColumnResult->num_rows > 0
+        ? 'address'
+        : "'' AS address";
+    $stmt = $conn->prepare("SELECT name, {$addressExpression}, logo FROM churches WHERE id = ? LIMIT 1");
     $stmt->bind_param('i', $_SESSION['church_id']);
     $stmt->execute();
     $stmt->bind_result($db_name, $db_address, $db_logo);

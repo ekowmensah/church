@@ -30,23 +30,31 @@ $can_export = $is_super_admin || has_permission('export_health_report');
 
 $page_title = 'Health Report';
 // Fetch filter options
-$churches = $conn->query("SELECT id, name FROM churches ORDER BY name");
+$actorChurchId = (int) ($_SESSION['church_id'] ?? 0);
+$churches = $is_super_admin
+    ? $conn->query("SELECT id, name FROM churches ORDER BY name")
+    : $conn->query("SELECT id, name FROM churches WHERE id = {$actorChurchId} ORDER BY name");
 $where = "WHERE 1=1";
 $params = [];
 $bind_types = '';
-if (!empty($_GET['church_id'])) {
-    $where .= " AND m.church_id = ?";
-    $params[] = intval($_GET['church_id']);
+$selectedChurchId = $is_super_admin ? max(0, (int) ($_GET['church_id'] ?? 0)) : $actorChurchId;
+if ($selectedChurchId > 0) {
+    $where .= " AND COALESCE(m.church_id, ss.church_id) = ?";
+    $params[] = $selectedChurchId;
     $bind_types .= 'i';
+} elseif (!$is_super_admin) {
+    $where .= ' AND 1=0';
 }
-if (!empty($_GET['from_date'])) {
+$fromDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($_GET['from_date'] ?? '')) ? (string) $_GET['from_date'] : '';
+$toDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($_GET['to_date'] ?? '')) ? (string) $_GET['to_date'] : '';
+if ($fromDate !== '') {
     $where .= " AND h.recorded_at >= ?";
-    $params[] = $_GET['from_date'];
+    $params[] = $fromDate . ' 00:00:00';
     $bind_types .= 's';
 }
-if (!empty($_GET['to_date'])) {
-    $where .= " AND h.recorded_at <= ?";
-    $params[] = $_GET['to_date'];
+if ($toDate !== '') {
+    $where .= " AND h.recorded_at < ?";
+    $params[] = (new DateTimeImmutable($toDate))->modify('+1 day')->format('Y-m-d') . ' 00:00:00';
     $bind_types .= 's';
 }
 $sql = "SELECT h.*, 
@@ -67,7 +75,11 @@ if ($params) {
 $stmt->execute();
 $healths = $stmt->get_result();
 // Trend chart data
-$trend_sql = "SELECT DATE_FORMAT(h.recorded_at, '%Y-%m') AS ym, COUNT(*) AS count FROM health_records h $where GROUP BY ym ORDER BY ym";
+$trend_sql = "SELECT DATE_FORMAT(h.recorded_at, '%Y-%m') AS ym, COUNT(*) AS count
+              FROM health_records h
+              LEFT JOIN members m ON h.member_id = m.id
+              LEFT JOIN sunday_school ss ON h.sundayschool_id = ss.id
+              $where GROUP BY ym ORDER BY ym";
 $trend_stmt = $conn->prepare($trend_sql);
 if ($params) {
     $trend_stmt->bind_param($bind_types, ...$params);
@@ -80,6 +92,7 @@ while ($row = $trend_res->fetch_assoc()) {
     $trend_labels[] = $row['ym'];
     $trend_counts[] = $row['count'];
 }
+ob_start();
 ?>
 <div class="container-fluid mt-4">
   <h2 class="mb-4">Health Report</h2>
@@ -89,17 +102,17 @@ while ($row = $trend_res->fetch_assoc()) {
       <select name="church_id" class="form-control">
         <option value="">All</option>
         <?php if ($churches) while($ch = $churches->fetch_assoc()): ?>
-          <option value="<?= $ch['id'] ?>"<?= isset($_GET['church_id']) && $_GET['church_id']==$ch['id'] ? ' selected' : '' ?>><?= htmlspecialchars($ch['name']) ?></option>
+          <option value="<?= $ch['id'] ?>"<?= $selectedChurchId === (int) $ch['id'] ? ' selected' : '' ?>><?= htmlspecialchars($ch['name']) ?></option>
         <?php endwhile; ?>
       </select>
     </div>
     <div class="form-group col-md-3">
       <label>From Date</label>
-      <input type="date" name="from_date" class="form-control" value="<?= htmlspecialchars($_GET['from_date'] ?? '') ?>">
+      <input type="date" name="from_date" class="form-control" value="<?= htmlspecialchars($fromDate) ?>">
     </div>
     <div class="form-group col-md-3">
       <label>To Date</label>
-      <input type="date" name="to_date" class="form-control" value="<?= htmlspecialchars($_GET['to_date'] ?? '') ?>">
+      <input type="date" name="to_date" class="form-control" value="<?= htmlspecialchars($toDate) ?>">
     </div>
     <div class="form-group col-md-3 align-self-end">
       <button type="submit" class="btn btn-primary btn-block">Filter</button>

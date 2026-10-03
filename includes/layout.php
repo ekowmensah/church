@@ -6,6 +6,9 @@ $reportExportBranding = isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof m
         isset($_GET['church_id']) ? (int) $_GET['church_id'] : null
     )
     : report_export_branding_defaults();
+$layoutScriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+$isReportWorkspace = strpos($layoutScriptName, '/views/reports/') !== false
+    || substr($layoutScriptName, -18) === '/views/reports.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -37,6 +40,9 @@ $reportExportBranding = isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof m
     
     <!-- Modern Sidebar Styles -->
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/modern-sidebar.css">
+    <?php if ($isReportWorkspace): ?>
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/report-workspace.css">
+    <?php endif; ?>
     <style>
       /* Enhanced Responsive Layout Styles */
       .content-wrapper {
@@ -198,7 +204,7 @@ $reportExportBranding = isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof m
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/select2/js/select2.full.min.js"></script>
     
 </head>
-<body class="hold-transition sidebar-mini layout-fixed">
+<body class="hold-transition sidebar-mini layout-fixed<?php echo $isReportWorkspace ? ' report-workspace' : ''; ?>">
     <div class="wrapper">
         <!-- Header must come first for proper AdminLTE layout -->
         <?php
