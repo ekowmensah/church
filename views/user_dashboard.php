@@ -1287,7 +1287,7 @@ ob_start();
                             </span>
                             <div>
                                 <h4 class="dashboard-action-title"><?= htmlspecialchars($action['label']) ?></h4>
-                                <p class="dashboard-action-copy">Open this workspace directly from your dashboard.</p>
+                                <!-- <p class="dashboard-action-copy">Open this workspace directly from your dashboard.</p> -->
                             </div>
                         </a>
                     <?php endforeach; ?>
