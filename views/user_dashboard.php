@@ -638,10 +638,15 @@ if ($org_ids !== null) {
 }
 
 $due_bible_class_attendance = [];
+$bible_class_attendance_queue = [
+    'date' => date('Y-m-d'), 'page' => 1, 'per_page' => 12,
+    'total' => 0, 'total_pages' => 1, 'sessions' => [],
+];
 $attendance_prompt_error = '';
 try {
     $bibleClassScheduleService = BibleClassAttendanceScheduleService::fromSession($conn);
-    $due_bible_class_attendance = $bibleClassScheduleService->getDueSessionsForDate(date('Y-m-d'));
+    $bible_class_attendance_queue = $bibleClassScheduleService->getDueSessionQueueForDate(date('Y-m-d'));
+    $due_bible_class_attendance = $bible_class_attendance_queue['sessions'];
 } catch (Throwable $attendancePromptException) {
     // A configuration problem must not take down the dashboard.
     $attendance_prompt_error = $attendancePromptException->getMessage();

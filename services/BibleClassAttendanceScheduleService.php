@@ -49,7 +49,7 @@ final class BibleClassAttendanceScheduleService {
             $result = $this->conn->query(
                 'SELECT class.id AS class_id, class.name AS class_name, class.code,
                         class.church_id, class.class_group_id, class_group.name AS group_name,
-                        class_group.meeting_day
+                        class_group.meeting_day, class_group.is_active AS group_is_active
                    FROM bible_classes class
                    JOIN class_groups class_group ON class_group.id = class.class_group_id
                   ORDER BY class.name'
@@ -63,7 +63,7 @@ final class BibleClassAttendanceScheduleService {
         $stmt = $this->conn->prepare(
             "SELECT DISTINCT class.id AS class_id, class.name AS class_name, class.code,
                     class.church_id, class.class_group_id, class_group.name AS group_name,
-                    class_group.meeting_day
+                    class_group.meeting_day, class_group.is_active AS group_is_active
                FROM bible_class_leaders leader
                JOIN bible_classes class ON class.id = leader.class_id
                JOIN class_groups class_group ON class_group.id = class.class_group_id
@@ -138,40 +138,127 @@ final class BibleClassAttendanceScheduleService {
      * the configured meeting day. Other scopes remain explicitly scheduled.
      */
     public function getDueSessionsForDate(string $date): array {
+        $queue = $this->getDueSessionQueueForDate($date, '', 1, 50);
+        $sessions = $queue['sessions'];
+        for ($page = 2; $page <= (int) $queue['total_pages']; $page++) {
+            $next = $this->getDueSessionQueueForDate($date, '', $page, 50);
+            $sessions = array_merge($sessions, $next['sessions']);
+        }
+        return $sessions;
+    }
+
+    /**
+     * Return one searchable page of outstanding meeting-day sessions. Only
+     * sessions on the requested page are materialized by the dashboard
+     * fallback, which keeps a large installation from creating/querying every
+     * class during each dashboard request.
+     */
+    public function getDueSessionQueueForDate(
+        string $date,
+        string $search = '',
+        int $page = 1,
+        int $perPage = 12
+    ): array {
         $attendanceDate = $this->normalizeDate($date);
         $weekday = (int) (new DateTimeImmutable($attendanceDate))->format('w');
-        $due = [];
+        $search = mb_strtolower(trim($search), 'UTF-8');
+        $perPage = max(1, min(50, $perPage));
+        $page = max(1, $page);
+        $scheduledClasses = [];
 
         foreach ($this->getLeaderClasses() as $class) {
-            if ($class['meeting_day'] === null || (int) $class['meeting_day'] !== $weekday) {
+            if ((isset($class['group_is_active']) && (int) $class['group_is_active'] !== 1)
+                || $class['meeting_day'] === null
+                || (int) $class['meeting_day'] !== $weekday) {
                 continue;
             }
-            $generated = $this->ensureForClassDate((int) $class['class_id'], $attendanceDate, 'dashboard');
-            $sessionId = (int) $generated['session_id'];
+            if ($search !== '') {
+                $haystack = mb_strtolower(implode(' ', [
+                    (string) ($class['class_name'] ?? ''),
+                    (string) ($class['group_name'] ?? ''),
+                    (string) ($class['code'] ?? ''),
+                ]), 'UTF-8');
+                if (mb_strpos($haystack, $search, 0, 'UTF-8') === false) {
+                    continue;
+                }
+            }
+            $scheduledClasses[] = $class;
+        }
+
+        $states = [];
+        if ($scheduledClasses) {
+            $classIds = array_values(array_unique(array_map(
+                static fn(array $class): int => (int) $class['class_id'],
+                $scheduledClasses
+            )));
+            $idList = implode(',', $classIds);
             $stmt = $this->conn->prepare(
-                "SELECT session.approval_status, session.submitted_at,
+                "SELECT session.id, session.scope_id AS class_id,
+                        session.approval_status, session.submitted_at,
                         (SELECT COUNT(*) FROM attendance_records record
                           WHERE record.session_id = session.id AND record.is_draft = 0) AS marked_count
-                   FROM attendance_sessions session WHERE session.id = ? LIMIT 1"
+                   FROM attendance_sessions session
+                  WHERE session.attendance_scope = 'bible_class'
+                    AND session.service_date = ?
+                    AND session.scope_id IN ({$idList})
+                  ORDER BY session.id DESC"
             );
-            $stmt->bind_param('i', $sessionId);
+            $stmt->bind_param('s', $attendanceDate);
             $stmt->execute();
-            $status = $stmt->get_result()->fetch_assoc() ?: [];
+            $result = $stmt->get_result();
+            while ($state = $result->fetch_assoc()) {
+                $classId = (int) $state['class_id'];
+                if (!isset($states[$classId])) {
+                    $states[$classId] = $state;
+                }
+            }
             $stmt->close();
-            if ($this->attendanceStateIsComplete($status)) {
+        }
+
+        $outstandingClasses = [];
+        foreach ($scheduledClasses as $class) {
+            $classId = (int) $class['class_id'];
+            if (isset($states[$classId]) && $this->attendanceStateIsComplete($states[$classId])) {
                 continue;
             }
-            $due[] = [
-                'class_id' => (int) $class['class_id'],
+            $outstandingClasses[] = $class;
+        }
+
+        $total = count($outstandingClasses);
+        $totalPages = max(1, (int) ceil($total / $perPage));
+        $page = min($page, $totalPages);
+        $pageClasses = array_slice($outstandingClasses, ($page - 1) * $perPage, $perPage);
+        $sessions = [];
+
+        foreach ($pageClasses as $class) {
+            $classId = (int) $class['class_id'];
+            $state = $states[$classId] ?? null;
+            if ($state) {
+                $sessionId = (int) $state['id'];
+            } else {
+                $generated = $this->ensureForClassDate($classId, $attendanceDate, 'dashboard');
+                $sessionId = (int) $generated['session_id'];
+            }
+            $sessions[] = [
+                'class_id' => $classId,
                 'class_name' => (string) $class['class_name'],
                 'group_name' => (string) $class['group_name'],
                 'session_id' => $sessionId,
                 'attendance_date' => $attendanceDate,
-                'marked_count' => (int) ($status['marked_count'] ?? 0),
+                'attendance_date_label' => (new DateTimeImmutable($attendanceDate))->format('j M Y'),
+                'marked_count' => (int) ($state['marked_count'] ?? 0),
             ];
         }
 
-        return $due;
+        return [
+            'date' => $attendanceDate,
+            'search' => $search,
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $total,
+            'total_pages' => $totalPages,
+            'sessions' => $sessions,
+        ];
     }
 
     /**
