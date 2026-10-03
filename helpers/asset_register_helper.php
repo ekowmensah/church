@@ -883,10 +883,41 @@ if (!function_exists('asset_create_approval_request')) {
     ): int {
         $payloadJson = json_encode($payload);
         $requestedBy = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
-        $stmt = $conn->prepare(
-            'INSERT INTO asset_approval_requests (church_id, asset_id, request_type, payload_json, requested_by, status) VALUES (?, ?, ?, ?, ?, "pending")'
-        );
-        $stmt->bind_param('iissi', $churchId, $assetId, $requestType, $payloadJson, $requestedBy);
+        if (asset_column_exists($conn, 'asset_approval_requests', 'asset_code_snapshot')
+            && asset_column_exists($conn, 'asset_approval_requests', 'asset_name_snapshot')) {
+            $asset = null;
+            $lookup = $conn->prepare('SELECT asset_code, item_name FROM assets WHERE id = ? AND church_id = ? LIMIT 1');
+            $lookup->bind_param('ii', $assetId, $churchId);
+            $lookup->execute();
+            $asset = $lookup->get_result()->fetch_assoc();
+            $lookup->close();
+            if (!$asset) {
+                throw new RuntimeException('The selected asset no longer exists.');
+            }
+            $assetCode = (string) $asset['asset_code'];
+            $assetName = (string) $asset['item_name'];
+            $stmt = $conn->prepare(
+                'INSERT INTO asset_approval_requests
+                    (church_id, asset_id, asset_code_snapshot, asset_name_snapshot,
+                     request_type, payload_json, requested_by, status)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, "pending")'
+            );
+            $stmt->bind_param(
+                'iissssi',
+                $churchId,
+                $assetId,
+                $assetCode,
+                $assetName,
+                $requestType,
+                $payloadJson,
+                $requestedBy
+            );
+        } else {
+            $stmt = $conn->prepare(
+                'INSERT INTO asset_approval_requests (church_id, asset_id, request_type, payload_json, requested_by, status) VALUES (?, ?, ?, ?, ?, "pending")'
+            );
+            $stmt->bind_param('iissi', $churchId, $assetId, $requestType, $payloadJson, $requestedBy);
+        }
         $stmt->execute();
         $id = (int) $conn->insert_id;
         $stmt->close();

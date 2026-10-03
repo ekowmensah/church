@@ -26,8 +26,16 @@ if ($isSuper) {
     }
 }
 
+$hasAssetSnapshots = asset_column_exists($conn, 'asset_approval_requests', 'asset_code_snapshot')
+    && asset_column_exists($conn, 'asset_approval_requests', 'asset_name_snapshot');
+$snapshotSelect = $hasAssetSnapshots
+    ? ', aar.asset_code_snapshot, aar.asset_name_snapshot'
+    : ', NULL AS asset_code_snapshot, NULL AS asset_name_snapshot';
+
 $sql = "
-    SELECT aar.*, a.asset_code, a.item_name, u1.name AS requested_by_name, u2.name AS reviewed_by_name
+    SELECT aar.*, a.id AS linked_asset_id, a.asset_code, a.item_name,
+           u1.name AS requested_by_name, u2.name AS reviewed_by_name
+           {$snapshotSelect}
     FROM asset_approval_requests aar
     LEFT JOIN assets a ON a.id = aar.asset_id
     LEFT JOIN users u1 ON u1.id = aar.requested_by
@@ -143,23 +151,32 @@ ob_start();
                 </thead>
                 <tbody>
                     <?php foreach ($rows as $row): ?>
+                        <?php
+                        $assetExists = (int) ($row['linked_asset_id'] ?? 0) > 0;
+                        $assetCode = trim((string) ($row['asset_code'] ?? $row['asset_code_snapshot'] ?? ''));
+                        $assetName = trim((string) ($row['item_name'] ?? $row['asset_name_snapshot'] ?? ''));
+                        $assetDisplay = trim($assetCode . ' ' . $assetName);
+                        if ($assetDisplay === '') {
+                            $assetDisplay = 'Asset record #' . (int) ($row['asset_id'] ?? 0);
+                        }
+                        ?>
                         <tr>
                             <td><?= htmlspecialchars((string) ($row['requested_at'] ?? '')) ?></td>
-                            <td><?= htmlspecialchars((string) (($row['asset_code'] ?? '-') . ' ' . ($row['item_name'] ?? ''))) ?></td>
+                            <td><?= htmlspecialchars($assetDisplay) ?><?php if (!$assetExists): ?><br><span class="badge badge-danger">Asset unavailable</span><?php endif; ?></td>
                             <td><?= htmlspecialchars((string) ucwords(str_replace('_', ' ', (string) $row['request_type']))) ?></td>
                             <td><span class="badge badge-<?= $row['status'] === 'approved' ? 'success' : ($row['status'] === 'rejected' ? 'danger' : ($row['status'] === 'pending' ? 'warning' : 'secondary')) ?>"><?= htmlspecialchars((string) $row['status']) ?></span></td>
                             <td><?= htmlspecialchars((string) ($row['requested_by_name'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string) ($row['reviewed_by_name'] ?? '-')) ?></td>
                             <td><pre class="mb-0" style="font-size:11px;max-width:260px;white-space:pre-wrap;"><?= htmlspecialchars((string) ($row['payload_json'] ?? '')) ?></pre></td>
                             <td class="text-nowrap">
-                                <a class="btn btn-sm btn-outline-primary" href="asset_view.php?id=<?= (int) $row['asset_id'] ?>&tab=approvals"><i class="fas fa-eye"></i></a>
+                                <?php if ($assetExists): ?><a class="btn btn-sm btn-outline-primary" href="asset_view.php?id=<?= (int) $row['asset_id'] ?>&tab=approvals"><i class="fas fa-eye"></i></a><?php endif; ?>
                                 <?php if ($canApprove && (string) $row['status'] === 'pending'): ?>
-                                    <form method="post" action="asset_approval_action.php" class="d-inline" onsubmit="return confirm('Approve this request?');">
+                                    <?php if ($assetExists): ?><form method="post" action="asset_approval_action.php" class="d-inline" onsubmit="return confirm('Approve this request?');">
                                         <?= csrf_input() ?>
                                         <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
                                         <input type="hidden" name="decision" value="approve">
                                         <button class="btn btn-sm btn-success" type="submit">Approve</button>
-                                    </form>
+                                    </form><?php endif; ?>
                                     <form method="post" action="asset_approval_action.php" class="d-inline" onsubmit="return confirm('Reject this request?');">
                                         <?= csrf_input() ?>
                                         <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">

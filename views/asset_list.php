@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/csrf.php';
 
 asset_require_permission('view_asset_register');
 
@@ -233,6 +234,7 @@ ob_start();
     <?php if (isset($_GET['deleted'])): ?><div class="alert alert-success">Asset deleted successfully.</div><?php endif; ?>
     <?php if (isset($_GET['transferred'])): ?><div class="alert alert-success">Asset transferred successfully.</div><?php endif; ?>
     <?php if (isset($_GET['requested'])): ?><div class="alert alert-info">Approval request submitted successfully.</div><?php endif; ?>
+    <?php if (isset($_GET['err'])): ?><div class="alert alert-danger"><?= htmlspecialchars((string) $_GET['err']) ?></div><?php endif; ?>
 
     <div class="row mb-3">
         <div class="col-md-3 mb-2">
@@ -414,7 +416,11 @@ ob_start();
                                     <a href="asset_transfer.php?id=<?= (int) $asset['id'] ?>" class="btn btn-sm btn-primary"><i class="fas fa-exchange-alt"></i></a>
                                 <?php endif; ?>
                                 <?php if ($canDelete): ?>
-                                    <a href="asset_delete.php?id=<?= (int) $asset['id'] ?>" class="btn btn-sm btn-danger" onclick="return confirm('Delete this asset?');"><i class="fas fa-trash"></i></a>
+                                    <form method="post" action="asset_delete.php" class="d-inline" onsubmit="return confirm('Permanently delete this unused asset? Assets with operational or approval history cannot be deleted.');">
+                                        <?= csrf_input() ?>
+                                        <input type="hidden" name="id" value="<?= (int) $asset['id'] ?>">
+                                        <button type="submit" class="btn btn-sm btn-danger" title="Delete unused asset"><i class="fas fa-trash"></i></button>
+                                    </form>
                                 <?php endif; ?>
                             </td>
                         </tr>

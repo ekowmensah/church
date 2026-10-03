@@ -30,7 +30,15 @@ if ($requestId <= 0 || !in_array($decision, ['approve', 'reject'], true)) {
 $isSuper = asset_is_super_admin();
 $churchId = $isSuper ? null : asset_current_church_id($conn);
 
-$sql = 'SELECT aar.*, a.asset_code, a.item_name, a.department_id AS current_department_id FROM asset_approval_requests aar INNER JOIN assets a ON a.id = aar.asset_id WHERE aar.id = ?';
+$hasAssetSnapshots = asset_column_exists($conn, 'asset_approval_requests', 'asset_code_snapshot')
+    && asset_column_exists($conn, 'asset_approval_requests', 'asset_name_snapshot');
+$snapshotSelect = $hasAssetSnapshots
+    ? ', aar.asset_code_snapshot, aar.asset_name_snapshot'
+    : ', NULL AS asset_code_snapshot, NULL AS asset_name_snapshot';
+$sql = 'SELECT aar.*, a.id AS linked_asset_id, a.asset_code, a.item_name,
+               a.church_id AS asset_church_id, a.department_id AS current_department_id'
+    . $snapshotSelect
+    . ' FROM asset_approval_requests aar LEFT JOIN assets a ON a.id = aar.asset_id WHERE aar.id = ?';
 if (!$isSuper) {
     $sql .= ' AND aar.church_id = ?';
 }
@@ -54,6 +62,10 @@ if ((string) $request['status'] !== 'pending') {
     exit;
 }
 
+$assetExists = (int) ($request['linked_asset_id'] ?? 0) > 0;
+$assetLabel = trim((string) ($request['asset_code'] ?? $request['asset_code_snapshot'] ?? ''));
+$assetName = trim((string) ($request['item_name'] ?? $request['asset_name_snapshot'] ?? ''));
+
 $reviewedBy = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
 $payload = json_decode((string) ($request['payload_json'] ?? '{}'), true);
 if (!is_array($payload)) {
@@ -63,6 +75,14 @@ if (!is_array($payload)) {
 $conn->begin_transaction();
 try {
     if ($decision === 'approve') {
+        if (!$assetExists) {
+            throw new RuntimeException(
+                'The linked asset no longer exists, so this request cannot be approved. Reject the retained request to close it.'
+            );
+        }
+        if ((int) ($request['asset_church_id'] ?? 0) !== (int) $request['church_id']) {
+            throw new RuntimeException('The linked asset no longer belongs to the request church.');
+        }
         $assetId = (int) $request['asset_id'];
         $requestType = (string) $request['request_type'];
 
@@ -179,7 +199,8 @@ try {
 
     asset_log_action('asset_approval_' . $newStatus, 'asset_approval_request', $requestId, [
         'asset_id' => (int) $request['asset_id'],
-        'asset_code' => (string) $request['asset_code'],
+        'asset_code' => $assetLabel,
+        'asset_name' => $assetName,
         'church_id' => (int) $request['church_id'],
         'request_type' => (string) $request['request_type'],
     ], [], $payload);
