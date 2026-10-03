@@ -208,6 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } else {
                         $payload = [
                             'asset_item_id' => $assetItemId,
+                            'item_number' => (string) $selectedItem['item_number'],
                             'new_status' => $newStatus,
                             'new_lifecycle_status' => $hasLifecycle ? $newLifecycle : asset_default_lifecycle($newStatus, (string) ($asset['condition_status'] ?? 'Good')),
                             'note' => $note,

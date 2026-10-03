@@ -190,3 +190,5 @@ tests/dashboard_insights_smoke.php
 tests/organization_attendance_page_smoke.php
 tests/organization_attendance_page_smoke.php
 tests/dashboard_insights_smoke.php
+tests/organization_attendance_page_smoke.php
+tests/bible_class_attendance_schedule_smoke.php

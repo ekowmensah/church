@@ -873,6 +873,74 @@ if (!function_exists('asset_sync_serial_numbers')) {
     }
 }
 
+if (!function_exists('asset_approval_payload_details')) {
+    /**
+     * Convert retained approval JSON into safe, human-readable evidence.
+     * Lookup maps are keyed by "church_id:id" to prevent cross-church labels.
+     */
+    function asset_approval_payload_details(
+        array $request,
+        array $departmentNames = [],
+        array $itemNumbers = []
+    ): array {
+        $payload = $request['_payload_data'] ?? json_decode((string) ($request['payload_json'] ?? ''), true);
+        if (!is_array($payload)) {
+            return [['label' => 'Request details', 'value' => 'Invalid retained payload']];
+        }
+
+        $churchId = (int) ($request['church_id'] ?? 0);
+        $departmentLabel = static function (int $id) use ($churchId, $departmentNames): string {
+            if ($id < 1) return 'Not recorded';
+            $name = trim((string) ($departmentNames[$churchId . ':' . $id] ?? ''));
+            return $name !== '' ? $name . ' (#' . $id . ')' : 'Department #' . $id;
+        };
+        $itemLabel = static function () use ($payload, $churchId, $itemNumbers): string {
+            $itemId = (int) ($payload['asset_item_id'] ?? 0);
+            $number = trim((string) ($payload['item_number'] ?? ''));
+            if ($number === '' && $itemId > 0) {
+                $number = trim((string) ($itemNumbers[$churchId . ':' . $itemId] ?? ''));
+            }
+            if ($number !== '') return $number . ($itemId > 0 ? ' (#' . $itemId . ')' : '');
+            return $itemId > 0 ? 'Physical item #' . $itemId : 'Legacy category-level request';
+        };
+
+        $type = (string) ($request['request_type'] ?? '');
+        $details = [];
+        if ($type === 'transfer') {
+            $details[] = ['label' => 'Physical item', 'value' => $itemLabel()];
+            $details[] = [
+                'label' => 'Move from',
+                'value' => $departmentLabel((int) ($payload['from_department_id'] ?? 0)),
+            ];
+            $details[] = [
+                'label' => 'Destination',
+                'value' => $departmentLabel((int) ($payload['to_department_id'] ?? 0)),
+            ];
+        } elseif ($type === 'dispose') {
+            $details[] = ['label' => 'Physical item', 'value' => $itemLabel()];
+            $details[] = ['label' => 'Requested action', 'value' => 'Dispose item'];
+        } elseif ($type === 'status_change') {
+            $details[] = ['label' => 'Physical item', 'value' => $itemLabel()];
+            $details[] = [
+                'label' => 'Asset status',
+                'value' => ucfirst(str_replace('_', ' ', (string) ($payload['new_status'] ?? 'Not recorded'))),
+            ];
+            if (isset($payload['new_lifecycle_status'])) {
+                $details[] = [
+                    'label' => 'Lifecycle',
+                    'value' => asset_lifecycle_label((string) $payload['new_lifecycle_status']),
+                ];
+            }
+        } else {
+            $details[] = ['label' => 'Request details', 'value' => 'Unsupported retained request type'];
+        }
+
+        $note = trim((string) ($payload['note'] ?? ''));
+        $details[] = ['label' => 'Reason', 'value' => $note !== '' ? $note : 'No reason provided'];
+        return $details;
+    }
+}
+
 if (!function_exists('asset_create_approval_request')) {
     function asset_create_approval_request(
         mysqli $conn,

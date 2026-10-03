@@ -81,6 +81,38 @@ while ($row = $res->fetch_assoc()) {
 }
 $stmt->close();
 
+$departmentIds = [];
+$itemIds = [];
+foreach ($rows as &$approvalRow) {
+    $payload = json_decode((string) ($approvalRow['payload_json'] ?? ''), true);
+    $approvalRow['_payload_data'] = is_array($payload) ? $payload : null;
+    if (!is_array($payload)) continue;
+    foreach (['from_department_id', 'to_department_id'] as $field) {
+        $id = (int) ($payload[$field] ?? 0);
+        if ($id > 0) $departmentIds[$id] = $id;
+    }
+    $itemId = (int) ($payload['asset_item_id'] ?? 0);
+    if ($itemId > 0) $itemIds[$itemId] = $itemId;
+}
+unset($approvalRow);
+
+$departmentNames = [];
+if ($departmentIds) {
+    $ids = implode(',', array_map('intval', array_values($departmentIds)));
+    $result = $conn->query("SELECT id, church_id, name FROM asset_departments WHERE id IN ({$ids})");
+    while ($department = $result->fetch_assoc()) {
+        $departmentNames[(int) $department['church_id'] . ':' . (int) $department['id']] = (string) $department['name'];
+    }
+}
+$itemNumbers = [];
+if ($itemIds && asset_table_exists($conn, 'asset_items')) {
+    $ids = implode(',', array_map('intval', array_values($itemIds)));
+    $result = $conn->query("SELECT id, church_id, item_number FROM asset_items WHERE id IN ({$ids})");
+    while ($item = $result->fetch_assoc()) {
+        $itemNumbers[(int) $item['church_id'] . ':' . (int) $item['id']] = (string) $item['item_number'];
+    }
+}
+
 ob_start();
 ?>
 <div class="container-fluid mt-4">
@@ -145,7 +177,7 @@ ob_start();
                         <th>Status</th>
                         <th>Requested By</th>
                         <th>Reviewed By</th>
-                        <th>Payload</th>
+                        <th>Request Details</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -159,6 +191,7 @@ ob_start();
                         if ($assetDisplay === '') {
                             $assetDisplay = 'Asset record #' . (int) ($row['asset_id'] ?? 0);
                         }
+                        $payloadDetails = asset_approval_payload_details($row, $departmentNames, $itemNumbers);
                         ?>
                         <tr>
                             <td><?= htmlspecialchars((string) ($row['requested_at'] ?? '')) ?></td>
@@ -167,7 +200,15 @@ ob_start();
                             <td><span class="badge badge-<?= $row['status'] === 'approved' ? 'success' : ($row['status'] === 'rejected' ? 'danger' : ($row['status'] === 'pending' ? 'warning' : 'secondary')) ?>"><?= htmlspecialchars((string) $row['status']) ?></span></td>
                             <td><?= htmlspecialchars((string) ($row['requested_by_name'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string) ($row['reviewed_by_name'] ?? '-')) ?></td>
-                            <td><pre class="mb-0" style="font-size:11px;max-width:260px;white-space:pre-wrap;"><?= htmlspecialchars((string) ($row['payload_json'] ?? '')) ?></pre></td>
+                            <td style="min-width:260px;">
+                                <?php foreach ($payloadDetails as $detail): ?>
+                                    <div class="mb-1"><span class="text-muted small"><?= htmlspecialchars((string) $detail['label']) ?>:</span> <strong><?= htmlspecialchars((string) $detail['value']) ?></strong></div>
+                                <?php endforeach; ?>
+                                <details class="mt-2">
+                                    <summary class="small text-muted" style="cursor:pointer;">Technical payload</summary>
+                                    <pre class="mb-0 mt-1 p-2 bg-light rounded" style="font-size:11px;max-width:320px;white-space:pre-wrap;"><?= htmlspecialchars((string) ($row['payload_json'] ?? '')) ?></pre>
+                                </details>
+                            </td>
                             <td class="text-nowrap">
                                 <?php if ($assetExists): ?><a class="btn btn-sm btn-outline-primary" href="asset_view.php?id=<?= (int) $row['asset_id'] ?>&tab=approvals"><i class="fas fa-eye"></i></a><?php endif; ?>
                                 <?php if ($canApprove && (string) $row['status'] === 'pending'): ?>
