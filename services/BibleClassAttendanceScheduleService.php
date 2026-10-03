@@ -149,7 +149,7 @@ final class BibleClassAttendanceScheduleService {
             $generated = $this->ensureForClassDate((int) $class['class_id'], $attendanceDate, 'dashboard');
             $sessionId = (int) $generated['session_id'];
             $stmt = $this->conn->prepare(
-                "SELECT session.approval_status,
+                "SELECT session.approval_status, session.submitted_at,
                         (SELECT COUNT(*) FROM attendance_records record
                           WHERE record.session_id = session.id AND record.is_draft = 0) AS marked_count
                    FROM attendance_sessions session WHERE session.id = ? LIMIT 1"
@@ -158,8 +158,7 @@ final class BibleClassAttendanceScheduleService {
             $stmt->execute();
             $status = $stmt->get_result()->fetch_assoc() ?: [];
             $stmt->close();
-            if ((string) ($status['approval_status'] ?? 'draft') === 'approved'
-                && (int) ($status['marked_count'] ?? 0) > 0) {
+            if ($this->attendanceStateIsComplete($status)) {
                 continue;
             }
             $due[] = [
@@ -173,6 +172,30 @@ final class BibleClassAttendanceScheduleService {
         }
 
         return $due;
+    }
+
+    /**
+     * Completion belongs to the attendance session, not the portal used to
+     * submit it. This prevents a member-portal submission from being offered
+     * again on the staff dashboard (and vice versa).
+     */
+    public function isSessionAttendanceComplete(int $sessionId): bool {
+        if ($sessionId < 1) {
+            return false;
+        }
+        $stmt = $this->conn->prepare(
+            "SELECT session.approval_status, session.submitted_at,
+                    (SELECT COUNT(*) FROM attendance_records record
+                      WHERE record.session_id = session.id AND record.is_draft = 0) AS marked_count
+               FROM attendance_sessions session
+              WHERE session.id = ? AND session.attendance_scope = 'bible_class'
+              LIMIT 1"
+        );
+        $stmt->bind_param('i', $sessionId);
+        $stmt->execute();
+        $state = $stmt->get_result()->fetch_assoc() ?: [];
+        $stmt->close();
+        return $state !== [] && $this->attendanceStateIsComplete($state);
     }
 
     public function ensureForClassDate(int $classId, string $date, string $source = 'dashboard'): array {
@@ -454,6 +477,16 @@ final class BibleClassAttendanceScheduleService {
             throw new RuntimeException('Enter a valid attendance date.');
         }
         return $parsed->format('Y-m-d');
+    }
+
+    private function attendanceStateIsComplete(array $state): bool {
+        $approvalStatus = strtolower(trim((string) ($state['approval_status'] ?? 'draft')));
+        if ($approvalStatus === 'rejected') {
+            return false;
+        }
+        return in_array($approvalStatus, ['submitted', 'approved'], true)
+            || trim((string) ($state['submitted_at'] ?? '')) !== ''
+            || (int) ($state['marked_count'] ?? 0) > 0;
     }
 
     private function isAdministrator(): bool {

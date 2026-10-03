@@ -36,11 +36,13 @@ $todayDay = (int) date('w');
 $dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 $meetingDay = $selectedClass['meeting_day'] === null ? null : (int) $selectedClass['meeting_day'];
 $todaySessionId = 0;
+$todaySessionComplete = false;
 
 if ($meetingDay !== null && $meetingDay === $todayDay) {
     try {
         $todaySession = $scheduleService->ensureForClassDate($selectedClassId, $today, 'dashboard');
         $todaySessionId = (int) $todaySession['session_id'];
+        $todaySessionComplete = $scheduleService->isSessionAttendanceComplete($todaySessionId);
     } catch (Throwable $exception) {
         $error = $exception->getMessage();
     }
@@ -118,6 +120,8 @@ ob_start();
     <?php if ($success !== ''): ?><div class="alert alert-success"><?= htmlspecialchars($success) ?></div><?php endif; ?>
     <?php if ($meetingDay === null): ?>
         <div class="alert alert-warning"><strong>Schedule incomplete:</strong> an administrator must set a meeting day for the <?= htmlspecialchars($selectedClass['group_name']) ?> group before weekly sessions can be generated.</div>
+    <?php elseif ($todaySessionId > 0 && $todaySessionComplete): ?>
+        <div class="alert alert-success d-flex justify-content-between align-items-center"><span>Today’s attendance has already been submitted. It will not be prompted again on either dashboard.</span><a class="btn btn-sm btn-outline-success" href="<?= htmlspecialchars(bible_class_attendance_url($selectedClassId, ['session_id' => $todaySessionId])) ?>">Review</a></div>
     <?php elseif ($todaySessionId > 0): ?>
         <div class="alert alert-info d-flex justify-content-between align-items-center"><span>Today is this group’s meeting day. Attendance is ready.</span><a class="btn btn-sm btn-primary" href="<?= htmlspecialchars(bible_class_attendance_url($selectedClassId, ['session_id' => $todaySessionId])) ?>">Open today</a></div>
     <?php endif; ?>
