@@ -1,272 +1,170 @@
 <?php
-require_once __DIR__.'/../../../config/config.php';
-require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions_v2.php';
-require_once __DIR__.'/../../../helpers/payment_report_context.php';
+require_once __DIR__ . '/../../../config/config.php';
+require_once __DIR__ . '/../../../helpers/auth.php';
+require_once __DIR__ . '/../../../helpers/permissions_v2.php';
+require_once __DIR__ . '/../../../helpers/payment_report_context.php';
+require_once __DIR__ . '/../../../helpers/report_pagination.php';
 
 if (!is_logged_in()) {
     http_response_code(403);
-    exit('Unauthorized');
+    exit('Authentication required.');
 }
-// Match the parent Payments by User report instead of requiring an unrelated
-// dashboard permission for its transaction-detail drawer.
-if (!is_super_admin()
-    && !has_permission('view_payments_by_user_report')
-    && !has_permission('view_payment_list')) {
+$canView = is_super_admin()
+    || has_permission('view_payments_by_user_report')
+    || has_permission('view_payment_list');
+if (!$canView) {
     http_response_code(403);
-    exit('Forbidden');
+    exit('You do not have permission to view these transactions.');
 }
 
-$user_id = intval($_GET['user_id'] ?? 0);
-if ($user_id <= 0) {
+$conn = $GLOBALS['conn'];
+$userId = max(0, (int) ($_GET['user_id'] ?? 0));
+if ($userId < 1) {
     http_response_code(422);
-    exit('Select a valid user.');
+    exit('Select a valid responsible user.');
 }
-
-$payment_type_id = intval($_GET['payment_type_id'] ?? 0);
-$date_from = $_GET['date_from'] ?? '';
-$date_to = $_GET['date_to'] ?? '';
-[$period_from, $period_to, $period_clauses, $period_values] = payment_report_reporting_month_filter(
+$paymentTypeId = max(0, (int) ($_GET['payment_type_id'] ?? 0));
+$dateFrom = payment_report_valid_date((string) ($_GET['date_from'] ?? ''));
+$dateTo = payment_report_valid_date((string) ($_GET['date_to'] ?? ''));
+if ($dateFrom !== '' && $dateTo !== '' && $dateFrom > $dateTo) {
+    [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
+}
+[$periodFrom, $periodTo, $periodClauses, $periodValues] = payment_report_reporting_month_filter(
     (string) ($_GET['period_from'] ?? ''),
     (string) ($_GET['period_to'] ?? '')
 );
-$page = max(1, intval($_GET['page'] ?? 1));
-$per_page = intval($_GET['per_page'] ?? 25);
-if (!in_array($per_page, [25, 50, 100], true)) {
-    $per_page = 25;
-}
-$offset = ($page - 1) * $per_page;
 
-$where = ['p.recorded_by = ?'];
-$scopeCondition = payment_report_payment_scope_condition($conn, 'p');
-if ($scopeCondition !== '') $where[] = $scopeCondition;
-$params = [$user_id];
+$where = ['payment.recorded_by = ?'];
+$params = [$userId];
 $types = 'i';
-
-if ($payment_type_id) {
-    $where[] = 'p.payment_type_id = ?';
-    $params[] = $payment_type_id;
+$scopeCondition = payment_report_payment_scope_condition($conn, 'payment');
+if ($scopeCondition !== '') {
+    $where[] = $scopeCondition;
+}
+if ($paymentTypeId > 0) {
+    $where[] = 'payment.payment_type_id = ?';
+    $params[] = $paymentTypeId;
     $types .= 'i';
 }
-if ($date_from) {
-    $where[] = 'p.payment_date >= ?';
-    $params[] = $date_from;
+if ($dateFrom !== '') {
+    $where[] = 'payment.payment_date >= ?';
+    $params[] = $dateFrom;
     $types .= 's';
 }
-if ($date_to) {
-    $where[] = 'p.payment_date <= ?';
-    $params[] = $date_to;
+if ($dateTo !== '') {
+    $where[] = 'payment.payment_date <= ?';
+    $params[] = $dateTo;
     $types .= 's';
 }
-foreach ($period_clauses as $period_clause) $where[] = $period_clause;
-foreach ($period_values as $period_value) { $params[] = $period_value; $types .= 's'; }
-
-// Main query with member/sunday_school join
-$reportingPeriodExpression = payment_report_reporting_period_expression('p');
-$sql = "SELECT p.id, p.payment_date, {$reportingPeriodExpression} AS reporting_period, p.amount, p.description,
-        m.first_name, m.last_name, m.middle_name, m.crn,
-        ss.srn, ss.first_name AS ss_first_name, ss.last_name AS ss_last_name, ss.middle_name AS ss_middle_name
-        FROM v_posted_payments p
-        LEFT JOIN members m ON p.member_id = m.id
-        LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
-        WHERE ".implode(' AND ', $where)."
-        ORDER BY p.payment_date DESC";
-$sql .= " LIMIT ? OFFSET ?";
-$params[] = $per_page;
-$types .= 'i';
-$params[] = $offset;
-$types .= 'i';
-$stmt = $conn->prepare($sql);
-if (!empty($types)) {
-    $stmt->bind_param($types, ...$params);
+foreach ($periodClauses as $periodClause) {
+    $where[] = str_replace('p.', 'payment.', $periodClause);
 }
-$stmt->execute();
-$result = $stmt->get_result();
+foreach ($periodValues as $periodValue) {
+    $params[] = $periodValue;
+    $types .= 's';
+}
+$whereSql = ' WHERE ' . implode(' AND ', $where);
+$reportingPeriodExpression = payment_report_reporting_period_expression('payment');
+$beneficiaryName = "CASE
+    WHEN payment.member_id IS NOT NULL THEN TRIM(CONCAT_WS(' ', member.first_name, member.middle_name, member.last_name))
+    WHEN payment.sundayschool_id IS NOT NULL THEN TRIM(CONCAT_WS(' ', child.first_name, child.middle_name, child.last_name))
+    ELSE 'Unassigned'
+END";
+$beneficiaryReference = "CASE
+    WHEN payment.member_id IS NOT NULL THEN member.crn
+    WHEN payment.sundayschool_id IS NOT NULL THEN child.srn
+    ELSE NULL
+END";
+$transactionSql = "SELECT payment.id, payment.payment_date,
+                          {$reportingPeriodExpression} AS reporting_period,
+                          payment.amount, payment.description,
+                          COALESCE(payment_type.name, 'Unclassified') AS payment_type,
+                          {$beneficiaryName} AS beneficiary_name,
+                          {$beneficiaryReference} AS beneficiary_reference
+                     FROM v_posted_payments payment
+                LEFT JOIN members member ON member.id = payment.member_id
+                LEFT JOIN sunday_school child ON child.id = payment.sundayschool_id
+                LEFT JOIN payment_types payment_type ON payment_type.id = payment.payment_type_id
+                   {$whereSql}
+                 ORDER BY payment.payment_date DESC, payment.id DESC";
 
-// Count query for pagination
-$count_sql = "SELECT COUNT(*) as total FROM v_posted_payments p WHERE ".implode(' AND ', $where);
-$count_stmt = $conn->prepare($count_sql);
-if (!empty($types)) {
-    // Remove last two types/params for LIMIT/OFFSET
-    $count_types = substr($types, 0, -2);
-    $count_params = array_slice($params, 0, -2);
-    if (!empty($count_types)) {
-        $count_stmt->bind_param($count_types, ...$count_params);
+$summarySql = "SELECT COUNT(*) AS payment_count,
+                      COALESCE(SUM(payment.amount), 0) AS total_amount,
+                      COUNT(DISTINCT payment.payment_type_id) AS payment_type_count,
+                      MIN(payment.payment_date) AS first_payment_date,
+                      MAX(payment.payment_date) AS last_payment_date
+                 FROM v_posted_payments payment {$whereSql}";
+$summaryStmt = $conn->prepare($summarySql);
+$summaryStmt->bind_param($types, ...$params);
+$summaryStmt->execute();
+$summary = $summaryStmt->get_result()->fetch_assoc() ?: [];
+$summaryStmt->close();
+
+if (($_GET['export'] ?? '') === 'csv') {
+    $exportStmt = $conn->prepare($transactionSql);
+    $exportStmt->bind_param($types, ...$params);
+    $exportStmt->execute();
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="user_recorded_transactions.csv"');
+    $output = fopen('php://output', 'wb');
+    fwrite($output, "\xEF\xBB\xBF");
+    fputcsv($output, ['Transaction ID', 'Transaction Date', 'Reporting Period', 'Beneficiary', 'Reference', 'Payment Type', 'Description', 'Amount (GHS)']);
+    $rows = $exportStmt->get_result();
+    while ($row = $rows->fetch_assoc()) {
+        fputcsv($output, [
+            $row['id'], $row['payment_date'], $row['reporting_period'],
+            $row['beneficiary_name'], $row['beneficiary_reference'],
+            $row['payment_type'], $row['description'], $row['amount'],
+        ]);
     }
-}
-$count_stmt->execute();
-$count_result = $count_stmt->get_result();
-$total_rows = $count_result->fetch_assoc()['total'];
-$total_pages = max(1, (int) ceil($total_rows / $per_page));
-
-// --- STATISTICS QUERIES ---
-$stats_where = $where;
-$stats_params = $params;
-$stats_types = $types;
-// Remove pagination params/types for statistics queries.
-$stats_types = substr($types, 0, -2);
-$stats_params = array_slice($params, 0, -2);
-
-// Total payments (all time, filtered)
-$total_sql = "SELECT COALESCE(SUM(amount),0) as total FROM v_posted_payments p WHERE ".implode(' AND ', $stats_where);
-$total_stmt = $conn->prepare($total_sql);
-if (!empty($stats_types)) $total_stmt->bind_param($stats_types, ...$stats_params);
-$total_stmt->execute();
-$total_stmt->bind_result($total_paid);
-$total_stmt->fetch();
-$total_stmt->close();
-
-// Payments this week
-$week_where = $stats_where;
-$week_params = $stats_params;
-$week_types = $stats_types;
-$week_where[] = "YEARWEEK(p.payment_date, 1) = YEARWEEK(CURDATE(), 1)";
-$week_sql = "SELECT COALESCE(SUM(amount),0) as total FROM v_posted_payments p WHERE ".implode(' AND ', $week_where);
-$week_stmt = $conn->prepare($week_sql);
-if (!empty($week_types)) $week_stmt->bind_param($week_types, ...$week_params);
-$week_stmt->execute();
-$week_stmt->bind_result($week_total);
-$week_stmt->fetch();
-$week_stmt->close();
-
-// Payments this month
-$month_where = $stats_where;
-$month_params = $stats_params;
-$month_types = $stats_types;
-$month_where[] = "YEAR(p.payment_date) = YEAR(CURDATE()) AND MONTH(p.payment_date) = MONTH(CURDATE())";
-$month_sql = "SELECT COALESCE(SUM(amount),0) as total FROM v_posted_payments p WHERE ".implode(' AND ', $month_where);
-$month_stmt = $conn->prepare($month_sql);
-if (!empty($month_types)) $month_stmt->bind_param($month_types, ...$month_params);
-$month_stmt->execute();
-$month_stmt->bind_result($month_total);
-$month_stmt->fetch();
-$month_stmt->close();
-
-// Payment type breakdown
-$type_sql = "SELECT pt.name, COALESCE(SUM(p.amount),0) as total FROM v_posted_payments p
-             LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
-             WHERE ".implode(' AND ', $stats_where)." GROUP BY pt.id";
-$type_stmt = $conn->prepare($type_sql);
-if (!empty($stats_types)) $type_stmt->bind_param($stats_types, ...$stats_params);
-$type_stmt->execute();
-$type_result = $type_stmt->get_result();
-$breakdown = [];
-while ($r = $type_result->fetch_assoc()) {
-    $breakdown[] = $r;
-}
-$type_stmt->close();
-?>
-<div class="row mb-3">
-  <div class="col-md-3 mb-2">
-    <div class="card shadow-sm border-left-primary h-100">
-      <div class="card-body p-2 text-center">
-        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Total Payments</div>
-        <div class="h5 mb-0 font-weight-bold text-gray-800">₵<?= number_format($total_paid,2) ?></div>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-3 mb-2">
-    <div class="card shadow-sm border-left-success h-100">
-      <div class="card-body p-2 text-center">
-        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">This Week</div>
-        <div class="h5 mb-0 font-weight-bold text-gray-800">₵<?= number_format($week_total,2) ?></div>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-3 mb-2">
-    <div class="card shadow-sm border-left-warning h-100">
-      <div class="card-body p-2 text-center">
-        <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">This Month</div>
-        <div class="h5 mb-0 font-weight-bold text-gray-800">₵<?= number_format($month_total,2) ?></div>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-3 mb-2">
-    <div class="card shadow-sm border-left-info h-100">
-      <div class="card-body p-2 text-center">
-        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">By Type</div>
-        <?php foreach($breakdown as $b): ?>
-          <div class="small"><?= htmlspecialchars($b['name']) ?>: <span class="font-weight-bold">₵<?= number_format($b['total'],2) ?></span></div>
-        <?php endforeach; ?>
-      </div>
-    </div>
-  </div>
-</div>
-<?php
-
-if ($result->num_rows === 0) {
-    echo '<div class="text-center text-muted py-4">No transactions found for this user and filter.</div>';
+    fclose($output);
+    $exportStmt->close();
     exit;
 }
+
+$pagination = report_paginate_query($conn, $transactionSql, $types, $params);
+$transactions = $pagination['result']->fetch_all(MYSQLI_ASSOC);
 ?>
-<div class="mb-2 d-flex flex-wrap align-items-center justify-content-between" style="gap:8px">
-  <label class="small text-muted mb-0">Rows
-    <select class="custom-select custom-select-sm ml-1" id="user-transactions-page-size" style="width:auto">
-      <?php foreach ([25, 50, 100] as $page_size): ?><option value="<?= $page_size ?>" <?= $per_page === $page_size ? 'selected' : '' ?>><?= $page_size ?></option><?php endforeach; ?>
-    </select>
-  </label>
-  <div><button class="btn btn-success btn-sm mr-1" id="export-transactions-excel"><i class="fas fa-file-excel"></i> Export to Excel</button>
-  <button class="btn btn-secondary btn-sm" id="export-transactions-csv"><i class="fas fa-file-csv"></i> Export to CSV</button></div>
+<div class="row mb-3">
+  <div class="col-lg-4 col-md-6 mb-2"><div class="summary-card"><small>Filtered payments</small><strong><?= number_format((int) ($summary['payment_count'] ?? 0)) ?></strong></div></div>
+  <div class="col-lg-4 col-md-6 mb-2"><div class="summary-card"><small>Filtered total</small><strong>GHS <?= number_format((float) ($summary['total_amount'] ?? 0), 2) ?></strong></div></div>
+  <div class="col-lg-4 col-md-6 mb-2"><div class="summary-card"><small>Payment types</small><strong><?= number_format((int) ($summary['payment_type_count'] ?? 0)) ?></strong></div></div>
 </div>
-<table class="table table-bordered table-hover" id="user-transactions-table">
-  <thead>
-    <tr>
-      <th>Date</th>
-      <th>Payment Period</th>
-      <th>Member</th>
-      <th>Amount</th>
-      <th>Description</th>
-    </tr>
-  </thead>
-  <tbody>
-    <?php 
-    $total_on_page = 0;
-    while($row = $result->fetch_assoc()): 
-      $total_on_page += $row['amount'];
-    ?>
-    <tr>
-      <td><?= htmlspecialchars(substr($row['payment_date'], 0, 10)) ?></td>
-      <td><?= htmlspecialchars($row['reporting_period'] ?: '-') ?></td>
-      <td>
-        <?php
-          if ($row['first_name'] || $row['last_name']) {
-            echo htmlspecialchars(trim($row['last_name'].' '.$row['first_name'].' '.$row['middle_name']));
-            if ($row['crn']) echo ' <span class="badge badge-info">CRN: '.htmlspecialchars($row['crn']).'</span>';
-          } else if ($row['ss_first_name'] || $row['ss_last_name']) {
-            echo htmlspecialchars(trim($row['ss_last_name'].' '.$row['ss_first_name'].' '.$row['ss_middle_name']));
-            if ($row['srn']) echo ' <span class="badge badge-warning">SRN: '.htmlspecialchars($row['srn']).'</span>';
-          } else {
-            echo '<span class="text-muted">N/A</span>';
-          }
-        ?>
-      </td>
-      <td>₵<?= number_format($row['amount'], 2) ?></td>
-      <td><?= htmlspecialchars($row['description']) ?></td>
-    </tr>
-    <?php endwhile; ?>
-  </tbody>
-  <tfoot>
-    <tr>
-      <td colspan="3" class="text-right font-weight-bold">Total:</td>
-      <td class="font-weight-bold text-success">₵<?= number_format($total_on_page,2) ?></td>
-      <td></td>
-    </tr>
-  </tfoot>
-</table>
-<nav>
-  <ul class="pagination justify-content-center">
-    <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>"><a class="page-link user-transactions-page-link" href="#" data-page="<?= max(1, $page - 1) ?>" data-per-page="<?= $per_page ?>">Previous</a></li>
-    <?php
-      $pager_pages = array_unique(array_merge([1, $total_pages], range(max(1, $page - 2), min($total_pages, $page + 2))));
-      sort($pager_pages);
-      $previous_page = null;
-      foreach ($pager_pages as $i):
-        if ($previous_page !== null && $i > $previous_page + 1):
-    ?><li class="page-item disabled"><span class="page-link">&hellip;</span></li><?php endif; ?>
-      <li class="page-item <?= $i == $page ? 'active' : '' ?>">
-        <a class="page-link user-transactions-page-link" href="#" data-page="<?= $i ?>" data-per-page="<?= $per_page ?>"><?= $i ?></a>
-      </li>
-    <?php $previous_page = $i; endforeach; ?>
-    <li class="page-item <?= $page >= $total_pages ? 'disabled' : '' ?>"><a class="page-link user-transactions-page-link" href="#" data-page="<?= min($total_pages, $page + 1) ?>" data-per-page="<?= $per_page ?>">Next</a></li>
-  </ul>
-</nav>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-2" style="gap:8px">
+  <label class="small text-muted mb-0">Rows <select class="custom-select custom-select-sm ml-1" id="user-transactions-page-size" style="width:auto"><?php foreach ([25, 50, 100] as $size): ?><option value="<?= $size ?>" <?= $pagination['per_page'] === $size ? 'selected' : '' ?>><?= $size ?></option><?php endforeach; ?></select></label>
+  <button type="button" class="btn btn-success btn-sm export-user-transactions"><i class="fas fa-file-csv mr-1"></i>Export complete transaction history</button>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-hover table-sm">
+    <thead class="thead-light"><tr><th>Date</th><th>Reporting period</th><th>Beneficiary</th><th>Payment type</th><th>Description</th><th class="text-right">Amount</th></tr></thead>
+    <tbody>
+    <?php if (!$transactions): ?><tr><td colspan="6" class="text-center text-muted py-4">No transactions match the selected filters.</td></tr><?php endif; ?>
+    <?php foreach ($transactions as $transaction): ?>
+      <tr>
+        <td><?= htmlspecialchars(date('j M Y', strtotime($transaction['payment_date']))) ?></td>
+        <td><?= htmlspecialchars($transaction['reporting_period'] ?: '-') ?></td>
+        <td><div class="font-weight-bold"><?= htmlspecialchars($transaction['beneficiary_name']) ?></div><small class="text-muted"><?= htmlspecialchars($transaction['beneficiary_reference'] ?: 'No reference') ?></small></td>
+        <td><?= htmlspecialchars($transaction['payment_type']) ?></td>
+        <td><?= htmlspecialchars($transaction['description'] ?: '-') ?></td>
+        <td class="text-right font-weight-bold">GHS <?= number_format((float) $transaction['amount'], 2) ?></td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table>
+</div>
+<?php
+$totalPages = $pagination['total_pages'];
+$page = $pagination['page'];
+$pages = array_unique(array_merge([1, $totalPages], range(max(1, $page - 2), min($totalPages, $page + 2))));
+sort($pages);
+?>
+<div class="d-flex flex-wrap align-items-center justify-content-between mt-3" style="gap:10px">
+  <small class="text-muted">Showing <?= number_format($pagination['total_rows'] ? $pagination['offset'] + 1 : 0) ?>&ndash;<?= number_format(min($pagination['total_rows'], $pagination['offset'] + $pagination['per_page'])) ?> of <?= number_format($pagination['total_rows']) ?> transactions</small>
+  <?php if ($totalPages > 1): ?><nav aria-label="Transaction pages"><ul class="pagination pagination-sm mb-0">
+    <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>"><a href="#" class="page-link user-transactions-page-link" data-page="<?= max(1, $page - 1) ?>" data-per-page="<?= $pagination['per_page'] ?>">Previous</a></li>
+    <?php $previous = null; foreach ($pages as $number): if ($previous !== null && $number > $previous + 1): ?><li class="page-item disabled"><span class="page-link">&hellip;</span></li><?php endif; ?><li class="page-item <?= $number === $page ? 'active' : '' ?>"><a href="#" class="page-link user-transactions-page-link" data-page="<?= $number ?>" data-per-page="<?= $pagination['per_page'] ?>"><?= $number ?></a></li><?php $previous = $number; endforeach; ?>
+    <li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>"><a href="#" class="page-link user-transactions-page-link" data-page="<?= min($totalPages, $page + 1) ?>" data-per-page="<?= $pagination['per_page'] ?>">Next</a></li>
+  </ul></nav><?php endif; ?>
+</div>
