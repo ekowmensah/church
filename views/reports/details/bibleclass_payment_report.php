@@ -1,478 +1,165 @@
 <?php
-require_once __DIR__.'/../../../config/config.php';
-require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions_v2.php';
-require_once __DIR__.'/../../../helpers/payment_report_context.php';
-require_once __DIR__.'/../../../helpers/report_pagination.php';
+require_once __DIR__ . '/../../../config/config.php';
+require_once __DIR__ . '/../../../helpers/auth.php';
+require_once __DIR__ . '/../../../helpers/permissions_v2.php';
+require_once __DIR__ . '/../../../helpers/payment_report_context.php';
+require_once __DIR__ . '/../../../helpers/report_pagination.php';
 
-// Only allow logged-in users
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-
-// Robust super admin bypass and permission check
-$is_super_admin = is_super_admin();
-
-if (!$is_super_admin && !has_permission('view_bibleclass_payment_report')) {
+$isSuperAdmin = is_super_admin();
+if (!$isSuperAdmin && !has_permission('view_bibleclass_payment_report')) {
     http_response_code(403);
-    if (file_exists(__DIR__.'/../../../views/errors/403.php')) {
-        include __DIR__.'/../../../views/errors/403.php';
-    } else if (file_exists(__DIR__.'/../../errors/403.php')) {
-        include __DIR__.'/../../errors/403.php';
-    } else {
-        echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this report.</p></div>';
-    }
+    include __DIR__ . '/../../errors/403.php';
     exit;
 }
+$canExport = $isSuperAdmin || has_permission('export_bibleclass_payment_report');
 
-// Set permission flags for UI elements
-$can_view = true; // Already validated above
-$can_export = $is_super_admin || has_permission('export_bibleclass_payment_report');
-
-// Remove admin_auth.php include as it has incorrect permission check
-
-// Filtering
-$class_id = isset($_GET['class_id']) ? intval($_GET['class_id']) : 0;
-$payment_type_id = isset($_GET['payment_type']) ? intval($_GET['payment_type']) : 0;
-$date_from = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
-$date_to = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
-[$period_from, $period_to, $period_clauses, $period_values] = payment_report_reporting_month_filter(
+$selectedClass = max(0, (int) ($_GET['class_id'] ?? 0));
+$selectedPaymentType = max(0, (int) ($_GET['payment_type'] ?? ($_GET['payment_type_id'] ?? 0)));
+$startDate = payment_report_valid_date((string) ($_GET['date_from'] ?? ''));
+$endDate = payment_report_valid_date((string) ($_GET['date_to'] ?? ''));
+if ($startDate !== '' && $endDate !== '' && $startDate > $endDate) [$startDate, $endDate] = [$endDate, $startDate];
+[$periodFrom, $periodTo, $periodClauses, $periodValues] = payment_report_reporting_month_filter(
     (string) ($_GET['period_from'] ?? ''),
     (string) ($_GET['period_to'] ?? '')
 );
-$export = isset($_GET['export']) && $_GET['export'] === 'csv';
 
-// Build WHERE clause
-$where = "WHERE m.status = 'active'";
-$scopeCondition = payment_report_payment_scope_condition($conn, 'p');
-if ($scopeCondition !== '') $where .= ' AND ' . $scopeCondition;
+$churchId = payment_report_current_church_id($conn);
+$classes = [];
+$classSql = payment_report_is_super_admin()
+    ? 'SELECT id, name FROM bible_classes ORDER BY name'
+    : 'SELECT id, name FROM bible_classes WHERE church_id = ? ORDER BY name';
+$classStmt = $conn->prepare($classSql);
+if (!payment_report_is_super_admin()) $classStmt->bind_param('i', $churchId);
+$classStmt->execute();
+$classes = $classStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$classStmt->close();
+
+$paymentTypes = [];
+$paymentTypeResult = $conn->query('SELECT id, name FROM payment_types ORDER BY name');
+while ($paymentTypeResult && ($paymentType = $paymentTypeResult->fetch_assoc())) $paymentTypes[] = $paymentType;
+
+$where = ["member.status = 'active'"];
 $params = [];
 $types = '';
-if ($class_id) {
-    $where .= " AND m.class_id = ?";
-    $params[] = $class_id;
-    $types .= 'i';
-}
-if ($payment_type_id) {
-    $where .= " AND p.payment_type_id = ?";
-    $params[] = $payment_type_id;
-    $types .= 'i';
-}
-if ($date_from) {
-    $where .= " AND p.payment_date >= ?";
-    $params[] = $date_from;
-    $types .= 's';
-}
-if ($date_to) {
-    $where .= " AND p.payment_date <= ?";
-    $params[] = $date_to;
-    $types .= 's';
-}
-foreach ($period_clauses as $period_clause) {
-    $where .= ' AND ' . $period_clause;
-}
-foreach ($period_values as $period_value) {
-    $params[] = $period_value;
-    $types .= 's';
-}
+$scopeCondition = payment_report_payment_scope_condition($conn, 'payment');
+if ($scopeCondition !== '') $where[] = $scopeCondition;
+if ($selectedClass > 0) { $where[] = 'member.class_id = ?'; $params[] = $selectedClass; $types .= 'i'; }
+if ($selectedPaymentType > 0) { $where[] = 'payment.payment_type_id = ?'; $params[] = $selectedPaymentType; $types .= 'i'; }
+if ($startDate !== '') { $where[] = 'payment.payment_date >= ?'; $params[] = $startDate . ' 00:00:00'; $types .= 's'; }
+if ($endDate !== '') { $where[] = 'payment.payment_date < ?'; $params[] = (new DateTimeImmutable($endDate))->modify('+1 day')->format('Y-m-d') . ' 00:00:00'; $types .= 's'; }
+foreach ($periodClauses as $clause) $where[] = str_replace('p.', 'payment.', $clause);
+foreach ($periodValues as $value) { $params[] = $value; $types .= 's'; }
+$whereSql = implode(' AND ', $where);
+$periodDate = 'COALESCE(payment.payment_period, payment.payment_date)';
 
-$reportingPeriodExpression = payment_report_reporting_period_expression('p');
-$sql = "SELECT p.payment_date, {$reportingPeriodExpression} AS reporting_period, m.crn, m.last_name, m.first_name, bc.name AS class_name, pt.name AS payment_type, p.amount FROM v_posted_payments p LEFT JOIN members m ON p.member_id = m.id LEFT JOIN bible_classes bc ON m.class_id = bc.id LEFT JOIN payment_types pt ON p.payment_type_id = pt.id $where ORDER BY bc.name, m.last_name, m.first_name, p.payment_date DESC";
-// Get all classes and payment types for dropdowns
-$classes = [];
-$churchId = payment_report_current_church_id($conn);
-$classScopeSql = payment_report_is_super_admin() ? '' : ' WHERE church_id = ' . max(0, $churchId);
-$class_result = $conn->query("SELECT id, name FROM bible_classes{$classScopeSql} ORDER BY name");
-if ($class_result) {
-    while ($row = $class_result->fetch_assoc()) {
-        $classes[] = $row;
+$summarySql = "SELECT member.id AS member_id, member.crn, member.first_name, member.middle_name,
+                      member.last_name, member.class_id, COALESCE(bible_class.name, 'Unassigned') AS class_name,
+                      COUNT(*) AS transaction_count,
+                      GROUP_CONCAT(DISTINCT COALESCE(payment_type.name, 'Unclassified') ORDER BY payment_type.name SEPARATOR ', ') AS payment_types,
+                      MIN({$periodDate}) AS first_reporting_period,
+                      MAX({$periodDate}) AS last_reporting_period,
+                      MAX(payment.payment_date) AS last_payment_date,
+                      COALESCE(SUM(payment.amount), 0) AS total_amount
+                 FROM members member
+                 JOIN v_posted_payments payment ON payment.member_id = member.id
+                 LEFT JOIN bible_classes bible_class ON bible_class.id = member.class_id
+                 LEFT JOIN payment_types payment_type ON payment_type.id = payment.payment_type_id
+                WHERE {$whereSql}
+                GROUP BY member.id, member.crn, member.first_name, member.middle_name,
+                         member.last_name, member.class_id, bible_class.name
+                ORDER BY class_name, total_amount DESC, member.last_name, member.first_name";
+
+$statsSql = "SELECT COUNT(DISTINCT member.id) AS member_count, COUNT(*) AS transaction_count,
+                    COUNT(DISTINCT member.class_id) AS class_count,
+                    COALESCE(SUM(payment.amount), 0) AS total_amount
+               FROM members member
+               JOIN v_posted_payments payment ON payment.member_id = member.id
+              WHERE {$whereSql}";
+$statsStmt = $conn->prepare($statsSql);
+if ($types !== '') $statsStmt->bind_param($types, ...$params);
+$statsStmt->execute();
+$stats = $statsStmt->get_result()->fetch_assoc() ?: [];
+$statsStmt->close();
+
+if ((string) ($_GET['export'] ?? '') === 'summary_csv') {
+    if (!$canExport) { http_response_code(403); exit('You do not have permission to export this report.'); }
+    $exportStmt = $conn->prepare($summarySql);
+    if ($types !== '') $exportStmt->bind_param($types, ...$params);
+    $exportStmt->execute();
+    $exportResult = $exportStmt->get_result();
+    if (ob_get_level()) ob_end_clean();
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="bible_class_member_payment_summary.csv"');
+    $output = fopen('php://output', 'w');
+    fputcsv($output, ['Bible Class', 'CRN', 'Member Name', 'Transactions', 'Payment Types', 'First Reporting Period', 'Last Reporting Period', 'Last Payment', 'Total Amount (GHS)']);
+    while ($row = $exportResult->fetch_assoc()) {
+        $name = trim(implode(' ', array_filter([$row['first_name'], $row['middle_name'], $row['last_name']])));
+        fputcsv($output, [$row['class_name'], $row['crn'], $name, $row['transaction_count'], $row['payment_types'], $row['first_reporting_period'], $row['last_reporting_period'], $row['last_payment_date'], $row['total_amount']]);
     }
-}
-$types_arr = [];
-$type_result = $conn->query("SELECT id, name FROM payment_types ORDER BY name");
-if ($type_result) {
-    while ($row = $type_result->fetch_assoc()) {
-        $types_arr[] = $row;
-    }
-}
-// CSV Export
-if ($export) {
-    $export_stmt = $conn->prepare($sql);
-    if ($types) {
-        $export_stmt->bind_param($types, ...$params);
-    }
-    $export_stmt->execute();
-    $payments = $export_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-    header('Content-Type: text/csv');
-    header('Content-Disposition: attachment;filename=bibleclass_payment_report.csv');
-    $out = fopen('php://output', 'w');
-    fputcsv($out, ['#','CRN','Full Name','Bible Class','Payment Type','Payment Period','Amount (GHS)','Transaction Date']);
-    $csv_total = 0;
-    foreach ($payments as $i => $row) {
-        $csv_total += floatval($row['amount']);
-        fputcsv($out, [
-            $i + 1,
-            $row['crn'],
-            $row['last_name'] . ', ' . $row['first_name'],
-            $row['class_name'],
-            $row['payment_type'],
-            $row['reporting_period'],
-            'GHS ' . number_format($row['amount'], 2),
-            $row['payment_date']
-        ]);
-    }
-    fputcsv($out, ['','','','','Total','GHS ' . number_format($csv_total, 2),'']);
-    fclose($out);
+    fclose($output);
     exit;
 }
 
-$pagination = report_paginate_query($conn, $sql, $types, $params);
-$payments = $pagination['result']->fetch_all(MYSQLI_ASSOC);
-$page = $pagination['page'];
-$per_page = $pagination['per_page'];
-$offset = $pagination['offset'];
-$record_count = $pagination['total_rows'];
+$pagination = report_paginate_query($conn, $summarySql, $types, $params);
+$members = $pagination['result']->fetch_all(MYSQLI_ASSOC);
+$exportQuery = $_GET;
+$exportQuery['export'] = 'summary_csv';
+unset($exportQuery['page'], $exportQuery['per_page']);
 
-// Full-filter summaries remain independent of the displayed page.
-$summary_sql = "SELECT COALESCE(SUM(amount), 0) AS total_amount,
-                       COUNT(DISTINCT NULLIF(crn, '')) AS member_count,
-                       COUNT(DISTINCT NULLIF(class_name, '')) AS class_count
-                FROM ($sql) report_summary";
-$summary_stmt = $conn->prepare($summary_sql);
-if ($types) {
-    $summary_stmt->bind_param($types, ...$params);
-}
-$summary_stmt->execute();
-$summary = $summary_stmt->get_result()->fetch_assoc() ?: [];
-$total_amount = (float) ($summary['total_amount'] ?? 0);
-$member_count = (int) ($summary['member_count'] ?? 0);
-$class_count = (int) ($summary['class_count'] ?? 0);
-$avg_payment = $record_count > 0 ? $total_amount / $record_count : 0;
-
-// Build active filter description
-$active_filters = [];
-if ($class_id) {
-    foreach ($classes as $cl) {
-        if (intval($cl['id']) === $class_id) { $active_filters[] = $cl['name']; break; }
-    }
-}
-if ($payment_type_id) {
-    foreach ($types_arr as $t) {
-        if (intval($t['id']) === $payment_type_id) { $active_filters[] = $t['name']; break; }
-    }
-}
-if ($date_from) $active_filters[] = "From: $date_from";
-if ($date_to) $active_filters[] = "To: $date_to";
-if ($period_from) $active_filters[] = 'Payment period from: ' . $period_from;
-if ($period_to) $active_filters[] = 'Payment period to: ' . $period_to;
-
+$page_title = 'Bible Class Payment Report';
 ob_start();
 ?>
+<div class="container-fluid mt-4 member-payment-summary class-payment-report">
+  <div class="d-flex flex-wrap justify-content-between align-items-start mb-3" style="gap:12px">
+    <div><a href="../../reports.php" class="btn btn-outline-secondary btn-sm mb-2"><i class="fas fa-arrow-left mr-1"></i>Report Centre</a><h2 class="mb-1 font-weight-bold"><i class="fas fa-chalkboard-teacher mr-2"></i>Bible Class Payment Report</h2><p class="text-muted mb-0">Member-first class payment performance with transaction evidence on demand.</p></div>
+    <div class="d-flex flex-wrap" style="gap:8px"><?php if ($canExport): ?><a href="?<?= htmlspecialchars(http_build_query($exportQuery)) ?>" class="btn btn-success btn-sm"><i class="fas fa-file-csv mr-1"></i>Export member summary</a><?php endif; ?><button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.print()"><i class="fas fa-print mr-1"></i>Print</button></div>
+  </div>
 
-<!-- Content Header -->
-<div class="content-header">
-    <div class="container-fluid">
-        <div class="row mb-2">
-            <div class="col-sm-6">
-                <h1 class="m-0" style="font-size:1.6rem;">
-                    <i class="fas fa-chalkboard-teacher mr-2 text-primary"></i>Bible Class Payment Report
-                </h1>
-            </div>
-            <div class="col-sm-6">
-                <ol class="breadcrumb float-sm-right">
-                    <li class="breadcrumb-item"><a href="<?= BASE_URL ?>/views/user_dashboard.php"><i class="fas fa-home"></i> Dashboard</a></li>
-                    <li class="breadcrumb-item"><a href="<?= BASE_URL ?>/views/reports.php">Reports</a></li>
-                    <li class="breadcrumb-item active">Bible Class Payments</li>
-                </ol>
-            </div>
-        </div>
-    </div>
+  <div class="card mb-3"><div class="card-body"><form method="get"><div class="form-row">
+    <div class="form-group col-lg-3 col-md-4"><label for="class_id">Bible Class</label><select name="class_id" id="class_id" class="form-control"><option value="0">All classes</option><?php foreach ($classes as $class): ?><option value="<?= (int) $class['id'] ?>" <?= $selectedClass === (int) $class['id'] ? 'selected' : '' ?>><?= htmlspecialchars($class['name']) ?></option><?php endforeach; ?></select></div>
+    <div class="form-group col-lg-2 col-md-4"><label for="payment_type">Payment Type</label><select name="payment_type" id="payment_type" class="form-control"><option value="0">All types</option><?php foreach ($paymentTypes as $paymentType): ?><option value="<?= (int) $paymentType['id'] ?>" <?= $selectedPaymentType === (int) $paymentType['id'] ? 'selected' : '' ?>><?= htmlspecialchars($paymentType['name']) ?></option><?php endforeach; ?></select></div>
+    <div class="form-group col-lg-2 col-md-4"><label for="date_from">Transaction From</label><input type="date" name="date_from" id="date_from" class="form-control" value="<?= htmlspecialchars($startDate) ?>"></div>
+    <div class="form-group col-lg-2 col-md-4"><label for="date_to">Transaction To</label><input type="date" name="date_to" id="date_to" class="form-control" value="<?= htmlspecialchars($endDate) ?>"></div>
+    <div class="form-group col-lg-2 col-md-4"><label for="period_from">Reporting From</label><input type="month" name="period_from" id="period_from" class="form-control" value="<?= htmlspecialchars($periodFrom) ?>"></div>
+    <div class="form-group col-lg-2 col-md-4"><label for="period_to">Reporting To</label><input type="month" name="period_to" id="period_to" class="form-control" value="<?= htmlspecialchars($periodTo) ?>"></div>
+    <div class="form-group col-lg-2 col-md-4 d-flex align-items-end"><button class="btn btn-primary btn-block"><i class="fas fa-filter mr-1"></i>Apply filters</button></div>
+    <div class="form-group col-lg-2 col-md-4 d-flex align-items-end"><a href="bibleclass_payment_report.php" class="btn btn-outline-secondary btn-block">Reset</a></div>
+  </div></form></div></div>
+
+  <div class="row mb-3">
+    <?php foreach ([['Members',(int)($stats['member_count']??0),'users'],['Transactions',(int)($stats['transaction_count']??0),'receipt'],['Classes',(int)($stats['class_count']??0),'chalkboard'],['Total Amount','GHS '.number_format((float)($stats['total_amount']??0),2),'coins']] as $metric): ?>
+      <div class="col-6 col-xl-3 mb-2"><div class="summary-card"><small><i class="fas fa-<?= $metric[2] ?> mr-1"></i><?= htmlspecialchars($metric[0]) ?></small><strong><?= is_int($metric[1]) ? number_format($metric[1]) : htmlspecialchars($metric[1]) ?></strong></div></div>
+    <?php endforeach; ?>
+  </div>
+
+  <div class="card shadow-sm mb-4"><div class="card-header d-flex flex-wrap justify-content-between align-items-center"><strong>Class Member Payment Summary</strong><small class="text-muted">Each member appears once in their current Bible Class.</small></div><div class="card-body">
+    <div class="table-responsive"><table class="table table-hover table-bordered" data-report-pagination="server"><thead><tr><th>#</th><th>Bible Class</th><th>Member</th><th class="text-center">Transactions</th><th>Payment Types</th><th>Reporting Coverage</th><th>Last Payment</th><th class="text-right">Total</th><th>Action</th></tr></thead><tbody>
+    <?php if (!$members): ?><tr><td colspan="9" class="text-center text-muted py-5">No Bible Class member payments match the selected filters.</td></tr><?php endif; ?>
+    <?php foreach ($members as $index => $member):
+      $memberName = trim(implode(' ', array_filter([$member['first_name'], $member['middle_name'], $member['last_name']])));
+      $firstPeriod = !empty($member['first_reporting_period']) ? date('M Y', strtotime($member['first_reporting_period'])) : '-';
+      $lastPeriod = !empty($member['last_reporting_period']) ? date('M Y', strtotime($member['last_reporting_period'])) : '-';
+      $coverage = $firstPeriod === $lastPeriod ? $firstPeriod : $firstPeriod . ' - ' . $lastPeriod;
+    ?><tr>
+      <td><?= number_format($pagination['offset']+$index+1) ?></td><td><span class="badge badge-info"><?= htmlspecialchars($member['class_name']) ?></span></td>
+      <td><div class="member-name"><?= htmlspecialchars($memberName) ?></div><small class="text-muted">CRN: <?= htmlspecialchars((string)($member['crn']?:'-')) ?></small></td>
+      <td class="text-center"><span class="badge badge-primary"><?= number_format((int)$member['transaction_count']) ?></span></td><td><div class="payment-types"><?= htmlspecialchars((string)($member['payment_types']?:'Unclassified')) ?></div></td>
+      <td><?= htmlspecialchars($coverage) ?></td><td><?= !empty($member['last_payment_date']) ? htmlspecialchars(date('j M Y',strtotime($member['last_payment_date']))) : '-' ?></td><td class="text-right font-weight-bold text-success">GHS <?= number_format((float)$member['total_amount'],2) ?></td>
+      <td><button type="button" class="btn btn-outline-primary btn-sm view-member-payments" data-member-id="<?= (int)$member['member_id'] ?>" data-member-name="<?= htmlspecialchars($memberName,ENT_QUOTES) ?>"><i class="fas fa-receipt mr-1"></i>View payments</button></td>
+    </tr><?php endforeach; ?></tbody></table></div>
+    <?php report_render_server_pagination($pagination['total_rows'],$pagination['page'],$pagination['per_page'],'Bible Class member payment summary pages'); ?>
+  </div></div>
+
+  <div class="modal fade" id="memberPaymentsModal" tabindex="-1" role="dialog" aria-labelledby="memberPaymentsTitle" aria-hidden="true"><div class="modal-dialog modal-xl modal-dialog-scrollable" role="document"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title" id="memberPaymentsTitle">Member payment history</h5><small class="text-white-50">Filtered transaction evidence</small></div><button type="button" class="close text-white" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button></div><div class="modal-body" id="memberPaymentsBody"><div class="text-center text-muted py-5">Select a member to view payments.</div></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button></div></div></div></div>
 </div>
-
-<section class="content">
-<div class="container-fluid">
-
-    <!-- Summary Cards -->
-    <div class="row">
-        <div class="col-lg-3 col-md-6 col-sm-6">
-            <div class="small-box bg-info">
-                <div class="inner">
-                    <h3>GHS <?= number_format($total_amount, 2) ?></h3>
-                    <p>Total Amount</p>
-                </div>
-                <div class="icon"><i class="fas fa-money-bill-wave"></i></div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-md-6 col-sm-6">
-            <div class="small-box bg-success">
-                <div class="inner">
-                    <h3><?= number_format($record_count) ?></h3>
-                    <p>Total Transactions</p>
-                </div>
-                <div class="icon"><i class="fas fa-receipt"></i></div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-md-6 col-sm-6">
-            <div class="small-box bg-warning">
-                <div class="inner">
-                    <h3><?= number_format($member_count) ?></h3>
-                    <p>Unique Members</p>
-                </div>
-                <div class="icon"><i class="fas fa-users"></i></div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-md-6 col-sm-6">
-            <div class="small-box bg-primary">
-                <div class="inner">
-                    <h3>GHS <?= number_format($avg_payment, 2) ?></h3>
-                    <p>Average per Transaction</p>
-                </div>
-                <div class="icon"><i class="fas fa-calculator"></i></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Filter Card -->
-    <div class="card card-outline card-primary collapsed-card">
-        <div class="card-header">
-            <h3 class="card-title">
-                <i class="fas fa-filter mr-2"></i>Filters
-                <?php if (!empty($active_filters)): ?>
-                    <span class="ml-2">
-                        <?php foreach ($active_filters as $af): ?>
-                            <span class="badge badge-info"><?= htmlspecialchars($af) ?></span>
-                        <?php endforeach; ?>
-                    </span>
-                <?php endif; ?>
-            </h3>
-            <div class="card-tools">
-                <button type="button" class="btn btn-tool" data-card-widget="collapse">
-                    <i class="fas fa-plus"></i>
-                </button>
-            </div>
-        </div>
-        <div class="card-body" style="display:none;">
-            <form method="get" id="filterForm">
-                <div class="row">
-                    <div class="col-md-3">
-                        <div class="form-group">
-                            <label for="class_id"><i class="fas fa-book-reader mr-1 text-muted"></i>Bible Class</label>
-                            <select name="class_id" id="class_id" class="form-control form-control-sm">
-                                <option value="0">-- All Classes --</option>
-                                <?php foreach ($classes as $cl): ?>
-                                    <option value="<?= $cl['id'] ?>"<?= $class_id === intval($cl['id']) ? ' selected' : '' ?>><?= htmlspecialchars($cl['name']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="form-group">
-                            <label for="payment_type"><i class="fas fa-tags mr-1 text-muted"></i>Payment Type</label>
-                            <select name="payment_type" id="payment_type" class="form-control form-control-sm">
-                                <option value="0">-- All Types --</option>
-                                <?php foreach ($types_arr as $type): ?>
-                                    <option value="<?= $type['id'] ?>"<?= $payment_type_id === intval($type['id']) ? ' selected' : '' ?>><?= htmlspecialchars($type['name']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="form-group">
-                            <label for="date_from"><i class="fas fa-calendar mr-1 text-muted"></i>Date From</label>
-                            <input type="date" name="date_from" id="date_from" class="form-control form-control-sm" value="<?= htmlspecialchars($date_from) ?>">
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="form-group">
-                            <label for="date_to"><i class="fas fa-calendar-check mr-1 text-muted"></i>Date To</label>
-                            <input type="date" name="date_to" id="date_to" class="form-control form-control-sm" value="<?= htmlspecialchars($date_to) ?>">
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="form-group">
-                            <label for="period_from">Payment Period From</label>
-                            <input type="month" name="period_from" id="period_from" class="form-control form-control-sm" value="<?= htmlspecialchars($period_from) ?>">
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="form-group">
-                            <label for="period_to">Payment Period To</label>
-                            <input type="month" name="period_to" id="period_to" class="form-control form-control-sm" value="<?= htmlspecialchars($period_to) ?>">
-                        </div>
-                    </div>
-                </div>
-                <div class="row">
-                    <div class="col-12 text-right">
-                        <a href="?" class="btn btn-default btn-sm mr-2"><i class="fas fa-undo mr-1"></i>Reset</a>
-                        <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-search mr-1"></i>Apply Filters</button>
-                    </div>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Data Table Card -->
-    <div class="card card-outline card-dark">
-        <div class="card-header">
-            <h3 class="card-title">
-                <i class="fas fa-table mr-2"></i>Payment Records
-                <small class="text-muted ml-2">(<?= number_format($record_count) ?> records<?= $class_count > 0 ? " across $class_count class" . ($class_count > 1 ? 'es' : '') : '' ?>)</small>
-            </h3>
-        </div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table id="bibleclass-payments-table" class="table table-bordered table-hover table-striped mb-0" data-report-pagination="server">
-                    <thead>
-                        <tr style="background:linear-gradient(135deg,#3c8dbc,#367fa9);color:#fff;">
-                            <th style="width:50px;">#</th>
-                            <th>CRN</th>
-                            <th>Full Name</th>
-                            <th>Bible Class</th>
-                            <th>Payment Type</th>
-                            <th>Payment Period</th>
-                            <th class="text-right" style="width:130px;">Amount</th>
-                            <th style="width:120px;">Date</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($payments)): ?>
-                            <tr>
-                                <td colspan="8" class="text-center py-5 text-muted">
-                                    <i class="fas fa-inbox fa-3x mb-3 d-block"></i>
-                                    No payments found matching your criteria.
-                                </td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($payments as $i => $row): ?>
-                                <tr>
-                                    <td class="text-center text-muted"><?= $i + 1 + $offset ?></td>
-                                    <td><code><?= htmlspecialchars($row['crn']) ?></code></td>
-                                    <td class="font-weight-bold"><?= htmlspecialchars($row['last_name'] . ', ' . $row['first_name']) ?></td>
-                                    <td><span class="badge badge-light border"><?= htmlspecialchars($row['class_name'] ?: '-') ?></span></td>
-                                    <td><span class="badge badge-info"><?= htmlspecialchars($row['payment_type'] ?: '-') ?></span></td>
-                                    <td><?= htmlspecialchars($row['reporting_period'] ?: '-') ?></td>
-                                    <td class="text-right font-weight-bold">GHS <?= number_format($row['amount'], 2) ?></td>
-                                    <td><?= date('d M Y', strtotime($row['payment_date'])) ?></td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                    <tfoot>
-                        <tr style="background:#f4f6f9; border-top:2px solid #3c8dbc;">
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                            <td class="text-right font-weight-bold" style="font-size:1.05rem;">Grand Total</td>
-                            <td class="text-right font-weight-bold text-primary" style="font-size:1.1rem;">GHS <?= number_format($total_amount, 2) ?></td>
-                            <td></td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <?php report_render_server_pagination($record_count, $page, $per_page, 'Bible Class payment report pages'); ?>
-
-</div>
-</section>
-
-<!-- DataTables CSS (Bootstrap 4 integration) -->
-<!-- DataTables JS -->
-<script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
 <script>
-$(document).ready(function() {
-    // Expand filter card if any filters are active
-    <?php if (!empty($active_filters)): ?>
-    $('.collapsed-card .card-header .btn-tool').trigger('click');
-    <?php endif; ?>
-
-    var table = $("#bibleclass-payments-table").DataTable({
-        dom: '<"row mb-2"<"col-sm-6 col-md-4"l><"col-sm-6 col-md-8 text-right"B>>' +
-             'rtip',
-        buttons: [
-            <?php if ($can_export): ?>
-            {
-                extend: 'csv',
-                text: '<i class="fas fa-file-csv mr-1"></i>CSV',
-                className: 'btn btn-sm btn-outline-success',
-                title: 'Bible Class Payment Report',
-                footer: true,
-                exportOptions: { columns: ':visible' }
-            },
-            {
-                extend: 'pdf',
-                text: '<i class="fas fa-file-pdf mr-1"></i>PDF',
-                className: 'btn btn-sm btn-outline-danger',
-                title: 'Bible Class Payment Report',
-                footer: false,
-                orientation: 'landscape',
-                exportOptions: { columns: ':visible' },
-                customize: function(doc) {
-                    doc.defaultStyle.fontSize = 9;
-                    doc.styles.tableHeader.fontSize = 10;
-                    doc.styles.tableHeader.fillColor = '#3c8dbc';
-                    // Manually add totals row
-                    var body = doc.content[1].table.body;
-                    var colCount = body[0].length;
-                    var totalRow = [];
-                    for (var j = 0; j < colCount; j++) {
-                        if (j === colCount - 2) {
-                            totalRow.push({ text: 'GHS <?= number_format($total_amount, 2) ?>', bold: true, fillColor: '#f4f6f9', fontSize: 10, alignment: 'right' });
-                        } else if (j === colCount - 3) {
-                            totalRow.push({ text: 'Grand Total', bold: true, fillColor: '#f4f6f9', fontSize: 10, alignment: 'right' });
-                        } else {
-                            totalRow.push({ text: '', fillColor: '#f4f6f9' });
-                        }
-                    }
-                    body.push(totalRow);
-                    MyFreemanExportBranding.brandPdf(doc);
-                }
-            },
-            {
-                extend: 'print',
-                text: '<i class="fas fa-print mr-1"></i>Print',
-                className: 'btn btn-sm btn-outline-secondary',
-                title: 'Bible Class Payment Report',
-                footer: true,
-                exportOptions: { columns: ':visible' }
-            },
-            <?php endif; ?>
-        ],
-        paging: false,
-        searching: false,
-        info: false,
-        ordering: true,
-        order: [],
-        language: {
-            search: '<i class="fas fa-search text-muted"></i>',
-            searchPlaceholder: 'Search records...',
-            lengthMenu: 'Show _MENU_ entries',
-            info: 'Showing _START_ to _END_ of _TOTAL_ records',
-            infoEmpty: 'No records available',
-            infoFiltered: '(filtered from _MAX_ total)',
-            paginate: {
-                first: '<i class="fas fa-angle-double-left"></i>',
-                previous: '<i class="fas fa-angle-left"></i>',
-                next: '<i class="fas fa-angle-right"></i>',
-                last: '<i class="fas fa-angle-double-right"></i>'
-            }
-        }
-    });
-});
+window.MemberPaymentDrilldownConfig = {
+  endpoint: <?= json_encode(BASE_URL.'/views/reports/details/ajax_member_payment_transactions.php') ?>,
+  filters: <?= json_encode(['report'=>'bible_class','class_id'=>$selectedClass,'payment_type_id'=>$selectedPaymentType,'start_date'=>$startDate,'end_date'=>$endDate,'period_from'=>$periodFrom,'period_to'=>$periodTo]) ?>
+};
 </script>
-
-<style>
-.small-box .inner h3 { font-size: 1.6rem; }
-.small-box .inner p { font-size: 0.85rem; }
-.dataTables_wrapper .dt-buttons .btn { margin-left: 4px; }
-.dataTables_filter input { border-radius: 20px !important; padding-left: 12px !important; }
-table.dataTable thead th { border-bottom: none; }
-table.dataTable tfoot td { border-top: 2px solid #3c8dbc; }
-.table-striped tbody tr:nth-of-type(odd) { background-color: rgba(0,0,0,.02); }
-</style>
-
-<?php $page_content = ob_get_clean(); include dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'includes' . DIRECTORY_SEPARATOR . 'layout.php'; ?>
+<?php $page_content=ob_get_clean(); include __DIR__.'/../../../includes/layout.php'; ?>

@@ -1,0 +1,24 @@
+/*
+ * Canonical application modal layer.
+ *
+ * Layout containers intentionally use their own stacking contexts. Bootstrap
+ * modals are therefore moved under <body> by modal-layering.js and rendered
+ * above headers, sidebars, chat drawers and assistant panels.
+ */
+body > .modal {
+    z-index: 2100;
+}
+
+body > .modal-backdrop {
+    z-index: 2090;
+}
+
+body.modal-open > .modal.show {
+    isolation: isolate;
+}
+
+@media (max-width: 575.98px) {
+    body > .modal .modal-dialog {
+        margin: .5rem;
+    }
+}

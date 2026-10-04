@@ -44,6 +44,7 @@ $layoutPageTitle = trim((string) ($page_title ?? '')) ?: ($layoutDerivedTitle ?:
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/modern-sidebar.css">
     <?php if ($isReportWorkspace): ?>
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/report-workspace.css">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/member-payment-summary.css">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-bs4/css/dataTables.bootstrap4.min.css">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-buttons/css/buttons.bootstrap4.min.css">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-responsive/css/responsive.bootstrap4.min.css">
@@ -187,6 +188,7 @@ $layoutPageTitle = trim((string) ($page_title ?? '')) ?: ($layoutDerivedTitle ?:
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/AdminLTE/dist/css/adminlte.min.css">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/AdminLTE/plugins/fontawesome-free/css/all.min.css">
     <link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700" rel="stylesheet">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/modal-layering.css">
     <!-- Scripts: jQuery and plugins must come FIRST -->
     
 
@@ -351,6 +353,7 @@ if (isset($page_content)) {
     <script src="<?php echo BASE_URL; ?>/assets/js/header-dropdown-fix.js"></script>
     <script src="<?php echo BASE_URL; ?>/assets/js/logout-confirmation.js"></script>
     <script src="<?php echo BASE_URL; ?>/assets/js/session-timeout.js"></script>
+    <script src="<?php echo BASE_URL; ?>/assets/js/modal-layering.js"></script>
 
 <script>
 // Enhanced Mobile Sidebar Functionality
@@ -506,6 +509,7 @@ $(document).ready(function() {
 <?php if (isset($additional_css)) echo $additional_css; ?>
 <?php if ($isReportWorkspace): ?>
 <script src="<?php echo BASE_URL; ?>/assets/js/report-pagination.js"></script>
+<script src="<?php echo BASE_URL; ?>/assets/js/member-payment-drilldown.js"></script>
 <?php endif; ?>
 </body>
 </html>

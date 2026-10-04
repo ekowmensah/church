@@ -1,253 +1,237 @@
 <?php
-require_once __DIR__.'/../../../config/config.php';
-require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions_v2.php';
-require_once __DIR__.'/../../../helpers/payment_report_context.php';
-require_once __DIR__.'/../../../helpers/report_pagination.php';
+require_once __DIR__ . '/../../../config/config.php';
+require_once __DIR__ . '/../../../helpers/auth.php';
+require_once __DIR__ . '/../../../helpers/permissions_v2.php';
+require_once __DIR__ . '/../../../helpers/payment_report_context.php';
+require_once __DIR__ . '/../../../helpers/report_pagination.php';
 
-// Only allow logged-in users
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
 
-// Robust super admin bypass and permission check
-$is_super_admin = is_super_admin();
-
-if (!$is_super_admin && !has_permission('view_day_born_payment_report')) {
+$isSuperAdmin = is_super_admin();
+if (!$isSuperAdmin && !has_permission('view_day_born_payment_report')) {
     http_response_code(403);
-    if (file_exists(__DIR__.'/../../../views/errors/403.php')) {
-        include __DIR__.'/../../../views/errors/403.php';
-    } else if (file_exists(__DIR__.'/../../errors/403.php')) {
-        include __DIR__.'/../../errors/403.php';
-    } else {
-        echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this report.</p></div>';
+    include __DIR__ . '/../../errors/403.php';
+    exit;
+}
+$canExport = $isSuperAdmin || has_permission('export_day_born_payment_report');
+
+$days = [
+    1 => 'Sunday', 2 => 'Monday', 3 => 'Tuesday', 4 => 'Wednesday',
+    5 => 'Thursday', 6 => 'Friday', 7 => 'Saturday',
+];
+$selectedDay = max(0, min(7, (int) ($_GET['day'] ?? 0)));
+$selectedPaymentType = max(0, (int) ($_GET['payment_type_id'] ?? 0));
+$startDate = payment_report_valid_date((string) ($_GET['start_date'] ?? ''));
+$endDate = payment_report_valid_date((string) ($_GET['end_date'] ?? ''));
+if ($startDate !== '' && $endDate !== '' && $startDate > $endDate) {
+    [$startDate, $endDate] = [$endDate, $startDate];
+}
+[$periodFrom, $periodTo, $periodClauses, $periodValues] = payment_report_reporting_month_filter(
+    (string) ($_GET['period_from'] ?? ''),
+    (string) ($_GET['period_to'] ?? '')
+);
+
+$paymentTypes = [];
+$paymentTypeResult = $conn->query('SELECT id, name FROM payment_types ORDER BY name');
+while ($paymentTypeResult && ($paymentType = $paymentTypeResult->fetch_assoc())) {
+    $paymentTypes[] = $paymentType;
+}
+
+$where = ["member.status = 'active'"];
+$params = [];
+$types = '';
+$scopeCondition = payment_report_payment_scope_condition($conn, 'payment');
+if ($scopeCondition !== '') $where[] = $scopeCondition;
+if ($selectedDay > 0) {
+    $where[] = 'DAYOFWEEK(member.dob) = ?';
+    $params[] = $selectedDay;
+    $types .= 'i';
+}
+if ($selectedPaymentType > 0) {
+    $where[] = 'payment.payment_type_id = ?';
+    $params[] = $selectedPaymentType;
+    $types .= 'i';
+}
+if ($startDate !== '') {
+    $where[] = 'payment.payment_date >= ?';
+    $params[] = $startDate . ' 00:00:00';
+    $types .= 's';
+}
+if ($endDate !== '') {
+    $where[] = 'payment.payment_date < ?';
+    $params[] = (new DateTimeImmutable($endDate))->modify('+1 day')->format('Y-m-d') . ' 00:00:00';
+    $types .= 's';
+}
+foreach ($periodClauses as $clause) $where[] = str_replace('p.', 'payment.', $clause);
+foreach ($periodValues as $value) {
+    $params[] = $value;
+    $types .= 's';
+}
+$whereSql = implode(' AND ', $where);
+$periodDate = 'COALESCE(payment.payment_period, payment.payment_date)';
+$summarySql = "SELECT member.id AS member_id, member.crn, member.first_name,
+                      member.middle_name, member.last_name, member.dob,
+                      COUNT(*) AS transaction_count,
+                      COUNT(DISTINCT COALESCE(payment.payment_type_id, 0)) AS payment_type_count,
+                      GROUP_CONCAT(DISTINCT COALESCE(payment_type.name, 'Unclassified')
+                                   ORDER BY payment_type.name SEPARATOR ', ') AS payment_types,
+                      MIN({$periodDate}) AS first_reporting_period,
+                      MAX({$periodDate}) AS last_reporting_period,
+                      MAX(payment.payment_date) AS last_payment_date,
+                      COALESCE(SUM(payment.amount), 0) AS total_amount
+                 FROM members member
+                 JOIN v_posted_payments payment ON payment.member_id = member.id
+                 LEFT JOIN payment_types payment_type ON payment_type.id = payment.payment_type_id
+                WHERE {$whereSql}
+                GROUP BY member.id, member.crn, member.first_name, member.middle_name,
+                         member.last_name, member.dob
+                ORDER BY total_amount DESC, member.last_name, member.first_name";
+
+$statsSql = "SELECT COUNT(DISTINCT member.id) AS member_count,
+                    COUNT(*) AS transaction_count,
+                    COALESCE(SUM(payment.amount), 0) AS total_amount,
+                    COALESCE(SUM(payment.amount) / NULLIF(COUNT(DISTINCT member.id), 0), 0) AS average_per_member
+               FROM members member
+               JOIN v_posted_payments payment ON payment.member_id = member.id
+               LEFT JOIN payment_types payment_type ON payment_type.id = payment.payment_type_id
+              WHERE {$whereSql}";
+$statsStmt = $conn->prepare($statsSql);
+if ($types !== '') $statsStmt->bind_param($types, ...$params);
+$statsStmt->execute();
+$stats = $statsStmt->get_result()->fetch_assoc() ?: [];
+$statsStmt->close();
+
+if ((string) ($_GET['export'] ?? '') === 'summary_csv') {
+    if (!$canExport) {
+        http_response_code(403);
+        exit('You do not have permission to export this report.');
     }
+    $exportStmt = $conn->prepare($summarySql);
+    if ($types !== '') $exportStmt->bind_param($types, ...$params);
+    $exportStmt->execute();
+    $exportResult = $exportStmt->get_result();
+    if (ob_get_level()) ob_end_clean();
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="day_born_member_payment_summary.csv"');
+    $output = fopen('php://output', 'w');
+    fputcsv($output, ['Day Born', 'CRN', 'Member Name', 'Transactions', 'Payment Types', 'First Reporting Period', 'Last Reporting Period', 'Last Payment', 'Total Amount (GHS)']);
+    while ($row = $exportResult->fetch_assoc()) {
+        $dayName = !empty($row['dob']) ? date('l', strtotime($row['dob'])) : 'Not recorded';
+        $name = trim(implode(' ', array_filter([$row['first_name'], $row['middle_name'], $row['last_name']])));
+        fputcsv($output, [
+            $dayName, $row['crn'], $name, $row['transaction_count'], $row['payment_types'],
+            $row['first_reporting_period'], $row['last_reporting_period'], $row['last_payment_date'], $row['total_amount'],
+        ]);
+    }
+    fclose($output);
     exit;
 }
 
-// Set permission flags for UI elements
-$can_view = true; // Already validated above
-$can_export = $is_super_admin || has_permission('export_day_born_payment_report');
+$pagination = report_paginate_query($conn, $summarySql, $types, $params);
+$members = $pagination['result']->fetch_all(MYSQLI_ASSOC);
+$exportQuery = $_GET;
+$exportQuery['export'] = 'summary_csv';
+unset($exportQuery['page'], $exportQuery['per_page']);
 
-//require_once dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'includes' . DIRECTORY_SEPARATOR . 'admin_auth.php';
-require_once dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'config.php';
+$page_title = 'Day Born Payment Report';
 ob_start();
-
-$conn = $GLOBALS['conn'];
-// Days of week
-$days = [
-    1 => 'Sunday', 2 => 'Monday', 3 => 'Tuesday', 4 => 'Wednesday', 5 => 'Thursday', 6 => 'Friday', 7 => 'Saturday'
-];
-// Single-select for day
-$selected_day = isset($_GET['day']) ? intval($_GET['day']) : 0;
-// Payment types
-$payment_types = [];
-$pt_result = $conn->query("SELECT id, name FROM payment_types ORDER BY name");
-if ($pt_result) {
-    while ($row = $pt_result->fetch_assoc()) {
-        $payment_types[] = $row;
-    }
-}
-$selected_payment_type = isset($_GET['payment_type_id']) ? intval($_GET['payment_type_id']) : 0;
-$start_date = isset($_GET['start_date']) ? $_GET['start_date'] : '';
-$end_date = isset($_GET['end_date']) ? $_GET['end_date'] : '';
-$period_from = payment_report_valid_month((string) ($_GET['period_from'] ?? ''));
-$period_to = payment_report_valid_month((string) ($_GET['period_to'] ?? ''));
-if ($period_from !== '' && $period_to !== '' && $period_from > $period_to) {
-    [$period_from, $period_to] = [$period_to, $period_from];
-}
-$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
-$per_page = report_pagination_page_size();
-$offset = ($page - 1) * $per_page;
-$where = ["m.status = 'active'"];
-$scopeCondition = payment_report_payment_scope_condition($conn, 'p');
-if ($scopeCondition !== '') $where[] = $scopeCondition;
-if ($selected_day > 0) {
-    $where[] = "DAYOFWEEK(m.dob) = $selected_day";
-} // $selected_day should be 1=Sunday, ..., 7=Saturday
-if ($selected_payment_type) {
-    $where[] = "pt.id = $selected_payment_type";
-}
-if ($start_date) {
-    $where[] = "p.payment_date >= '" . $conn->real_escape_string($start_date) . "'";
-}
-if ($end_date) {
-    $where[] = "p.payment_date <= '" . $conn->real_escape_string($end_date) . "'";
-}
-if ($period_from !== '') {
-    $where[] = "COALESCE(p.payment_period, p.payment_date) >= '" . $conn->real_escape_string($period_from . '-01') . "'";
-}
-if ($period_to !== '') {
-    $period_to_end = date('Y-m-d', strtotime($period_to . '-01 +1 month'));
-    $where[] = "COALESCE(p.payment_period, p.payment_date) < '" . $conn->real_escape_string($period_to_end) . "'";
-}
-$where_sql = count($where) ? 'WHERE ' . implode(' AND ', $where) : '';
-// Total
-$total_sql = "SELECT SUM(p.amount) AS total_amount FROM members m
-INNER JOIN v_posted_payments p ON m.id = p.member_id
-LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
-$where_sql";
-$total_result = $conn->query($total_sql);
-$total_amount = 0;
-if ($total_result && ($row = $total_result->fetch_assoc())) {
-    $total_amount = $row['total_amount'] ?: 0;
-}
-// Paginated results
-$reporting_period_expression = payment_report_reporting_period_expression('p');
-$sql = "SELECT m.crn, m.last_name, m.first_name, m.dob, pt.name AS payment_type, p.amount, p.payment_date,
-               {$reporting_period_expression} AS reporting_period FROM members m
-INNER JOIN v_posted_payments p ON m.id = p.member_id
-LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
-$where_sql
-ORDER BY m.last_name, m.first_name, p.payment_date DESC";
-$count_sql = "SELECT COUNT(*) AS total_count FROM members m
-INNER JOIN v_posted_payments p ON m.id = p.member_id
-LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
-$where_sql";
-$count_result = $conn->query($count_sql);
-$total_count = 0;
-if ($count_result && ($row = $count_result->fetch_assoc())) {
-    $total_count = $row['total_count'] ?: 0;
-}
-$total_pages = max(1, (int) ceil($total_count / $per_page));
-$page = min($page, $total_pages);
-$offset = ($page - 1) * $per_page;
-$result = $conn->query($sql . " LIMIT $per_page OFFSET $offset");
-$rows = [];
-if ($result) {
-    while ($row = $result->fetch_assoc()) {
-        $rows[] = $row;
-    }
-}
 ?>
-<div class="container mt-4">
-    <a href="../../reports.php" class="btn btn-secondary mb-3"><i class="fas fa-arrow-left mr-1"></i>Back to Reports</a>
-    <h2 class="mb-4 font-weight-bold"><i class="fas fa-calendar-day mr-2"></i>Day Born Payment Report</h2>
-    <form method="get" class="form-inline mb-3">
-        <div class="form-group mr-2">
-    <label for="day" class="mr-2 font-weight-bold">Day of Week:</label>
-    <select name="day" id="day" class="form-control">
-        <option value="0">All</option>
-        <?php foreach ($days as $num => $name): ?>
-            <option value="<?php echo $num; ?>"<?php if ($selected_day === $num) echo ' selected'; ?>><?php echo htmlspecialchars($name); ?></option>
-        <?php endforeach; ?>
-    </select>
-</div>
-        <div class="form-group mr-2">
-            <label for="payment_type_id" class="mr-2 font-weight-bold">Payment Type:</label>
-            <select name="payment_type_id" id="payment_type_id" class="form-control">
-                <option value="0">All</option>
-                <?php foreach ($payment_types as $pt): ?>
-                    <option value="<?php echo $pt['id']; ?>"<?php if ($selected_payment_type === intval($pt['id'])) echo ' selected'; ?>><?php echo htmlspecialchars($pt['name']); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <div class="form-group mr-2">
-            <label for="start_date" class="mr-2 font-weight-bold">From:</label>
-            <input type="date" name="start_date" id="start_date" class="form-control" value="<?php echo htmlspecialchars($start_date); ?>">
-        </div>
-        <div class="form-group mr-2">
-            <label for="end_date" class="mr-2 font-weight-bold">To:</label>
-            <input type="date" name="end_date" id="end_date" class="form-control" value="<?php echo htmlspecialchars($end_date); ?>">
-        </div>
-        <div class="form-group mr-2">
-            <label for="period_from" class="mr-2 font-weight-bold">Payment Period From:</label>
-            <input type="month" name="period_from" id="period_from" class="form-control" value="<?= htmlspecialchars($period_from) ?>">
-        </div>
-        <div class="form-group mr-2">
-            <label for="period_to" class="mr-2 font-weight-bold">Payment Period To:</label>
-            <input type="month" name="period_to" id="period_to" class="form-control" value="<?= htmlspecialchars($period_to) ?>">
-        </div>
-        <div class="form-group mr-2">
-            <label for="per_page" class="mr-2 font-weight-bold">Rows:</label>
-            <select name="per_page" id="per_page" class="form-control">
-                <?php foreach ([25, 50, 100] as $page_size): ?>
-                    <option value="<?= $page_size ?>" <?= $per_page === $page_size ? 'selected' : '' ?>><?= $page_size ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <button type="submit" class="btn btn-primary">Filter</button>
-    </form>
-    <div class="mb-3">
-    <?php if ($can_export): ?>
-    <button id="export-csv" class="btn btn-success btn-sm mr-2"><i class="fas fa-file-csv"></i> Export CSV</button>
-    <button id="export-pdf" class="btn btn-danger btn-sm mr-2"><i class="fas fa-file-pdf"></i> Export PDF</button>
-    <?php endif; ?>
-    <button id="print-table" class="btn btn-secondary btn-sm"><i class="fas fa-print"></i> Print</button>
-</div>
-<div class="table-responsive">
-        <table class="table table-bordered table-hover" data-report-pagination="server">
-            <thead class="thead-light">
-                <tr>
-                    <th>#</th>
-                    <th>Day Born</th>
-                    <th>CRN</th>
-                    <th>Member Name</th>
-                    <th>Payment Type</th>
-                    <th>Amount</th>
-                    <th>Payment Period</th>
-                    <th>Date</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php if (empty($rows)): ?>
-                    <tr><td colspan="8" class="text-center">No records found.</td></tr>
-                <?php else: ?>
-                    <?php foreach ($rows as $i => $row): ?>
-                        <tr>
-                            <td><?php echo $i + 1 + $offset; ?></td>
-                            <td><?php echo $days[date('N', strtotime($row['dob'])) == 7 ? 1 : date('N', strtotime($row['dob'])) + 1]; ?></td>
-                            <td><?php echo htmlspecialchars($row['crn']); ?></td>
-                            <td><?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name']); ?></td>
-                            <td><?php echo htmlspecialchars($row['payment_type'] ?: '-'); ?></td>
-                            <td><?php echo htmlspecialchars(number_format($row['amount'], 2)); ?></td>
-                            <td><?= htmlspecialchars($row['reporting_period'] ?: '-') ?></td>
-                            <td><?php echo htmlspecialchars($row['payment_date']); ?></td>
-                        </tr>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </tbody>
+<div class="container-fluid mt-4 member-payment-summary day-born-report">
+  <div class="d-flex flex-wrap justify-content-between align-items-start mb-3" style="gap:12px">
+    <div>
+      <a href="../../reports.php" class="btn btn-outline-secondary btn-sm mb-2"><i class="fas fa-arrow-left mr-1"></i>Report Centre</a>
+      <h2 class="mb-1 font-weight-bold"><i class="fas fa-calendar-day mr-2"></i>Day Born Payment Report</h2>
+      <p class="text-muted mb-0">One consolidated row per member, with complete payment history available on demand.</p>
+    </div>
+    <div class="d-flex flex-wrap" style="gap:8px">
+      <?php if ($canExport): ?><a href="?<?= htmlspecialchars(http_build_query($exportQuery)) ?>" class="btn btn-success btn-sm"><i class="fas fa-file-csv mr-1"></i>Export member summary</a><?php endif; ?>
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.print()"><i class="fas fa-print mr-1"></i>Print</button>
+    </div>
+  </div>
+
+  <div class="card mb-3"><div class="card-body">
+    <form method="get"><div class="form-row">
+      <div class="form-group col-lg-2 col-md-4"><label for="day">Day of Birth</label><select name="day" id="day" class="form-control"><option value="0">All days</option><?php foreach ($days as $number => $name): ?><option value="<?= $number ?>" <?= $selectedDay === $number ? 'selected' : '' ?>><?= htmlspecialchars($name) ?></option><?php endforeach; ?></select></div>
+      <div class="form-group col-lg-2 col-md-4"><label for="payment_type_id">Payment Type</label><select name="payment_type_id" id="payment_type_id" class="form-control"><option value="0">All types</option><?php foreach ($paymentTypes as $paymentType): ?><option value="<?= (int) $paymentType['id'] ?>" <?= $selectedPaymentType === (int) $paymentType['id'] ? 'selected' : '' ?>><?= htmlspecialchars($paymentType['name']) ?></option><?php endforeach; ?></select></div>
+      <div class="form-group col-lg-2 col-md-4"><label for="start_date">Transaction From</label><input type="date" name="start_date" id="start_date" class="form-control" value="<?= htmlspecialchars($startDate) ?>"></div>
+      <div class="form-group col-lg-2 col-md-4"><label for="end_date">Transaction To</label><input type="date" name="end_date" id="end_date" class="form-control" value="<?= htmlspecialchars($endDate) ?>"></div>
+      <div class="form-group col-lg-2 col-md-4"><label for="period_from">Reporting From</label><input type="month" name="period_from" id="period_from" class="form-control" value="<?= htmlspecialchars($periodFrom) ?>"></div>
+      <div class="form-group col-lg-2 col-md-4"><label for="period_to">Reporting To</label><input type="month" name="period_to" id="period_to" class="form-control" value="<?= htmlspecialchars($periodTo) ?>"></div>
+      <div class="form-group col-lg-2 col-md-4 d-flex align-items-end"><button class="btn btn-primary btn-block"><i class="fas fa-filter mr-1"></i>Apply filters</button></div>
+      <div class="form-group col-lg-2 col-md-4 d-flex align-items-end"><a href="day_born_payment_report.php" class="btn btn-outline-secondary btn-block">Reset</a></div>
+    </div></form>
+  </div></div>
+
+  <div class="row mb-3">
+    <?php foreach ([
+        ['Members', (int) ($stats['member_count'] ?? 0), 'users'],
+        ['Transactions', (int) ($stats['transaction_count'] ?? 0), 'receipt'],
+        ['Total Amount', 'GHS ' . number_format((float) ($stats['total_amount'] ?? 0), 2), 'coins'],
+        ['Average / Member', 'GHS ' . number_format((float) ($stats['average_per_member'] ?? 0), 2), 'chart-line'],
+    ] as $metric): ?>
+      <div class="col-6 col-xl-3 mb-2"><div class="summary-card"><small><i class="fas fa-<?= $metric[2] ?> mr-1"></i><?= htmlspecialchars($metric[0]) ?></small><strong><?= is_int($metric[1]) ? number_format($metric[1]) : htmlspecialchars($metric[1]) ?></strong></div></div>
+    <?php endforeach; ?>
+  </div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center"><strong>Member Payment Summary</strong><small class="text-muted">Select “View payments” for the transaction ledger.</small></div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-hover table-bordered" data-report-pagination="server">
+          <thead><tr><th>#</th><th>Member</th><th>Day Born</th><th class="text-center">Transactions</th><th>Payment Types</th><th>Reporting Coverage</th><th>Last Payment</th><th class="text-right">Total</th><th>Action</th></tr></thead>
+          <tbody>
+          <?php if (!$members): ?><tr><td colspan="9" class="text-center text-muted py-5">No member payments match the selected filters.</td></tr><?php endif; ?>
+          <?php foreach ($members as $index => $member):
+              $memberName = trim(implode(' ', array_filter([$member['first_name'], $member['middle_name'], $member['last_name']])));
+              $firstPeriod = !empty($member['first_reporting_period']) ? date('M Y', strtotime($member['first_reporting_period'])) : '-';
+              $lastPeriod = !empty($member['last_reporting_period']) ? date('M Y', strtotime($member['last_reporting_period'])) : '-';
+              $coverage = $firstPeriod === $lastPeriod ? $firstPeriod : $firstPeriod . ' – ' . $lastPeriod;
+          ?>
+            <tr>
+              <td><?= number_format($pagination['offset'] + $index + 1) ?></td>
+              <td><div class="member-name"><?= htmlspecialchars($memberName) ?></div><small class="text-muted">CRN: <?= htmlspecialchars((string) ($member['crn'] ?: '-')) ?></small></td>
+              <td><?= !empty($member['dob']) ? htmlspecialchars(date('l', strtotime($member['dob']))) : '<span class="text-muted">Not recorded</span>' ?></td>
+              <td class="text-center"><span class="badge badge-primary"><?= number_format((int) $member['transaction_count']) ?></span></td>
+              <td><div class="payment-types"><?= htmlspecialchars((string) ($member['payment_types'] ?: 'Unclassified')) ?></div></td>
+              <td><?= htmlspecialchars($coverage) ?></td>
+              <td><?= !empty($member['last_payment_date']) ? htmlspecialchars(date('j M Y', strtotime($member['last_payment_date']))) : '-' ?></td>
+              <td class="text-right font-weight-bold text-success">GHS <?= number_format((float) $member['total_amount'], 2) ?></td>
+              <td><button type="button" class="btn btn-outline-primary btn-sm view-member-payments" data-member-id="<?= (int) $member['member_id'] ?>" data-member-name="<?= htmlspecialchars($memberName, ENT_QUOTES) ?>"><i class="fas fa-receipt mr-1"></i>View payments</button></td>
+            </tr>
+          <?php endforeach; ?>
+          </tbody>
         </table>
+      </div>
+      <?php report_render_server_pagination($pagination['total_rows'], $pagination['page'], $pagination['per_page'], 'Member payment summary pages'); ?>
     </div>
-    <div class="mt-3">
-        <h5 class="font-weight-bold">Total Amount: <span class="text-primary">₵<?php echo number_format($total_amount, 2); ?></span></h5>
-    </div>
-    <?php report_render_server_pagination($total_count, $page, $per_page, 'Day-born payment report pages'); ?>
+  </div>
+
+  <div class="modal fade" id="memberPaymentsModal" tabindex="-1" role="dialog" aria-labelledby="memberPaymentsTitle" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable" role="document"><div class="modal-content">
+      <div class="modal-header"><div><h5 class="modal-title" id="memberPaymentsTitle">Member payment history</h5><small class="text-white-50">Filtered transaction evidence</small></div><button type="button" class="close text-white" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button></div>
+      <div class="modal-body" id="memberPaymentsBody"><div class="text-center text-muted py-5">Select a member to view payments.</div></div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button></div>
+    </div></div>
+  </div>
 </div>
-<!-- DataTables and JS export dependencies -->
-<script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
 <script>
-$(document).ready(function() {
-    var table = $(".table").DataTable({
-        dom: 'Bfrtip',
-        buttons: [
-            {
-                extend: 'csv',
-                text: '<i class="fas fa-file-csv"></i> CSV',
-                className: 'btn btn-success btn-sm mr-2',
-                title: 'Day Born Payment Report'
-            },
-            {
-                extend: 'pdf',
-                text: '<i class="fas fa-file-pdf"></i> PDF',
-                className: 'btn btn-danger btn-sm mr-2',
-                title: 'Day Born Payment Report'
-            },
-            {
-                extend: 'print',
-                text: '<i class="fas fa-print"></i> Print',
-                className: 'btn btn-secondary btn-sm',
-                title: 'Day Born Payment Report'
-            }
-        ],
-        paging: false,
-        searching: false,
-        info: false,
-        ordering: false
-    });
-    // Hide custom buttons if DataTables is used
-    $('#export-csv, #export-pdf, #print-table').hide();
-});
+window.MemberPaymentDrilldownConfig = {
+  endpoint: <?= json_encode(BASE_URL . '/views/reports/details/ajax_member_payment_transactions.php') ?>,
+  filters: <?= json_encode([
+      'report' => 'day_born',
+      'day' => $selectedDay,
+      'payment_type_id' => $selectedPaymentType,
+      'start_date' => $startDate,
+      'end_date' => $endDate,
+      'period_from' => $periodFrom,
+      'period_to' => $periodTo,
+  ]) ?>
+};
 </script>
-<?php $page_content = ob_get_clean(); include dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'includes' . DIRECTORY_SEPARATOR . 'layout.php'; ?>
+<?php
+$page_content = ob_get_clean();
+include __DIR__ . '/../../../includes/layout.php';
+?>
