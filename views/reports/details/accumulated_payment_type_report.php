@@ -1,8 +1,9 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
 require_once __DIR__.'/../../../helpers/payment_report_context.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -86,13 +87,12 @@ $where_sql
 GROUP BY m.id, m.crn, m.last_name, m.first_name, bible_class.name, pt.id, pt.name, reporting_period
 ORDER BY m.last_name, m.first_name, pt.name
 ";
-$result = $conn->query($sql);
-$rows = [];
-if ($result) {
-    while ($row = $result->fetch_assoc()) {
-        $rows[] = $row;
-    }
-}
+$pagination = report_paginate_query($conn, $sql);
+$rows = $pagination['result']->fetch_all(MYSQLI_ASSOC);
+$page = $pagination['page'];
+$per_page = $pagination['per_page'];
+$offset = $pagination['offset'];
+$total_rows = $pagination['total_rows'];
 // Total for all
 $total_all_sql = "SELECT SUM(p.amount) AS total_amount FROM v_posted_payments p
 JOIN members m ON m.id = p.member_id
@@ -139,7 +139,7 @@ if ($total_all_result && ($row = $total_all_result->fetch_assoc())) {
         <button type="submit" class="btn btn-primary">Filter</button>
     </form>
     <div class="table-responsive">
-        <table class="table table-bordered table-hover">
+        <table class="table table-bordered table-hover" data-report-pagination="server">
             <thead class="thead-light">
                 <tr>
                     <th>#</th>
@@ -158,7 +158,7 @@ if ($total_all_result && ($row = $total_all_result->fetch_assoc())) {
                 <?php else: ?>
                     <?php foreach ($rows as $i => $row): ?>
                         <tr>
-                            <td><?php echo $i + 1; ?></td>
+                            <td><?php echo $i + 1 + $offset; ?></td>
                             <td><?php echo htmlspecialchars($row['crn'] ?: '-'); ?></td>
                             <td><?php echo htmlspecialchars(trim($row['last_name'] . ', ' . $row['first_name'])); ?></td>
                             <td><?php echo htmlspecialchars($row['class_name'] ?: '-'); ?></td>
@@ -175,19 +175,10 @@ if ($total_all_result && ($row = $total_all_result->fetch_assoc())) {
     <div class="mt-3">
         <h5 class="font-weight-bold">Total Amount: <span class="text-primary">₵<?php echo number_format($total_amount, 2); ?></span></h5>
     </div>
+    <?php report_render_server_pagination($total_rows, $page, $per_page, 'Accumulated payment report pages'); ?>
 </div>
 <!-- DataTables and JS export dependencies -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css">
-<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.print.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.pdf.min.js"></script>
 <script>
 $(document).ready(function() {
     var table = $(".table").DataTable({
@@ -214,11 +205,9 @@ $(document).ready(function() {
                 title: <?= json_encode('Accumulated Payment Type Report - ' . $period_label) ?>
             }
         ],
-        paging: true,
-        pageLength: 25,
-        lengthMenu: [25, 50, 100],
+        paging: false,
         searching: false,
-        info: true,
+        info: false,
         ordering: false
     });
     // Hide custom buttons if DataTables is used

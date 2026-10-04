@@ -2,6 +2,8 @@
 require_once __DIR__.'/../../config/config.php';
 require_once __DIR__.'/../../helpers/auth.php';
 require_once __DIR__.'/../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../helpers/report_scope.php';
+require_once __DIR__.'/../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -32,15 +34,22 @@ $page_title = 'Membership Report';
 
 ob_start();
 
-// Fetch filter options
-$churches = $conn->query("SELECT id, name FROM churches ORDER BY name");
-$classes = $conn->query("SELECT id, name FROM bible_classes ORDER BY name");
+// Fetch only filter options the current account is authorized to use.
+$actorChurchId = report_scope_current_church_id($conn);
+$churchOptionWhere = $is_super_admin ? '' : ' WHERE id = ' . max(0, $actorChurchId);
+$classOptionWhere = $is_super_admin ? '' : ' WHERE church_id = ' . max(0, $actorChurchId);
+$churches = $conn->query("SELECT id, name FROM churches{$churchOptionWhere} ORDER BY name");
+$classes = $conn->query("SELECT id, name FROM bible_classes{$classOptionWhere} ORDER BY name");
 
 // Handle filters
 $where = "WHERE 1=1";
 $params = [];
 $types = '';
-if (!empty($_GET['church_id'])) {
+if (!$is_super_admin) {
+    $where .= ' AND m.church_id = ?';
+    $params[] = $actorChurchId;
+    $types .= 'i';
+} elseif (!empty($_GET['church_id'])) {
     $where .= " AND m.church_id = ?";
     $params[] = intval($_GET['church_id']);
     $types .= 'i';
@@ -80,19 +89,31 @@ if (!empty($_GET['confirmation_status'])) {
     $params[] = $_GET['confirmation_status'];
     $types .= 's';
 }
-// Membership status is computed in PHP, not filtered in SQL
+$membershipStatusMap = [
+    'full' => 'Full Member',
+    'catechumen' => 'Catechumen',
+    'adherent' => 'Adherent',
+    'junior' => 'Junior Member',
+    'distant' => 'Distant Member',
+    'invalid' => 'Invalid',
+];
+if (!empty($_GET['membership_status']) && isset($membershipStatusMap[$_GET['membership_status']])) {
+    $where .= ' AND m.membership_status = ?';
+    $params[] = $membershipStatusMap[$_GET['membership_status']];
+    $types .= 's';
+}
 if (!empty($_GET['org_member'])) {
     $where .= " AND mo.organization_id = ?";
     $params[] = intval($_GET['org_member']);
     $types .= 'i';
 }
 if (!empty($_GET['dob'])) {
-    $where .= " AND m.day_born = ?";
+    $where .= " AND m.dob = ?";
     $params[] = $_GET['dob'];
     $types .= 's';
 }
 if (!empty($_GET['day_born'])) {
-    $where .= " AND DAYNAME(m.day_born) = ?";
+    $where .= " AND DAYNAME(m.dob) = ?";
     $params[] = $_GET['day_born'];
     $types .= 's';
 }
@@ -101,23 +122,23 @@ if (!empty($_GET['age_bracket'])) {
     $today = date('Y-m-d');
     $age_bracket = $_GET['age_bracket'];
     if ($age_bracket == '0-12') {
-        $where .= " AND TIMESTAMPDIFF(YEAR, m.day_born, ?) BETWEEN 0 AND 12";
+        $where .= " AND TIMESTAMPDIFF(YEAR, m.dob, ?) BETWEEN 0 AND 12";
         $params[] = $today;
         $types .= 's';
     } elseif ($age_bracket == '13-17') {
-        $where .= " AND TIMESTAMPDIFF(YEAR, m.day_born, ?) BETWEEN 13 AND 17";
+        $where .= " AND TIMESTAMPDIFF(YEAR, m.dob, ?) BETWEEN 13 AND 17";
         $params[] = $today;
         $types .= 's';
     } elseif ($age_bracket == '18-35') {
-        $where .= " AND TIMESTAMPDIFF(YEAR, m.day_born, ?) BETWEEN 18 AND 35";
+        $where .= " AND TIMESTAMPDIFF(YEAR, m.dob, ?) BETWEEN 18 AND 35";
         $params[] = $today;
         $types .= 's';
     } elseif ($age_bracket == '36-59') {
-        $where .= " AND TIMESTAMPDIFF(YEAR, m.day_born, ?) BETWEEN 36 AND 59";
+        $where .= " AND TIMESTAMPDIFF(YEAR, m.dob, ?) BETWEEN 36 AND 59";
         $params[] = $today;
         $types .= 's';
     } elseif ($age_bracket == '60+') {
-        $where .= " AND TIMESTAMPDIFF(YEAR, m.day_born, ?) >= 60";
+        $where .= " AND TIMESTAMPDIFF(YEAR, m.dob, ?) >= 60";
         $params[] = $today;
         $types .= 's';
     }
@@ -148,12 +169,8 @@ if (!empty($_GET['role_of_service'])) {
     $join .= ' INNER JOIN member_roles_of_serving mrs ON mrs.member_id = m.id ';
 }
 $sql = "SELECT m.*, c.name AS class_name, ch.name AS church_name FROM members m $join LEFT JOIN bible_classes c ON m.class_id = c.id LEFT JOIN churches ch ON m.church_id = ch.id $where ORDER BY m.last_name, m.first_name, m.middle_name";
-$stmt = $conn->prepare($sql);
-if ($params) {
-    $stmt->bind_param($types, ...$params);
-}
-$stmt->execute();
-$members = $stmt->get_result();
+$pagination = report_paginate_query($conn, $sql, $types, $params);
+$members = $pagination['result'];
 
 // For growth chart: get monthly registration counts
 $growth_join = '';
@@ -316,7 +333,7 @@ while ($row = $growth_res->fetch_assoc()) {
     </div>
     <div class="card-body">
       <div class="table-responsive">
-        <table class="table table-bordered" id="memberTable" width="100%" cellspacing="0">
+        <table class="table table-bordered" id="memberTable" data-report-pagination="server" width="100%" cellspacing="0">
           <thead>
             <tr>
               <th>Photo</th>
@@ -349,7 +366,7 @@ while ($row = $growth_res->fetch_assoc()) {
               <td><?=htmlspecialchars($row['phone'])?></td>
               <td><?=htmlspecialchars($row['class_name'])?></td>
               <td><?=htmlspecialchars($row['church_name'])?></td>
-              <td><?=htmlspecialchars($row['day_born'])?></td>
+              <td><?=htmlspecialchars($row['dob'])?></td>
               <td><?=htmlspecialchars($row['gender'])?></td>
               <td><?=htmlspecialchars($row['status'])?></td>
             </tr>
@@ -357,32 +374,21 @@ while ($row = $growth_res->fetch_assoc()) {
           </tbody>
         </table>
       </div>
+      <?php report_render_server_pagination($pagination['total_rows'], $pagination['page'], $pagination['per_page'], 'Membership report pages'); ?>
     </div>
   </div>
 </div>
 
 <!-- DataTables and Chart.js scripts -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap4.min.css">
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.bootstrap4.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.print.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 $(document).ready(function() {
     $('#memberTable').DataTable({
+        paging: false,
+        searching: false,
+        info: false,
         dom: 'Bfrtip',
-        buttons: [
-            'copy', 'csv', 'excel', 'pdf', 'print'
-        ]
+        buttons: <?= $can_export ? "[\n            'copy', 'csv', 'excel', 'pdf', 'print'\n        ]" : '[]' ?>
     });
     var ctx = document.getElementById('growthChart').getContext('2d');
     var growthChart = new Chart(ctx, {

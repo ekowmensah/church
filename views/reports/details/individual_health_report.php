@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../../helpers/report_scope.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -31,12 +33,13 @@ $can_export = $is_super_admin || has_permission('export_individual_health_report
 // Filtering
 $member_search = isset($_GET['member_search']) ? trim($_GET['member_search']) : '';
 $health_type = isset($_GET['health_type']) ? trim($_GET['health_type']) : '';
-$date_from = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
-$date_to = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
+$date_from = report_scope_valid_date((string) ($_GET['date_from'] ?? ''));
+$date_to = report_scope_valid_date((string) ($_GET['date_to'] ?? ''));
 $export = isset($_GET['export']) && $_GET['export'] === 'csv';
 
 // Build WHERE clause
-$where = "WHERE m.status = 'active'";
+$memberScope = report_scope_member_condition($conn, 'm');
+$where = "WHERE m.status = 'active' AND {$memberScope}";
 $params = [];
 $types = '';
 if ($member_search) {
@@ -51,30 +54,81 @@ if ($date_from) {
     $types .= 's';
 }
 if ($date_to) {
-    $where .= " AND hr.recorded_at <= ?";
-    $params[] = $date_to . ' 23:59:59';
+    $where .= " AND hr.recorded_at < ?";
+    $params[] = report_scope_exclusive_end($date_to) . ' 00:00:00';
     $types .= 's';
 }
+$typeWhere = $where;
+$typeParams = $params;
+$typeTypes = $types;
+if ($health_type !== '') {
+    $where .= " AND JSON_SEARCH(JSON_KEYS(hr.vitals), 'one', ?) IS NOT NULL";
+    $params[] = $health_type;
+    $types .= 's';
+}
+
+$availableTypes = [];
+$typeSql = "SELECT DISTINCT JSON_KEYS(hr.vitals) AS health_keys
+              FROM health_records hr
+              INNER JOIN members m ON hr.member_id = m.id
+              {$typeWhere}";
+$typeStmt = $conn->prepare($typeSql);
+if ($typeTypes) $typeStmt->bind_param($typeTypes, ...$typeParams);
+$typeStmt->execute();
+$typeResult = $typeStmt->get_result();
+while ($typeRow = $typeResult->fetch_assoc()) {
+    foreach ((array) json_decode((string) ($typeRow['health_keys'] ?? '[]'), true) as $key) {
+        $availableTypes[(string) $key] = true;
+    }
+}
+$typeStmt->close();
+ksort($availableTypes);
 
 // Query health records for active members
 $sql = "SELECT hr.*, m.crn, m.first_name, m.last_name, c.name AS class_name FROM health_records hr 
         INNER JOIN members m ON hr.member_id = m.id 
         LEFT JOIN bible_classes c ON m.class_id = c.id 
         $where ORDER BY m.last_name, m.first_name, hr.recorded_at DESC";
-$stmt = $conn->prepare($types ? $sql . '' : $sql);
-if ($types) {
-    $stmt->bind_param($types, ...$params);
+if ($export) {
+    $stmt = $conn->prepare($sql);
+    if ($types) $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $pagination = null;
+} else {
+    $memberPageSql = "SELECT DISTINCT m.id, m.last_name, m.first_name
+                        FROM health_records hr
+                        INNER JOIN members m ON hr.member_id = m.id
+                        {$where}
+                       ORDER BY m.last_name, m.first_name, m.id";
+    $pagination = report_paginate_query($conn, $memberPageSql, $types, $params);
+    $pageMemberIds = array_map('intval', array_column($pagination['result']->fetch_all(MYSQLI_ASSOC), 'id'));
+    if ($pageMemberIds) {
+        $pageWhere = $where . ' AND m.id IN (' . implode(',', array_fill(0, count($pageMemberIds), '?')) . ')';
+        $pageSql = "SELECT hr.*, m.crn, m.first_name, m.last_name, c.name AS class_name
+                      FROM health_records hr
+                      INNER JOIN members m ON hr.member_id = m.id
+                      LEFT JOIN bible_classes c ON m.class_id = c.id
+                      {$pageWhere}
+                     ORDER BY m.last_name, m.first_name, hr.recorded_at DESC";
+        $pageTypes = $types . str_repeat('i', count($pageMemberIds));
+        $pageParams = array_merge($params, $pageMemberIds);
+        $stmt = $conn->prepare($pageSql);
+        $stmt->bind_param($pageTypes, ...$pageParams);
+        $stmt->execute();
+        $result = $stmt->get_result();
+    } else {
+        $result = false;
+    }
 }
-$stmt->execute();
-$result = $stmt->get_result();
 
 // Collect all possible health types from vitals and group them per member
-$all_types = [];
+$all_types = $availableTypes;
 $grouped_rows = [];
 $member_ids = [];
 $health_type_counts = [];
 $all_member_records = [];
-while ($row = $result->fetch_assoc()) {
+while ($result && ($row = $result->fetch_assoc())) {
     $vitals = json_decode($row['vitals'], true) ?: [];
     $member_id = (int) $row['member_id'];
     $member_ids[$member_id] = true;
@@ -111,8 +165,8 @@ if ($health_type) {
     }));
 }
 
-$summary_records = count($rows);
-$summary_members = count($member_ids);
+$summary_records = $export ? count($rows) : $pagination['total_rows'];
+$summary_members = $export ? count($member_ids) : $pagination['total_rows'];
 $summary_health_types = count($all_types);
 $summary_date_label = 'All available records';
 if ($date_from || $date_to) {
@@ -221,7 +275,7 @@ $page_title = 'Individual Health Report';
       </form>
 
       <div class="table-responsive">
-        <table class="table table-hover table-bordered align-middle mb-0">
+        <table class="table table-hover table-bordered align-middle mb-0" data-report-pagination="server">
           <thead class="thead-light">
             <tr>
               <th style="width: 30px;"></th>
@@ -306,6 +360,7 @@ $page_title = 'Individual Health Report';
           </tbody>
         </table>
       </div>
+      <?php report_render_server_pagination($pagination['total_rows'], $pagination['page'], $pagination['per_page'], 'Individual health report pages'); ?>
     </div>
   </div>
 </div>

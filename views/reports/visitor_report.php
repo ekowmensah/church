@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../helpers/auth.php';
 require_once __DIR__ . '/../../helpers/permissions_v2.php';
+require_once __DIR__ . '/../../helpers/report_pagination.php';
 require_once __DIR__ . '/../../services/UnifiedAttendanceReportService.php';
 
 if (!is_logged_in()) {
@@ -66,22 +67,36 @@ $sql = "SELECT visitor.*, church.name AS church_name,
           LEFT JOIN members converted ON converted.id = visitor.converted_to_member_id
          WHERE " . implode(' AND ', $where) . '
          ORDER BY visitor.visit_date DESC, visitor.name, visitor.id DESC';
-$stmt = $conn->prepare($sql);
-if ($params) $stmt->bind_param($types, ...$params);
-$stmt->execute();
-$rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+$pagination = report_paginate_query($conn, $sql, $types, $params);
+$rows = $pagination['result']->fetch_all(MYSQLI_ASSOC);
 
+$summarySql = "SELECT COUNT(*) AS total,
+                      SUM(visitor.conversion_status = 'registered') AS registered,
+                      SUM(visitor.follow_up_status IN ('contacted', 'in_progress')) AS active,
+                      SUM(visitor.next_follow_up_date IS NOT NULL
+                          AND visitor.next_follow_up_date <= CURDATE()
+                          AND visitor.follow_up_status NOT IN ('completed', 'declined')) AS due
+                 FROM visitors visitor
+                WHERE " . implode(' AND ', $where);
+$summaryStmt = $conn->prepare($summarySql);
+if ($params) $summaryStmt->bind_param($types, ...$params);
+$summaryStmt->execute();
+$summary = $summaryStmt->get_result()->fetch_assoc() ?: ['total' => 0, 'registered' => 0, 'active' => 0, 'due' => 0];
+$summaryStmt->close();
+
+$trendSql = "SELECT DATE_FORMAT(visitor.visit_date, '%Y-%m') AS ym, COUNT(*) AS total
+               FROM visitors visitor
+              WHERE " . implode(' AND ', $where) . "
+              GROUP BY ym ORDER BY ym";
+$trendStmt = $conn->prepare($trendSql);
+if ($params) $trendStmt->bind_param($types, ...$params);
+$trendStmt->execute();
 $trend = [];
-$summary = ['total' => count($rows), 'registered' => 0, 'active' => 0, 'due' => 0];
-foreach ($rows as $row) {
-    $month = substr((string) $row['visit_date'], 0, 7);
-    if ($month !== '') $trend[$month] = ($trend[$month] ?? 0) + 1;
-    if (($row['conversion_status'] ?? '') === 'registered') $summary['registered']++;
-    if (in_array($row['follow_up_status'] ?? '', ['contacted', 'in_progress'], true)) $summary['active']++;
-    if (!empty($row['next_follow_up_date']) && $row['next_follow_up_date'] <= date('Y-m-d') && !in_array($row['follow_up_status'] ?? '', ['completed', 'declined'], true)) $summary['due']++;
+$trendResult = $trendStmt->get_result();
+while ($trendRow = $trendResult->fetch_assoc()) {
+    $trend[$trendRow['ym']] = (int) $trendRow['total'];
 }
-ksort($trend);
+$trendStmt->close();
 $statusLabels = ['not_started'=>'Not Started','contacted'=>'Contacted','in_progress'=>'In Progress','completed'=>'Completed','unreachable'=>'Unreachable','declined'=>'Declined'];
 
 $page_title = 'Visitor Report';
@@ -103,7 +118,8 @@ ob_start();
   <div class="row mb-3"><?php foreach ([['Total Visitors',$summary['total'],'primary'],['Registered',$summary['registered'],'success'],['Active Follow-up',$summary['active'],'warning'],['Due / Overdue',$summary['due'],'danger']] as $card): ?><div class="col-6 col-lg-3 mb-2"><div class="card border-left-<?= $card[2] ?> shadow-sm h-100"><div class="card-body py-3"><div class="small text-uppercase text-muted"><?= htmlspecialchars($card[0]) ?></div><div class="h4 mb-0"><?= (int) $card[1] ?></div></div></div></div><?php endforeach; ?></div>
   <div class="card mb-4"><div class="card-header bg-light"><strong>Visit Trend</strong></div><div class="card-body"><canvas id="trendChart" height="60"></canvas></div></div>
   <div class="card shadow mb-4"><div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">Visitor Records</h6></div><div class="card-body"><div class="table-responsive">
-    <table class="table table-bordered table-sm" id="visitorTable" width="100%"><thead><tr><th>Date</th><th>Name</th><th>Church</th><th>Contact</th><th>Purpose / Invited By</th><th>Membership</th><th>Follow-up</th><th>Next Date / Assignee</th></tr></thead><tbody>
+    <table class="table table-bordered table-sm" id="visitorTable" data-report-pagination="server" width="100%"><thead><tr><th>Date</th><th>Name</th><th>Church</th><th>Contact</th><th>Purpose / Invited By</th><th>Membership</th><th>Follow-up</th><th>Next Date / Assignee</th></tr></thead><tbody>
+      <?php if (!$rows): ?><tr><td colspan="8" class="text-center text-muted py-4">No visitor records match the selected filters.</td></tr><?php endif; ?>
       <?php foreach ($rows as $row): ?><tr>
         <td><?= htmlspecialchars($row['visit_date'] ?? '') ?></td><td><?= htmlspecialchars($row['name'] ?? '') ?><br><small class="text-muted"><?= htmlspecialchars($row['gender'] ?? '') ?></small></td><td><?= htmlspecialchars($row['church_name'] ?? '') ?></td>
         <td><?= htmlspecialchars($row['phone'] ?? '') ?><br><small><?= htmlspecialchars($row['email'] ?? '') ?></small><br><small><?= htmlspecialchars($row['address'] ?? '') ?></small></td>
@@ -113,9 +129,7 @@ ob_start();
         <td><?= htmlspecialchars($row['next_follow_up_date'] ?: '-') ?><?php if (!empty($row['follow_up_assigned_name'])): ?><br><small><?= htmlspecialchars($row['follow_up_assigned_name']) ?></small><?php endif; ?></td>
       </tr><?php endforeach; ?>
     </tbody></table>
-  </div></div></div>
+  </div><?php report_render_server_pagination($pagination['total_rows'], $pagination['page'], $pagination['per_page'], 'Visitor report pages'); ?></div></div>
 </div>
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css"><link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap4.min.css">
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script><script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script><script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script><script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script><script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.bootstrap4.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/pdfmake.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/vfs_fonts.js"></script><script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script><script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.print.min.js"></script><script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script><script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>$(function(){$('#visitorTable').DataTable({pageLength:25,order:[[0,'desc']],dom:<?= json_encode($canExport ? 'Bfrtip' : 'frtip') ?>,buttons:<?= json_encode($canExport ? ['copy','csv','excel','pdf','print'] : []) ?>});new Chart(document.getElementById('trendChart').getContext('2d'),{type:'line',data:{labels:<?= json_encode(array_keys($trend)) ?>,datasets:[{label:'Visits',data:<?= json_encode(array_values($trend)) ?>,backgroundColor:'rgba(111,66,193,.2)',borderColor:'rgba(111,66,193,1)',borderWidth:2,fill:true,tension:.3}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});});</script>
+<script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script><script>$(function(){$('#visitorTable').DataTable({paging:false,searching:false,info:false,order:[[0,'desc']],dom:<?= json_encode($canExport ? 'Bfrtip' : 'frtip') ?>,buttons:<?= json_encode($canExport ? ['copy','csv','excel','pdf','print'] : []) ?>});new Chart(document.getElementById('trendChart').getContext('2d'),{type:'line',data:{labels:<?= json_encode(array_keys($trend)) ?>,datasets:[{label:'Visits',data:<?= json_encode(array_values($trend)) ?>,backgroundColor:'rgba(111,66,193,.2)',borderColor:'rgba(111,66,193,1)',borderWidth:2,fill:true,tension:.3}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});});</script>
 <?php $page_content = ob_get_clean(); include __DIR__ . '/../../includes/layout.php'; ?>

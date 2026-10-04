@@ -1,8 +1,9 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
 require_once __DIR__.'/../../../helpers/payment_report_context.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -82,13 +83,12 @@ AND NOT EXISTS (
 )
 ORDER BY pt.name, m.last_name, m.first_name
 ";
-$result = $conn->query($sql);
-$rows = [];
-if ($result) {
-    while ($row = $result->fetch_assoc()) {
-        $rows[] = $row;
-    }
-}
+$pagination = report_paginate_query($conn, $sql);
+$rows = $pagination['result']->fetch_all(MYSQLI_ASSOC);
+$page = $pagination['page'];
+$per_page = $pagination['per_page'];
+$offset = $pagination['offset'];
+$total_rows = $pagination['total_rows'];
 ?>
 <div class="container mt-4">
     <a href="../../reports.php" class="btn btn-secondary mb-3"><i class="fas fa-arrow-left mr-1"></i>Back to Reports</a>
@@ -132,7 +132,7 @@ if ($result) {
     <button id="print-table" class="btn btn-secondary btn-sm"><i class="fas fa-print"></i> Print</button>
 </div>
 <div class="table-responsive">
-        <table class="table table-bordered table-hover">
+        <table class="table table-bordered table-hover" data-report-pagination="server">
             <thead class="thead-light">
                 <tr>
                     <th>#</th>
@@ -153,7 +153,7 @@ if ($result) {
                 <?php else: ?>
                     <?php foreach ($rows as $i => $row): ?>
                         <tr>
-                            <td><?php echo $i + 1; ?></td>
+                            <td><?php echo $i + 1 + $offset; ?></td>
                             <td><?php echo htmlspecialchars($row['payment_type']); ?></td>
                             <td><?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name']); ?></td>
                             <td><?php echo htmlspecialchars($row['crn']); ?></td>
@@ -169,19 +169,10 @@ if ($result) {
             </tbody>
         </table>
     </div>
+    <?php report_render_server_pagination($total_rows, $page, $per_page, 'Zero-payment report pages'); ?>
 </div>
 <!-- DataTables and JS export dependencies -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css">
-<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.print.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.pdf.min.js"></script>
 <script>
 $(document).ready(function() {
     var table = $(".table").DataTable({
@@ -208,11 +199,9 @@ $(document).ready(function() {
                 title: <?= json_encode('Zero Payment Type Report - ' . $period_label) ?>
             }
         ],
-        paging: true,
-        pageLength: 25,
-        lengthMenu: [25, 50, 100],
+        paging: false,
         searching: false,
-        info: true,
+        info: false,
         ordering: false
     });
     // Hide custom buttons if DataTables is used

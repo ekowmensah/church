@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../../helpers/report_scope.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -33,10 +35,12 @@ require_once dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SE
 ob_start();
 
 $conn = $GLOBALS['conn'];
+$memberScope = report_scope_member_condition($conn, 'm');
+$organizationScope = report_scope_church_condition($conn, 'organizations');
 // Try common org membership join patterns (adjust if needed)
 // Fetch organization list for filter
 $orgs = [];
-$org_result = $conn->query("SELECT id, name FROM organizations ORDER BY name");
+$org_result = $conn->query("SELECT id, name FROM organizations WHERE {$organizationScope} ORDER BY name");
 if ($org_result) {
     while ($row = $org_result->fetch_assoc()) {
         $orgs[] = $row;
@@ -45,12 +49,13 @@ if ($org_result) {
 
 $selected_org = isset($_GET['organization_id']) ? intval($_GET['organization_id']) : 0;
 
-$sql = "SELECT m.crn, m.last_name, m.first_name, org.name AS organization_name, m.gender, m.phone, m.dob, m.marital_status, m.home_town FROM members m LEFT JOIN member_organizations mo ON m.id = mo.member_id LEFT JOIN organizations org ON mo.organization_id = org.id WHERE m.status = 'active'";
+$sql = "SELECT m.crn, m.last_name, m.first_name, org.name AS organization_name, m.gender, m.phone, m.dob, m.marital_status, m.home_town FROM members m LEFT JOIN member_organizations mo ON m.id = mo.member_id LEFT JOIN organizations org ON mo.organization_id = org.id WHERE m.status = 'active' AND {$memberScope}";
 if ($selected_org) {
     $sql .= " AND org.id = $selected_org";
 }
 $sql .= " ORDER BY org.name, m.last_name, m.first_name";
-$result = $conn->query($sql);
+$pagination = report_paginate_query($conn, $sql);
+$result = $pagination['result'];
 $members = [];
 if ($result) {
     while ($row = $result->fetch_assoc()) {
@@ -81,7 +86,7 @@ if ($result) {
         <button id="print-table" class="btn btn-secondary btn-sm"><i class="fas fa-print"></i> Print</button>
     </div>
     <div class="table-responsive">
-        <table class="table table-bordered table-hover">
+        <table class="table table-bordered table-hover" data-report-pagination="server">
             <thead class="thead-light">
                 <tr>
                     <th>#</th>
@@ -101,7 +106,7 @@ if ($result) {
                 <?php else: ?>
                     <?php foreach ($members as $i => $member): ?>
                         <tr>
-                            <td><?php echo $i + 1; ?></td>
+                            <td><?php echo $pagination['offset'] + $i + 1; ?></td>
                             <td><?php echo htmlspecialchars($member['crn']); ?></td>
                             <td><?php echo htmlspecialchars($member['last_name'] . ', ' . $member['first_name']); ?></td>
                             <td><?php echo htmlspecialchars($member['organization_name'] ?: '-'); ?></td>
@@ -116,19 +121,10 @@ if ($result) {
             </tbody>
         </table>
     </div>
+    <?php report_render_server_pagination($pagination['total_rows'], $pagination['page'], $pagination['per_page'], 'Organization member report pages'); ?>
 </div>
 <!-- DataTables and JS export dependencies -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css">
-<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.print.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.pdf.min.js"></script>
 <script>
 $(document).ready(function() {
     var table = $(".table").DataTable({
@@ -156,7 +152,7 @@ $(document).ready(function() {
         paging: false,
         searching: false,
         info: false,
-        ordering: false
+        ordering: true
     });
     // Hide custom buttons if DataTables is used
     $('#export-csv, #export-pdf, #print-table').hide();

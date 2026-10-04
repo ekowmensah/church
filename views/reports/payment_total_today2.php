@@ -410,6 +410,7 @@ ob_start();
             ],
             responsive: true,
             pageLength: 25,
+            lengthMenu: [[25, 50, 100], [25, 50, 100]],
             order: [[0, 'asc']]
         };
         

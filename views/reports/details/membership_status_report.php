@@ -2,6 +2,7 @@
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
 require_once __DIR__.'/../../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -71,17 +72,14 @@ $sunday_sql = "SELECT s.srn AS crn, s.last_name, s.first_name, 'No' AS baptized,
                  FROM sunday_school s WHERE " . implode(' AND ', $sunday_where);
 $sql = "SELECT * FROM ({$member_sql}" . ($include_sunday_school ? " UNION ALL {$sunday_sql}" : '') . ") status_rows
         ORDER BY membership_status, last_name, first_name";
-$stmt = $conn->prepare($sql);
 if ($types !== '') {
     if (!$include_sunday_school) {
         $types = substr($types, 0, 1);
         $params = [reset($params)];
     }
-    $stmt->bind_param($types, ...$params);
 }
-$stmt->execute();
-$members = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+$pagination = report_paginate_query($conn, $sql, $types, $params);
+$members = $pagination['result']->fetch_all(MYSQLI_ASSOC);
 ?>
 <div class="container mt-4">
     <a href="../../reports.php" class="btn btn-secondary mb-3"><i class="fas fa-arrow-left mr-1"></i>Back to Reports</a>
@@ -106,7 +104,7 @@ $stmt->close();
         <button id="print-table" class="btn btn-secondary btn-sm"><i class="fas fa-print"></i> Print</button>
     </div>
     <div class="table-responsive">
-        <table class="table table-bordered table-hover">
+        <table class="table table-bordered table-hover" data-report-pagination="server">
             <thead class="thead-light">
                 <tr>
                     <th>#</th>
@@ -126,7 +124,7 @@ $stmt->close();
                 <?php if (empty($members)): ?>
                     <tr><td colspan="11" class="text-center">No members found.</td></tr>
                 <?php else: ?>
-                    <?php $i=1; foreach ($members as $member): ?>
+                    <?php $i = $pagination['offset'] + 1; foreach ($members as $member): ?>
                         <tr>
                             <td><?php echo $i++; ?></td>
                             <td><?php echo htmlspecialchars($member['crn']); ?></td>
@@ -145,19 +143,10 @@ $stmt->close();
             </tbody>
         </table>
     </div>
+    <?php report_render_server_pagination($pagination['total_rows'], $pagination['page'], $pagination['per_page'], 'Membership status report pages'); ?>
 </div>
 <!-- DataTables and JS export dependencies -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css">
-<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.print.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.pdf.min.js"></script>
 <script>
 $(document).ready(function() {
     var table = $(".table").DataTable({
@@ -185,7 +174,7 @@ $(document).ready(function() {
         paging: false,
         searching: false,
         info: false,
-        ordering: false
+        ordering: true
     });
     // Hide custom buttons if DataTables is used
     $('#export-csv, #export-pdf, #print-table').hide();

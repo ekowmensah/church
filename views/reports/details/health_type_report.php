@@ -3,16 +3,12 @@ require_once __DIR__.'/../../../config/config.php';
 //echo "AFTER CONFIG<br>";
 require_once __DIR__.'/../../../helpers/auth.php';
 
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../../helpers/report_scope.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 
 
-if (!is_logged_in()) {
-  die('STOP');
-  header('Location: ' . BASE_URL . '/login.php');
-  exit;
-}
-// Only allow logged-in users
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
@@ -43,12 +39,13 @@ require_once __DIR__.'/../../../config/config.php';
 // Filtering
 $class_id = isset($_GET['class_id']) ? intval($_GET['class_id']) : '';
 $health_type = isset($_GET['health_type']) ? trim($_GET['health_type']) : '';
-$date_from = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
-$date_to = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
+$date_from = report_scope_valid_date((string) ($_GET['date_from'] ?? ''));
+$date_to = report_scope_valid_date((string) ($_GET['date_to'] ?? ''));
 $export = isset($_GET['export']) && $_GET['export'] === 'csv';
 
 // Build WHERE clause
-$where = "WHERE m.status = 'active'";
+$memberScope = report_scope_member_condition($conn, 'm');
+$where = "WHERE m.status = 'active' AND {$memberScope}";
 $params = [];
 $types = '';
 if ($class_id) {
@@ -62,8 +59,13 @@ if ($date_from) {
     $types .= 's';
 }
 if ($date_to) {
-    $where .= " AND hr.recorded_at <= ?";
-    $params[] = $date_to . ' 23:59:59';
+    $where .= " AND hr.recorded_at < ?";
+    $params[] = report_scope_exclusive_end($date_to) . ' 00:00:00';
+    $types .= 's';
+}
+if ($health_type !== '') {
+    $where .= " AND JSON_SEARCH(JSON_KEYS(hr.vitals), 'one', ?) IS NOT NULL";
+    $params[] = $health_type;
     $types .= 's';
 }
 
@@ -72,12 +74,16 @@ $sql = "SELECT hr.*, m.crn, m.first_name, m.last_name, c.name AS class_name FROM
         INNER JOIN members m ON hr.member_id = m.id 
         LEFT JOIN bible_classes c ON m.class_id = c.id 
         $where ORDER BY hr.recorded_at DESC";
-$stmt = $conn->prepare($types ? $sql . '' : $sql);
-if ($types) {
-    $stmt->bind_param($types, ...$params);
+if ($export) {
+    $stmt = $conn->prepare($sql);
+    if ($types) $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $pagination = null;
+} else {
+    $pagination = report_paginate_query($conn, $sql, $types, $params);
+    $result = $pagination['result'];
 }
-$stmt->execute();
-$result = $stmt->get_result();
 
 // Collect all possible health types from vitals
 $all_types = [];
@@ -127,7 +133,8 @@ ob_start();
       <select name="class_id" id="class_id" class="form-control mr-2">
         <option value="">All Classes</option>
         <?php
-        $q = $conn->query("SELECT id, name FROM bible_classes ORDER BY name");
+        $classScope = report_scope_church_condition($conn, 'bible_classes');
+        $q = $conn->query("SELECT id, name FROM bible_classes WHERE {$classScope} ORDER BY name");
         while($c = $q->fetch_assoc()): ?>
           <option value="<?= $c['id'] ?>" <?= $class_id==$c['id']?'selected':'' ?>><?= htmlspecialchars($c['name']) ?></option>
         <?php endwhile; ?>
@@ -151,7 +158,7 @@ ob_start();
   </div>
   <div class="card-body">
     <div class="table-responsive">
-    <table class="table table-bordered table-striped">
+    <table class="table table-bordered table-striped" data-report-pagination="server">
       <thead>
         <tr>
           <th>Health Type</th>
@@ -179,6 +186,7 @@ ob_start();
       </tbody>
     </table>
     </div>
+    <?php report_render_server_pagination($pagination['total_rows'], $pagination['page'], $pagination['per_page'], 'Health type report pages'); ?>
   </div>
 </div>
 <?php $page_content = ob_get_clean(); include __DIR__.'/../../../includes/layout.php'; ?>

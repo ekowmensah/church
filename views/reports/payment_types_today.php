@@ -163,7 +163,8 @@ ob_start();
             [ 'extend' => 'print', 'className' => 'btn btn-sm btn-outline-dark' ]
         ],
         'responsive' => true,
-        'pageLength' => 10,
+        'pageLength' => 25,
+        'lengthMenu' => [[25, 50, 100], [25, 50, 100]],
         'order' => [[3, 'desc']]
     ]); ?>
 </main>

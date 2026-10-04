@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../../helpers/report_scope.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -33,9 +35,10 @@ require_once dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SE
 ob_start();
 
 $conn = $GLOBALS['conn'];
+$memberScope = report_scope_member_condition($conn, 'm');
 // Fetch marital status options for filter
 $statuses = [];
-$status_result = $conn->query("SELECT DISTINCT marital_status FROM members WHERE marital_status IS NOT NULL AND marital_status != '' ORDER BY marital_status");
+$status_result = $conn->query("SELECT DISTINCT m.marital_status FROM members m WHERE {$memberScope} AND m.marital_status IS NOT NULL AND m.marital_status != '' ORDER BY m.marital_status");
 if ($status_result) {
     while ($row = $status_result->fetch_assoc()) {
         $statuses[] = $row['marital_status'];
@@ -43,13 +46,14 @@ if ($status_result) {
 }
 $selected_status = isset($_GET['marital_status']) ? $_GET['marital_status'] : '';
 
-$sql = "SELECT m.crn, m.last_name, m.first_name, m.marital_status, m.gender, m.phone, m.dob, m.home_town FROM members m WHERE m.status = 'active'";
+$sql = "SELECT m.crn, m.last_name, m.first_name, m.marital_status, m.gender, m.phone, m.dob, m.home_town FROM members m WHERE m.status = 'active' AND {$memberScope}";
 if ($selected_status !== '') {
     $safe_status = $conn->real_escape_string($selected_status);
     $sql .= " AND m.marital_status = '$safe_status'";
 }
 $sql .= " ORDER BY m.marital_status, m.last_name, m.first_name";
-$result = $conn->query($sql);
+$pagination = report_paginate_query($conn, $sql);
+$result = $pagination['result'];
 $members = [];
 if ($result) {
     while ($row = $result->fetch_assoc()) {
@@ -80,7 +84,7 @@ if ($result) {
         <button id="print-table" class="btn btn-secondary btn-sm"><i class="fas fa-print"></i> Print</button>
     </div>
     <div class="table-responsive">
-        <table class="table table-bordered table-hover">
+        <table class="table table-bordered table-hover" data-report-pagination="server">
             <thead class="thead-light">
                 <tr>
                     <th>#</th>
@@ -99,7 +103,7 @@ if ($result) {
                 <?php else: ?>
                     <?php foreach ($members as $i => $member): ?>
                         <tr>
-                            <td><?php echo $i + 1; ?></td>
+                            <td><?php echo $pagination['offset'] + $i + 1; ?></td>
                             <td><?php echo htmlspecialchars($member['crn']); ?></td>
                             <td><?php echo htmlspecialchars($member['last_name'] . ', ' . $member['first_name']); ?></td>
                             <td><?php echo htmlspecialchars($member['marital_status'] ?: '-'); ?></td>
@@ -113,19 +117,10 @@ if ($result) {
             </tbody>
         </table>
     </div>
+    <?php report_render_server_pagination($pagination['total_rows'], $pagination['page'], $pagination['per_page'], 'Marital status report pages'); ?>
 </div>
 <!-- DataTables and JS export dependencies -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css">
-<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.print.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.pdf.min.js"></script>
 <script>
 $(document).ready(function() {
     var table = $(".table").DataTable({
@@ -153,7 +148,7 @@ $(document).ready(function() {
         paging: false,
         searching: false,
         info: false,
-        ordering: false
+        ordering: true
     });
     // Hide custom buttons if DataTables is used
     $('#export-csv, #export-pdf, #print-table').hide();

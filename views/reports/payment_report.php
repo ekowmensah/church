@@ -33,8 +33,11 @@ $page_title = 'Payment Report';
 ob_start();
 
 // Fetch filter options
-$churches = $conn->query("SELECT id, name FROM churches ORDER BY name");
-$classes = $conn->query("SELECT id, name FROM bible_classes ORDER BY name");
+$actorChurchId = payment_report_current_church_id($conn);
+$churchOptionWhere = $is_super_admin ? '' : ' WHERE id = ' . max(0, $actorChurchId);
+$classOptionWhere = $is_super_admin ? '' : ' WHERE church_id = ' . max(0, $actorChurchId);
+$churches = $conn->query("SELECT id, name FROM churches{$churchOptionWhere} ORDER BY name");
+$classes = $conn->query("SELECT id, name FROM bible_classes{$classOptionWhere} ORDER BY name");
 $types = $conn->query("SELECT id, name FROM payment_types ORDER BY name");
 
 // Handle filters
@@ -65,7 +68,11 @@ $bind_types = '';
     (string) ($_GET['period_from'] ?? ''),
     (string) ($_GET['period_to'] ?? '')
 );
-if (!empty($_GET['church_id'])) {
+if (!$is_super_admin) {
+    $where .= ' AND COALESCE(m.church_id, ss.church_id, p.church_id) = ?';
+    $params[] = $actorChurchId;
+    $bind_types .= 'i';
+} elseif (!empty($_GET['church_id'])) {
     $where .= " AND COALESCE(m.church_id, ss.church_id, p.church_id) = ?";
     $params[] = intval($_GET['church_id']);
     $bind_types .= 'i';
@@ -315,7 +322,7 @@ sort($pagination_pages);
     </div>
     <div class="card-body">
       <div class="table-responsive">
-        <table class="table table-bordered" id="paymentTable" width="100%" cellspacing="0">
+        <table class="table table-bordered" id="paymentTable" data-report-pagination="server" width="100%" cellspacing="0">
           <thead>
             <tr>
               <th>Date</th>
@@ -409,20 +416,7 @@ sort($pagination_pages);
 </div>
 
 <!-- DataTables and Chart.js scripts -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap4.min.css">
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.bootstrap4.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.print.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 $(document).ready(function() {
     $('#paymentTable').DataTable({

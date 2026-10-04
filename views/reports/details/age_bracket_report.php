@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../../helpers/report_scope.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -45,7 +47,8 @@ $age_brackets = [
 ];
 $selected_bracket = isset($_GET['age_bracket']) ? $_GET['age_bracket'] : 'all';
 
-$sql = "SELECT m.crn, m.last_name, m.first_name, bc.name AS class_name, m.gender, m.dob, m.phone, m.marital_status, m.home_town FROM members m LEFT JOIN bible_classes bc ON m.class_id = bc.id WHERE m.status = 'active'";
+$memberScope = report_scope_member_condition($conn, 'm');
+$sql = "SELECT m.crn, m.last_name, m.first_name, bc.name AS class_name, m.gender, m.dob, m.phone, m.marital_status, m.home_town FROM members m LEFT JOIN bible_classes bc ON m.class_id = bc.id WHERE m.status = 'active' AND {$memberScope}";
 
 // Filtering by age bracket
 if ($selected_bracket !== 'all') {
@@ -73,7 +76,8 @@ if ($selected_bracket !== 'all') {
     $sql .= " AND m.dob BETWEEN '$min_date' AND '$max_date'";
 }
 $sql .= " ORDER BY m.dob DESC";
-$result = $conn->query($sql);
+$pagination = report_paginate_query($conn, $sql);
+$result = $pagination['result'];
 $members = [];
 if ($result) {
     while ($row = $result->fetch_assoc()) {
@@ -105,7 +109,7 @@ if ($result) {
         <button id="print-table" class="btn btn-secondary btn-sm"><i class="fas fa-print"></i> Print</button>
     </div>
     <div class="table-responsive">
-        <table class="table table-bordered table-hover">
+        <table class="table table-bordered table-hover" data-report-pagination="server">
             <thead class="thead-light">
                 <tr>
                     <th>#</th>
@@ -126,7 +130,7 @@ if ($result) {
                 <?php else: ?>
                     <?php foreach ($members as $i => $member): ?>
                         <tr>
-                            <td><?php echo $i + 1; ?></td>
+                            <td><?php echo $pagination['offset'] + $i + 1; ?></td>
                             <td><?php echo htmlspecialchars($member['crn']); ?></td>
                             <td><?php echo htmlspecialchars($member['last_name'] . ', ' . $member['first_name']); ?></td>
                             <td><?php echo htmlspecialchars($member['class_name'] ?: '-'); ?></td>
@@ -142,19 +146,10 @@ if ($result) {
             </tbody>
         </table>
     </div>
+    <?php report_render_server_pagination($pagination['total_rows'], $pagination['page'], $pagination['per_page'], 'Age bracket report pages'); ?>
 </div>
 <!-- DataTables and JS export dependencies -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css">
-<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.print.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.pdf.min.js"></script>
 <script>
 $(document).ready(function() {
     var table = $(".table").DataTable({
@@ -182,7 +177,7 @@ $(document).ready(function() {
         paging: false,
         searching: false,
         info: false,
-        ordering: false
+        ordering: true
     });
     // Hide custom buttons if DataTables is used
     $('#export-csv, #export-pdf, #print-table').hide();

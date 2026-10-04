@@ -859,6 +859,7 @@ ob_start();
             ],
             responsive: true,
             pageLength: 25,
+            lengthMenu: [[25, 50, 100], [25, 50, 100]],
             order: [[0, 'asc']],
             language: {
                 search: '<i class="fas fa-search"></i>',
@@ -888,7 +889,7 @@ ob_start();
         $('#transactionsTable').DataTable({
             ...commonConfig,
             order: [[0, 'desc']], // Sort by ID descending (most recent first)
-            pageLength: 50
+            pageLength: 25
         });
         <?php endif; ?>
         

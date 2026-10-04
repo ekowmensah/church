@@ -1,8 +1,9 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
 require_once __DIR__.'/../../../helpers/payment_report_context.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -37,6 +38,8 @@ $payment_type_id = $_GET['payment_type_id'] ?? '';
 
 // Build filter SQL
 $where = [];
+$scopeCondition = payment_report_payment_scope_condition($conn, 'p');
+if ($scopeCondition !== '') $where[] = $scopeCondition;
 $params = [];
 $types = '';
 if ($date_from) {
@@ -76,15 +79,28 @@ $sql = "SELECT u.id AS user_id, u.name AS user_name, u.email AS user_email, COUN
         GROUP BY u.id
         ORDER BY total_amount DESC, payment_count DESC, u.name ASC";
 
-$stmt = $conn->prepare($sql);
+$pagination = report_paginate_query($conn, $sql, $types, $params);
+$result = $pagination['result'];
+$page = $pagination['page'];
+$per_page = $pagination['per_page'];
+$total_rows = $pagination['total_rows'];
+
+$summary_stmt = $conn->prepare(
+    'SELECT COALESCE(SUM(payment_count), 0) AS grand_count,'
+    . ' COALESCE(SUM(total_amount), 0) AS grand_total FROM (' . $sql . ') report_summary'
+);
 if ($params) {
-    $stmt->bind_param($types, ...$params);
+    $summary_stmt->bind_param($types, ...$params);
 }
-$stmt->execute();
-$result = $stmt->get_result();
+$summary_stmt->execute();
+$summary = $summary_stmt->get_result()->fetch_assoc() ?: [];
+$grand_count = (int) ($summary['grand_count'] ?? 0);
+$grand_total = (float) ($summary['grand_total'] ?? 0);
 
 // Fetch filter options
-$users = $conn->query("SELECT id, name FROM users ORDER BY name ASC");
+$churchId = payment_report_current_church_id($conn);
+$userScopeSql = payment_report_is_super_admin() ? '' : ' WHERE church_id = ' . max(0, $churchId);
+$users = $conn->query("SELECT id, name FROM users{$userScopeSql} ORDER BY name ASC");
 $payment_types = $conn->query("SELECT id, name FROM payment_types ORDER BY name ASC");
 
 ob_start();
@@ -129,7 +145,7 @@ ob_start();
 <div class="card shadow mb-4">
     <div class="card-body">
         <div class="table-responsive">
-            <table class="table table-bordered table-hover" id="reportTable">
+            <table class="table table-bordered table-hover" id="reportTable" data-report-pagination="server">
                 <thead class="thead-light">
                     <tr>
                         <th>User</th>
@@ -141,12 +157,8 @@ ob_start();
                 </thead>
                 <tbody>
                 <?php
-                $grand_total = 0;
-                $grand_count = 0;
                 if ($result && $result->num_rows > 0):
                     while($row = $result->fetch_assoc()):
-                        $grand_total += $row['total_amount'];
-                        $grand_count += $row['payment_count'];
                 ?>
                     <tr>
                         <td><?= htmlspecialchars($row['user_name']) ?></td>
@@ -177,6 +189,7 @@ ob_start();
         </div>
     </div>
 </div>
+<?php report_render_server_pagination($total_rows, $page, $per_page, 'Payments-by-user report pages'); ?>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 function exportToExcel() {
@@ -271,8 +284,12 @@ $(document).ready(function() {
   $('#user-transactions-table-area').on('click', '.user-transactions-page-link', function(e) {
     e.preventDefault();
     var page = $(this).data('page');
-    var perPage = $(this).data('per-page') || 10;
+    var perPage = $(this).data('per-page') || 25;
     loadUserTransactions(page, perPage);
+  });
+
+  $('#user-transactions-table-area').on('change', '#user-transactions-page-size', function() {
+    loadUserTransactions(1, $(this).val());
   });
 
   // Export buttons

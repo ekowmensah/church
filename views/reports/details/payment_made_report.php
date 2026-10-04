@@ -1,8 +1,9 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
 require_once __DIR__.'/../../../helpers/payment_report_context.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -49,9 +50,11 @@ $period_from = payment_report_valid_month((string) ($_GET['period_from'] ?? ''))
 $period_to = payment_report_valid_month((string) ($_GET['period_to'] ?? ''));
 if ($period_from !== '' && $period_to !== '' && $period_from > $period_to) [$period_from, $period_to] = [$period_to, $period_from];
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
-$per_page = 25;
+$per_page = report_pagination_page_size();
 $offset = ($page - 1) * $per_page;
 $where = ["m.status = 'active'"];
+$scopeCondition = payment_report_payment_scope_condition($conn, 'p');
+if ($scopeCondition !== '') $where[] = $scopeCondition;
 if ($search !== '') {
     $safe = $conn->real_escape_string($search);
     $where[] = "(m.crn LIKE '%$safe%' OR m.first_name LIKE '%$safe%' OR m.last_name LIKE '%$safe%')";
@@ -84,15 +87,7 @@ $sql = "SELECT m.crn, m.last_name, m.first_name, pt.name AS payment_type, p.amou
 INNER JOIN v_posted_payments p ON m.id = p.member_id
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 $where_sql
-ORDER BY m.last_name, m.first_name, p.payment_date DESC
-LIMIT $per_page OFFSET $offset";
-$result = $conn->query($sql);
-$rows = [];
-if ($result) {
-    while ($row = $result->fetch_assoc()) {
-        $rows[] = $row;
-    }
-}
+ORDER BY m.last_name, m.first_name, p.payment_date DESC";
 $count_sql = "SELECT COUNT(*) AS total_count FROM members m
 INNER JOIN v_posted_payments p ON m.id = p.member_id
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
@@ -102,7 +97,16 @@ $total_count = 0;
 if ($count_result && ($row = $count_result->fetch_assoc())) {
     $total_count = $row['total_count'] ?: 0;
 }
-$total_pages = ceil($total_count / $per_page);
+$total_pages = max(1, (int) ceil($total_count / $per_page));
+$page = min($page, $total_pages);
+$offset = ($page - 1) * $per_page;
+$result = $conn->query($sql . " LIMIT $per_page OFFSET $offset");
+$rows = [];
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $rows[] = $row;
+    }
+}
 ?>
 <div class="container mt-4">
     <a href="../../reports.php" class="btn btn-secondary mb-3"><i class="fas fa-arrow-left mr-1"></i>Back to Reports</a>
@@ -131,10 +135,11 @@ $total_pages = ceil($total_count / $per_page);
         </div>
         <div class="form-group mr-2"><label for="period_from" class="mr-2 font-weight-bold">Payment Period From:</label><input type="month" name="period_from" id="period_from" class="form-control" value="<?= htmlspecialchars($period_from) ?>"></div>
         <div class="form-group mr-2"><label for="period_to" class="mr-2 font-weight-bold">Payment Period To:</label><input type="month" name="period_to" id="period_to" class="form-control" value="<?= htmlspecialchars($period_to) ?>"></div>
+        <div class="form-group mr-2"><label for="per_page" class="mr-2 font-weight-bold">Rows:</label><select name="per_page" id="per_page" class="form-control"><?php foreach ([25, 50, 100] as $page_size): ?><option value="<?= $page_size ?>" <?= $per_page === $page_size ? 'selected' : '' ?>><?= $page_size ?></option><?php endforeach; ?></select></div>
         <button type="submit" class="btn btn-primary">Filter</button>
     </form>
     <div class="table-responsive">
-        <table class="table table-bordered table-hover">
+        <table class="table table-bordered table-hover" data-report-pagination="server">
             <thead class="thead-light">
                 <tr>
                     <th>#</th>
@@ -168,21 +173,6 @@ $total_pages = ceil($total_count / $per_page);
     <div class="mt-3">
         <h5 class="font-weight-bold">Total Amount: <span class="text-primary">₵<?php echo number_format($total_amount, 2); ?></span></h5>
     </div>
-    <?php if ($total_pages > 1): ?>
-    <nav aria-label="Page navigation">
-        <ul class="pagination justify-content-center mt-3">
-            <?php
-                $query_params = $_GET;
-                for ($i = 1; $i <= $total_pages; $i++):
-                    $query_params['page'] = $i;
-                    $url = '?' . http_build_query($query_params);
-            ?>
-                <li class="page-item<?php if ($i == $page) echo ' active'; ?>">
-                    <a class="page-link" href="<?php echo $url; ?>"><?php echo $i; ?></a>
-                </li>
-            <?php endfor; ?>
-        </ul>
-    </nav>
-    <?php endif; ?>
+    <?php report_render_server_pagination($total_count, $page, $per_page, 'Payment-made report pages'); ?>
 </div>
 <?php $page_content = ob_get_clean(); include dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'includes' . DIRECTORY_SEPARATOR . 'layout.php'; ?>

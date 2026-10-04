@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../../helpers/report_scope.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -34,12 +36,13 @@ require_once dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SE
 // Filtering
 $class_id = isset($_GET['class_id']) ? intval($_GET['class_id']) : '';
 $health_type = isset($_GET['health_type']) ? trim($_GET['health_type']) : '';
-$date_from = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
-$date_to = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
+$date_from = report_scope_valid_date((string) ($_GET['date_from'] ?? ''));
+$date_to = report_scope_valid_date((string) ($_GET['date_to'] ?? ''));
 $export = isset($_GET['export']) && $_GET['export'] === 'csv';
 
 // Build WHERE clause
-$where = "WHERE m.status = 'active'";
+$memberScope = report_scope_member_condition($conn, 'm');
+$where = "WHERE m.status = 'active' AND {$memberScope}";
 $params = [];
 $types = '';
 if ($class_id) {
@@ -53,8 +56,13 @@ if ($date_from) {
     $types .= 's';
 }
 if ($date_to) {
-    $where .= " AND hr.recorded_at <= ?";
-    $params[] = $date_to . ' 23:59:59';
+    $where .= " AND hr.recorded_at < ?";
+    $params[] = report_scope_exclusive_end($date_to) . ' 00:00:00';
+    $types .= 's';
+}
+if ($health_type !== '') {
+    $where .= " AND JSON_SEARCH(JSON_KEYS(hr.vitals), 'one', ?) IS NOT NULL";
+    $params[] = $health_type;
     $types .= 's';
 }
 
@@ -63,12 +71,16 @@ $sql = "SELECT hr.*, m.crn, m.first_name, m.last_name, c.name AS class_name FROM
         INNER JOIN members m ON hr.member_id = m.id 
         LEFT JOIN bible_classes c ON m.class_id = c.id 
         $where ORDER BY c.name, hr.recorded_at DESC";
-$stmt = $conn->prepare($types ? $sql . '' : $sql);
-if ($types) {
-    $stmt->bind_param($types, ...$params);
+if ($export) {
+    $stmt = $conn->prepare($sql);
+    if ($types) $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $pagination = null;
+} else {
+    $pagination = report_paginate_query($conn, $sql, $types, $params);
+    $result = $pagination['result'];
 }
-$stmt->execute();
-$result = $stmt->get_result();
 
 // Collect all possible health types from vitals
 $all_types = [];
@@ -118,7 +130,8 @@ ob_start();
       <select name="class_id" id="class_id" class="form-control mr-2">
         <option value="">All Classes</option>
         <?php
-        $q = $conn->query("SELECT id, name FROM bible_classes ORDER BY name");
+        $classScope = report_scope_church_condition($conn, 'bible_classes');
+        $q = $conn->query("SELECT id, name FROM bible_classes WHERE {$classScope} ORDER BY name");
         while($c = $q->fetch_assoc()): ?>
           <option value="<?= $c['id'] ?>" <?= $class_id==$c['id']?'selected':'' ?>><?= htmlspecialchars($c['name']) ?></option>
         <?php endwhile; ?>
@@ -149,7 +162,7 @@ ob_start();
       <button id="print-table" class="btn btn-secondary btn-sm"><i class="fas fa-print"></i> Print</button>
     </div>
     <div class="table-responsive">
-      <table class="table table-bordered table-striped">
+      <table class="table table-bordered table-striped" data-report-pagination="server">
         <thead>
           <tr>
             <th>Bible Class</th>
@@ -177,20 +190,11 @@ ob_start();
         </tbody>
       </table>
     </div>
+    <?php report_render_server_pagination($pagination['total_rows'], $pagination['page'], $pagination['per_page'], 'Class health report pages'); ?>
   </div>
 </div>
 <!-- DataTables and JS export dependencies -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css">
-<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.print.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.pdf.min.js"></script>
 <script>
 $(document).ready(function() {
     var table = $(".table").DataTable({
@@ -218,7 +222,7 @@ $(document).ready(function() {
         paging: false,
         searching: false,
         info: false,
-        ordering: false
+        ordering: true
     });
     // Hide custom buttons if DataTables is used
     $('#export-csv, #export-pdf, #print-table').hide();

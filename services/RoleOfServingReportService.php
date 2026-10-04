@@ -80,7 +80,7 @@ final class RoleOfServingReportService {
         return $rows;
     }
 
-    public function build(int $churchId, ?int $servingRoleId = null, ?int $organizationId = null, ?string $gender = null): array {
+    public function build(int $churchId, ?int $servingRoleId = null, ?int $organizationId = null, ?string $gender = null, ?int $page = null, ?int $perPage = null): array {
         $this->assertChurchAllowed($churchId);
         if ($gender !== null && !in_array($gender, ['Male', 'Female', 'Unspecified'], true)) {
             throw new InvalidArgumentException('Choose a valid gender filter.');
@@ -130,7 +130,7 @@ final class RoleOfServingReportService {
         $summary = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
 
-        $detailSql = "SELECT member.id AS member_id, member.crn,
+        $detailBaseSql = "SELECT member.id AS member_id, member.crn,
                              TRIM(CONCAT_WS(' ', member.first_name, member.middle_name, member.last_name)) AS member_name,
                              CASE WHEN member.gender IN ('Male', 'Female') THEN member.gender ELSE 'Unspecified' END AS gender,
                              member.phone, member.email, bible_class.name AS class_name,
@@ -145,29 +145,75 @@ final class RoleOfServingReportService {
                        WHERE {$whereSql}
                        GROUP BY member.id, member.crn, member.first_name, member.middle_name, member.last_name,
                                 member.gender, member.phone, member.email, bible_class.name,
-                                serving_role.id, serving_role.name
-                       ORDER BY serving_role.name, member.last_name, member.first_name, member.middle_name";
+                                serving_role.id, serving_role.name";
+        $countSql = "SELECT COUNT(*) AS total_rows
+                       FROM (
+                             SELECT member.id AS member_id, serving_role.id AS role_id
+                               FROM member_roles_of_serving member_role
+                               JOIN roles_of_serving serving_role ON serving_role.id = member_role.role_id
+                               JOIN members member ON member.id = member_role.member_id
+                              WHERE {$whereSql}
+                              GROUP BY member.id, serving_role.id
+                       ) role_detail_rows";
+        $countStmt = $this->conn->prepare($countSql);
+        $countStmt->bind_param($types, ...$params);
+        $countStmt->execute();
+        $totalRows = (int) ($countStmt->get_result()->fetch_assoc()['total_rows'] ?? 0);
+        $countStmt->close();
+
+        $detailSql = $detailBaseSql . ' ORDER BY serving_role.name, member.last_name, member.first_name, member.middle_name';
+        $detailTypes = $types;
+        $detailParams = $params;
+        $effectivePage = 1;
+        $effectivePerPage = max(1, $totalRows ?: 1);
+        $totalPages = 1;
+        $offset = 0;
+        if ($perPage !== null) {
+            $effectivePerPage = in_array($perPage, [25, 50, 100], true) ? $perPage : 25;
+            $totalPages = max(1, (int) ceil($totalRows / $effectivePerPage));
+            $effectivePage = min(max(1, (int) $page), $totalPages);
+            $offset = ($effectivePage - 1) * $effectivePerPage;
+            $detailSql .= ' LIMIT ? OFFSET ?';
+            $detailTypes .= 'ii';
+            $detailParams[] = $effectivePerPage;
+            $detailParams[] = $offset;
+        }
         $stmt = $this->conn->prepare($detailSql);
-        $stmt->bind_param($types, ...$params);
+        $stmt->bind_param($detailTypes, ...$detailParams);
         $stmt->execute();
         $members = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
 
-        $totals = ['male' => 0, 'female' => 0, 'unspecified' => 0, 'total' => 0];
-        $uniqueMembers = [];
-        foreach ($members as $member) {
-            $uniqueMembers[(int) $member['member_id']] = $member['gender'];
-        }
-        foreach ($uniqueMembers as $memberGender) {
-            $field = $memberGender === 'Male' ? 'male' : ($memberGender === 'Female' ? 'female' : 'unspecified');
-            $totals[$field]++;
-            $totals['total']++;
-        }
+        $totalsSql = "SELECT COUNT(DISTINCT CASE WHEN member.gender = 'Male' THEN member.id END) AS male,
+                             COUNT(DISTINCT CASE WHEN member.gender = 'Female' THEN member.id END) AS female,
+                             COUNT(DISTINCT CASE WHEN member.gender NOT IN ('Male', 'Female') OR member.gender IS NULL THEN member.id END) AS unspecified,
+                             COUNT(DISTINCT member.id) AS total
+                        FROM member_roles_of_serving member_role
+                        JOIN roles_of_serving serving_role ON serving_role.id = member_role.role_id
+                        JOIN members member ON member.id = member_role.member_id
+                       WHERE {$whereSql}";
+        $totalsStmt = $this->conn->prepare($totalsSql);
+        $totalsStmt->bind_param($types, ...$params);
+        $totalsStmt->execute();
+        $totals = $totalsStmt->get_result()->fetch_assoc() ?: ['male' => 0, 'female' => 0, 'unspecified' => 0, 'total' => 0];
+        $totalsStmt->close();
+        foreach (['male', 'female', 'unspecified', 'total'] as $field) $totals[$field] = (int) $totals[$field];
         foreach ($summary as &$row) {
             foreach (['male', 'female', 'unspecified', 'total'] as $field) $row[$field] = (int) $row[$field];
         }
         unset($row);
-        return ['summary' => $summary, 'members' => $members, 'totals' => $totals];
+        return [
+            'summary' => $summary,
+            'members' => $members,
+            'totals' => $totals,
+            'pagination' => [
+                'total_rows' => $totalRows,
+                'total_pages' => $totalPages,
+                'page' => $effectivePage,
+                'per_page' => $effectivePerPage,
+                'offset' => $offset,
+            ],
+        ];
     }
 
     private function assertChurchAllowed(int $churchId): void {

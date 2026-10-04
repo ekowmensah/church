@@ -116,6 +116,14 @@ function payment_report_member_scope_condition(mysqli $conn, string $memberAlias
     return $churchId > 0 ? $memberAlias . '.church_id = ' . $churchId : '1 = 0';
 }
 
+/** Scope a payment query directly, including Sunday School beneficiaries. */
+function payment_report_payment_scope_condition(mysqli $conn, string $paymentAlias = 'p'): string
+{
+    if (payment_report_is_super_admin()) return '';
+    $churchId = payment_report_current_church_id($conn);
+    return $churchId > 0 ? $paymentAlias . '.church_id = ' . $churchId : '1 = 0';
+}
+
 function payment_report_organizations_expression(string $memberAlias = 'm'): string
 {
     return "COALESCE((SELECT GROUP_CONCAT(DISTINCT organization.name ORDER BY organization.name SEPARATOR ', ')"

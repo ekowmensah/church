@@ -2,6 +2,8 @@
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
 require_once __DIR__.'/../../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../../helpers/report_scope.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -33,6 +35,7 @@ require_once __DIR__.'/../../../config/config.php';
 ob_start();
 
 $conn = $GLOBALS['conn'];
+$memberScope = report_scope_member_condition($conn, 'm');
 // Employment status options (from registration forms)
 $statuses = ['Formal', 'Informal', 'Self Employed', 'Unemployed', 'Retired', 'Student'];
 $selected_status = isset($_GET['employment_status']) ? $_GET['employment_status'] : '';
@@ -46,8 +49,8 @@ $unemployment_sql = "SELECT
     AVG(YEAR(CURDATE()) - YEAR(dob)) as avg_age,
     MIN(YEAR(CURDATE()) - YEAR(dob)) as min_age,
     MAX(YEAR(CURDATE()) - YEAR(dob)) as max_age
-FROM members 
-WHERE status = 'active' AND employment_status = 'Unemployed'";
+FROM members m
+WHERE m.status = 'active' AND m.employment_status = 'Unemployed' AND {$memberScope}";
 $unemployment_result = $conn->query($unemployment_sql);
 if ($unemployment_result) {
     $unemployment_stats = $unemployment_result->fetch_assoc();
@@ -67,8 +70,8 @@ $age_group_sql = "SELECT
     END as age_group,
     COUNT(*) as count,
     GROUP_CONCAT(CONCAT(first_name, ' ', last_name) SEPARATOR ', ') as members
-FROM members 
-WHERE status = 'active' AND employment_status = 'Unemployed'
+FROM members m
+WHERE m.status = 'active' AND m.employment_status = 'Unemployed' AND {$memberScope}
 GROUP BY age_group
 ORDER BY 
     CASE age_group
@@ -88,7 +91,7 @@ if ($age_group_result) {
 }
 
 // Get total active members for percentage calculation
-$total_members_sql = "SELECT COUNT(*) as total FROM members WHERE status = 'active'";
+$total_members_sql = "SELECT COUNT(*) as total FROM members m WHERE m.status = 'active' AND {$memberScope}";
 $total_result = $conn->query($total_members_sql);
 $total_members = 0;
 if ($total_result) {
@@ -96,13 +99,14 @@ if ($total_result) {
     $total_members = $total_row['total'];
 }
 
-$sql = "SELECT m.crn, m.last_name, m.first_name, m.employment_status, m.gender, m.phone, m.dob, m.home_town FROM members m WHERE m.status = 'active'";
+$sql = "SELECT m.crn, m.last_name, m.first_name, m.employment_status, m.gender, m.phone, m.dob, m.home_town FROM members m WHERE m.status = 'active' AND {$memberScope}";
 if ($selected_status !== '' && in_array($selected_status, $statuses)) {
     $safe_status = $conn->real_escape_string($selected_status);
     $sql .= " AND m.employment_status = '$safe_status'";
 }
 $sql .= " ORDER BY m.employment_status, m.last_name, m.first_name";
-$result = $conn->query($sql);
+$pagination = report_paginate_query($conn, $sql);
+$result = $pagination['result'];
 $members = [];
 if ($result) {
     while ($row = $result->fetch_assoc()) {
@@ -275,11 +279,11 @@ if ($result) {
     <!-- Members List -->
     <div class="card shadow-sm">
         <div class="card-header bg-light">
-            <h5 class="mb-0"><i class="fas fa-list mr-2"></i>Members List <?= $selected_status ? '- ' . htmlspecialchars($selected_status) : '' ?> (<?= count($members) ?> members)</h5>
+            <h5 class="mb-0"><i class="fas fa-list mr-2"></i>Members List <?= $selected_status ? '- ' . htmlspecialchars($selected_status) : '' ?> (<?= number_format($pagination['total_rows']) ?> members)</h5>
         </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-bordered table-hover table-striped" id="membersTable">
+                <table class="table table-bordered table-hover table-striped" id="membersTable" data-report-pagination="server">
                     <thead class="thead-dark">
                         <tr>
                             <th>#</th>
@@ -310,7 +314,7 @@ if ($result) {
                                 $badge_class = $status_badge[$member['employment_status']] ?? 'badge-dark';
                             ?>
                             <tr>
-                                <td><?php echo $i + 1; ?></td>
+                                <td><?php echo $pagination['offset'] + $i + 1; ?></td>
                                 <td><strong><?php echo htmlspecialchars($member['crn']); ?></strong></td>
                                 <td><?php echo htmlspecialchars($member['last_name'] . ', ' . $member['first_name']); ?></td>
                                 <td><span class="badge <?= $badge_class ?>"><?php echo htmlspecialchars($member['employment_status'] ?: '-'); ?></span></td>
@@ -325,25 +329,19 @@ if ($result) {
                     </tbody>
                 </table>
             </div>
+            <?php report_render_server_pagination($pagination['total_rows'], $pagination['page'], $pagination['per_page'], 'Employment report pages'); ?>
         </div>
     </div>
 </div>
 <!-- DataTables and JS export dependencies -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css">
-<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.print.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.pdf.min.js"></script>
 <script>
 $(document).ready(function() {
     <?php if (!empty($members)): ?>
     var table = $("#membersTable").DataTable({
+        paging: false,
+        searching: false,
+        info: false,
         dom: 'Bfrtip',
         buttons: [
             {

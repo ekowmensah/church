@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../../helpers/report_scope.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -34,12 +36,13 @@ require_once __DIR__.'/../../../config/config.php';
 // Filtering
 $org_id = isset($_GET['org_id']) ? intval($_GET['org_id']) : '';
 $health_type = isset($_GET['health_type']) ? trim($_GET['health_type']) : '';
-$date_from = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
-$date_to = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
+$date_from = report_scope_valid_date((string) ($_GET['date_from'] ?? ''));
+$date_to = report_scope_valid_date((string) ($_GET['date_to'] ?? ''));
 $export = isset($_GET['export']) && $_GET['export'] === 'csv';
 
 // Build WHERE clause
-$where = "WHERE m.status = 'active'";
+$memberScope = report_scope_member_condition($conn, 'm');
+$where = "WHERE m.status = 'active' AND {$memberScope}";
 $params = [];
 $types = '';
 if ($org_id) {
@@ -53,8 +56,13 @@ if ($date_from) {
     $types .= 's';
 }
 if ($date_to) {
-    $where .= " AND hr.recorded_at <= ?";
-    $params[] = $date_to . ' 23:59:59';
+    $where .= " AND hr.recorded_at < ?";
+    $params[] = report_scope_exclusive_end($date_to) . ' 00:00:00';
+    $types .= 's';
+}
+if ($health_type !== '') {
+    $where .= " AND JSON_SEARCH(JSON_KEYS(hr.vitals), 'one', ?) IS NOT NULL";
+    $params[] = $health_type;
     $types .= 's';
 }
 
@@ -64,12 +72,16 @@ $sql = "SELECT hr.*, m.crn, m.first_name, m.last_name, o.name AS org_name FROM h
         INNER JOIN member_organizations mo ON m.id = mo.member_id 
         LEFT JOIN organizations o ON mo.organization_id = o.id 
         $where ORDER BY o.name, hr.recorded_at DESC";
-$stmt = $conn->prepare($types ? $sql . '' : $sql);
-if ($types) {
-    $stmt->bind_param($types, ...$params);
+if ($export) {
+    $stmt = $conn->prepare($sql);
+    if ($types) $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $pagination = null;
+} else {
+    $pagination = report_paginate_query($conn, $sql, $types, $params);
+    $result = $pagination['result'];
 }
-$stmt->execute();
-$result = $stmt->get_result();
 
 // Collect all possible health types from vitals
 $all_types = [];
@@ -113,7 +125,8 @@ if ($export) {
 }
 
 // Get all organizations for dropdown
-$org_options = $conn->query("SELECT id, name FROM organizations ORDER BY name");
+$organizationScope = report_scope_church_condition($conn, 'organizations');
+$org_options = $conn->query("SELECT id, name FROM organizations WHERE {$organizationScope} ORDER BY name");
 
 ob_start();
 ?>
@@ -147,7 +160,7 @@ ob_start();
   </div>
   <div class="card-body">
     <div class="table-responsive">
-    <table class="table table-bordered table-striped">
+    <table class="table table-bordered table-striped" data-report-pagination="server">
       <thead>
         <tr>
           <th>Organization</th>
@@ -175,6 +188,7 @@ ob_start();
       </tbody>
     </table>
     </div>
+    <?php report_render_server_pagination($pagination['total_rows'], $pagination['page'], $pagination['per_page'], 'Organization health report pages'); ?>
   </div>
 </div>
 <?php $page_content = ob_get_clean(); include __DIR__.'/../../../includes/layout.php'; ?>

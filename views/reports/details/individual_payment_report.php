@@ -1,8 +1,9 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
 require_once __DIR__.'/../../../helpers/payment_report_context.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -90,7 +91,7 @@ $total_amount = 0;
 if ($total_result && ($row = $total_result->fetch_assoc())) {
     $total_amount = $row['total_amount'] ?: 0;
 }
-// Load the complete filtered result so CSV/PDF/print exports are complete.
+// Page the visible ledger at the database; aggregate totals remain unbounded.
 $sql = "SELECT m.id AS member_id, m.crn, m.last_name, m.first_name, m.phone,
                bible_class.name AS class_name, pt.name AS payment_type,
                p.amount, p.payment_date,
@@ -104,13 +105,12 @@ LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 $where_sql
 ORDER BY m.last_name, m.first_name, p.payment_date DESC
 ";
-$result = $conn->query($sql);
-$rows = [];
-if ($result) {
-    while ($row = $result->fetch_assoc()) {
-        $rows[] = $row;
-    }
-}
+$pagination = report_paginate_query($conn, $sql);
+$rows = $pagination['result']->fetch_all(MYSQLI_ASSOC);
+$page = $pagination['page'];
+$per_page = $pagination['per_page'];
+$offset = $pagination['offset'];
+$total_rows = $pagination['total_rows'];
 $statement_member = null;
 $member_count_sql = "SELECT COUNT(DISTINCT m.id) AS member_count, MIN(m.id) AS member_id
 FROM members m
@@ -214,7 +214,7 @@ if ($statement_member) {
     <button id="print-table" class="btn btn-secondary btn-sm"><i class="fas fa-print"></i> Print</button>
 </div>
 <div class="table-responsive">
-        <table class="table table-bordered table-hover">
+        <table class="table table-bordered table-hover" data-report-pagination="server">
             <thead class="thead-light">
                 <tr>
                     <th>#</th>
@@ -232,7 +232,7 @@ if ($statement_member) {
                 <?php else: ?>
                     <?php foreach ($rows as $i => $row): ?>
                         <tr>
-                            <td><?php echo $i + 1; ?></td>
+                            <td><?php echo $i + 1 + $offset; ?></td>
                             <td><?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name']); ?></td>
                             <td><?php echo htmlspecialchars($row['crn']); ?></td>
                             <td><?php echo htmlspecialchars($row['payment_type'] ?: '-'); ?></td>
@@ -248,19 +248,10 @@ if ($statement_member) {
     <div class="mt-3">
         <h5 class="font-weight-bold">Total Amount: <span class="text-primary">₵<?php echo number_format($total_amount, 2); ?></span></h5>
     </div>
+    <?php report_render_server_pagination($total_rows, $page, $per_page, 'Individual payment report pages'); ?>
 </div>
 <!-- DataTables and JS export dependencies -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css">
-<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.print.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.pdf.min.js"></script>
 <script>
 $(document).ready(function() {
     var table = $(".table").DataTable({
@@ -289,11 +280,9 @@ $(document).ready(function() {
                 messageTop: <?= json_encode($statement_export_header) ?>
             }
         ],
-        paging: true,
-        pageLength: 25,
-        lengthMenu: [25, 50, 100],
+        paging: false,
         searching: false,
-        info: true,
+        info: false,
         ordering: false
     });
     // Hide custom buttons if DataTables is used

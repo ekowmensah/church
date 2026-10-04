@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../../helpers/report_scope.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -36,7 +38,8 @@ $date_to = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
 $export = isset($_GET['export']) && $_GET['export'] === 'csv';
 
 // Build WHERE clause
-$where = "WHERE m.status = 'active'";
+$memberScope = report_scope_member_condition($conn, 'm');
+$where = "WHERE m.status = 'active' AND {$memberScope}";
 $params = [];
 $types = '';
 if ($class_id) {
@@ -67,16 +70,22 @@ $sql = "SELECT m.*, c.name AS class_name, o.name AS org_name FROM members m
         $where
         GROUP BY m.id
         ORDER BY m.created_at DESC";
-$stmt = $conn->prepare($types ? $sql . '' : $sql);
-if ($types) {
-    $stmt->bind_param($types, ...$params);
+if ($export) {
+    $stmt = $conn->prepare($sql);
+    if ($types) $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $pagination = null;
+} else {
+    $pagination = report_paginate_query($conn, $sql, $types, $params);
+    $result = $pagination['result'];
 }
-$stmt->execute();
-$result = $stmt->get_result();
 
 // Get all classes and organizations for dropdowns
-$class_options = $conn->query("SELECT id, name FROM bible_classes ORDER BY name");
-$org_options = $conn->query("SELECT id, name FROM organizations ORDER BY name");
+$classScope = report_scope_church_condition($conn, 'bible_classes');
+$organizationScope = report_scope_church_condition($conn, 'organizations');
+$class_options = $conn->query("SELECT id, name FROM bible_classes WHERE {$classScope} ORDER BY name");
+$org_options = $conn->query("SELECT id, name FROM organizations WHERE {$organizationScope} ORDER BY name");
 
 $rows = [];
 while ($row = $result->fetch_assoc()) {
@@ -134,7 +143,7 @@ ob_start();
   </div>
   <div class="card-body">
     <div class="table-responsive">
-    <table class="table table-bordered table-striped">
+    <table class="table table-bordered table-striped" data-report-pagination="server">
       <thead>
         <tr>
           <th>Registration Date</th>
@@ -160,6 +169,7 @@ ob_start();
       </tbody>
     </table>
     </div>
+    <?php report_render_server_pagination($pagination['total_rows'], $pagination['page'], $pagination['per_page'], 'Registration date report pages'); ?>
   </div>
 </div>
 <?php $page_content = ob_get_clean(); include __DIR__.'/../../../includes/layout.php'; ?>

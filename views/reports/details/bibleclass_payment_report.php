@@ -1,8 +1,9 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
 require_once __DIR__.'/../../../helpers/payment_report_context.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -44,6 +45,8 @@ $export = isset($_GET['export']) && $_GET['export'] === 'csv';
 
 // Build WHERE clause
 $where = "WHERE m.status = 'active'";
+$scopeCondition = payment_report_payment_scope_condition($conn, 'p');
+if ($scopeCondition !== '') $where .= ' AND ' . $scopeCondition;
 $params = [];
 $types = '';
 if ($class_id) {
@@ -76,20 +79,11 @@ foreach ($period_values as $period_value) {
 
 $reportingPeriodExpression = payment_report_reporting_period_expression('p');
 $sql = "SELECT p.payment_date, {$reportingPeriodExpression} AS reporting_period, m.crn, m.last_name, m.first_name, bc.name AS class_name, pt.name AS payment_type, p.amount FROM v_posted_payments p LEFT JOIN members m ON p.member_id = m.id LEFT JOIN bible_classes bc ON m.class_id = bc.id LEFT JOIN payment_types pt ON p.payment_type_id = pt.id $where ORDER BY bc.name, m.last_name, m.first_name, p.payment_date DESC";
-$stmt = $conn->prepare($sql);
-if ($types) {
-    $stmt->bind_param($types, ...$params);
-}
-$stmt->execute();
-$result = $stmt->get_result();
-$payments = [];
-while ($row = $result->fetch_assoc()) {
-    $payments[] = $row;
-}
-
 // Get all classes and payment types for dropdowns
 $classes = [];
-$class_result = $conn->query("SELECT id, name FROM bible_classes ORDER BY name");
+$churchId = payment_report_current_church_id($conn);
+$classScopeSql = payment_report_is_super_admin() ? '' : ' WHERE church_id = ' . max(0, $churchId);
+$class_result = $conn->query("SELECT id, name FROM bible_classes{$classScopeSql} ORDER BY name");
 if ($class_result) {
     while ($row = $class_result->fetch_assoc()) {
         $classes[] = $row;
@@ -104,6 +98,12 @@ if ($type_result) {
 }
 // CSV Export
 if ($export) {
+    $export_stmt = $conn->prepare($sql);
+    if ($types) {
+        $export_stmt->bind_param($types, ...$params);
+    }
+    $export_stmt->execute();
+    $payments = $export_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment;filename=bibleclass_payment_report.csv');
     $out = fopen('php://output', 'w');
@@ -126,22 +126,28 @@ if ($export) {
     fclose($out);
     exit;
 }
-// Compute summary statistics
-$total_amount = 0;
-$unique_members = [];
-$unique_classes = [];
-$payment_type_totals = [];
-foreach ($payments as $row) {
-    $total_amount += floatval($row['amount']);
-    if (!empty($row['crn'])) $unique_members[$row['crn']] = true;
-    if (!empty($row['class_name'])) $unique_classes[$row['class_name']] = true;
-    $pt = $row['payment_type'] ?: 'Unknown';
-    if (!isset($payment_type_totals[$pt])) $payment_type_totals[$pt] = 0;
-    $payment_type_totals[$pt] += floatval($row['amount']);
+
+$pagination = report_paginate_query($conn, $sql, $types, $params);
+$payments = $pagination['result']->fetch_all(MYSQLI_ASSOC);
+$page = $pagination['page'];
+$per_page = $pagination['per_page'];
+$offset = $pagination['offset'];
+$record_count = $pagination['total_rows'];
+
+// Full-filter summaries remain independent of the displayed page.
+$summary_sql = "SELECT COALESCE(SUM(amount), 0) AS total_amount,
+                       COUNT(DISTINCT NULLIF(crn, '')) AS member_count,
+                       COUNT(DISTINCT NULLIF(class_name, '')) AS class_count
+                FROM ($sql) report_summary";
+$summary_stmt = $conn->prepare($summary_sql);
+if ($types) {
+    $summary_stmt->bind_param($types, ...$params);
 }
-$record_count = count($payments);
-$member_count = count($unique_members);
-$class_count = count($unique_classes);
+$summary_stmt->execute();
+$summary = $summary_stmt->get_result()->fetch_assoc() ?: [];
+$total_amount = (float) ($summary['total_amount'] ?? 0);
+$member_count = (int) ($summary['member_count'] ?? 0);
+$class_count = (int) ($summary['class_count'] ?? 0);
 $avg_payment = $record_count > 0 ? $total_amount / $record_count : 0;
 
 // Build active filter description
@@ -316,7 +322,7 @@ ob_start();
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table id="bibleclass-payments-table" class="table table-bordered table-hover table-striped mb-0">
+                <table id="bibleclass-payments-table" class="table table-bordered table-hover table-striped mb-0" data-report-pagination="server">
                     <thead>
                         <tr style="background:linear-gradient(135deg,#3c8dbc,#367fa9);color:#fff;">
                             <th style="width:50px;">#</th>
@@ -340,7 +346,7 @@ ob_start();
                         <?php else: ?>
                             <?php foreach ($payments as $i => $row): ?>
                                 <tr>
-                                    <td class="text-center text-muted"><?= $i + 1 ?></td>
+                                    <td class="text-center text-muted"><?= $i + 1 + $offset ?></td>
                                     <td><code><?= htmlspecialchars($row['crn']) ?></code></td>
                                     <td class="font-weight-bold"><?= htmlspecialchars($row['last_name'] . ', ' . $row['first_name']) ?></td>
                                     <td><span class="badge badge-light border"><?= htmlspecialchars($row['class_name'] ?: '-') ?></span></td>
@@ -369,25 +375,14 @@ ob_start();
         </div>
     </div>
 
+    <?php report_render_server_pagination($record_count, $page, $per_page, 'Bible Class payment report pages'); ?>
+
 </div>
 </section>
 
 <!-- DataTables CSS (Bootstrap 4 integration) -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap4.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.bootstrap4.min.css">
-
 <!-- DataTables JS -->
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap4.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.bootstrap4.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.print.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.pdf.min.js"></script>
-
 <script>
 $(document).ready(function() {
     // Expand filter card if any filters are active
@@ -447,11 +442,9 @@ $(document).ready(function() {
             },
             <?php endif; ?>
         ],
-        paging: true,
-        pageLength: 25,
-        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
-        searching: true,
-        info: true,
+        paging: false,
+        searching: false,
+        info: false,
         ordering: true,
         order: [],
         language: {

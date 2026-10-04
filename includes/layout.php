@@ -9,6 +9,8 @@ $reportExportBranding = isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof m
 $layoutScriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
 $isReportWorkspace = strpos($layoutScriptName, '/views/reports/') !== false
     || substr($layoutScriptName, -18) === '/views/reports.php';
+$layoutDerivedTitle = ucwords(str_replace(['_', '-'], ' ', pathinfo($layoutScriptName, PATHINFO_FILENAME)));
+$layoutPageTitle = trim((string) ($page_title ?? '')) ?: ($layoutDerivedTitle ?: 'Church Management System');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -36,12 +38,15 @@ $isReportWorkspace = strpos($layoutScriptName, '/views/reports/') !== false
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     
-    <title><?php echo isset($page_title) ? htmlspecialchars($page_title) : 'Church Management System'; ?></title>
+    <title><?php echo htmlspecialchars($layoutPageTitle, ENT_QUOTES, 'UTF-8'); ?></title>
     
     <!-- Modern Sidebar Styles -->
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/modern-sidebar.css">
     <?php if ($isReportWorkspace): ?>
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/report-workspace.css">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-bs4/css/dataTables.bootstrap4.min.css">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-buttons/css/buttons.bootstrap4.min.css">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-responsive/css/responsive.bootstrap4.min.css">
     <?php endif; ?>
     <style>
       /* Enhanced Responsive Layout Styles */
@@ -197,6 +202,19 @@ $isReportWorkspace = strpos($layoutScriptName, '/views/reports/') !== false
     <!-- DataTables and other plugins (if needed) -->
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables/jquery.dataTables.min.js"></script>
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-bs4/js/dataTables.bootstrap4.min.js"></script>
+    <?php if ($isReportWorkspace): ?>
+    <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/jszip/jszip.min.js"></script>
+    <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/pdfmake/pdfmake.min.js"></script>
+    <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/pdfmake/vfs_fonts.js"></script>
+    <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-buttons/js/dataTables.buttons.min.js"></script>
+    <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-buttons/js/buttons.bootstrap4.min.js"></script>
+    <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-buttons/js/buttons.html5.min.js"></script>
+    <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-buttons/js/buttons.print.min.js"></script>
+    <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-responsive/js/dataTables.responsive.min.js"></script>
+    <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-responsive/js/responsive.bootstrap4.min.js"></script>
+    <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/chart.js/Chart.min.js"></script>
+    <script src="<?php echo BASE_URL; ?>/assets/js/report-export-branding.js"></script>
+    <?php endif; ?>
     <!-- FullCalendar (for dashboard calendar) -->
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@latest/main.min.js"></script>
     
@@ -228,8 +246,25 @@ $isReportWorkspace = strpos($layoutScriptName, '/views/reports/') !== false
             <!-- Main Content -->
             <section class="content">
                 <?php 
-if (isset($page_content)) { 
-    echo $page_content; 
+if (isset($page_content)) {
+    if ($isReportWorkspace
+        && strpos($page_content, 'report-page-shell') === false
+        && strpos($page_content, 'report-centre-hero') === false
+    ) {
+        $reportTitle = htmlspecialchars($layoutPageTitle, ENT_QUOTES, 'UTF-8');
+        $reportCentreUrl = htmlspecialchars(BASE_URL . '/views/reports.php', ENT_QUOTES, 'UTF-8');
+        echo '<div class="report-page-shell report-legacy-shell">';
+        echo '<header class="report-page-header report-page-header--compact">';
+        echo '<div><span class="report-eyebrow">Reporting workspace</span><h1><i class="fas fa-chart-bar mr-2"></i>' . $reportTitle . '</h1>';
+        echo '<p>Permission-scoped information with consistent filtering, export and print controls.</p></div>';
+        echo '<div class="report-header-actions"><a class="btn btn-outline-light" href="' . $reportCentreUrl . '"><i class="fas fa-th-large mr-1"></i>Report Centre</a>';
+        echo '<button type="button" class="btn btn-light" onclick="window.print()"><i class="fas fa-print mr-1"></i>Print</button></div>';
+        echo '</header>';
+        echo $page_content;
+        echo '</div>';
+    } else {
+        echo $page_content;
+    }
 } else if (isset($content_view) && $content_view) {
     include $content_view;
 }
@@ -469,5 +504,8 @@ $(document).ready(function() {
 <?php if (isset($modal_html)) echo $modal_html; ?>
 <?php if (isset($additional_js)) echo $additional_js; ?>
 <?php if (isset($additional_css)) echo $additional_css; ?>
+<?php if ($isReportWorkspace): ?>
+<script src="<?php echo BASE_URL; ?>/assets/js/report-pagination.js"></script>
+<?php endif; ?>
 </body>
 </html>

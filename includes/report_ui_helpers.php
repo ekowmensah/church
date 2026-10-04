@@ -29,19 +29,7 @@ function render_summary_card($label, $value, $icon, $color = 'primary', $sub = '
 
 function include_datatables_scripts() {
     ?>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
-    <script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
-    <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.bootstrap4.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/pdfmake.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/vfs_fonts.js"></script>
-    <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
-    <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.print.min.js"></script>
-    <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
-    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
-    <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap4.min.css">
+    <!-- Report dependencies are supplied once by includes/layout.php. -->
     <?php
 }
 
@@ -56,7 +44,8 @@ function datatables_init_script($tableId, $options = []) {
             [ 'extend' => 'print', 'className' => 'btn btn-sm btn-outline-dark' ]
         ],
         'responsive' => true,
-        'pageLength' => 10,
+        'pageLength' => 25,
+        'lengthMenu' => [[25, 50, 100], [25, 50, 100]],
         'order' => [[0, 'desc']]
     ];
     $opts = array_merge($default, $options);

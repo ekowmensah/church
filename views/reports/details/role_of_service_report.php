@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../../config/config.php';
 require_once __DIR__ . '/../../../helpers/auth.php';
 require_once __DIR__ . '/../../../helpers/permissions_v2.php';
+require_once __DIR__ . '/../../../helpers/report_pagination.php';
 require_once __DIR__ . '/../../../services/RoleOfServingReportService.php';
 
 if (!is_logged_in()) {
@@ -25,12 +26,19 @@ $roleId = !empty($_GET['role_id']) ? (int) $_GET['role_id'] : null;
 $organizationId = !empty($_GET['organization_id']) ? (int) $_GET['organization_id'] : null;
 $gender = in_array($_GET['gender'] ?? '', ['Male', 'Female', 'Unspecified'], true) ? $_GET['gender'] : null;
 $organizations = [];
-$report = ['summary' => [], 'members' => [], 'totals' => ['male' => 0, 'female' => 0, 'unspecified' => 0, 'total' => 0]];
+$report = ['summary' => [], 'members' => [], 'totals' => ['male' => 0, 'female' => 0, 'unspecified' => 0, 'total' => 0], 'pagination' => ['total_rows' => 0, 'page' => 1, 'per_page' => 25, 'offset' => 0]];
 $error = '';
 try {
     if ($churchId < 1) throw new RuntimeException('No church is available for your reporting scope.');
     $organizations = $service->getOrganizations($churchId);
-    $report = $service->build($churchId, $roleId, $organizationId, $gender);
+    $report = $service->build(
+        $churchId,
+        $roleId,
+        $organizationId,
+        $gender,
+        max(1, (int) ($_GET['page'] ?? 1)),
+        report_pagination_page_size()
+    );
 } catch (Throwable $exception) {
     $error = $exception->getMessage();
 }
@@ -62,7 +70,7 @@ ob_start();
 
   <div class="card serving-card mb-3"><div class="card-header bg-white font-weight-bold">Gender Summary by Role</div><div class="table-responsive"><table class="table table-bordered serving-table mb-0" id="servingSummaryTable"><thead><tr><th>Role of Serving</th><th class="text-right">Male</th><th class="text-right">Female</th><th class="text-right">Unspecified</th><th class="text-right">Total</th></tr></thead><tbody><?php if (!$report['summary']): ?><tr><td colspan="5" class="text-center text-muted py-4">No role holders match the filters.</td></tr><?php endif; ?><?php foreach ($report['summary'] as $row): ?><tr class="summary-row"><td><?= htmlspecialchars($row['role_name']) ?></td><td class="text-right"><?= number_format($row['male']) ?></td><td class="text-right"><?= number_format($row['female']) ?></td><td class="text-right"><?= number_format($row['unspecified']) ?></td><td class="text-right"><?= number_format($row['total']) ?></td></tr><?php endforeach; ?></tbody></table></div></div>
 
-  <div class="card serving-card"><div class="card-header bg-white font-weight-bold">Role Holder Details</div><div class="table-responsive"><table class="table table-bordered table-hover serving-table mb-0" id="servingDetailTable"><thead><tr><th>#</th><th>CRN</th><th>Member</th><th>Role</th><th>Gender</th><th>Bible Class</th><th>Organization(s)</th><th>Contact</th></tr></thead><tbody><?php if (!$report['members']): ?><tr><td colspan="8" class="text-center text-muted py-4">No members match the filters.</td></tr><?php endif; ?><?php foreach ($report['members'] as $index=>$member): ?><tr><td><?= $index+1 ?></td><td><?= htmlspecialchars($member['crn'] ?: '-') ?></td><td><?= htmlspecialchars($member['member_name']) ?></td><td><?= htmlspecialchars($member['role_name']) ?></td><td><?= htmlspecialchars($member['gender']) ?></td><td><?= htmlspecialchars($member['class_name'] ?: '-') ?></td><td><?= htmlspecialchars($member['organizations'] ?: '-') ?></td><td><?= htmlspecialchars($member['phone'] ?: '-') ?></td></tr><?php endforeach; ?></tbody></table></div></div>
+  <div class="card serving-card"><div class="card-header bg-white font-weight-bold">Role Holder Details</div><div class="table-responsive"><table class="table table-bordered table-hover serving-table mb-0" id="servingDetailTable" data-report-pagination="server"><thead><tr><th>#</th><th>CRN</th><th>Member</th><th>Role</th><th>Gender</th><th>Bible Class</th><th>Organization(s)</th><th>Contact</th></tr></thead><tbody><?php if (!$report['members']): ?><tr><td colspan="8" class="text-center text-muted py-4">No members match the filters.</td></tr><?php endif; ?><?php foreach ($report['members'] as $index=>$member): ?><tr><td><?= $report['pagination']['offset']+$index+1 ?></td><td><?= htmlspecialchars($member['crn'] ?: '-') ?></td><td><?= htmlspecialchars($member['member_name']) ?></td><td><?= htmlspecialchars($member['role_name']) ?></td><td><?= htmlspecialchars($member['gender']) ?></td><td><?= htmlspecialchars($member['class_name'] ?: '-') ?></td><td><?= htmlspecialchars($member['organizations'] ?: '-') ?></td><td><?= htmlspecialchars($member['phone'] ?: '-') ?></td></tr><?php endforeach; ?></tbody></table></div><div class="card-body pt-0"><?php report_render_server_pagination($report['pagination']['total_rows'], $report['pagination']['page'], $report['pagination']['per_page'], 'Role holder report pages'); ?></div></div>
   <?php endif; ?>
 </div></div>
 <script>

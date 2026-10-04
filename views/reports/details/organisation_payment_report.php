@@ -1,8 +1,9 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
 require_once __DIR__.'/../../../helpers/payment_report_context.php';
+require_once __DIR__.'/../../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -60,10 +61,12 @@ if ($period_from !== '' && $period_to !== '' && $period_from > $period_to) {
     [$period_from, $period_to] = [$period_to, $period_from];
 }
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
-$per_page = 25;
+$per_page = report_pagination_page_size();
 $offset = ($page - 1) * $per_page;
 
 $where = ["m.status = 'active'"];
+$scopeCondition = payment_report_payment_scope_condition($conn, 'p');
+if ($scopeCondition !== '') $where[] = $scopeCondition;
 if ($selected_org) {
     $where[] = "org.id = $selected_org";
 }
@@ -110,15 +113,7 @@ INNER JOIN v_posted_payments p ON m.id = p.member_id
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 LEFT JOIN bible_classes bc ON m.class_id = bc.id
 $where_sql
-ORDER BY org.name, m.last_name, m.first_name, p.payment_date DESC
-LIMIT $per_page OFFSET $offset";
-$result = $conn->query($sql);
-$rows = [];
-if ($result) {
-    while ($row = $result->fetch_assoc()) {
-        $rows[] = $row;
-    }
-}
+ORDER BY org.name, m.last_name, m.first_name, p.payment_date DESC";
 // Get total count for pagination
 $count_sql = "SELECT COUNT(*) AS total_count FROM members m
 LEFT JOIN member_organizations mo ON m.id = mo.member_id
@@ -132,7 +127,16 @@ $total_count = 0;
 if ($count_result && ($row = $count_result->fetch_assoc())) {
     $total_count = $row['total_count'] ?: 0;
 }
-$total_pages = ceil($total_count / $per_page);
+$total_pages = max(1, (int) ceil($total_count / $per_page));
+$page = min($page, $total_pages);
+$offset = ($page - 1) * $per_page;
+$result = $conn->query($sql . " LIMIT $per_page OFFSET $offset");
+$rows = [];
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $rows[] = $row;
+    }
+}
 ?>
 <div class="container mt-4">
     <a href="../../reports.php" class="btn btn-secondary mb-3"><i class="fas fa-arrow-left mr-1"></i>Back to Reports</a>
@@ -166,6 +170,14 @@ $total_pages = ceil($total_count / $per_page);
                 <?php endforeach; ?>
             </select>
         </div>
+        <div class="form-group mr-2">
+            <label for="per_page" class="mr-2 font-weight-bold">Rows:</label>
+            <select name="per_page" id="per_page" class="form-control">
+                <?php foreach ([25, 50, 100] as $page_size): ?>
+                    <option value="<?= $page_size ?>" <?= $per_page === $page_size ? 'selected' : '' ?>><?= $page_size ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
         <button type="submit" class="btn btn-primary">Filter</button>
     </form>
     <div class="mb-3">
@@ -176,7 +188,7 @@ $total_pages = ceil($total_count / $per_page);
     <button id="print-table" class="btn btn-secondary btn-sm"><i class="fas fa-print"></i> Print</button>
 </div>
 <div class="table-responsive">
-        <table class="table table-bordered table-hover">
+        <table class="table table-bordered table-hover" data-report-pagination="server">
             <thead class="thead-light">
                 <tr>
                     <th>#</th>
@@ -200,7 +212,7 @@ $total_pages = ceil($total_count / $per_page);
                 <?php else: ?>
                     <?php foreach ($rows as $i => $row): ?>
                         <tr>
-                            <td><?php echo $i + 1; ?></td>
+                            <td><?php echo $i + 1 + $offset; ?></td>
                             <td><?php echo htmlspecialchars($row['crn']); ?></td>
                             <td><?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name']); ?></td>
                             <td><?php echo htmlspecialchars($row['class_name'] ?: '-'); ?></td>
@@ -222,35 +234,10 @@ $total_pages = ceil($total_count / $per_page);
     <div class="mt-3">
         <h5 class="font-weight-bold">Total Amount: <span class="text-primary">₵<?php echo number_format($total_amount, 2); ?></span></h5>
     </div>
-    <?php if ($total_pages > 1): ?>
-    <nav aria-label="Page navigation">
-        <ul class="pagination justify-content-center mt-3">
-            <?php
-                $query_params = $_GET;
-                for ($i = 1; $i <= $total_pages; $i++):
-                    $query_params['page'] = $i;
-                    $url = '?' . http_build_query($query_params);
-            ?>
-                <li class="page-item<?php if ($i == $page) echo ' active'; ?>">
-                    <a class="page-link" href="<?php echo $url; ?>"><?php echo $i; ?></a>
-                </li>
-            <?php endfor; ?>
-        </ul>
-    </nav>
-    <?php endif; ?>
+    <?php report_render_server_pagination($total_count, $page, $per_page, 'Organisation payment report pages'); ?>
 </div>
 <!-- DataTables and JS export dependencies -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.3.6/css/buttons.dataTables.min.css">
-<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.print.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.3.6/js/buttons.pdf.min.js"></script>
 <script>
 $(document).ready(function() {
     var table = $(".table").DataTable({

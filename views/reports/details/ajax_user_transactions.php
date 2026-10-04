@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__.'/../../../config/config.php';
 require_once __DIR__.'/../../../helpers/auth.php';
-require_once __DIR__.'/../../../helpers/permissions.php';
+require_once __DIR__.'/../../../helpers/permissions_v2.php';
 require_once __DIR__.'/../../../helpers/payment_report_context.php';
 
 if (!is_logged_in()) {
@@ -31,10 +31,15 @@ $date_to = $_GET['date_to'] ?? '';
     (string) ($_GET['period_to'] ?? '')
 );
 $page = max(1, intval($_GET['page'] ?? 1));
-$per_page = (isset($_GET['per_page']) && $_GET['per_page'] === 'all') ? null : 10;
-$offset = $per_page ? ($page - 1) * $per_page : 0;
+$per_page = intval($_GET['per_page'] ?? 25);
+if (!in_array($per_page, [25, 50, 100], true)) {
+    $per_page = 25;
+}
+$offset = ($page - 1) * $per_page;
 
 $where = ['p.recorded_by = ?'];
+$scopeCondition = payment_report_payment_scope_condition($conn, 'p');
+if ($scopeCondition !== '') $where[] = $scopeCondition;
 $params = [$user_id];
 $types = 'i';
 
@@ -66,13 +71,11 @@ $sql = "SELECT p.id, p.payment_date, {$reportingPeriodExpression} AS reporting_p
         LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
         WHERE ".implode(' AND ', $where)."
         ORDER BY p.payment_date DESC";
-if ($per_page) {
-    $sql .= " LIMIT ? OFFSET ?";
-    $params[] = $per_page;
-    $types .= 'i';
-    $params[] = $offset;
-    $types .= 'i';
-}
+$sql .= " LIMIT ? OFFSET ?";
+$params[] = $per_page;
+$types .= 'i';
+$params[] = $offset;
+$types .= 'i';
 $stmt = $conn->prepare($sql);
 if (!empty($types)) {
     $stmt->bind_param($types, ...$params);
@@ -83,30 +86,26 @@ $result = $stmt->get_result();
 // Count query for pagination
 $count_sql = "SELECT COUNT(*) as total FROM v_posted_payments p WHERE ".implode(' AND ', $where);
 $count_stmt = $conn->prepare($count_sql);
-if (!empty($types) && $per_page) {
+if (!empty($types)) {
     // Remove last two types/params for LIMIT/OFFSET
     $count_types = substr($types, 0, -2);
     $count_params = array_slice($params, 0, -2);
     if (!empty($count_types)) {
         $count_stmt->bind_param($count_types, ...$count_params);
     }
-} else if (!empty($types)) {
-    $count_stmt->bind_param($types, ...$params);
 }
 $count_stmt->execute();
 $count_result = $count_stmt->get_result();
 $total_rows = $count_result->fetch_assoc()['total'];
-$total_pages = $per_page ? ceil($total_rows / $per_page) : 1;
+$total_pages = max(1, (int) ceil($total_rows / $per_page));
 
 // --- STATISTICS QUERIES ---
 $stats_where = $where;
 $stats_params = $params;
 $stats_types = $types;
-// Remove pagination params/types for stats queries if per_page is set
-if ($per_page) {
-    $stats_types = substr($types, 0, -2);
-    $stats_params = array_slice($params, 0, -2);
-}
+// Remove pagination params/types for statistics queries.
+$stats_types = substr($types, 0, -2);
+$stats_params = array_slice($params, 0, -2);
 
 // Total payments (all time, filtered)
 $total_sql = "SELECT COALESCE(SUM(amount),0) as total FROM v_posted_payments p WHERE ".implode(' AND ', $stats_where);
@@ -200,9 +199,14 @@ if ($result->num_rows === 0) {
     exit;
 }
 ?>
-<div class="mb-2 text-right">
-  <button class="btn btn-success btn-sm mr-1" id="export-transactions-excel"><i class="fas fa-file-excel"></i> Export to Excel</button>
-  <button class="btn btn-secondary btn-sm" id="export-transactions-csv"><i class="fas fa-file-csv"></i> Export to CSV</button>
+<div class="mb-2 d-flex flex-wrap align-items-center justify-content-between" style="gap:8px">
+  <label class="small text-muted mb-0">Rows
+    <select class="custom-select custom-select-sm ml-1" id="user-transactions-page-size" style="width:auto">
+      <?php foreach ([25, 50, 100] as $page_size): ?><option value="<?= $page_size ?>" <?= $per_page === $page_size ? 'selected' : '' ?>><?= $page_size ?></option><?php endforeach; ?>
+    </select>
+  </label>
+  <div><button class="btn btn-success btn-sm mr-1" id="export-transactions-excel"><i class="fas fa-file-excel"></i> Export to Excel</button>
+  <button class="btn btn-secondary btn-sm" id="export-transactions-csv"><i class="fas fa-file-csv"></i> Export to CSV</button></div>
 </div>
 <table class="table table-bordered table-hover" id="user-transactions-table">
   <thead>
@@ -251,13 +255,18 @@ if ($result->num_rows === 0) {
 </table>
 <nav>
   <ul class="pagination justify-content-center">
-    <?php for ($i = 1; $i <= $total_pages; $i++): ?>
+    <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>"><a class="page-link user-transactions-page-link" href="#" data-page="<?= max(1, $page - 1) ?>" data-per-page="<?= $per_page ?>">Previous</a></li>
+    <?php
+      $pager_pages = array_unique(array_merge([1, $total_pages], range(max(1, $page - 2), min($total_pages, $page + 2))));
+      sort($pager_pages);
+      $previous_page = null;
+      foreach ($pager_pages as $i):
+        if ($previous_page !== null && $i > $previous_page + 1):
+    ?><li class="page-item disabled"><span class="page-link">&hellip;</span></li><?php endif; ?>
       <li class="page-item <?= $i == $page ? 'active' : '' ?>">
-        <a class="page-link user-transactions-page-link" href="#" data-page="<?= $i ?>"><?= $i ?></a>
+        <a class="page-link user-transactions-page-link" href="#" data-page="<?= $i ?>" data-per-page="<?= $per_page ?>"><?= $i ?></a>
       </li>
-    <?php endfor; ?>
-    <li class="page-item">
-      <a class="page-link user-transactions-page-link" href="#" data-page="1" data-per-page="all">Show All</a>
-    </li>
+    <?php $previous_page = $i; endforeach; ?>
+    <li class="page-item <?= $page >= $total_pages ? 'disabled' : '' ?>"><a class="page-link user-transactions-page-link" href="#" data-page="<?= min($total_pages, $page + 1) ?>" data-per-page="<?= $per_page ?>">Next</a></li>
   </ul>
 </nav>

@@ -2,6 +2,7 @@
 require_once __DIR__.'/../../config/config.php';
 require_once __DIR__.'/../../helpers/auth.php';
 require_once __DIR__.'/../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../helpers/report_pagination.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -60,7 +61,7 @@ if ($toDate !== '') {
 $sql = "SELECT h.*, 
     m.first_name, m.last_name, m.middle_name, ch.name AS church_name, 
     ss.srn, ss.first_name AS ss_first_name, ss.last_name AS ss_last_name, ss.middle_name AS ss_middle_name, ssch.name AS ss_church_name, 
-    u.name AS recorded_by 
+    u.name AS recorded_by_name
 FROM health_records h 
     LEFT JOIN members m ON h.member_id = m.id 
     LEFT JOIN churches ch ON m.church_id = ch.id 
@@ -68,12 +69,8 @@ FROM health_records h
     LEFT JOIN churches ssch ON ss.church_id = ssch.id 
     LEFT JOIN users u ON h.recorded_by = u.id 
 $where ORDER BY h.recorded_at DESC, h.id DESC";
-$stmt = $conn->prepare($sql);
-if ($params) {
-    $stmt->bind_param($bind_types, ...$params);
-}
-$stmt->execute();
-$healths = $stmt->get_result();
+$pagination = report_paginate_query($conn, $sql, $bind_types, $params);
+$healths = $pagination['result'];
 // Trend chart data
 $trend_sql = "SELECT DATE_FORMAT(h.recorded_at, '%Y-%m') AS ym, COUNT(*) AS count
               FROM health_records h
@@ -132,7 +129,7 @@ ob_start();
     </div>
     <div class="card-body">
       <div class="table-responsive">
-        <table class="table table-bordered" id="healthTable" width="100%" cellspacing="0">
+        <table class="table table-bordered" id="healthTable" data-report-pagination="server" width="100%" cellspacing="0">
           <thead>
             <tr>
               <th>Date</th>
@@ -165,38 +162,27 @@ ob_start();
                   -
                 <?php endif; ?>
               </td>
-              <td><?=htmlspecialchars($row['recorded_by'] ?? '-')?></td>
+              <td><?=htmlspecialchars($row['recorded_by_name'] ?? '-')?></td>
               <td><?=htmlspecialchars(mb_strimwidth($row['notes'] ?? '-', 0, 50, '...'))?></td>
             </tr>
             <?php endwhile; ?>
           </tbody>
         </table>
       </div>
+      <?php report_render_server_pagination($pagination['total_rows'], $pagination['page'], $pagination['per_page'], 'Health report pages'); ?>
     </div>
   </div>
 </div>
 <!-- DataTables and Chart.js scripts -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap4.min.css">
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.bootstrap4.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.print.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 $(document).ready(function() {
     $('#healthTable').DataTable({
+        paging: false,
+        searching: false,
+        info: false,
         dom: 'Bfrtip',
-        buttons: [
-            'copy', 'csv', 'excel', 'pdf', 'print'
-        ]
+        buttons: <?= $can_export ? "[\n            'copy', 'csv', 'excel', 'pdf', 'print'\n        ]" : '[]' ?>
     });
     var ctx = document.getElementById('trendChart').getContext('2d');
     var trendChart = new Chart(ctx, {

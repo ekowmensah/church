@@ -164,6 +164,10 @@ $sql = "
 
 $params = [$start_date, $end_date];
 $types = 'ss';
+$scopeCondition = payment_report_payment_scope_condition($conn, 'p');
+if ($scopeCondition !== '') {
+    $sql .= " AND {$scopeCondition}";
+}
 foreach ($period_clauses as $period_clause) {
     $sql .= " AND {$period_clause}";
 }
@@ -557,7 +561,6 @@ datatables_init_script('modeTypeTable', [
     'order' => [[0, 'asc']]
 ]);
 ?>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const ctx = document.getElementById('modeTypeChart');

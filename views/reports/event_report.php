@@ -2,6 +2,7 @@
 require_once __DIR__.'/../../config/config.php';
 require_once __DIR__.'/../../helpers/auth.php';
 require_once __DIR__.'/../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../helpers/report_pagination.php';
 require_once __DIR__.'/../../services/EventManagementService.php';
 
 // Only allow logged-in users
@@ -67,12 +68,8 @@ if (!empty($_GET['to_date'])) {
     $bind_types .= 's';
 }
 $sql = "SELECT r.*, e.name AS event_title, e.event_date, et.name AS event_type, m.crn, m.last_name, m.first_name, m.middle_name FROM event_registrations r INNER JOIN events e ON r.event_id = e.id LEFT JOIN event_types et ON e.event_type_id = et.id LEFT JOIN members m ON r.member_id = m.id $where ORDER BY e.event_date DESC, e.name, m.last_name, m.first_name, m.middle_name";
-$stmt = $conn->prepare($sql);
-if ($params) {
-    $stmt->bind_param($bind_types, ...$params);
-}
-$stmt->execute();
-$records = $stmt->get_result();
+$pagination = report_paginate_query($conn, $sql, $bind_types, $params);
+$records = $pagination['result'];
 
 // For event trend chart: count registrations per month
 $trend_sql = "SELECT DATE_FORMAT(e.event_date, '%Y-%m') AS ym, COUNT(*) AS count FROM event_registrations r INNER JOIN events e ON r.event_id = e.id $where GROUP BY ym ORDER BY ym";
@@ -139,7 +136,7 @@ while ($row = $trend_res->fetch_assoc()) {
     </div>
     <div class="card-body">
       <div class="table-responsive">
-        <table class="table table-bordered" id="eventTable" width="100%" cellspacing="0">
+        <table class="table table-bordered" id="eventTable" data-report-pagination="server" width="100%" cellspacing="0">
           <thead>
             <tr>
               <th>Date</th>
@@ -166,28 +163,19 @@ while ($row = $trend_res->fetch_assoc()) {
           </tbody>
         </table>
       </div>
+      <?php report_render_server_pagination($pagination['total_rows'], $pagination['page'], $pagination['per_page'], 'Event report pages'); ?>
     </div>
   </div>
 </div>
 
 <!-- DataTables and Chart.js scripts -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap4.min.css">
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.bootstrap4.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.print.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 $(document).ready(function() {
     $('#eventTable').DataTable({
+        paging: false,
+        searching: false,
+        info: false,
         dom: 'Bfrtip',
         buttons: <?= $can_export ? "['copy', 'csv', 'excel', 'pdf', 'print']" : '[]' ?>
     });

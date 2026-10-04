@@ -239,7 +239,7 @@ ob_start();
             <span class="badge badge-light">Page <?= $page ?> of <?= $totalPages ?></span>
         </div>
         <div class="table-responsive">
-            <table class="table table-hover" aria-label="Audit evidence records">
+            <table class="table table-hover" data-report-pagination="server" aria-label="Audit evidence records">
                 <thead><tr><th>Date and time</th><th>Actor</th><th>Action</th><th>Target</th><th>IP address</th><th class="text-right">Evidence</th></tr></thead>
                 <tbody>
                 <?php if (!$auditRows): ?>
