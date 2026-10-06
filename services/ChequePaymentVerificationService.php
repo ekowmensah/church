@@ -214,6 +214,88 @@ final class ChequePaymentVerificationService {
         }
     }
 
+    public function correctEvidence(
+        int $paymentId,
+        string $bankName,
+        string $chequeNumber,
+        string $reason
+    ): void {
+        $bankName = mb_substr(trim($bankName), 0, 120);
+        $chequeNumber = mb_substr(trim($chequeNumber), 0, 100);
+        $reason = mb_substr(trim($reason), 0, 500);
+        if ($paymentId <= 0) throw new InvalidArgumentException('Choose a valid cheque payment.');
+        if ($bankName === '' || $chequeNumber === '') {
+            throw new InvalidArgumentException('Bank name and cheque number are required.');
+        }
+        if ($reason === '') {
+            throw new InvalidArgumentException('Explain why the cheque evidence is being corrected.');
+        }
+
+        $this->conn->begin_transaction();
+        try {
+            $stmt = $this->conn->prepare(
+                "SELECT id, church_id, mode, bank_name, cheque_number, cheque_verification_status
+                   FROM payments WHERE id = ? FOR UPDATE"
+            );
+            $stmt->bind_param('i', $paymentId);
+            $stmt->execute();
+            $payment = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$payment) throw new RuntimeException('The cheque payment was not found.');
+            if ($payment['cheque_verification_status'] !== 'pending') {
+                throw new RuntimeException('Only a pending cheque can have its evidence corrected.');
+            }
+            if (!in_array(strtolower(trim((string) $payment['mode'])), ['cheque', 'check'], true)) {
+                throw new RuntimeException('Only cheque payments can have cheque evidence.');
+            }
+            if (!$this->superAdmin && ($this->churchId === null || $this->churchId !== (int) $payment['church_id'])) {
+                throw new RuntimeException('The cheque is outside your authorized church.');
+            }
+
+            $previousBankName = trim((string) ($payment['bank_name'] ?? ''));
+            $previousChequeNumber = trim((string) ($payment['cheque_number'] ?? ''));
+            if ($previousBankName === $bankName && $previousChequeNumber === $chequeNumber) {
+                throw new RuntimeException('Change the bank name or cheque number before saving.');
+            }
+
+            $stmt = $this->conn->prepare(
+                "UPDATE payments
+                    SET bank_name = ?, cheque_number = ?
+                  WHERE id = ? AND cheque_verification_status = 'pending'"
+            );
+            $stmt->bind_param('ssi', $bankName, $chequeNumber, $paymentId);
+            $stmt->execute();
+            if ($stmt->affected_rows !== 1) {
+                throw new RuntimeException('The cheque changed before the evidence was saved. Refresh and try again.');
+            }
+            $stmt->close();
+
+            $stmt = $this->conn->prepare(
+                "INSERT INTO payment_cheque_verification_audit
+                    (payment_id, action, from_status, to_status, notes,
+                     performed_by_user_id, previous_bank_name, new_bank_name,
+                     previous_cheque_number, new_cheque_number)
+                 VALUES (?, 'evidence_corrected', 'pending', 'pending', ?, ?, ?, ?, ?, ?)"
+            );
+            $stmt->bind_param(
+                'isissss',
+                $paymentId,
+                $reason,
+                $this->actorUserId,
+                $previousBankName,
+                $bankName,
+                $previousChequeNumber,
+                $chequeNumber
+            );
+            $stmt->execute();
+            $stmt->close();
+            $this->conn->commit();
+        } catch (Throwable $e) {
+            $this->conn->rollback();
+            throw $e;
+        }
+    }
+
     private function appendChurchScope(array &$conditions, string &$types, array &$params, int $requestedChurchId): void {
         if (!$this->superAdmin) {
             if ($this->churchId === null) {

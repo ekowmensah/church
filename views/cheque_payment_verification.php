@@ -26,14 +26,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         http_response_code(419);
         $error = 'Your form expired. Refresh the page and try again.';
     } else {
+        $action = (string) ($_POST['action'] ?? 'review');
         $decision = (string) ($_POST['decision'] ?? '');
         try {
-            $service->review(
-                (int) ($_POST['payment_id'] ?? 0),
-                $decision,
-                (string) ($_POST['review_notes'] ?? '')
-            );
-            header('Location: cheque_payment_verification.php?result=' . ($decision === 'verified' ? 'verified' : 'rejected'));
+            if ($action === 'correct_evidence') {
+                $service->correctEvidence(
+                    (int) ($_POST['payment_id'] ?? 0),
+                    (string) ($_POST['bank_name'] ?? ''),
+                    (string) ($_POST['cheque_number'] ?? ''),
+                    (string) ($_POST['correction_reason'] ?? '')
+                );
+                $resultCode = 'evidence_updated';
+            } elseif ($action === 'review') {
+                $service->review(
+                    (int) ($_POST['payment_id'] ?? 0),
+                    $decision,
+                    (string) ($_POST['review_notes'] ?? '')
+                );
+                $resultCode = $decision === 'verified' ? 'verified' : 'rejected';
+            } else {
+                throw new InvalidArgumentException('Choose a valid cheque workflow action.');
+            }
+            header('Location: cheque_payment_verification.php?result=' . $resultCode);
             exit;
         } catch (mysqli_sql_exception $exception) {
             error_log('Cheque approval persistence failed: ' . $exception->getMessage());
@@ -72,6 +86,7 @@ $churches = $service->listChurches();
 $resultMessages = [
     'verified' => 'Cheque approved and posted as a completed payment.',
     'rejected' => 'Cheque rejected and retained in the decision history.',
+    'evidence_updated' => 'Cheque evidence corrected. The cheque remains pending until it is reviewed and approved.',
 ];
 $success = $resultMessages[(string) ($_GET['result'] ?? '')] ?? '';
 $statusMeta = [
@@ -108,6 +123,7 @@ ob_start();
 .cheque-table thead th { border-top:0; border-bottom:1px solid #dfe6ec; color:#526273; font-size:.72rem; letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; }
 .cheque-table td { vertical-align:top; }
 .cheque-reference { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-weight:700; }
+.evidence-action { margin-top:.65rem; }
 .decision-panel { min-width:275px; }
 .decision-panel textarea { resize:vertical; min-height:64px; }
 .status-badge { border-radius:999px; padding:.42rem .68rem; font-weight:700; }
@@ -178,11 +194,11 @@ ob_start();
             ?>
                 <tr>
                     <td><span class="cheque-reference text-primary">PAY-<?= str_pad((string) $payment['id'], 6, '0', STR_PAD_LEFT) ?></span><div class="font-weight-bold mt-1"><?= htmlspecialchars($payment['payer_name'] ?: 'Unknown payer') ?></div><small class="text-muted"><?= htmlspecialchars($payment['registration_number'] ?: 'No registration number') ?></small><?php if ($isSuperAdmin): ?><div class="small mt-1"><i class="fas fa-church text-muted mr-1"></i><?= htmlspecialchars($payment['church_name'] ?: 'No church') ?></div><?php endif; ?></td>
-                    <td><span class="detail-label">Bank</span><strong><?= htmlspecialchars($payment['bank_name'] ?: 'Missing') ?></strong><span class="detail-label mt-2">Cheque number</span><span class="cheque-reference"><?= htmlspecialchars($payment['cheque_number'] ?: 'Missing') ?></span><?php if (!$hasRequiredEvidence): ?><div class="text-danger small mt-2"><i class="fas fa-exclamation-triangle mr-1"></i>Evidence incomplete</div><?php endif; ?></td>
+                    <td><span class="detail-label">Bank</span><strong><?= htmlspecialchars($payment['bank_name'] ?: 'Missing') ?></strong><span class="detail-label mt-2">Cheque number</span><span class="cheque-reference"><?= htmlspecialchars($payment['cheque_number'] ?: 'Missing') ?></span><?php if (!$hasRequiredEvidence): ?><div class="text-danger small mt-2"><i class="fas fa-exclamation-triangle mr-1"></i>Evidence incomplete</div><?php endif; ?><?php if ($rowStatus === 'pending'): ?><button type="button" class="btn btn-sm <?= $hasRequiredEvidence ? 'btn-outline-secondary' : 'btn-outline-warning' ?> evidence-action edit-cheque-evidence" data-payment-id="<?= (int) $payment['id'] ?>" data-reference="PAY-<?= str_pad((string) $payment['id'], 6, '0', STR_PAD_LEFT) ?>" data-payer="<?= htmlspecialchars($payment['payer_name'] ?: 'Unknown payer', ENT_QUOTES) ?>" data-bank-name="<?= htmlspecialchars((string) $payment['bank_name'], ENT_QUOTES) ?>" data-cheque-number="<?= htmlspecialchars((string) $payment['cheque_number'], ENT_QUOTES) ?>"><i class="fas fa-pen mr-1"></i><?= $hasRequiredEvidence ? 'Correct evidence' : 'Add evidence' ?></button><?php endif; ?></td>
                     <td><div class="font-weight-bold text-success">GH&#8373;<?= number_format((float) $payment['amount'], 2) ?></div><div><?= htmlspecialchars($payment['payment_type'] ?: 'Unknown payment type') ?></div><small class="text-muted">Payment date: <?= htmlspecialchars($formatDate($payment['payment_date'])) ?></small><div class="small mt-1"><span class="detail-label">Reporting period</span><?= htmlspecialchars($period ?: 'Not supplied') ?></div></td>
                     <td><span class="badge badge-<?= $meta['class'] ?> status-badge"><i class="fas fa-<?= $meta['icon'] ?> mr-1"></i><?= htmlspecialchars($meta['label']) ?></span><div class="small mt-2"><span class="detail-label">Recorded by</span><?= htmlspecialchars($payment['recorded_by_name'] ?: 'Legacy/unknown recorder') ?></div><?php if ($payment['manual_batch_reference']): ?><div class="small mt-1"><span class="detail-label">Batch</span><?= htmlspecialchars($payment['manual_batch_reference']) ?></div><?php endif; ?><?php if ($rowStatus !== 'pending'): ?><div class="small mt-2"><span class="detail-label">Reviewed by</span><?= htmlspecialchars($payment['verified_by_name'] ?: 'Unknown reviewer') ?> · <?= htmlspecialchars($formatDate($payment['cheque_verified_at'], 'd M Y H:i')) ?></div><div class="small mt-1"><span class="detail-label">Decision note</span><?= nl2br(htmlspecialchars($payment['cheque_verification_notes'] ?: 'No note retained')) ?></div><?php endif; ?></td>
                     <td class="decision-panel">
-                        <?php if ($rowStatus === 'pending'): ?><form method="post"><?= csrf_input() ?><input type="hidden" name="payment_id" value="<?= (int) $payment['id'] ?>"><label class="small font-weight-bold" for="review_notes_<?= (int) $payment['id'] ?>">Decision note</label><textarea id="review_notes_<?= (int) $payment['id'] ?>" class="form-control form-control-sm mb-2" name="review_notes" maxlength="500" required placeholder="State what was checked or why it was rejected"></textarea><div class="d-flex flex-wrap" style="gap:6px"><button type="submit" class="btn btn-sm btn-success" name="decision" value="verified" <?= $hasRequiredEvidence ? '' : 'disabled' ?> onclick="return confirm('Approve this cheque and post it as completed income?')"><i class="fas fa-check mr-1"></i>Approve &amp; post</button><button type="submit" class="btn btn-sm btn-outline-danger" name="decision" value="rejected" onclick="return confirm('Reject this cheque payment?')"><i class="fas fa-times mr-1"></i>Reject</button></div></form><?php else: ?><div class="text-muted small mb-2">This decision is complete and cannot be silently overwritten.</div><?php endif; ?>
+                        <?php if ($rowStatus === 'pending'): ?><form method="post"><?= csrf_input() ?><input type="hidden" name="action" value="review"><input type="hidden" name="payment_id" value="<?= (int) $payment['id'] ?>"><label class="small font-weight-bold" for="review_notes_<?= (int) $payment['id'] ?>">Decision note</label><textarea id="review_notes_<?= (int) $payment['id'] ?>" class="form-control form-control-sm mb-2" name="review_notes" maxlength="500" required placeholder="State what was checked or why it was rejected"></textarea><div class="d-flex flex-wrap" style="gap:6px"><button type="submit" class="btn btn-sm btn-success" name="decision" value="verified" <?= $hasRequiredEvidence ? '' : 'disabled' ?> onclick="return confirm('Approve this cheque and post it as completed income?')"><i class="fas fa-check mr-1"></i>Approve &amp; post</button><button type="submit" class="btn btn-sm btn-outline-danger" name="decision" value="rejected" onclick="return confirm('Reject this cheque payment?')"><i class="fas fa-times mr-1"></i>Reject</button></div></form><?php else: ?><div class="text-muted small mb-2">This decision is complete and cannot be silently overwritten.</div><?php endif; ?>
                         <a href="payment_view.php?id=<?= (int) $payment['id'] ?>" class="btn btn-sm btn-outline-primary mt-2"><i class="fas fa-eye mr-1"></i>Full payment</a>
                     </td>
                 </tr>
@@ -193,6 +209,41 @@ ob_start();
         <?php if ((int) $result['total_rows'] > 0): ?><div class="card-footer bg-white border-0"><?php report_render_server_pagination($result['total_rows'], $page, $perPage, 'Cheque approval pages'); ?></div><?php endif; ?>
     </div>
 </div>
+
+<div class="modal fade" id="chequeEvidenceModal" tabindex="-1" role="dialog" aria-labelledby="chequeEvidenceModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document"><div class="modal-content">
+        <form method="post" autocomplete="off">
+            <?= csrf_input() ?>
+            <input type="hidden" name="action" value="correct_evidence">
+            <input type="hidden" name="payment_id" id="evidence_payment_id" value="">
+            <div class="modal-header bg-warning text-dark">
+                <div><h5 class="modal-title" id="chequeEvidenceModalTitle"><i class="fas fa-money-check-alt mr-2"></i>Correct cheque evidence</h5><small id="evidence_payment_context">Pending cheque</small></div>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info small"><i class="fas fa-shield-alt mr-1"></i>Only the bank and cheque number will change. The previous and new values are retained in the audit trail.</div>
+                <div class="form-group"><label for="evidence_bank_name">Bank name <span class="text-danger">*</span></label><input type="text" class="form-control" id="evidence_bank_name" name="bank_name" maxlength="120" required></div>
+                <div class="form-group"><label for="evidence_cheque_number">Cheque number <span class="text-danger">*</span></label><input type="text" class="form-control" id="evidence_cheque_number" name="cheque_number" maxlength="100" required></div>
+                <div class="form-group mb-0"><label for="evidence_correction_reason">Correction reason <span class="text-danger">*</span></label><textarea class="form-control" id="evidence_correction_reason" name="correction_reason" maxlength="500" rows="3" required placeholder="Explain where the corrected evidence was confirmed"></textarea><small class="form-text text-muted">The cheque remains pending after this correction.</small></div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-light border" data-dismiss="modal">Cancel</button><button type="submit" class="btn btn-warning"><i class="fas fa-save mr-1"></i>Save evidence</button></div>
+        </form>
+    </div></div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var modal = $('#chequeEvidenceModal').appendTo(document.body);
+    $('.edit-cheque-evidence').on('click', function () {
+        var button = $(this);
+        $('#evidence_payment_id').val(button.data('payment-id'));
+        $('#evidence_bank_name').val(button.attr('data-bank-name') || '');
+        $('#evidence_cheque_number').val(button.attr('data-cheque-number') || '');
+        $('#evidence_correction_reason').val('');
+        $('#evidence_payment_context').text(button.attr('data-reference') + ' · ' + button.attr('data-payer'));
+        modal.modal('show');
+    });
+});
+</script>
 <?php
 $page_content = ob_get_clean();
 $page_title = 'Cheque Approvals';

@@ -70,6 +70,18 @@ $canAssignLeaders = $canManageAll
 $canReassignMembers = $canManageAll
     || in_array($organizationId, $leaderOrganizationIds, true)
     || (!$mustScopeToLedOrganizations && has_permission('reassign_organization_groups'));
+$unitNameHistoryReady = false;
+$unitNameHistoryResult = $conn->query(
+    "SELECT COUNT(*) AS total
+       FROM information_schema.TABLES
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'organization_unit_name_history'"
+);
+if ($unitNameHistoryResult) {
+    $unitNameHistoryReady = (int) ($unitNameHistoryResult->fetch_assoc()['total'] ?? 0) === 1;
+    $unitNameHistoryResult->free();
+}
+$canInlineRename = $canManageSelected && $unitNameHistoryReady;
 $service = new OrganizationGroupService($conn);
 $logoService = new OrganizationLogoService($conn);
 $success = $_SESSION['organization_groups_success'] ?? '';
@@ -180,6 +192,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $stmt->close();
             $message = 'Organization unit created.';
+        } elseif ($action === 'rename_unit') {
+            if (!$canManageSelected) {
+                throw new RuntimeException('You cannot rename units in this organization.');
+            }
+            if (!$unitNameHistoryReady) {
+                throw new RuntimeException('Inline unit renaming requires database migration Phase 0083.');
+            }
+            $unitId = max(0, intval($_POST['unit_id'] ?? 0));
+            $newName = trim((string) ($_POST['name'] ?? ''));
+            if ($unitId < 1) {
+                throw new RuntimeException('Select a valid organization unit.');
+            }
+            if ($newName === '' || mb_strlen($newName) > 100) {
+                throw new RuntimeException('Enter a unit name of 100 characters or fewer.');
+            }
+            $stmt = $conn->prepare(
+                'SELECT id, name, unit_type, branch FROM organization_units
+                  WHERE id = ? AND organization_id = ? FOR UPDATE'
+            );
+            $stmt->bind_param('ii', $unitId, $organizationId);
+            $stmt->execute();
+            $existingUnit = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$existingUnit) {
+                throw new RuntimeException('The organization unit was not found in your current scope.');
+            }
+            $previousName = trim((string) $existingUnit['name']);
+            if ($previousName === $newName) {
+                throw new RuntimeException('Enter a different name before saving.');
+            }
+            $stmt = $conn->prepare(
+                'SELECT id FROM organization_units
+                  WHERE organization_id = ? AND unit_type = ? AND branch = ?
+                    AND name = ? AND id <> ? LIMIT 1'
+            );
+            $stmt->bind_param(
+                'isssi',
+                $organizationId,
+                $existingUnit['unit_type'],
+                $existingUnit['branch'],
+                $newName,
+                $unitId
+            );
+            $stmt->execute();
+            $duplicateUnit = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if ($duplicateUnit) {
+                throw new RuntimeException('That unit name already exists in this organization section.');
+            }
+            $stmt = $conn->prepare(
+                'UPDATE organization_units SET name = ?
+                  WHERE id = ? AND organization_id = ?'
+            );
+            $stmt->bind_param('sii', $newName, $unitId, $organizationId);
+            try {
+                $stmt->execute();
+            } catch (mysqli_sql_exception $exception) {
+                if ((int) $exception->getCode() === 1062) {
+                    throw new RuntimeException('That unit name already exists in this organization section.');
+                }
+                throw $exception;
+            }
+            $stmt->close();
+            $actorUserId = $sessionUserId > 0 ? $sessionUserId : null;
+            $stmt = $conn->prepare(
+                'INSERT INTO organization_unit_name_history
+                    (organization_unit_id, organization_id, previous_name, new_name, changed_by_user_id)
+                 VALUES (?, ?, ?, ?, ?)'
+            );
+            $stmt->bind_param('iissi', $unitId, $organizationId, $previousName, $newName, $actorUserId);
+            $stmt->execute();
+            $stmt->close();
+            $message = 'Organization unit renamed from ' . $previousName . ' to ' . $newName . '.';
         } elseif ($action === 'assign_leader') {
             if (!$canAssignLeaders) {
                 throw new RuntimeException('You cannot assign leaders for this organization.');
@@ -428,6 +513,7 @@ ob_start();
 
   <?php if ($success): ?><div class="alert alert-success"><?= htmlspecialchars($success) ?></div><?php endif; ?>
   <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+  <?php if ($canManageSelected && !$unitNameHistoryReady): ?><div class="alert alert-warning"><i class="fas fa-database mr-1"></i>Inline group-name editing is unavailable until database migration Phase 0083 is installed.</div><?php endif; ?>
 
   <div class="card shadow-sm mb-4"><div class="card-body">
     <form method="get" class="form-row align-items-end">
@@ -581,7 +667,21 @@ ob_start();
           <tbody>
           <?php foreach ($typeUnits as $unit): $unitId = (int) $unit['id']; ?>
             <tr class="<?= $unit['is_active'] ? '' : 'table-secondary' ?>">
-              <td><?= htmlspecialchars($unit['name']) ?><?= $unit['is_active'] ? '' : ' (inactive)' ?></td>
+              <td style="min-width:240px">
+                <?php if ($canInlineRename): ?>
+                  <form method="post" class="input-group input-group-sm" aria-label="Rename <?= htmlspecialchars($unit['name']) ?>">
+                    <?= csrf_input() ?>
+                    <input type="hidden" name="action" value="rename_unit">
+                    <input type="hidden" name="org_id" value="<?= $organizationId ?>">
+                    <input type="hidden" name="unit_id" value="<?= $unitId ?>">
+                    <input type="text" class="form-control" name="name" maxlength="100" value="<?= htmlspecialchars($unit['name']) ?>" required aria-label="Organization unit name">
+                    <div class="input-group-append"><button class="btn btn-outline-primary" type="submit" title="Save unit name"><i class="fas fa-save"></i><span class="sr-only">Save unit name</span></button></div>
+                  </form>
+                  <?= $unit['is_active'] ? '' : '<small class="text-muted">Inactive</small>' ?>
+                <?php else: ?>
+                  <?= htmlspecialchars($unit['name']) ?><?= $unit['is_active'] ? '' : ' (inactive)' ?>
+                <?php endif; ?>
+              </td>
               <td style="min-width: 220px;">
                 <?php $unitLogoUrl = organization_logo_url($unit['logo_path'] ?? null); ?>
                 <?php if ($unitLogoUrl): ?>
