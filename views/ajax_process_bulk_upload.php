@@ -1,7 +1,8 @@
 <?php
 header('Content-Type: application/json');
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
 
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
@@ -16,7 +17,7 @@ if (!is_logged_in()) {
 }
 
 // Permission check
-$is_super_admin = (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 if (!$is_super_admin && !has_permission('view_payment_bulk')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Permission denied']);
@@ -108,7 +109,6 @@ while ($row = $types_result->fetch_assoc()) {
 $payment_types = array_merge($payment_types, $payment_type_aliases);
 
 // Debug: Log available payment types
-error_log("Available payment types: " . print_r($payment_types, true));
 
 // Process and validate data
 try {
@@ -172,7 +172,6 @@ function processPaymentData($data, $church_id, $default_payment_type_id, $defaul
         $row_num = $index + 2; // Account for header row
         
         // Debug: Log the row data
-        error_log("Row $row_num data: " . print_r($row, true));
         
         // Validate required fields
         $crn = isset($row['crn']) ? strtoupper(trim($row['crn'])) : '';

@@ -1307,10 +1307,7 @@ ob_start();
 include 'adherent_scripts.php';
 $script_html = ob_get_clean();
 
-$page_content = ob_get_clean();
-include '../includes/layout.php';
 ?>
-
 <?= $status_modal_html ?>
 <?= $status_script_html ?>
 <?= $modal_html ?>
@@ -1398,3 +1395,7 @@ $(document).ready(function() {
     });
 });
 </script>
+<?php
+$page_content = ob_get_clean();
+include '../includes/layout.php';
+?>

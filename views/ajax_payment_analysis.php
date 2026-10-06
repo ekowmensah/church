@@ -36,6 +36,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !csrf_is_valid($_POST['csrf_token']
     echo json_encode(['success' => false, 'error' => 'Invalid or expired session token. Refresh the page and try again.']);
     exit;
 }
+if (in_array($action, ['save', 'delete'], true) && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['success' => false, 'error' => 'Use the protected POST action.']);
+    exit;
+}
+if ($action === 'get' && $_SERVER['REQUEST_METHOD'] !== 'GET') {
+    http_response_code(405);
+    echo json_encode(['success' => false, 'error' => 'Use GET to retrieve analyses.']);
+    exit;
+}
 
 try {
     switch ($action) {
@@ -53,8 +63,9 @@ try {
             echo json_encode(['success' => false, 'error' => 'Invalid action']);
     }
 } catch (Exception $e) {
+    error_log('Payment analysis request failed: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['success' => false, 'error' => 'The payment analysis request could not be completed.']);
 }
 
 /**

@@ -4,7 +4,7 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 // Canonical permission check for SMS Settings
-$is_super_admin = (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 if (!is_logged_in() || (!$is_super_admin && !has_permission('edit_sms_settings'))) {
     http_response_code(403);
     exit('Forbidden: You do not have permission to access this page.');

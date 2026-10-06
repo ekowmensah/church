@@ -4,9 +4,11 @@ require_once __DIR__.'/../includes/sms.php';
 require_once __DIR__.'/../includes/sms_templates.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../helpers/church_helper.php';
 
 // Canonical permission check for Bulk SMS (send)
-if (!is_logged_in() || !has_permission('send_bulk_sms')) {
+if (!is_logged_in() || (!is_super_admin() && !has_permission('send_bulk_sms'))) {
     http_response_code(403);
     exit('Forbidden: You do not have permission to access this resource.');
 }
@@ -17,9 +19,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     exit('Method not allowed');
 }
+if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(419);
+    exit('Your session token is invalid. Refresh the page and try again.');
+}
 
 $type = $_POST['recipient_type'] ?? '';
 $class_ids = $_POST['class_ids'] ?? [];
+$organization_ids = $_POST['organization_ids'] ?? [];
 $church_ids = $_POST['church_ids'] ?? [];
 $custom_phones = $_POST['custom_phones'] ?? '';
 $template_id = $_POST['template_id'] ?? '';
@@ -27,18 +34,40 @@ $message = trim($_POST['message'] ?? '');
 
 $recipients = [];
 $recipient_names = [];
+$isSuperAdmin = is_super_admin();
+$currentChurchId = $isSuperAdmin ? 0 : (int) get_user_church_id($conn);
+
+$class_ids = array_values(array_unique(array_filter(array_map('intval', (array) $class_ids))));
+$organization_ids = array_values(array_unique(array_filter(array_map('intval', (array) $organization_ids))));
+$church_ids = array_values(array_unique(array_filter(array_map('intval', (array) $church_ids))));
+if (!$isSuperAdmin) {
+    $church_ids = [$currentChurchId];
+}
 
 // 1. Get recipients by type
 if ($type === 'class' && !empty($class_ids)) {
-    $in = implode(',', array_map('intval', $class_ids));
-    $q = $conn->query("SELECT phone, first_name, last_name, crn FROM members WHERE class_id IN ($in) AND phone IS NOT NULL AND phone != ''");
+    $in = implode(',', $class_ids);
+    $scope = $isSuperAdmin ? '' : ' AND church_id = ' . $currentChurchId;
+    $q = $conn->query("SELECT phone, first_name, last_name, crn, church_id FROM members WHERE class_id IN ($in){$scope} AND phone IS NOT NULL AND phone != ''");
     while($m = $q->fetch_assoc()) {
         $recipients[] = $m['phone'];
         $recipient_names[$m['phone']] = $m;
     }
-} elseif (($type === 'organization' || $type === 'all') && !empty($church_ids)) {
-    $in = implode(',', array_map('intval', $church_ids));
-    $q = $conn->query("SELECT phone, first_name, last_name, crn FROM members WHERE church_id IN ($in) AND phone IS NOT NULL AND phone != ''");
+} elseif ($type === 'organization' && !empty($organization_ids)) {
+    $in = implode(',', $organization_ids);
+    $scope = $isSuperAdmin ? '' : ' AND member.church_id = ' . $currentChurchId;
+    $q = $conn->query("SELECT DISTINCT member.phone, member.first_name, member.last_name, member.crn, member.church_id
+                       FROM members member
+                       JOIN member_organizations membership ON membership.member_id = member.id
+                       WHERE membership.organization_id IN ($in){$scope}
+                         AND member.phone IS NOT NULL AND member.phone != ''");
+    while($m = $q->fetch_assoc()) {
+        $recipients[] = $m['phone'];
+        $recipient_names[$m['phone']] = $m;
+    }
+} elseif ($type === 'all' && !empty($church_ids)) {
+    $in = implode(',', $church_ids);
+    $q = $conn->query("SELECT phone, first_name, last_name, crn, church_id FROM members WHERE church_id IN ($in) AND phone IS NOT NULL AND phone != ''");
     while($m = $q->fetch_assoc()) {
         $recipients[] = $m['phone'];
         $recipient_names[$m['phone']] = $m;
@@ -99,7 +128,18 @@ if ($template_id) {
 // 3. Send SMS (one by one for personalization)
 $success = 0; $fail = 0;
 foreach($msgs as $ph => $msg) {
-    $resp = send_sms($ph, $msg);
+    $recipientChurchId = (int) ($recipient_names[$ph]['church_id'] ?? $currentChurchId);
+    $resp = log_sms(
+        $ph,
+        $msg,
+        null,
+        'bulk',
+        null,
+        [
+            'church_id' => $recipientChurchId > 0 ? $recipientChurchId : null,
+            'sent_by' => (int) ($_SESSION['user_id'] ?? 0),
+        ]
+    );
     // Handle Arkesel v2 API response format
     $status = 'fail';
     if (isset($resp['status']) && $resp['status'] === 'success') {
@@ -110,14 +150,6 @@ foreach($msgs as $ph => $msg) {
         // Fallback for other API versions
         $status = 'sent';
     }
-    $provider = defined('SMS_PROVIDER') ? SMS_PROVIDER : 'unknown';
-    $conn->query("INSERT INTO sms_logs (phone, message, template_name, status, provider, response) VALUES (".
-        "'".$conn->real_escape_string($ph)."', ".
-        "'".$conn->real_escape_string($msg)."', ".
-        ($template_id ? "'".$conn->real_escape_string($tpl['name'])."'" : 'NULL').", ".
-        "'".$conn->real_escape_string($status)."', ".
-        "'".$conn->real_escape_string($provider)."', ".
-        "'".$conn->real_escape_string(json_encode($resp))."')");
     if ($status === 'sent') $success++; else $fail++;
 }
 

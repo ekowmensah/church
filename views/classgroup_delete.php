@@ -8,7 +8,7 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-if ((int) ($_SESSION['role_id'] ?? 0) !== 1 && !has_permission('delete_classgroup')) {
+if (!is_super_admin() && !has_permission('delete_classgroup')) {
     http_response_code(403);
     include __DIR__ . '/errors/403.php';
     exit;

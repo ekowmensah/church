@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/permissions_v2.php';
+
 /**
  * Shared branding for browser, Excel-compatible HTML, print and PDF exports.
  * This helper deliberately falls back to safe defaults when Phase 0023 has
@@ -29,26 +31,7 @@ function report_export_branding_hex($value, string $fallback): string
 
 function report_export_branding_is_super_admin(mysqli $conn): bool
 {
-    if (!empty($_SESSION['is_super_admin'])
-        || (int) ($_SESSION['role_id'] ?? 0) === 1
-        || in_array(1, array_map('intval', (array) ($_SESSION['role_ids'] ?? [])), true)) {
-        return true;
-    }
-
-    $userId = (int) ($_SESSION['user_id'] ?? 0);
-    if ($userId < 1) return false;
-    $statement = $conn->prepare(
-        "SELECT 1 FROM user_roles user_role
-         JOIN roles role ON role.id = user_role.role_id
-         WHERE user_role.user_id = ?
-           AND (role.id = 1 OR LOWER(TRIM(role.name)) IN ('super admin', 'super administrator'))
-         LIMIT 1"
-    );
-    $statement->bind_param('i', $userId);
-    $statement->execute();
-    $isSuper = (bool) $statement->get_result()->fetch_row();
-    $statement->close();
-    return $isSuper;
+    return is_super_admin();
 }
 
 function report_export_branding_resolve_church_id(mysqli $conn, ?int $requestedChurchId = null): int

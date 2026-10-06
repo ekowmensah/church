@@ -14,11 +14,7 @@ if (!is_logged_in()) {
 
 // Match the page-level role resolution: installations may store multiple role
 // IDs without populating the legacy single role_id session field.
-$role_ids = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
-if (isset($_SESSION['role_id'])) $role_ids[] = (int) $_SESSION['role_id'];
-$is_super_admin = !empty($_SESSION['is_super_admin'])
-    || is_super_admin()
-    || in_array(1, $role_ids, true);
+$is_super_admin = is_super_admin();
 
 if (!$is_super_admin
     && !has_permission('access_ajax_get_person_by_id')

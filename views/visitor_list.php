@@ -172,10 +172,7 @@ $(function(){
 ob_start();
 include 'visitor_sms_modal.php';
 $modal_html = ob_get_clean();
-$page_content = ob_get_clean();
-include '../includes/layout.php';
 ?>
-
 <script>
 $(function() {
   // Select all checkboxes
@@ -233,3 +230,7 @@ $(function() {
   });
 });
 </script>
+<?php
+$page_content = ob_get_clean();
+include '../includes/layout.php';
+?>

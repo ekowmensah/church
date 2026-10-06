@@ -4,9 +4,7 @@ require_once __DIR__ . '/../helpers/auth.php';
 require_once __DIR__ . '/../helpers/permissions_v2.php';
 require_once __DIR__ . '/../helpers/csrf.php';
 
-$roleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
-if (isset($_SESSION['role_id'])) $roleIds[] = (int) $_SESSION['role_id'];
-$allowed = in_array(1, $roleIds, true) || has_permission('activate_user') || has_permission('edit_user');
+$allowed = is_super_admin() || has_permission('activate_user') || has_permission('edit_user');
 if (!is_logged_in() || !$allowed) {
     http_response_code(403);
     exit('You do not have permission to activate users.');

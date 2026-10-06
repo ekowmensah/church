@@ -10,7 +10,7 @@ if (!is_logged_in()) {
     exit;
 }
 // Permission check for managing members
-if (!(isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1)) {
+if (!is_super_admin()) {
     if (!has_permission('manage_members')) {
         die('No permission to edit members.');
     }

@@ -10,7 +10,7 @@ if (!is_logged_in()) {
     http_response_code(401);
     exit('Authentication required.');
 }
-$isSuperAdmin = (int) ($_SESSION['role_id'] ?? 0) === 1;
+$isSuperAdmin = is_super_admin();
 if (!$isSuperAdmin && !has_permission('export_sms_logs')) {
     http_response_code(403);
     exit('You do not have permission to export SMS logs.');

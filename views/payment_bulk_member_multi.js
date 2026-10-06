@@ -587,6 +587,7 @@ $(function() {
       $(this).prop('disabled', true).text('Processing...');
       // Debug: log the payload before sending
       var payloadData = {
+        csrf_token: $('#bulkPaymentForm input[name="csrf_token"]').val(),
         church_id: churchId,
         payment_date: paymentDate,
         member_ids: memberIds,
@@ -596,8 +597,6 @@ $(function() {
         periods: periods,
         period_descriptions: period_descriptions
       };
-      
-      console.log('Sending bulk payment payload:', JSON.parse(JSON.stringify(payloadData)));
       
       $.ajax({
         url: 'ajax_bulk_payment.php',

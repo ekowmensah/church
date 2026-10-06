@@ -12,8 +12,7 @@ if (!is_logged_in()) {
     exit;
 }
 
-$is_super_admin = is_super_admin()
-    || (isset($_SESSION['role_id']) && (int) $_SESSION['role_id'] === 1);
+$is_super_admin = is_super_admin();
 if (!$is_super_admin && !has_permission('edit_member')) {
     http_response_code(403);
     if (file_exists(__DIR__.'/errors/403.php')) {

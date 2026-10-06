@@ -2,6 +2,8 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/member_feedback_access.php';
+header('Content-Type: application/json; charset=utf-8');
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -30,10 +32,7 @@ if (!$thread_id) {
 }
 
 // Verify thread exists and user has access
-$stmt = $conn->prepare('SELECT * FROM member_feedback_thread WHERE id = ? AND feedback_id IS NULL');
-$stmt->bind_param('i', $thread_id);
-$stmt->execute();
-$thread = $stmt->get_result()->fetch_assoc();
+$thread = member_feedback_load_thread($conn, $thread_id);
 
 if (!$thread) {
     http_response_code(404);

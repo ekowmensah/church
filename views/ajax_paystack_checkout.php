@@ -89,7 +89,9 @@ curl_setopt($ch, CURLOPT_TIMEOUT, 15); // 15 second timeout
 error_log('Before curl_exec');
 $response = curl_exec($ch);
 $err = curl_error($ch);
-error_log('After curl_exec: response='.print_r($response, true).', curl_error='.print_r($err, true));
+if ($err !== '') {
+    error_log('Paystack checkout transport error: ' . $err);
+}
 
 // Debug log
 if ($err || !$response) {

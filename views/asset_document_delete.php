@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/csrf.php';
 
 asset_require_permission('delete_asset_document');
 
@@ -9,8 +10,12 @@ if (!asset_table_exists($conn, 'asset_documents')) {
     exit;
 }
 
-$docId = isset($_GET['id']) ? (int) $_GET['id'] : 0;
-$assetId = isset($_GET['asset_id']) ? (int) $_GET['asset_id'] : 0;
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(405);
+    exit('Use the protected delete form.');
+}
+$docId = (int) ($_POST['id'] ?? 0);
+$assetId = (int) ($_POST['asset_id'] ?? 0);
 if ($docId <= 0 || $assetId <= 0) {
     header('Location: asset_list.php');
     exit;

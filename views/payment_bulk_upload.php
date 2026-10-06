@@ -10,7 +10,7 @@ if (!is_logged_in()) {
 }
 
 // Permission check
-$is_super_admin = (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 if (!$is_super_admin && !has_permission('view_payment_bulk')) {
     http_response_code(403);
     echo '<h1>403 Forbidden</h1><p>You do not have permission to access this page.</p>';
@@ -163,11 +163,6 @@ ob_start();
     </div>
 </div>
 
-
-<?php
-$page_content = ob_get_clean();
-require_once __DIR__.'/../includes/layout.php';
-?>
 
 <!-- Template Modal -->
 <div class="modal fade" id="templateModal" tabindex="-1" role="dialog">
@@ -395,3 +390,7 @@ function downloadTemplate() {
     window.URL.revokeObjectURL(url);
 }
 </script>
+<?php
+$page_content = ob_get_clean();
+require_once __DIR__.'/../includes/layout.php';
+?>

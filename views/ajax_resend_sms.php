@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 if (!is_logged_in()) {
     sms_resend_response(401, ['success' => false, 'error' => 'Authentication required.']);
 }
-if (!has_permission('resend_sms') && (int) ($_SESSION['role_id'] ?? 0) !== 1) {
+if (!is_super_admin() && !has_permission('resend_sms')) {
     sms_resend_response(403, ['success' => false, 'error' => 'You cannot resend SMS messages.']);
 }
 if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
@@ -67,7 +67,7 @@ if (strpos($sourceStatus, 'fail') === false && strpos($sourceStatus, 'error') ==
     ]);
 }
 
-$isSuperAdmin = (int) ($_SESSION['role_id'] ?? 0) === 1;
+$isSuperAdmin = is_super_admin();
 $sessionChurchId = (int) ($_SESSION['church_id'] ?? 0);
 if (!$isSuperAdmin && $sessionChurchId <= 0 && (int) ($_SESSION['user_id'] ?? 0) > 0) {
     $church = $conn->prepare('SELECT church_id FROM users WHERE id = ? LIMIT 1');

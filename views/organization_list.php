@@ -169,7 +169,7 @@ $(function(){
                   <a href="organization_edit.php?id=<?= $row['id'] ?>" class="btn btn-sm btn-outline-warning" data-toggle="tooltip" title="Edit"><i class="fas fa-edit"></i></a>
                   <?php endif; ?>
                   <?php if ($can_delete): ?>
-                  <a href="organization_delete.php?id=<?= $row['id'] ?>" class="btn btn-sm btn-outline-danger" data-toggle="tooltip" title="Delete" onclick="return confirm('Delete this organization?');"><i class="fas fa-trash"></i></a>
+                  <form method="post" action="organization_delete.php" class="d-inline" onsubmit="return confirm('Delete this organization?');"><?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $row['id'] ?>"><button type="submit" class="btn btn-sm btn-outline-danger" data-toggle="tooltip" title="Delete"><i class="fas fa-trash"></i></button></form>
                   <?php endif; ?>
                 </td>
               </tr>
@@ -186,10 +186,7 @@ $(function(){
 ob_start();
 include __DIR__ . '/organization_assign_leader_modal.php';
 $modal_html = ob_get_clean();
-$page_content = ob_get_clean();
-include __DIR__ . '/../includes/layout.php';
 ?>
-
 <script>
 $(function() {
     // Initialize Select2 for leader assignment
@@ -262,3 +259,7 @@ $(function() {
     });
 });
 </script>
+<?php
+$page_content = ob_get_clean();
+include __DIR__ . '/../includes/layout.php';
+?>

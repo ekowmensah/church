@@ -3,25 +3,39 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../helpers/church_helper.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-if (!(isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1)) {
-    if (!has_permission('delete_bibleclass')) {
-        die('No permission to delete bible class');
-    }
-}
-if (!has_permission('delete_bibleclass')) {
+if (!is_super_admin() && !has_permission('delete_bibleclass')) {
     http_response_code(403);
     include '../views/errors/403.php';
     exit;
 }
-if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
-    die('Invalid bible class ID.');
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(405);
+    exit('Use the protected delete form.');
 }
-$id = intval($_GET['id']);
+$id = (int) ($_POST['id'] ?? 0);
+if ($id <= 0) {
+    header('Location: bibleclass_list.php?error=invalid');
+    exit;
+}
+$churchId = (int) get_user_church_id($conn);
+$scopeStmt = $conn->prepare(is_super_admin()
+    ? 'SELECT id FROM bible_classes WHERE id = ? LIMIT 1'
+    : 'SELECT id FROM bible_classes WHERE id = ? AND church_id = ? LIMIT 1');
+if (is_super_admin()) $scopeStmt->bind_param('i', $id); else $scopeStmt->bind_param('ii', $id, $churchId);
+$scopeStmt->execute();
+$allowedClass = $scopeStmt->get_result()->fetch_assoc();
+$scopeStmt->close();
+if (!$allowedClass) {
+    http_response_code(404);
+    exit('Bible class not found.');
+}
 // Check for related member_transfers
 $stmt = $conn->prepare('SELECT COUNT(*) AS cnt FROM member_transfers WHERE from_class_id = ? OR to_class_id = ?');
 $stmt->bind_param('ii', $id, $id);

@@ -9,7 +9,7 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-$is_super_admin = (int) ($_SESSION['role_id'] ?? 0) === 1;
+$is_super_admin = is_super_admin();
 if (!$is_super_admin && !has_permission('view_sms_logs')) {
     http_response_code(403);
     include __DIR__ . '/errors/403.php';

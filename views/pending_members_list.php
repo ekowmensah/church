@@ -173,7 +173,9 @@ $query = "
 
 $members = $conn->query($query);
 if (!$members) {
-    die("Error fetching members: " . $conn->error);
+    error_log('Unable to fetch deactivated members: ' . $conn->error);
+    http_response_code(500);
+    exit('Deactivated members are temporarily unavailable. Please try again later.');
 }
 
 ob_start();
@@ -341,12 +343,7 @@ ob_start();
                                         <?php endif; ?>
                                         
                                         <?php if ($row['status'] === 'de-activated' && $can_activate): ?>
-                                            <a href="member_activate.php?id=<?= $row['id'] ?>" 
-                                               class="btn btn-success btn-sm" 
-                                               title="Activate Member"
-                                               onclick="return confirm('Activate this member?')">
-                                                <i class="fas fa-user-check"></i>
-                                            </a>
+                                            <form method="post" action="member_activate.php" class="d-inline" onsubmit="return confirm('Activate this member?')"><?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $row['id'] ?>"><button type="submit" class="btn btn-success btn-sm" title="Activate Member"><i class="fas fa-user-check"></i></button></form>
                                         <?php endif; ?>
                                         
                                         <?php if ($can_edit): ?>

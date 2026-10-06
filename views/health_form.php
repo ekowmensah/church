@@ -3,32 +3,11 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 
-?>
-<script>
-    window.BASE_URL = "<?= htmlspecialchars(BASE_URL) ?>";
-</script>
-<?php
-require_once __DIR__.'/../helpers/auth.php';
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-// Allow Super Admin (role_id==1 or role name 'Super Admin') to always access
-$super_admin = false;
-$role_id = $_SESSION['role_id'] ?? 0;
-if ($role_id == 1) {
-    $super_admin = true;
-} else {
-    $stmt = $conn->prepare("SELECT name FROM roles WHERE id = ? LIMIT 1");
-    $stmt->bind_param('i', $role_id);
-    $stmt->execute();
-    $stmt->bind_result($role_name);
-    $stmt->fetch();
-    $stmt->close();
-    if ($role_name === 'Super Admin') {
-        $super_admin = true;
-    }
-}
+$super_admin = is_super_admin();
 if (!$super_admin && !has_permission('create_health_record')) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
@@ -182,6 +161,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 ob_start();
 ?>
+<script>
+    window.BASE_URL = <?= json_encode((string) BASE_URL) ?>;
+</script>
 <!-- Custom CSS for Health Form -->
 <style>
 .health-form-container {
@@ -988,10 +970,6 @@ document.addEventListener('DOMContentLoaded', function() {
 <style>
     .vitals-section, .tests-section, .notes-section, .d-flex.justify-content-end { transition: opacity 0.2s; }
 </style>
-<?php
-$page_content = ob_get_clean();
-require_once __DIR__.'/../includes/layout.php';
-?>
 <!-- Member Photo Modal -->
 <div class="modal fade" id="photoModal" tabindex="-1" role="dialog" aria-labelledby="photoModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered" role="document">
@@ -1036,3 +1014,7 @@ require_once __DIR__.'/../includes/layout.php';
     });
   });
 </script>
+<?php
+$page_content = ob_get_clean();
+require_once __DIR__.'/../includes/layout.php';
+?>

@@ -1,13 +1,14 @@
 <?php
 require_once __DIR__ . '/../includes/member_auth.php';
 require_once __DIR__ . '/../helpers/spouse_link_helper.php';
+require_once __DIR__ . '/../helpers/permissions_v2.php';
 
 if (!isset($_SESSION['member_id']) && !isset($_SESSION['user_id'])) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
 
-if (isset($_SESSION['role_id']) && (int) $_SESSION['role_id'] === 1) {
+if (is_super_admin()) {
     header('Location: member_view.php?id=' . (int) ($_SESSION['member_id'] ?? 0));
     exit;
 }

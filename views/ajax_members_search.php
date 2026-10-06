@@ -100,7 +100,6 @@ while ($row = $result->fetch_assoc()) {
 if (empty($members)) {
     error_log("AJAX Debug - No members found:");
     error_log("Query: " . $query);
-    error_log("Params: " . print_r($params, true));
     error_log("Search term: " . $search_term);
     error_log("Church ID: " . $church_id);
     error_log("Organization ID: " . $organization_id);

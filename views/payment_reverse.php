@@ -2,16 +2,22 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../helpers/payment_report_context.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
 
-$uid = $_SESSION['user_id'] ?? 0;
-$role_id = $_SESSION['role_id'] ?? 0;
-$action = $_GET['action'] ?? '';
-$id = intval($_GET['id'] ?? 0);
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(405);
+    exit('Use the protected payment-reversal form.');
+}
+
+$uid = (int) ($_SESSION['user_id'] ?? 0);
+$action = trim((string) ($_POST['action'] ?? 'request'));
+$id = (int) ($_POST['id'] ?? 0);
 
 if (!$id) {
     header('Location: payment_list.php?error=Invalid+payment+ID');
@@ -19,8 +25,15 @@ if (!$id) {
 }
 
 // Fetch payment to check status
-$stmt = $conn->prepare("SELECT * FROM payments WHERE id = ?");
-$stmt->bind_param('i', $id);
+$churchId = payment_report_current_church_id($conn);
+$stmt = $conn->prepare(is_super_admin()
+    ? 'SELECT * FROM payments WHERE id = ? LIMIT 1'
+    : 'SELECT * FROM payments WHERE id = ? AND church_id = ? LIMIT 1');
+if (is_super_admin()) {
+    $stmt->bind_param('i', $id);
+} else {
+    $stmt->bind_param('ii', $id, $churchId);
+}
 $stmt->execute();
 $payment = $stmt->get_result()->fetch_assoc();
 if (!$payment) {
@@ -30,7 +43,7 @@ if (!$payment) {
 
 if ($action === 'undo') {
     // Only admin can undo
-    if ($role_id != 1 && (!has_permission('approve_payment_reversal'))) {
+    if (!is_super_admin() && !has_permission('approve_payment_reversal')) {
         die('No permission to undo reversal');
     }
     if (empty($payment['reversal_approved_at'])) {
@@ -52,7 +65,7 @@ if ($action === 'undo') {
 
 if ($action === 'approve') {
     // Only admin can approve
-    if ($role_id != 1 && (!has_permission('approve_payment_reversal'))) {
+    if (!is_super_admin() && !has_permission('approve_payment_reversal')) {
         die('No permission to approve reversal');
     }
     if (empty($payment['reversal_requested_at']) || !empty($payment['reversal_approved_at'])) {
@@ -74,7 +87,7 @@ if ($action === 'approve') {
 
 if ($action === 'deny') {
     // Only admin can deny
-    if ($role_id != 1 && (!has_permission('approve_payment_reversal'))) {
+    if (!is_super_admin() && !has_permission('approve_payment_reversal')) {
         die('No permission to deny reversal');
     }
     if (empty($payment['reversal_requested_at']) || !empty($payment['reversal_approved_at'])) {
@@ -104,7 +117,7 @@ if (!empty($payment['reversal_approved_at']) && empty($payment['reversal_undone_
     exit;
 }
 // Allow only permitted users
-if ($role_id != 1 && (!has_permission('reverse_payment'))) {
+if (!is_super_admin() && !has_permission('reverse_payment')) {
     die('No permission to request reversal');
 }
 // Request reversal

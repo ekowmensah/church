@@ -9,8 +9,7 @@ if (!is_logged_in()) {
     exit;
 }
 
-$isSuperAdmin = (int) ($_SESSION['role_id'] ?? 0) === 1
-    || is_super_admin();
+$isSuperAdmin = is_super_admin();
 if (!$isSuperAdmin && !has_permission('view_sms_logs') && !has_permission('view_sms_report')) {
     http_response_code(403);
     include __DIR__ . '/errors/403.php';

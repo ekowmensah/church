@@ -2,6 +2,8 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../helpers/church_helper.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -13,17 +15,54 @@ if (!has_permission('view_feedback_report')) {
     echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
     exit;
 }
+$canDeleteFeedback = is_super_admin() || has_permission('delete_feedback');
+$currentChurchId = (int) get_user_church_id($conn);
 
 $feedback_msg = '';
-if (isset($_GET['delete'])) {
-    $del_id = intval($_GET['delete']);
-    $stmt = $conn->prepare('DELETE FROM member_feedback WHERE id = ?');
-    $stmt->bind_param('i', $del_id);
-    if ($stmt->execute()) {
-        header('Location: memberfeedback_list.php?deleted=1');
-        exit;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_thread') {
+    if (!$canDeleteFeedback) {
+        http_response_code(403);
+        $feedback_msg = 'You do not have permission to delete feedback conversations.';
+    } elseif (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $feedback_msg = 'Your session token is invalid. Refresh the page and try again.';
+    } else {
+        $threadId = (int) ($_POST['thread_id'] ?? 0);
+        $scopeSql = "SELECT thread.id
+                     FROM member_feedback_thread thread
+                     LEFT JOIN members sender_member
+                       ON thread.sender_type = 'member' AND sender_member.id = thread.sender_id
+                     LEFT JOIN users sender_user
+                       ON thread.sender_type = 'user' AND sender_user.id = thread.sender_id
+                     LEFT JOIN members recipient_member
+                       ON thread.recipient_type = 'member' AND recipient_member.id = thread.recipient_id
+                     LEFT JOIN users recipient_user
+                       ON thread.recipient_type = 'user' AND recipient_user.id = thread.recipient_id
+                     WHERE thread.id = ? AND thread.feedback_id IS NULL";
+        if (!is_super_admin()) {
+            $scopeSql .= ' AND COALESCE(sender_member.church_id, sender_user.church_id, recipient_member.church_id, recipient_user.church_id) = ?';
+        }
+        $scopeSql .= ' LIMIT 1';
+        $scopeStmt = $conn->prepare($scopeSql);
+        if (is_super_admin()) {
+            $scopeStmt->bind_param('i', $threadId);
+        } else {
+            $scopeStmt->bind_param('ii', $threadId, $currentChurchId);
+        }
+        $scopeStmt->execute();
+        $allowedThread = $scopeStmt->get_result()->fetch_assoc();
+        $scopeStmt->close();
+        if (!$allowedThread) {
+            $feedback_msg = 'Conversation not found or outside your authorized church.';
+        } else {
+            $stmt = $conn->prepare('DELETE FROM member_feedback_thread WHERE id = ? OR feedback_id = ?');
+            $stmt->bind_param('ii', $threadId, $threadId);
+            if ($stmt->execute()) {
+                header('Location: memberfeedback_list.php?deleted=1');
+                exit;
+            }
+            $feedback_msg = 'Error deleting feedback.';
+        }
     }
-    $feedback_msg = 'Error deleting feedback.';
 }
 if (isset($_GET['deleted'])) {
     $feedback_msg = 'Feedback deleted.';
@@ -31,11 +70,28 @@ if (isset($_GET['deleted'])) {
 
 $all_rows = [];
 $member_ids = [];
-$sql = "SELECT id, sender_type, sender_id, recipient_type, recipient_id, message, sent_at
-        FROM member_feedback_thread
-        WHERE feedback_id IS NULL
-        ORDER BY sent_at DESC";
-$result = $conn->query($sql);
+$sql = "SELECT thread.id, thread.sender_type, thread.sender_id,
+               thread.recipient_type, thread.recipient_id, thread.message, thread.sent_at
+        FROM member_feedback_thread thread
+        LEFT JOIN members sender_member
+          ON thread.sender_type = 'member' AND sender_member.id = thread.sender_id
+        LEFT JOIN users sender_user
+          ON thread.sender_type = 'user' AND sender_user.id = thread.sender_id
+        LEFT JOIN members recipient_member
+          ON thread.recipient_type = 'member' AND recipient_member.id = thread.recipient_id
+        LEFT JOIN users recipient_user
+          ON thread.recipient_type = 'user' AND recipient_user.id = thread.recipient_id
+        WHERE thread.feedback_id IS NULL";
+if (!is_super_admin()) {
+    $sql .= ' AND COALESCE(sender_member.church_id, sender_user.church_id, recipient_member.church_id, recipient_user.church_id) = ?';
+}
+$sql .= ' ORDER BY thread.sent_at DESC';
+$listStmt = $conn->prepare($sql);
+if (!is_super_admin()) {
+    $listStmt->bind_param('i', $currentChurchId);
+}
+$listStmt->execute();
+$result = $listStmt->get_result();
 if ($result) {
     while ($row = $result->fetch_assoc()) {
         $all_rows[] = $row;
@@ -284,9 +340,12 @@ ob_start();
                                 <a href="memberfeedback_thread.php?id=<?= (int) $card['thread_id'] ?>" class="btn btn-sm btn-outline-primary mb-2">
                                     <i class="fas fa-comments mr-1"></i> Open
                                 </a>
-                                <a href="memberfeedback_list.php?delete=<?= (int) $card['thread_id'] ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to delete this feedback?');">
-                                    <i class="fas fa-trash-alt"></i>
-                                </a>
+                                <?php if ($canDeleteFeedback): ?>
+                                    <form method="post" class="d-inline" onsubmit="return confirm('Delete this conversation and all replies?');">
+                                        <?= csrf_input() ?><input type="hidden" name="action" value="delete_thread"><input type="hidden" name="thread_id" value="<?= (int) $card['thread_id'] ?>">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete conversation"><i class="fas fa-trash-alt"></i></button>
+                                    </form>
+                                <?php endif; ?>
                             </div>
                         </article>
                     <?php endforeach; ?>

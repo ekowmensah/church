@@ -9,7 +9,7 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-$isSuperAdmin = (int) ($_SESSION['role_id'] ?? 0) === 1 || !empty($_SESSION['is_super_admin']);
+$isSuperAdmin = is_super_admin();
 $canRestore = $isSuperAdmin || has_permission('restore_deleted_member');
 $canAudit = $isSuperAdmin || has_permission('view_member_lifecycle_audit');
 if (!$canRestore && !$canAudit) {

@@ -219,9 +219,6 @@ $bible_classes = $conn->query("SELECT id, name FROM bible_classes ORDER BY name 
 
 ob_start();
 ?>
-<!DOCTYPE html>
-<html>
-<head>
     <style>
         .attendance-view-container {
             background: #f8f9fa;
@@ -464,9 +461,6 @@ ob_start();
             }
         }
     </style>
-</head>
-<body>
-
 <div class="attendance-view-container">
     <div class="view-header">
         <div class="d-flex justify-content-between align-items-start flex-wrap">

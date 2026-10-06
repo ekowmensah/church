@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -81,7 +82,7 @@ ob_start();
                         <a href="church_edit.php?id=<?=$row['id']?>" class="btn btn-sm btn-info" title="Edit"><i class="fas fa-edit"></i></a>
                         <?php endif; ?>
                         <?php if ($can_delete): ?>
-                        <a href="church_delete.php?id=<?=$row['id']?>" class="btn btn-sm btn-danger" onclick="return confirm('Delete this church?')" title="Delete"><i class="fas fa-trash"></i></a>
+                        <form method="post" action="church_delete.php" class="d-inline" onsubmit="return confirm('Delete this church?')"><?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $row['id'] ?>"><button type="submit" class="btn btn-sm btn-danger" title="Delete"><i class="fas fa-trash"></i></button></form>
                         <?php endif; ?>
                     </td>
                     <?php endif; ?>

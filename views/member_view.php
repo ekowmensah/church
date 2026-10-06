@@ -1,4 +1,4 @@
-views/member_view.php<?php
+<?php
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
@@ -985,11 +985,6 @@ $(document).on('click', '#viewHealthBtn', function() {
   });
 });
 </script>
-<?php
-$page_content = ob_get_clean();
-include '../includes/layout.php';
-?>
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
 $(document).ready(function() {
     var span = $('.total-payments');
@@ -1007,3 +1002,7 @@ $(document).ready(function() {
     }, 'json');
 });
 </script>
+<?php
+$page_content = ob_get_clean();
+include '../includes/layout.php';
+?>

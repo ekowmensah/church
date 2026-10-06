@@ -305,11 +305,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_POST['action']) || $_POST
 
 ob_start();
 ?>
-<!DOCTYPE html>
-<html>
-<head>
-    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-    <link href="https://cdn.jsdelivr.net/npm/@ttskch/select2-bootstrap4-theme@1.5.2/dist/select2-bootstrap4.min.css" rel="stylesheet" />
     <style>
         .attendance-mark-container {
             background: #f8f9fa;
@@ -832,9 +827,6 @@ ob_start();
             background-color: #667eea;
         }
     </style>
-</head>
-<body>
-
 <div class="attendance-mark-container">
     <div class="attendance-header">
         <div class="session-info">
@@ -1407,7 +1399,6 @@ document.getElementById('attendanceForm').addEventListener('submit', function() 
 updateStats();
 </script>
 
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 // Initialize Select2 for searchable dropdowns
 $(document).ready(function() {

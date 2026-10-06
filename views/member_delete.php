@@ -5,7 +5,7 @@ require_once __DIR__ . '/../helpers/permissions_v2.php';
 require_once __DIR__ . '/../helpers/csrf.php';
 require_once __DIR__ . '/../services/MemberLifecycleService.php';
 
-if (!is_logged_in() || ((int) ($_SESSION['role_id'] ?? 0) !== 1 && !has_permission('delete_member'))) {
+if (!is_logged_in() || (!is_super_admin() && !has_permission('delete_member'))) {
     http_response_code(403);
     die('You do not have permission to archive members.');
 }

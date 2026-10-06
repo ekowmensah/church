@@ -46,7 +46,9 @@ function getEventTypeColor($type_name, $event_type_colors) {
 
 $stmt = $conn->prepare($sql);
 if (!$stmt) {
-    die('Database error: ' . $conn->error);
+    error_log('Unable to prepare member events query: ' . $conn->error);
+    http_response_code(500);
+    exit('Church events are temporarily unavailable. Please try again later.');
 }
 
 $stmt->bind_param('iis', $member_id, $church_id, $today);

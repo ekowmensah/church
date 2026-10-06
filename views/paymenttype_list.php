@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -71,12 +72,12 @@ ob_start();
                         <td>
                             <a href="paymenttype_edit.php?id=<?= $row['id'] ?>" class="btn btn-sm btn-warning"><i class="fas fa-edit"></i> Edit</a>
                             <?php if ($row['active']): ?>
-                                <a href="paymenttype_toggle.php?id=<?= $row['id'] ?>&action=disable" class="btn btn-sm btn-secondary" onclick="return confirm('Disable this payment type?');"><i class="fas fa-ban"></i> Disable</a>
+                                <form method="post" action="paymenttype_toggle.php" class="d-inline" onsubmit="return confirm('Disable this payment type?');"><?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="action" value="disable"><button type="submit" class="btn btn-sm btn-secondary"><i class="fas fa-ban"></i> Disable</button></form>
                             <?php else: ?>
-                                <a href="paymenttype_toggle.php?id=<?= $row['id'] ?>&action=enable" class="btn btn-sm btn-success"><i class="fas fa-check"></i> Enable</a>
+                                <form method="post" action="paymenttype_toggle.php" class="d-inline"><?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="action" value="enable"><button type="submit" class="btn btn-sm btn-success"><i class="fas fa-check"></i> Enable</button></form>
                             <?php endif; ?>
                             <?php if (!$row['active']): ?>
-                                <a href="paymenttype_delete.php?id=<?= $row['id'] ?>" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete this payment type?');"><i class="fas fa-trash"></i> Delete</a>
+                                <form method="post" action="paymenttype_delete.php" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this payment type?');"><?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $row['id'] ?>"><button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-trash"></i> Delete</button></form>
                             <?php endif; ?>
                         </td>
                     </tr>

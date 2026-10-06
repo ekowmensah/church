@@ -15,11 +15,7 @@ if (!is_logged_in()) {
     exit;
 }
 
-$roleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
-if (isset($_SESSION['role_id'])) $roleIds[] = (int) $_SESSION['role_id'];
-$isSuperAdmin = !empty($_SESSION['is_super_admin'])
-    || is_super_admin()
-    || in_array(1, $roleIds, true);
+$isSuperAdmin = is_super_admin();
 if (!$isSuperAdmin && !has_permission('create_payment')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'msg' => 'Permission denied.']);

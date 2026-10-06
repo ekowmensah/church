@@ -14,7 +14,7 @@ if (!is_logged_in()) {
 }
 
 // Permission check
-$is_super_admin = (int) ($_SESSION['role_id'] ?? 0) === 1 || !empty($_SESSION['is_super_admin']);
+$is_super_admin = is_super_admin();
 if (!$is_super_admin && !has_permission('transfer_sundayschool')) {
     http_response_code(403);
     echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';

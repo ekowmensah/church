@@ -9,7 +9,7 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-$isSuperAdmin = (int) ($_SESSION['role_id'] ?? 0) === 1 || !empty($_SESSION['is_super_admin']);
+$isSuperAdmin = is_super_admin();
 if (!$isSuperAdmin && !has_permission('review_possible_duplicates')) {
     http_response_code(403);
     die('You do not have permission to review possible duplicates.');

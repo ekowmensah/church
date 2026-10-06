@@ -9,7 +9,7 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-if (!has_permission('deactivate_member') && (int) ($_SESSION['role_id'] ?? 0) !== 1) {
+if (!is_super_admin() && !has_permission('deactivate_member')) {
     http_response_code(403);
     die('You do not have permission to deactivate members.');
 }

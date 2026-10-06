@@ -234,8 +234,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
     // Remove $membership_status from required fields (field removed from form)
     if (!$first_name || !$last_name || !$gender || !$dob || !$place_of_birth || !$marital_status || ($marital_status === 'Married' && !$marriage_type) || !$home_town || !$region || !$phone || count($valid_contacts) === 0 || !$employment_status || !$baptized || !$confirmed || !$password) {
         // Debug output for troubleshooting
-        error_log('DEBUG: valid_contacts count: ' . count($valid_contacts));
-        error_log('DEBUG: emergency_contacts: ' . print_r($emergency_contacts, true));
         $error = 'Please fill in all required fields (at least one emergency contact).';
     } elseif (($transferError = member_transfer_origin_validation_error($transferOrigin)) !== '') {
         $error = $transferError;

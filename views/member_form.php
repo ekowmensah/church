@@ -216,14 +216,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $msg = "Hi $first_name, click on the link to complete your registration: $registration_link"; // BASE_URL is now always used above
                             error_log("Attempting to send SMS to $phone (member add, hardcoded)");
                             $smsResult = send_sms($phone, $msg);
-                            error_log('SMS API Response (member add, hardcoded): ' . print_r($smsResult, true));
                             $logResult = log_sms($phone, $msg, null, 'registration', null, [
                                 'member_name' => $first_name,
                                 'link' => $registration_link,
                                 'phone' => $phone,
                                 'template' => 'registration_link (hardcoded)'
                             ]);
-                            error_log('SMS Log Result (member add, hardcoded): ' . print_r($logResult, true));
                             $smsSent = isset($smsResult['status']) && $smsResult['status'] === 'success';
                             $smsError = $smsResult['message'] ?? 'Unknown error';
                             error_log('SMS Send Status (member add, hardcoded): ' . ($smsSent ? 'Success' : 'Failed - ' . $smsError));

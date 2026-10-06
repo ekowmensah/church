@@ -2,6 +2,8 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../helpers/payment_report_context.php';
 
 // Authentication check
 if (!is_logged_in()) {
@@ -26,6 +28,8 @@ if ($id <= 0) {
 }
 
 // Fetch payment data with all related information
+$paymentScope = payment_report_payment_scope_condition($conn, 'p');
+$scopeSql = $paymentScope !== '' ? " AND {$paymentScope}" : '';
 $stmt = $conn->prepare("
     SELECT p.*, 
            pt.name AS payment_type,
@@ -42,14 +46,14 @@ $stmt = $conn->prepare("
     LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
     LEFT JOIN members m ON p.member_id = m.id
     LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
-    LEFT JOIN churches c ON m.church_id = c.id
+    LEFT JOIN churches c ON p.church_id = c.id
     LEFT JOIN bible_classes bc ON m.class_id = bc.id
     LEFT JOIN member_organizations mo ON mo.member_id = m.id
     LEFT JOIN organizations org ON mo.organization_id = org.id
     LEFT JOIN users u ON p.recorded_by = u.id
     LEFT JOIN users approver ON p.reversal_approved_by = approver.id
     LEFT JOIN users reverser ON p.reversal_requested_by = reverser.id
-    WHERE p.id = ?
+    WHERE p.id = ?{$scopeSql}
 ");
 $stmt->bind_param('i', $id);
 $stmt->execute();
@@ -306,25 +310,22 @@ ob_start();
         <i class="fas fa-print mr-2"></i>Print Receipt
     </button>
     <?php if ($is_active && !$is_pending_reversal): ?>
-        <a href="payment_reverse.php?id=<?= $payment['id'] ?>" 
-           class="btn btn-banking btn-warning"
-           onclick="return confirm('Request reversal for this payment?');">
-            <i class="fas fa-undo mr-2"></i>Request Reversal
-        </a>
+        <form method="post" action="payment_reverse.php" class="d-inline" onsubmit="return confirm('Request reversal for this payment?');">
+            <?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $payment['id'] ?>"><input type="hidden" name="action" value="request">
+            <button type="submit" class="btn btn-banking btn-warning"><i class="fas fa-undo mr-2"></i>Request Reversal</button>
+        </form>
     <?php endif; ?>
     <?php if ($is_pending_reversal && $is_super_admin): ?>
-        <a href="payment_reverse.php?id=<?= $payment['id'] ?>&action=approve" 
-           class="btn btn-banking btn-success"
-           onclick="return confirm('Approve this payment reversal?');">
-            <i class="fas fa-check mr-2"></i>Approve Reversal
-        </a>
+        <form method="post" action="payment_reverse.php" class="d-inline" onsubmit="return confirm('Approve this payment reversal?');">
+            <?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $payment['id'] ?>"><input type="hidden" name="action" value="approve">
+            <button type="submit" class="btn btn-banking btn-success"><i class="fas fa-check mr-2"></i>Approve Reversal</button>
+        </form>
     <?php endif; ?>
     <?php if ($is_reversed && $is_super_admin): ?>
-        <a href="payment_reverse.php?id=<?= $payment['id'] ?>&action=undo" 
-           class="btn btn-banking btn-info"
-           onclick="return confirm('Undo this payment reversal?');">
-            <i class="fas fa-redo mr-2"></i>Undo Reversal
-        </a>
+        <form method="post" action="payment_reverse.php" class="d-inline" onsubmit="return confirm('Undo this payment reversal?');">
+            <?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $payment['id'] ?>"><input type="hidden" name="action" value="undo">
+            <button type="submit" class="btn btn-banking btn-info"><i class="fas fa-redo mr-2"></i>Undo Reversal</button>
+        </form>
     <?php endif; ?>
 </div>
 

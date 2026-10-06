@@ -265,9 +265,6 @@ if ($group_by_month && $result->num_rows > 0) {
 
 ob_start();
 ?>
-<!DOCTYPE html>
-<html>
-<head>
     <style>
         .statement-container {
             background: #fff;
@@ -668,9 +665,6 @@ ob_start();
             }
         }
     </style>
-</head>
-<body>
-
 <div class="statement-container">
     <!-- Statement Header -->
     <div class="statement-header">

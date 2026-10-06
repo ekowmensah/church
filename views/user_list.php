@@ -10,10 +10,8 @@ if (!is_logged_in()) {
     exit;
 }
 
-// Super Administrator status follows role assignment, never a hard-coded user ID.
-$userListRoleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
-if (isset($_SESSION['role_id'])) $userListRoleIds[] = (int) $_SESSION['role_id'];
-$is_super_admin = in_array(1, $userListRoleIds, true);
+// Super Administrator status follows canonical active role assignment.
+$is_super_admin = is_super_admin();
 
 if (!$is_super_admin && !has_permission('view_user_list')) {
     http_response_code(403);
@@ -242,11 +240,17 @@ $(function(){
         $member_id = $u['member_id'];
         // Fetch all roles for this user (including secondary roles)
         $roles = [];
-        $role_q = $conn->query("SELECT r.name FROM user_roles ur JOIN roles r ON ur.role_id = r.id WHERE ur.user_id = ".$user_id);
+        $row_is_super_admin = false;
+        $role_q = $conn->query("SELECT r.id, r.name FROM user_roles ur JOIN roles r ON ur.role_id = r.id WHERE ur.user_id = ".$user_id." AND ur.is_active = 1 AND r.is_active = 1");
         if ($role_q) {
-            while($r = $role_q->fetch_assoc()) $roles[] = $r['name'];
+            while($r = $role_q->fetch_assoc()) {
+                $roles[] = $r['name'];
+                $normalizedRoleName = strtolower(trim((string) $r['name']));
+                if ((int) $r['id'] === 1 || in_array($normalizedRoleName, ['super admin', 'super administrator'], true)) {
+                    $row_is_super_admin = true;
+                }
+            }
         }
-        $row_is_super_admin = in_array('Super Admin', $roles, true);
         // Fetch class leadership (robust to missing columns)
         $class_leadership = '';
         if ($member_id) {

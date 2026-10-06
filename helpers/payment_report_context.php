@@ -102,11 +102,7 @@ function payment_report_is_super_admin(): bool
         return is_super_admin();
     }
 
-    $roleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
-    if (isset($_SESSION['role_id'])) {
-        $roleIds[] = (int) $_SESSION['role_id'];
-    }
-    return !empty($_SESSION['is_super_admin']) || in_array(1, $roleIds, true);
+    return !empty($_SESSION['is_super_admin']);
 }
 
 function payment_report_member_scope_condition(mysqli $conn, string $memberAlias = 'm'): string

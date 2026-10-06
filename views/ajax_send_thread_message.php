@@ -2,6 +2,9 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../helpers/member_feedback_access.php';
+header('Content-Type: application/json; charset=utf-8');
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -28,8 +31,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 // Get input data
 $input = json_decode(file_get_contents('php://input'), true);
+$input = is_array($input) ? $input : [];
+if (!csrf_is_valid($input['csrf_token'] ?? null)) {
+    http_response_code(419);
+    echo json_encode(['success' => false, 'error' => 'Your session token is invalid. Refresh the page and try again.']);
+    exit;
+}
 $thread_id = isset($input['thread_id']) ? intval($input['thread_id']) : 0;
 $message = isset($input['message']) ? trim($input['message']) : '';
+$message = mb_substr($message, 0, 4000);
 
 if (!$thread_id || !$message) {
     http_response_code(400);
@@ -38,10 +48,7 @@ if (!$thread_id || !$message) {
 }
 
 // Verify thread exists
-$stmt = $conn->prepare('SELECT * FROM member_feedback_thread WHERE id = ? AND feedback_id IS NULL');
-$stmt->bind_param('i', $thread_id);
-$stmt->execute();
-$thread = $stmt->get_result()->fetch_assoc();
+$thread = member_feedback_load_thread($conn, $thread_id);
 
 if (!$thread) {
     http_response_code(404);
@@ -50,17 +57,14 @@ if (!$thread) {
 }
 
 // Determine sender type/id
-if (isset($_SESSION['member_id'])) {
-    $sender_type = 'member';
-    $sender_id = $_SESSION['member_id'];
-} else {
-    $sender_type = 'user';
-    $sender_id = $_SESSION['user_id'] ?? 0;
-}
+$actor = member_feedback_actor();
+$sender_type = $actor['type'];
+$sender_id = $actor['id'];
+$recipient = member_feedback_reply_recipient($thread, $sender_type, $sender_id);
 
 // Insert new message
 $stmt = $conn->prepare('INSERT INTO member_feedback_thread (feedback_id, recipient_type, recipient_id, sender_type, sender_id, message, sent_at) VALUES (?, ?, ?, ?, ?, ?, NOW())');
-$stmt->bind_param('isisss', $thread_id, $thread['recipient_type'], $thread['recipient_id'], $sender_type, $sender_id, $message);
+$stmt->bind_param('isisis', $thread_id, $recipient['type'], $recipient['id'], $sender_type, $sender_id, $message);
 
 if ($stmt->execute()) {
     $message_id = $conn->insert_id;

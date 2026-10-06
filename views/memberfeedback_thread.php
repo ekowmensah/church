@@ -2,6 +2,8 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../helpers/member_feedback_access.php';
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
@@ -24,11 +26,7 @@ if (!$thread_id) {
 }
 
 // Fetch thread info (for header)
-$stmt = $conn->prepare('SELECT * FROM member_feedback_thread WHERE id = ? AND feedback_id IS NULL');
-$stmt->bind_param('i', $thread_id);
-$stmt->execute();
-$res = $stmt->get_result();
-$thread = $res->fetch_assoc();
+$thread = member_feedback_load_thread($conn, $thread_id);
 if (!$thread) {
     header('Location: memberfeedback_list.php');
     exit;
@@ -37,20 +35,19 @@ if (!$thread) {
 // Handle new message post
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $msg = trim($_POST['message'] ?? '');
-    if ($msg === '') {
+    $msg = trim((string) ($_POST['message'] ?? ''));
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $error = 'Your session token is invalid. Refresh the page and try again.';
+    } elseif ($msg === '') {
         $error = 'Message cannot be empty.';
     } else {
         // Determine sender type/id
-        if (isset($_SESSION['member_id'])) {
-            $sender_type = 'member';
-            $sender_id = $_SESSION['member_id'];
-        } else {
-            $sender_type = 'user';
-            $sender_id = $_SESSION['user_id'] ?? 0;
-        }
+        $actor = member_feedback_actor();
+        $sender_type = $actor['type'];
+        $sender_id = $actor['id'];
+        $recipient = member_feedback_reply_recipient($thread, $sender_type, $sender_id);
         $stmt = $conn->prepare('INSERT INTO member_feedback_thread (feedback_id, recipient_type, recipient_id, sender_type, sender_id, message, sent_at) VALUES (?, ?, ?, ?, ?, ?, NOW())');
-        $stmt->bind_param('isisss', $thread_id, $thread['recipient_type'], $thread['recipient_id'], $sender_type, $sender_id, $msg);
+        $stmt->bind_param('isisis', $thread_id, $recipient['type'], $recipient['id'], $sender_type, $sender_id, $msg);
         if ($stmt->execute()) {
             header('Location: memberfeedback_thread.php?id=' . $thread_id);
             exit;
@@ -108,7 +105,8 @@ ob_start();
                 <div class="card-footer">
                     <div id="error-alert" class="alert alert-danger mb-2 d-none"></div>
                     <div id="success-alert" class="alert alert-success mb-2 d-none"></div>
-                    <form id="message-form" class="d-flex align-items-end">
+                    <form id="message-form" method="post" class="d-flex align-items-end">
+                        <?= csrf_input() ?>
                         <textarea id="message-input" name="message" class="form-control mr-2" rows="2" placeholder="Type your message..." required></textarea>
                         <button type="submit" id="send-btn" class="btn btn-primary">
                             <i class="fas fa-paper-plane"></i> <span class="btn-text">Send</span>
@@ -126,8 +124,6 @@ ob_start();
         </div>
     </div>
 </div>
-<?php $page_content = ob_get_clean(); require_once __DIR__.'/../includes/layout.php'; ?>
-
 <style>
 .typing-dots {
     display: inline-block;
@@ -162,6 +158,7 @@ ob_start();
 <script>
 (function() {
     const threadId = <?= $thread_id ?>;
+    const csrfToken = <?= json_encode(csrf_token()) ?>;
     let lastTimestamp = '<?= $messages->num_rows > 0 ? date('Y-m-d H:i:s') : '1970-01-01 00:00:00' ?>';
     let isPolling = false;
     let pollInterval;
@@ -185,6 +182,12 @@ ob_start();
         element.classList.remove('d-none');
         setTimeout(() => element.classList.add('d-none'), duration);
     }
+
+    function escapeHtml(value) {
+        const holder = document.createElement('div');
+        holder.textContent = String(value || '');
+        return holder.innerHTML;
+    }
     
     // Add message to chat
     function addMessage(msg) {
@@ -200,7 +203,7 @@ ob_start();
         messageDiv.innerHTML = `
             <div class="p-2 rounded shadow-sm ${isUser ? 'bg-success text-white' : 'bg-light border'}" style="max-width:70%;">
                 <div style="font-size:0.95em;">
-                    ${msg.message.replace(/\n/g, '<br>')}
+                    ${escapeHtml(msg.message).replace(/\n/g, '<br>')}
                 </div>
                 <div class="text-muted mt-1" style="font-size:0.8em;">
                     ${msg.sender_type.charAt(0).toUpperCase() + msg.sender_type.slice(1)} #${msg.sender_id}
@@ -245,6 +248,7 @@ ob_start();
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
+                csrf_token: csrfToken,
                 thread_id: threadId,
                 message: message
             })
@@ -305,3 +309,4 @@ ob_start();
     });
 })();
 </script>
+<?php $page_content = ob_get_clean(); require_once __DIR__.'/../includes/layout.php'; ?>

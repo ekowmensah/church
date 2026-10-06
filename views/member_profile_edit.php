@@ -13,7 +13,7 @@ if (!isset($_SESSION['member_id'])) {
     exit;
 }
 // Prevent admins/managers from editing via this page
-if (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1) {
+if (is_super_admin()) {
     header('Location: member_form.php?id=' . intval($_SESSION['member_id']));
     exit;
 }
@@ -344,9 +344,6 @@ ob_start();
         </div>
     </div>
 </div>
-<?php $page_content = ob_get_clean(); include '../includes/layout.php'; ?>
-<link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.full.min.js"></script>
 <!-- Camera Modal -->
 <div class="modal fade" id="cameraModal" tabindex="-1" role="dialog" aria-labelledby="cameraModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered" role="document">
@@ -541,4 +538,4 @@ $(function(){
     });
 });
 </script>
-
+<?php $page_content = ob_get_clean(); include '../includes/layout.php'; ?>

@@ -8,9 +8,7 @@ require_once __DIR__ . '/../services/PaymentGatewayIntegrityService.php';
 require_once __DIR__ . '/../services/OnlinePaymentApprovalService.php';
 
 if (!is_logged_in()) { header('Location: ' . BASE_URL . '/login.php'); exit; }
-$roleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
-if (isset($_SESSION['role_id'])) $roleIds[] = (int) $_SESSION['role_id'];
-$isSuper = !empty($_SESSION['is_super_admin']) || is_super_admin() || in_array(1, $roleIds, true);
+$isSuper = is_super_admin();
 if (!$isSuper && !has_permission('review_payment_gateway_integrity')) {
     http_response_code(403); include __DIR__ . '/errors/403.php'; exit;
 }

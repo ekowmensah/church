@@ -118,9 +118,6 @@ $archived_stmt->close();
 
 // Debug: Log the first few records to see what's in created_at
 if (!empty($pending_intents)) {
-    error_log("DEBUG: First payment intent created_at: " . print_r($pending_intents[0]['created_at'], true));
-    error_log("DEBUG: First payment intent debug_created_at: " . print_r($pending_intents[0]['debug_created_at'], true));
-    error_log("DEBUG: First payment intent timestamp: " . print_r($pending_intents[0]['created_timestamp'], true));
 }
 
 ob_start();

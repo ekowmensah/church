@@ -1,10 +1,15 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/csrf.php';
 
 asset_require_permission('manage_asset_departments');
 
-$id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(405);
+    exit('Use the protected status form.');
+}
+$id = (int) ($_POST['id'] ?? 0);
 if ($id <= 0) {
     header('Location: asset_department_list.php');
     exit;

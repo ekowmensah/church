@@ -3,6 +3,8 @@ session_start();
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../helpers/church_helper.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -19,11 +21,10 @@ if (!$is_member_session && !$has_feedback_permission) {
 
 $post_save_redirect = $is_member_session ? 'memberfeedback_my.php' : 'memberfeedback_list.php';
 $back_link = $post_save_redirect;
-
-// Fetch members for dropdown
-$members = $conn->query("SELECT id, CONCAT(TRIM(CONCAT(last_name, ', ', first_name, ' ', COALESCE(middle_name, ''))), CASE WHEN crn IS NOT NULL AND crn <> '' THEN CONCAT(' (', crn, ')') ELSE '' END) AS name FROM members ORDER BY last_name, first_name");
-// Fetch users for user dropdown (show all users except the current user)
-$users = $conn->query("SELECT id, name FROM users WHERE id != " . intval($_SESSION['user_id'] ?? 0) . " ORDER BY name");
+$isSuperAdmin = is_super_admin();
+$scopeChurchId = $is_member_session
+    ? (int) ($conn->query('SELECT church_id FROM members WHERE id = ' . (int) $_SESSION['member_id'])->fetch_assoc()['church_id'] ?? 0)
+    : (int) get_user_church_id($conn);
 
 $id = intval($_GET['id'] ?? 0);
 $editing = $id > 0;
@@ -41,7 +42,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $recipient_type = $_POST['recipient_type'] === 'user' ? 'user' : 'member';
     $recipient_id = intval($_POST['recipient_id'] ?? 0);
     $message = trim($_POST['message'] ?? '');
-    if ($recipient_id && $message) {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $form_msg = 'Your session token is invalid. Refresh the page and try again.';
+    } elseif ($recipient_id && $message) {
+        $recipientTable = $recipient_type === 'user' ? 'users' : 'members';
+        $recipientSql = "SELECT id FROM {$recipientTable} WHERE id = ?";
+        if (!$isSuperAdmin) $recipientSql .= ' AND church_id = ?';
+        $recipientSql .= ' LIMIT 1';
+        $recipientStmt = $conn->prepare($recipientSql);
+        if ($isSuperAdmin) {
+            $recipientStmt->bind_param('i', $recipient_id);
+        } else {
+            $recipientStmt->bind_param('ii', $recipient_id, $scopeChurchId);
+        }
+        $recipientStmt->execute();
+        $recipientAllowed = (bool) $recipientStmt->get_result()->fetch_assoc();
+        $recipientStmt->close();
+        if (!$recipientAllowed) {
+            $form_msg = 'The selected recipient is outside your authorized church.';
+        } else {
         // Insert into member_feedback_thread as new chat
         $sender_is_member = isset($_SESSION['member_id']) ? 1 : 0;
         $sender_id = $sender_is_member ? intval($_SESSION['member_id']) : intval($_SESSION['user_id']);
@@ -53,6 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         } else {
             $form_msg = 'Error saving feedback.';
+        }
         }
     } else {
         $form_msg = 'Recipient and message are required.';
@@ -84,6 +104,7 @@ ob_start();
                     </div>
                 <?php endif; ?>
                 <form method="post" autocomplete="off">
+    <?= csrf_input() ?>
     <div class="form-group">
         <label for="recipient_type" class="font-weight-bold">Recipient Type <span class="text-danger">*</span></label>
         <select class="form-control" name="recipient_type" id="recipient_type" required>
@@ -98,7 +119,8 @@ ob_start();
             <option value="">Select member...</option>
             <?php 
             // Always re-fetch members for select to ensure options are present after JS show/hide
-            $members_for_select = $conn->query("SELECT id, CONCAT(TRIM(CONCAT(last_name, ', ', first_name, ' ', COALESCE(middle_name, ''))), CASE WHEN crn IS NOT NULL AND crn <> '' THEN CONCAT(' (', crn, ')') ELSE '' END) AS name FROM members ORDER BY last_name, first_name");
+            $memberScopeSql = $isSuperAdmin ? '' : ' WHERE church_id = ' . $scopeChurchId;
+            $members_for_select = $conn->query("SELECT id, CONCAT(TRIM(CONCAT(last_name, ', ', first_name, ' ', COALESCE(middle_name, ''))), CASE WHEN crn IS NOT NULL AND crn <> '' THEN CONCAT(' (', crn, ')') ELSE '' END) AS name FROM members{$memberScopeSql} ORDER BY last_name, first_name");
             if ($members_for_select && $members_for_select->num_rows > 0): 
                 while($m = $members_for_select->fetch_assoc()): ?>
                 <option value="<?= $m['id'] ?>" <?= ($feedback['recipient_type']=='member' && $feedback['recipient_id']==$m['id'] ? 'selected' : '') ?>><?= htmlspecialchars($m['name']) ?></option>
@@ -111,7 +133,8 @@ ob_start();
             <option value="">Select user...</option>
             <?php 
             // Always re-fetch users for select to ensure options are present after JS show/hide
-            $users_for_select = $conn->query("SELECT id, name FROM users WHERE id != " . intval($_SESSION['user_id'] ?? 0) . " ORDER BY name");
+            $userScopeSql = $isSuperAdmin ? '' : ' AND church_id = ' . $scopeChurchId;
+            $users_for_select = $conn->query("SELECT id, name FROM users WHERE id != " . intval($_SESSION['user_id'] ?? 0) . $userScopeSql . " ORDER BY name");
             if ($users_for_select && $users_for_select->num_rows > 0): 
                 while($u = $users_for_select->fetch_assoc()): ?>
                 <option value="<?= $u['id'] ?>" <?= ($feedback['recipient_type']=='user' && $feedback['recipient_id']==$u['id'] ? 'selected' : '') ?>><?= htmlspecialchars($u['name']) ?></option>
@@ -160,12 +183,6 @@ document.querySelectorAll('.autosize').forEach(function(textarea) {
     textarea.dispatchEvent(new Event('input'));
 });
 </script>
-<!-- jQuery (required for Select2) -->
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<!-- Select2 CSS/JS -->
-<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-<link href="https://cdn.jsdelivr.net/npm/@ttskch/select2-bootstrap4-theme@1.6.4/dist/select2-bootstrap4.min.css" rel="stylesheet" />
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 $(function() {
     $('#member_id').select2({ width: '100%', theme: 'bootstrap4', placeholder: 'Select member...' });

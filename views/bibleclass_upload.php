@@ -8,7 +8,7 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-$is_super_admin = (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 $can_upload = $is_super_admin || (has_permission('manage_bibleclasses'));
 if (!$can_upload) {
     die('No permission to upload Bible Classes.');

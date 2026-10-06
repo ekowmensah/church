@@ -2,6 +2,8 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../helpers/payment_report_context.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -22,6 +24,8 @@ $filter_actor = $_GET['actor_id'] ?? '';
 $date_from = $_GET['date_from'] ?? '';
 $date_to = $_GET['date_to'] ?? '';
 $search_term = trim($_GET['search'] ?? '');
+$paymentScope = payment_report_payment_scope_condition($conn, 'p');
+$scopeSql = $paymentScope !== '' ? " AND {$paymentScope}" : '';
 
 // Pagination
 $records_per_page = isset($_GET['per_page']) ? intval($_GET['per_page']) : 50;
@@ -41,7 +45,7 @@ LEFT JOIN users u ON l.actor_id = u.id
 LEFT JOIN payments p ON l.payment_id = p.id
 LEFT JOIN payment_types pt ON p.payment_type_id = pt.id
 LEFT JOIN members m ON p.member_id = m.id
-WHERE 1=1";
+WHERE 1=1{$scopeSql}";
 
 $params = [];
 $types = '';
@@ -84,7 +88,7 @@ $count_sql = "SELECT COUNT(*) as total FROM payment_reversal_log l
 LEFT JOIN users u ON l.actor_id = u.id
 LEFT JOIN payments p ON l.payment_id = p.id
 LEFT JOIN members m ON p.member_id = m.id
-WHERE 1=1";
+WHERE 1=1{$scopeSql}";
 
 $count_params = [];
 $count_types = '';
@@ -133,6 +137,7 @@ if ($count_types) {
 
 $total_pages = ceil($total_records / $records_per_page);
 $current_page = min($current_page, max(1, $total_pages));
+$offset = ($current_page - 1) * $records_per_page;
 
 // Add ORDER BY and LIMIT
 $sql .= " ORDER BY l.action_at DESC, l.id DESC LIMIT ? OFFSET ?";
@@ -151,19 +156,22 @@ if ($types) {
 }
 
 // Get statistics
-$stats_request = $conn->query("SELECT COUNT(*) as cnt FROM payment_reversal_log WHERE action = 'request'")->fetch_assoc()['cnt'];
-$stats_approve = $conn->query("SELECT COUNT(*) as cnt FROM payment_reversal_log WHERE action = 'approve'")->fetch_assoc()['cnt'];
-$stats_undo = $conn->query("SELECT COUNT(*) as cnt FROM payment_reversal_log WHERE action = 'undo'")->fetch_assoc()['cnt'];
+$statsFrom = " FROM payment_reversal_log l JOIN payments p ON p.id = l.payment_id WHERE 1=1{$scopeSql}";
+$stats_request = $conn->query("SELECT COUNT(*) as cnt{$statsFrom} AND l.action = 'request'")->fetch_assoc()['cnt'];
+$stats_approve = $conn->query("SELECT COUNT(*) as cnt{$statsFrom} AND l.action = 'approve'")->fetch_assoc()['cnt'];
+$stats_undo = $conn->query("SELECT COUNT(*) as cnt{$statsFrom} AND l.action = 'undo'")->fetch_assoc()['cnt'];
 $stats_total = $stats_request + $stats_approve + $stats_undo;
 
 // Get actors for filter
-$actors = $conn->query("SELECT DISTINCT u.id, u.name FROM payment_reversal_log l JOIN users u ON l.actor_id = u.id ORDER BY u.name");
+$actors = $conn->query("SELECT DISTINCT u.id, u.name
+    FROM payment_reversal_log l
+    JOIN users u ON l.actor_id = u.id
+    JOIN payments p ON p.id = l.payment_id
+    WHERE 1=1{$scopeSql}
+    ORDER BY u.name");
 
 ob_start();
 ?>
-<!DOCTYPE html>
-<html>
-<head>
     <style>
         .reversal-container {
             background: #f8f9fa;
@@ -274,8 +282,6 @@ ob_start();
         .badge-approve { background: #dc3545; color: #fff; }
         .badge-undo { background: #28a745; color: #fff; }
     </style>
-</head>
-<body>
 
 <div class="reversal-container">
     <div class="reversal-header">
@@ -480,25 +486,20 @@ ob_start();
                             // Show action buttons based on status and action type
                             if ($current_action == 'request' && $is_pending && $can_manage): ?>
                                 <div class="btn-group btn-group-sm">
-                                    <a href="payment_reverse.php?id=<?= $row['payment_id'] ?>&action=approve" 
-                                       class="btn btn-success btn-sm" 
-                                       onclick="return confirm('Approve this payment reversal?');" 
-                                       title="Approve Reversal">
-                                        <i class="fas fa-check"></i> Approve
-                                    </a>
-                                    <button class="btn btn-danger btn-sm" 
-                                            onclick="denyReversal(<?= $row['payment_id'] ?>)" 
-                                            title="Deny Reversal">
-                                        <i class="fas fa-times"></i> Deny
-                                    </button>
+                                    <form method="post" action="payment_reverse.php" class="d-inline" onsubmit="return confirm('Approve this payment reversal?');">
+                                        <?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $row['payment_id'] ?>"><input type="hidden" name="action" value="approve">
+                                        <button type="submit" class="btn btn-success btn-sm" title="Approve Reversal"><i class="fas fa-check"></i> Approve</button>
+                                    </form>
+                                    <form method="post" action="payment_reverse.php" class="d-inline" onsubmit="return confirm('Deny this reversal request? This action cannot be undone.');">
+                                        <?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $row['payment_id'] ?>"><input type="hidden" name="action" value="deny">
+                                        <button type="submit" class="btn btn-danger btn-sm" title="Deny Reversal"><i class="fas fa-times"></i> Deny</button>
+                                    </form>
                                 </div>
                             <?php elseif ($current_action == 'approve' && $is_approved && $can_manage): ?>
-                                <a href="payment_reverse.php?id=<?= $row['payment_id'] ?>&action=undo" 
-                                   class="btn btn-info btn-sm" 
-                                   onclick="return confirm('Undo this payment reversal? This will restore the payment.');" 
-                                   title="Undo Reversal">
-                                    <i class="fas fa-undo"></i> Undo
-                                </a>
+                                <form method="post" action="payment_reverse.php" class="d-inline" onsubmit="return confirm('Undo this payment reversal? This will restore the payment.');">
+                                    <?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $row['payment_id'] ?>"><input type="hidden" name="action" value="undo">
+                                    <button type="submit" class="btn btn-info btn-sm" title="Undo Reversal"><i class="fas fa-undo"></i> Undo</button>
+                                </form>
                             <?php else: ?>
                                 <span class="text-muted">-</span>
                             <?php endif; ?>
@@ -563,11 +564,6 @@ ob_start();
 </div>
 
 <script>
-function denyReversal(paymentId) {
-    if (confirm('Are you sure you want to deny this reversal request? This action cannot be undone.')) {
-        window.location.href = 'payment_reverse.php?id=' + paymentId + '&action=deny';
-    }
-}
 </script>
 
 <?php 

@@ -4,7 +4,8 @@ require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 if (!is_logged_in()) { header('Location: ' . BASE_URL . '/login.php'); exit; }
 require_once __DIR__.'/../helpers/permissions_v2.php';
-$is_super_admin = (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
+require_once __DIR__.'/../helpers/csrf.php';
+$is_super_admin = is_super_admin();
 if (!$is_super_admin && !has_permission('view_payment_bulk')) {
     http_response_code(403);
     echo '<h1>403 Forbidden</h1><p>You do not have permission to access this page.</p>';
@@ -16,6 +17,7 @@ ob_start();
 
   <h2 class="mb-4 font-weight-bold"><i class="fas fa-layer-group mr-2"></i>Bulk Payments</h2>
   <form id="bulkPaymentForm" autocomplete="off" aria-label="Bulk Payment Form">
+    <?= csrf_input() ?>
     <div class="row align-items-end">
       <div class="col-md-4 mb-3">
         <label for="church_id" class="font-weight-bold">Church <span class="text-danger">*</span></label>
@@ -88,18 +90,10 @@ ob_start();
   </div>
 </div>
 <?php $modal_html = ob_get_clean(); ?>
+<!-- Plugin Imports -->
+<link href="payment_bulk_member_multi.css" rel="stylesheet" />
+<script src="payment_bulk_member_multi.js"></script>
 <?php
 $page_content = ob_get_clean();
 include '../includes/layout.php';
 ?>
-<!-- Plugin Imports -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap4.min.css">
-<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-<link href="payment_bulk_member_multi.css" rel="stylesheet" />
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap4.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-<script src="payment_bulk_member_multi.js"></script>

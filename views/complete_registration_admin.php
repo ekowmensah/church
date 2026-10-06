@@ -16,8 +16,7 @@ if (!is_logged_in()) {
     exit;
 }
 
-$is_super_admin = is_super_admin()
-    || (isset($_SESSION['role_id']) && (int) $_SESSION['role_id'] === 1);
+$is_super_admin = is_super_admin();
 if (!$is_super_admin && !has_permission('edit_member')) {
     http_response_code(403);
     if (file_exists(__DIR__.'/errors/403.php')) {
@@ -493,8 +492,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
     // Remove $membership_status from required fields (field removed from form)
     if (!$first_name || !$last_name || !$gender || !$dob || !$place_of_birth || !$marital_status || ($marital_status === 'Married' && !$marriage_type) || !$home_town || !$region || !$phone || count($valid_contacts) === 0 || !$employment_status || !$baptized || !$confirmed || ($is_password_required && !$password)) {
         // Debug output for troubleshooting
-        error_log('DEBUG: valid_contacts count: ' . count($valid_contacts));
-        error_log('DEBUG: emergency_contacts: ' . print_r($normalized_contacts, true));
         $error = 'Please fill in all required fields (at least one emergency contact).';
     } elseif (($transferError = member_transfer_origin_validation_error($transferOrigin)) !== '') {
         $error = $transferError;
@@ -1428,7 +1425,6 @@ $(function(){
     }
 </style>
 <?php
-$page_content = ob_get_clean();
 $script_name = str_replace('\\', '/', $_SERVER['SCRIPT_NAME']);
 $base_url = rtrim(dirname(dirname($script_name)), '/\\');
 if ($base_url === '/' || $base_url === '' || $base_url === '.') $base_url = '';
@@ -1437,5 +1433,6 @@ $logo_url = $base_url . '/assets/logo.png';
 <!-- Inject BASE_URL for JS -->
 <script>window.BASE_URL = <?= json_encode($base_url) ?>;</script>
 <?php
+$page_content = ob_get_clean();
 require_once __DIR__.'/../includes/layout.php';
 ?>

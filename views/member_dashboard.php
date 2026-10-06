@@ -1,23 +1,9 @@
 <?php
 require_once __DIR__.'/../includes/member_auth.php';
 require_once __DIR__.'/../services/BibleClassAttendanceScheduleService.php';
-if (!empty($_SESSION['login_success']) && !empty($_SESSION['login_fullname'])): ?>
-<!-- Login Success Modal -->
-<div id="loginSuccessModal" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:14px;padding:36px 28px;box-shadow:0 8px 40px rgba(0,0,0,0.18);max-width:340px;width:90%;text-align:center;">
-    <div style="font-size:1.5rem;font-weight:600;margin-bottom:8px;color:#2d7c36;">Welcome Back!</div>
-    <div style="font-size:1.2rem;font-weight:500;margin-bottom:20px;">
-      <?php echo htmlspecialchars($_SESSION['login_fullname']); ?>
-    </div>
-    <button id="loginSuccessOk" style="background:#2d7c36;color:#fff;font-weight:600;border:none;border-radius:6px;padding:10px 32px;font-size:1.1rem;cursor:pointer;">Continue</button>
-  </div>
-</div>
-<script>
-document.getElementById('loginSuccessOk').onclick = function() {
-  document.getElementById('loginSuccessModal').style.display = 'none';
-};
-</script>
-<?php unset($_SESSION['login_success'], $_SESSION['login_fullname']); endif;
+$showLoginSuccess = !empty($_SESSION['login_success']) && !empty($_SESSION['login_fullname']);
+$loginFullName = $showLoginSuccess ? (string) $_SESSION['login_fullname'] : '';
+unset($_SESSION['login_success'], $_SESSION['login_fullname']);
 
 if (!isset($_SESSION['member_id'])) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -25,6 +11,21 @@ if (!isset($_SESSION['member_id'])) {
 }
 
 ob_start();
+if ($showLoginSuccess): ?>
+<!-- Login Success Modal -->
+<div id="loginSuccessModal" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:14px;padding:36px 28px;box-shadow:0 8px 40px rgba(0,0,0,0.18);max-width:340px;width:90%;text-align:center;">
+    <div style="font-size:1.5rem;font-weight:600;margin-bottom:8px;color:#2d7c36;">Welcome Back!</div>
+    <div style="font-size:1.2rem;font-weight:500;margin-bottom:20px;"><?= htmlspecialchars($loginFullName) ?></div>
+    <button id="loginSuccessOk" type="button" style="background:#2d7c36;color:#fff;font-weight:600;border:none;border-radius:6px;padding:10px 32px;font-size:1.1rem;cursor:pointer;">Continue</button>
+  </div>
+</div>
+<script>
+document.getElementById('loginSuccessOk').onclick = function() {
+  document.getElementById('loginSuccessModal').style.display = 'none';
+};
+</script>
+<?php endif;
 $member_name = isset($_SESSION['member_name']) ? $_SESSION['member_name'] : 'Member';
 $profile_img = BASE_URL . '/assets/img/undraw_profile.svg';
 $member_id = isset($_SESSION['member_id']) ? intval($_SESSION['member_id']) : 0;

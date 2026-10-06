@@ -5,8 +5,6 @@
     var payer = null;
     var payerType = null;
     var payments = [];
-    var lastAutoDescription = '';
-    var descriptionWasEdited = false;
 
     function escapeHtml(value) {
         return $('<div>').text(value == null ? '' : String(value)).html();
@@ -19,6 +17,15 @@
         });
     }
 
+    function formatRegistrationNumber(value) {
+        var normalized = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 10);
+        var segments = [];
+        if (normalized.length > 0) segments.push(normalized.substring(0, 3));
+        if (normalized.length > 3) segments.push(normalized.substring(3, 8));
+        if (normalized.length > 8) segments.push(normalized.substring(8, 10));
+        return segments.join('-');
+    }
+
     function setFeedback(message, level) {
         $('#bulk-payment-feedback').html(
             '<div class="alert alert-' + (level || 'danger') + '">' + escapeHtml(message) + '</div>'
@@ -29,8 +36,6 @@
         $('#bulk_payment_type_id').val('');
         $('#bulk_amount').val('');
         $('#bulk_description').val('');
-        lastAutoDescription = '';
-        descriptionWasEdited = false;
         $('#bulk_bank_name, #bulk_cheque_number').val('');
         $('input[name="payment_method"][value="Cash"]').prop('checked', true).trigger('change');
         $('#payment-method-options label').removeClass('active');
@@ -58,6 +63,10 @@
                 '</tr>'
             );
         });
+        if (payments.length === 0) {
+            body.append('<tr class="payment-lines-empty"><td colspan="8"><i class="fas fa-receipt mr-1"></i>No payment lines added yet.</td></tr>');
+        }
+        $('#bulkPaymentsCount').text(payments.length + (payments.length === 1 ? ' line' : ' lines'));
         $('#bulkPaymentsTotal').text(money(total));
         $('#submitBulkPaymentsBtn').prop('disabled', payments.length === 0 || !payer);
     }
@@ -94,6 +103,21 @@
         // body level guarantees it remains above the backdrop and clickable.
         $('#bulkPaymentConfirmModal').appendTo(document.body);
 
+        // Match the member-login CRN behavior. Both current CRNs and SRNs use
+        // the FMC-K0101-KM / FMC-S2101-KM 3-5-2 registration-number pattern.
+        $('#crn').on('input', function () {
+            this.value = formatRegistrationNumber(this.value);
+        }).on('keydown', function (event) {
+            if (event.key !== 'Backspace') return;
+            var input = this;
+            var cursorPosition = input.selectionStart;
+            if (cursorPosition > 0 && input.value.charAt(cursorPosition - 1) === '-') {
+                window.setTimeout(function () {
+                    input.setSelectionRange(cursorPosition - 1, cursorPosition - 1);
+                }, 0);
+            }
+        });
+
         $('#searchMemberForm').on('submit', function (event) {
             event.preventDefault();
             var registrationNumber = $.trim($('#crn').val());
@@ -118,6 +142,7 @@
                     $('#member-summary').html(payerSummary(response.data, response.type)).removeClass('d-none');
                     $('#payment-panels').removeClass('d-none');
                     $('#crn-feedback').removeClass('text-danger text-muted').addClass('text-success').text('Payer selected.');
+                    $('#bulk_payment_type_id').trigger('focus');
                 })
                 .fail(function () {
                     $('#crn-feedback').removeClass('text-muted').addClass('text-danger').text('The payer lookup failed. Please try again.');
@@ -133,18 +158,13 @@
             $('#bulk_cheque_fields').toggleClass('d-none', mode !== 'Cheque');
         });
 
-        $('#bulk_description').on('input', function () {
-            var current = $.trim($(this).val());
-            descriptionWasEdited = current !== '' && current !== lastAutoDescription;
-            if (current === '') descriptionWasEdited = false;
-        });
-
         $('#bulk_payment_type_id, #bulk_payment_period').on('change', function () {
             var typeText = $('#bulk_payment_type_id option:selected').text();
             var periodText = $('#bulk_payment_period option:selected').text();
-            if (!$('#bulk_payment_type_id').val() || descriptionWasEdited) return;
-            lastAutoDescription = 'Payment for ' + periodText + ' ' + typeText;
-            $('#bulk_description').val(lastAutoDescription);
+            var description = $('#bulk_payment_type_id').val()
+                ? 'Payment for ' + periodText + ' ' + typeText
+                : '';
+            $('#bulk_description').val(description);
         });
 
         $('#addToBulkBtn').on('click', function () {
@@ -172,6 +192,7 @@
             $('#bulk-payment-feedback').empty();
             renderPayments();
             resetLineForm();
+            $('#bulk_payment_type_id').trigger('focus');
         });
 
         $('#bulkPaymentsTable').on('click', '.remove-payment', function () {

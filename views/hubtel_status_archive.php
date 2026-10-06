@@ -10,14 +10,8 @@ if (!is_logged_in()) {
     exit;
 }
 
-$roleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
-if (isset($_SESSION['role_id'])) {
-    $roleIds[] = (int) $_SESSION['role_id'];
-}
 $userId = (int) ($_SESSION['user_id'] ?? 0);
-$isSuperAdmin = !empty($_SESSION['is_super_admin'])
-    || $userId === 3
-    || in_array(1, $roleIds, true);
+$isSuperAdmin = is_super_admin();
 
 if (!$isSuperAdmin && !has_permission('manage_payments')) {
     http_response_code(403);

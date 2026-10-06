@@ -1,7 +1,7 @@
 <?php
-// Enable error reporting for debugging
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
+// Record diagnostics without disclosing stack traces or breaking page/AJAX output.
+ini_set('display_errors', '0');
+ini_set('display_startup_errors', '0');
 error_reporting(E_ALL);
 
 // Log errors to a file
@@ -11,6 +11,7 @@ ini_set('error_log', __DIR__ . '/../logs/php_errors.log');
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 require_once __DIR__.'/../helpers/role_based_filter.php';
 
 // Only allow logged-in users
@@ -34,6 +35,7 @@ $can_edit = $is_super_admin || has_permission('edit_payment');
 $can_delete = $is_super_admin || has_permission('delete_payment');
 $can_view_all = $is_super_admin || has_permission('view_all_payments');
 $can_review_gateway = $is_super_admin || has_permission('review_payment_gateway_integrity');
+$can_verify_cheques = $is_super_admin || has_permission('verify_cheque_payments');
 $user_church_id = 0;
 if (!$is_super_admin && isset($_SESSION['user_id'])) {
     $church_stmt = $conn->prepare('SELECT church_id FROM users WHERE id = ? LIMIT 1');
@@ -582,11 +584,33 @@ if ($can_review_gateway) {
     $pending_ussd_total = (float) ($pending_result['total_amount'] ?? 0);
 }
 
+$pending_cheque_count = 0;
+$pending_cheque_total = 0.0;
+if ($can_verify_cheques) {
+    $pending_cheque_sql = "SELECT COUNT(*) AS total_count, COALESCE(SUM(amount), 0) AS total_amount
+        FROM payments
+        WHERE LOWER(TRIM(mode)) IN ('cheque','check')
+          AND cheque_verification_status = 'pending'";
+    if (!$is_super_admin) {
+        if ($user_church_id > 0) {
+            $pending_cheque_sql .= ' AND church_id = ?';
+            $pending_cheque_stmt = $conn->prepare($pending_cheque_sql);
+            $pending_cheque_stmt->bind_param('i', $user_church_id);
+            $pending_cheque_stmt->execute();
+            $pending_cheque_result = $pending_cheque_stmt->get_result()->fetch_assoc();
+            $pending_cheque_stmt->close();
+        } else {
+            $pending_cheque_result = ['total_count' => 0, 'total_amount' => 0];
+        }
+    } else {
+        $pending_cheque_result = $conn->query($pending_cheque_sql)->fetch_assoc();
+    }
+    $pending_cheque_count = (int) ($pending_cheque_result['total_count'] ?? 0);
+    $pending_cheque_total = (float) ($pending_cheque_result['total_amount'] ?? 0);
+}
+
 ob_start();
 ?>
-<!DOCTYPE html>
-<html>
-<head>
     <style>
         .banking-container {
             background: #f8f9fa;
@@ -913,9 +937,6 @@ ob_start();
             }
         }
     </style>
-</head>
-<body>
-
 <div class="banking-container">
     <!-- Statement Header -->
     <div class="statement-header">
@@ -984,6 +1005,20 @@ ob_start();
             </div>
             <a class="btn btn-sm btn-warning mt-2 mt-md-0" href="payment_gateway_integrity.php">
                 Review USSD payments
+            </a>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($can_verify_cheques && $pending_cheque_count > 0): ?>
+        <div class="alert alert-warning no-print d-flex justify-content-between align-items-center flex-wrap" role="alert">
+            <div>
+                <i class="fas fa-money-check-alt mr-2"></i>
+                <strong><?= number_format($pending_cheque_count) ?> cheque payment(s) awaiting approval</strong>
+                totalling <strong>GH&#8373;<?= number_format($pending_cheque_total, 2) ?></strong>.
+                These amounts remain outside completed-income totals until reviewed.
+            </div>
+            <a class="btn btn-sm btn-warning mt-2 mt-md-0" href="cheque_payment_verification.php">
+                Open cheque approvals
             </a>
         </div>
     <?php endif; ?>
@@ -1102,6 +1137,12 @@ ob_start();
                     <?php if ($can_add): ?>
                         <a href="payment_form.php" class="btn btn-banking btn-banking-primary">
                             <i class="fas fa-plus mr-2"></i>New Payment
+                        </a>
+                    <?php endif; ?>
+                    <?php if ($can_verify_cheques): ?>
+                        <a href="cheque_payment_verification.php" class="btn btn-banking btn-warning">
+                            <i class="fas fa-money-check-alt mr-2"></i>Cheque Approvals
+                            <?php if ($pending_cheque_count > 0): ?><span class="badge badge-light ml-1"><?= number_format($pending_cheque_count) ?></span><?php endif; ?>
                         </a>
                     <?php endif; ?>
                     <a href="payment_reversal_log.php" class="btn btn-banking btn-banking-secondary">
@@ -1336,7 +1377,7 @@ ob_start();
                                 <?php
                                     $is_pending = !empty($row['reversal_requested_at']) && empty($row['reversal_approved_at']);
                                     $is_reversed = !empty($row['reversal_approved_at']) && empty($row['reversal_undone_at']);
-                                    $can_approve = isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1;
+                                    $can_approve = is_super_admin() || has_permission('approve_payment_reversal');
                                     $can_undo = $can_approve;
                                 ?>
                                 <div class="mt-2">
@@ -1345,32 +1386,32 @@ ob_start();
                                             <i class="fas fa-clock"></i> Reversal Pending
                                         </span>
                                         <?php if ($can_approve): ?>
-                                            <a href="payment_reverse.php?id=<?= $row['id'] ?>&action=approve" 
-                                               class="btn btn-xs btn-success mt-1" 
-                                               onclick="return confirm('Approve this payment reversal?');" 
-                                               title="Approve Reversal">
-                                                <i class="fas fa-check"></i> Approve
-                                            </a>
+                                            <form method="post" action="payment_reverse.php" class="d-inline" onsubmit="return confirm('Approve this payment reversal?');">
+                                                <?= csrf_input() ?>
+                                                <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
+                                                <input type="hidden" name="action" value="approve">
+                                                <button type="submit" class="btn btn-xs btn-success mt-1" title="Approve Reversal"><i class="fas fa-check"></i> Approve</button>
+                                            </form>
                                         <?php endif; ?>
                                     <?php elseif ($is_reversed): ?>
                                         <span class="badge badge-danger badge-banking">
                                             <i class="fas fa-ban"></i> Reversed
                                         </span>
                                         <?php if ($can_undo): ?>
-                                            <a href="payment_reverse.php?id=<?= $row['id'] ?>&action=undo" 
-                                               class="btn btn-xs btn-info mt-1" 
-                                               onclick="return confirm('Undo this payment reversal?');" 
-                                               title="Undo Reversal">
-                                                <i class="fas fa-undo"></i> Undo
-                                            </a>
+                                            <form method="post" action="payment_reverse.php" class="d-inline" onsubmit="return confirm('Undo this payment reversal?');">
+                                                <?= csrf_input() ?>
+                                                <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
+                                                <input type="hidden" name="action" value="undo">
+                                                <button type="submit" class="btn btn-xs btn-info mt-1" title="Undo Reversal"><i class="fas fa-undo"></i> Undo</button>
+                                            </form>
                                         <?php endif; ?>
                                     <?php elseif (empty($row['reversal_requested_at'])): ?>
-                                        <a href="payment_reverse.php?id=<?= $row['id'] ?>" 
-                                           class="btn btn-xs btn-secondary mt-1" 
-                                           onclick="return confirm('Request reversal for this payment?');" 
-                                           title="Request Reversal">
-                                            <i class="fas fa-undo"></i> Reverse
-                                        </a>
+                                        <form method="post" action="payment_reverse.php" class="d-inline" onsubmit="return confirm('Request reversal for this payment?');">
+                                            <?= csrf_input() ?>
+                                            <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
+                                            <input type="hidden" name="action" value="request">
+                                            <button type="submit" class="btn btn-xs btn-secondary mt-1" title="Request Reversal"><i class="fas fa-undo"></i> Reverse</button>
+                                        </form>
                                     <?php endif; ?>
                                 </div>
                             </td>
@@ -1487,7 +1528,21 @@ function exportToExcel() {
 
 function deletePayment(id) {
     if (confirm('Are you sure you want to delete this payment? This action cannot be undone.')) {
-        window.location.href = 'payment_delete.php?id=' + id;
+        const form = document.createElement('form');
+        form.method = 'post';
+        form.action = 'payment_delete.php';
+        const idInput = document.createElement('input');
+        idInput.type = 'hidden';
+        idInput.name = 'id';
+        idInput.value = id;
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrf_token';
+        csrfInput.value = <?= json_encode(csrf_token()) ?>;
+        form.appendChild(idInput);
+        form.appendChild(csrfInput);
+        document.body.appendChild(form);
+        form.submit();
     }
 }
 

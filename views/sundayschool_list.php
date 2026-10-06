@@ -2,6 +2,7 @@
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -27,7 +28,7 @@ if (!$is_super_admin && !has_permission('view_sunday_school_list')) {
 // Set permission flags for UI elements
 $can_add = $is_super_admin || has_permission('create_sunday_school');
 $can_edit = $is_super_admin || has_permission('edit_sunday_school');
-$can_delete = $is_super_admin || has_permission('delete_sunday_school');
+$can_delete = $is_super_admin || has_permission('delete_sundayschool');
 $can_view = true; // Already validated above
 
 // Build WHERE clause with filters
@@ -355,7 +356,7 @@ ob_start();
                             <a href="<?=BASE_URL?>/views/sundayschool_form.php?id=<?=$row['id']?>" class="btn btn-sm btn-warning"><i class="fa fa-edit"></i></a>
                             <?php endif; ?>
                             <?php if ($can_delete): ?>
-                            <a href="<?=BASE_URL?>/views/sundayschool_delete.php?id=<?=$row['id']?>" class="btn btn-sm btn-danger" onclick="return confirm('Delete this record?');"><i class="fa fa-trash"></i></a>
+                            <form method="post" action="<?= BASE_URL ?>/views/sundayschool_delete.php" class="d-inline" onsubmit="return confirm('Delete this record?');"><?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $row['id'] ?>"><button type="submit" class="btn btn-sm btn-danger"><i class="fa fa-trash"></i></button></form>
                             <?php endif; ?>
                             <a href="<?=BASE_URL?>/views/payment_form.php" class="btn btn-sm btn-success"><i class="fa fa-coins"></i> Payment</a>
                         </td>
@@ -403,8 +404,6 @@ ob_start();
         </nav>
     </div>
 </div>
-<?php $page_content = ob_get_clean(); include '../includes/layout.php'; ?>
-
 <!-- DataTables Buttons dependencies (JS & CSS) -->
 <link rel="stylesheet" href="<?= BASE_URL ?>/AdminLTE/plugins/datatables-buttons/css/buttons.bootstrap4.min.css">
 <script src="<?= BASE_URL ?>/AdminLTE/plugins/datatables-buttons/js/dataTables.buttons.min.js"></script>
@@ -455,3 +454,4 @@ $(document).ready(function() {
 });
 </script>
 <!-- <script src="<?= BASE_URL ?>/assets/js/sundayschool_list.js"></script> -->
+<?php $page_content = ob_get_clean(); include '../includes/layout.php'; ?>

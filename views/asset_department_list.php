@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/csrf.php';
 
 asset_require_permission('manage_asset_departments');
 
@@ -108,9 +109,7 @@ ob_start();
                         </td>
                         <td class="text-nowrap">
                             <a href="asset_department_form.php?id=<?= (int) $dept['id'] ?>" class="btn btn-sm btn-warning"><i class="fas fa-edit"></i></a>
-                            <a href="asset_department_toggle.php?id=<?= (int) $dept['id'] ?>" class="btn btn-sm btn-<?= (int) $dept['is_active'] === 1 ? 'secondary' : 'success' ?>" onclick="return confirm('Change department status?');">
-                                <i class="fas fa-power-off"></i>
-                            </a>
+                            <form method="post" action="asset_department_toggle.php" class="d-inline" onsubmit="return confirm('Change department status?');"><?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $dept['id'] ?>"><button type="submit" class="btn btn-sm btn-<?= (int) $dept['is_active'] === 1 ? 'secondary' : 'success' ?>"><i class="fas fa-power-off"></i></button></form>
                         </td>
                     </tr>
                 <?php endforeach; ?>

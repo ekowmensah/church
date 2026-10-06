@@ -23,7 +23,7 @@ if (!has_permission('manage_roles')) {
 }
 
 // Super admin check
-$is_super_admin = ($_SESSION['role_id'] == 1);
+$is_super_admin = is_super_admin();
 
 // Initialize variables
 $role_id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: 0;

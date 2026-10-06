@@ -14,9 +14,7 @@ if (!is_logged_in()) {
 
 $editing = isset($_GET['id']) && ctype_digit((string) $_GET['id']);
 $userId = $editing ? (int) $_GET['id'] : null;
-$sessionRoleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
-if (isset($_SESSION['role_id'])) $sessionRoleIds[] = (int) $_SESSION['role_id'];
-$isSuperAdmin = in_array(1, $sessionRoleIds, true);
+$isSuperAdmin = is_super_admin();
 $requiredPermission = $editing ? 'edit_user' : 'create_user';
 if (!$isSuperAdmin && !has_permission($requiredPermission)) {
     http_response_code(403);

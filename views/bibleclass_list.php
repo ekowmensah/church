@@ -187,7 +187,7 @@ ob_start();
                                 <a href="bibleclass_form.php?id=<?=$row['id']?>" class="btn btn-sm btn-info" title="Edit"><i class="fas fa-edit"></i></a>
                             <?php endif; ?>
                             <?php if ($can_delete): ?>
-                                <a href="bibleclass_delete.php?id=<?=$row['id']?>" class="btn btn-sm btn-danger" onclick="return confirm('Delete this bible class?')" title="Delete"><i class="fas fa-trash"></i></a>
+                                <form method="post" action="bibleclass_delete.php" class="d-inline" onsubmit="return confirm('Delete this bible class?')"><?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $row['id'] ?>"><button type="submit" class="btn btn-sm btn-danger" title="Delete"><i class="fas fa-trash"></i></button></form>
                             <?php endif; ?>
                         </td>
                         <?php endif; ?>

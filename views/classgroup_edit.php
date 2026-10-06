@@ -14,7 +14,7 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-if (!(isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1)) {
+if (!is_super_admin()) {
     if (!has_permission('edit_classgroup')) {
         $error = 'No permission to edit class group';
     }

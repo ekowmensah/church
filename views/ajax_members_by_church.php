@@ -26,7 +26,7 @@ $church_id = isset($_GET['church_id']) ? intval($_GET['church_id']) : 0;
 $organization_id = isset($_GET['organization_id']) ? intval($_GET['organization_id']) : 0;
 $bible_class_id = isset($_GET['bible_class_id']) ? intval($_GET['bible_class_id']) : 0;
 
-$is_class_leader = (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 5);
+$is_class_leader = has_role('Class Leader') || has_role('Assistant Bible Class Leader');
 $linked_member_id = isset($_SESSION['member_id']) ? intval($_SESSION['member_id']) : 0;
 $class_leader_class_id = 0;
 if ($is_class_leader && $linked_member_id) {
@@ -38,6 +38,8 @@ if ($is_class_leader && $linked_member_id) {
     $stmt->fetch();
     $stmt->close();
 }
+$params = [];
+$types = '';
 $sql = "SELECT m.id, m.first_name, m.last_name, m.middle_name, CONCAT(m.last_name, ' ', m.first_name, ' ', m.middle_name, ' (', m.crn, ')') as text, m.crn, c.name as class_name
         FROM members m
         LEFT JOIN bible_classes c ON m.class_id = c.id";
@@ -55,8 +57,6 @@ if ($is_class_leader && $class_leader_class_id) {
     $types .= 'i';
 }
 
-$params = [];
-$types = '';
 $gender = isset($_GET['gender']) ? strtolower(trim($_GET['gender'])) : '';
 if ($church_id) {
     $sql .= " AND m.church_id = ?";
@@ -134,15 +134,4 @@ if ($church_id) {
     }
     $stmt_ss->close();
 }
-if (empty($results) && isset($_SESSION['role_id']) && $_SESSION['role_id']==1) {
-    echo json_encode([
-        'results'=>$results,
-        'debug'=>[
-            'sql'=>$sql,
-            'params'=>$params,
-            'types'=>$types
-        ]
-    ]);
-} else {
-    echo json_encode(['results' => $results]);
-}
+echo json_encode(['results' => $results]);

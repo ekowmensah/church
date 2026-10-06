@@ -552,9 +552,6 @@ $churches = $conn->query("SELECT id, name FROM churches ORDER BY name");
 
 ob_start();
 ?>
-<!DOCTYPE html>
-<html>
-<head>
     <style>
         .attendance-container {
             background: #f8f9fa;
@@ -687,9 +684,6 @@ ob_start();
             opacity: 0.3;
         }
     </style>
-</head>
-<body>
-
 <div class="attendance-container">
     <div class="attendance-header">
         <div class="d-flex justify-content-between align-items-center">
@@ -1209,5 +1203,4 @@ if ($recurring_check && $recurring_check->num_rows > 0) {
 }
 
 include '../includes/layout.php';
-echo $modal_html;
 ?>

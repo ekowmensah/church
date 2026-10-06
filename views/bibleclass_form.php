@@ -12,7 +12,7 @@ $bclass = ['name' => '', 'code' => '', 'class_group_id' => '', 'church_id' => ''
 
 if (!is_logged_in()) {
     $error = 'Not logged in (session or login issue).';
-} elseif ((int) ($_SESSION['role_id'] ?? 0) !== 1) {
+} elseif (!is_super_admin()) {
     $requiredPermission = $editing ? 'edit_bibleclass' : 'create_bibleclass';
     if (!has_permission($requiredPermission)) {
         $error = $editing ? 'No permission to edit Bible classes.' : 'No permission to create Bible classes.';

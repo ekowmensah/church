@@ -9,10 +9,7 @@ if (!is_logged_in()) {
     exit;
 }
 
-$reportRoleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
-if (isset($_SESSION['role_id'])) $reportRoleIds[] = (int) $_SESSION['role_id'];
-$reportRoleIds = array_values(array_unique($reportRoleIds));
-$reportIsSuperAdmin = in_array(1, $reportRoleIds, true);
+$reportIsSuperAdmin = is_super_admin();
 if (!$reportIsSuperAdmin && !has_permission('view_attendance_report')) {
     http_response_code(403);
     include __DIR__ . '/../errors/403.php';

@@ -13,7 +13,7 @@ $churches = $conn->query('SELECT id, name FROM churches ORDER BY name');
 
 if (!is_logged_in()) {
     $error = 'Not logged in (session or login issue)';
-} elseif (!(isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1)) {
+} elseif (!is_super_admin()) {
     if (!has_permission('manage_bible_class_attendance_schedule')) {
         $error = 'No permission to manage Bible class attendance schedules';
     }

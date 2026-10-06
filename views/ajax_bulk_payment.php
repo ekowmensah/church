@@ -1,11 +1,10 @@
 <?php
-// --- DEBUG: Log incoming payload for bulk payments ---
-file_put_contents(__DIR__.'/bulk_payment_debug.log', "\n--- BULK PAYMENT SUBMIT ".date('Y-m-d H:i:s')." ---\n".file_get_contents('php://input')."\n", FILE_APPEND);
-
 session_start();
 // Modern Bulk Payment API Endpoint
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../helpers/church_helper.php';
 header('Content-Type: application/json');
 
 // Check if user is logged in first
@@ -42,6 +41,12 @@ function get_post_json() {
 }
 
 $data = get_post_json();
+if (!is_array($data)) {
+    respond(['success' => false, 'msg' => 'Invalid request body.'], 400);
+}
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_is_valid($data['csrf_token'] ?? null)) {
+    respond(['success' => false, 'msg' => 'Your session token is invalid. Refresh the page and try again.'], 405);
+}
 $member_ids = $data['member_ids'] ?? [];
 $sundayschool_ids = $data['sundayschool_ids'] ?? [];
 $amounts = isset($data['amounts_json']) ? json_decode($data['amounts_json'], true) : ($data['amounts'] ?? []);
@@ -54,6 +59,12 @@ $period_descriptions = $data['period_descriptions'] ?? [];
 
 
 $church_id = intval($data['church_id'] ?? 0);
+if (!$is_super_admin) {
+    $sessionChurchId = (int) get_user_church_id($conn);
+    if ($sessionChurchId <= 0 || $church_id !== $sessionChurchId) {
+        respond(['success' => false, 'msg' => 'The selected church is outside your authorized scope.'], 403);
+    }
+}
 // Handle payment date - if only date is provided, append current time
 $payment_date = $data['payment_date'] ?? date('Y-m-d H:i:s');
 if ($payment_date && strlen($payment_date) == 10) { // If date is in Y-m-d format (10 chars), append current time
@@ -64,9 +75,7 @@ if ($payment_date && strlen($payment_date) == 10) { // If date is in Y-m-d forma
 $recorded_by = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : null;
 
 // --- Restrict Class Leaders to their own class ---
-@session_start();
-$is_super_admin = (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1);
-$is_class_leader = (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 5);
+$is_class_leader = has_role('Class Leader') || has_role('Assistant Bible Class Leader');
 $linked_member_id = isset($_SESSION['member_id']) ? intval($_SESSION['member_id']) : 0;
 $class_leader_class_id = 0;
 if ($is_class_leader && $linked_member_id) {
@@ -93,21 +102,42 @@ if ($is_class_leader && $linked_member_id) {
         $filtered_ids = array_intersect($submitted_ids, $allowed_ids);
         $rejected_ids = array_diff($submitted_ids, $filtered_ids);
         $member_ids = array_values($filtered_ids);
-        // If any rejected, add error
         if (!empty($rejected_ids)) {
-            file_put_contents(__DIR__.'/bulk_payment_debug.log', "Class Leader restriction: rejected member_ids: ".json_encode($rejected_ids)."\n", FILE_APPEND);
-            // Optionally: respond with error or just skip
-            // respond(['success' => false, 'msg' => 'You can only pay for members in your class.'], 403);
+            respond(['success' => false, 'msg' => 'One or more members are outside your assigned Bible Class.'], 403);
         }
     }
 }
 
-// Debug: log incoming payload
-file_put_contents(__DIR__.'/bulk_payment_debug.log', "\n====\n".date('c')."\n".json_encode($data,JSON_PRETTY_PRINT)."\n", FILE_APPEND);
-
 if ((!$member_ids && !$sundayschool_ids) || !$amounts || !$church_id || !$payment_date) {
     respond(['success' => false, 'msg' => 'Missing required fields.'], 400);
 }
+
+// Every beneficiary must belong to the authorized church. Never trust IDs
+// supplied by the browser, even when the picker itself is scoped.
+$memberScope = $conn->prepare("SELECT id, class_id FROM members WHERE id = ? AND church_id = ? AND status = 'active' LIMIT 1");
+foreach (array_unique(array_map('intval', (array) $member_ids)) as $memberId) {
+    $memberScope->bind_param('ii', $memberId, $church_id);
+    $memberScope->execute();
+    $scopedMember = $memberScope->get_result()->fetch_assoc();
+    if (!$scopedMember || ($is_class_leader && $class_leader_class_id > 0 && (int) $scopedMember['class_id'] !== $class_leader_class_id)) {
+        $memberScope->close();
+        respond(['success' => false, 'msg' => 'One or more members are outside your authorized scope.'], 403);
+    }
+}
+$memberScope->close();
+
+$childScope = $conn->prepare('SELECT id, class_id FROM sunday_school WHERE id = ? AND church_id = ? LIMIT 1');
+foreach ((array) $sundayschool_ids as $childIdValue) {
+    $childId = is_numeric($childIdValue) ? (int) $childIdValue : (int) preg_replace('/^ss_/', '', (string) $childIdValue);
+    $childScope->bind_param('ii', $childId, $church_id);
+    $childScope->execute();
+    $scopedChild = $childScope->get_result()->fetch_assoc();
+    if (!$scopedChild || ($is_class_leader && $class_leader_class_id > 0 && (int) $scopedChild['class_id'] !== $class_leader_class_id)) {
+        $childScope->close();
+        respond(['success' => false, 'msg' => 'One or more Sunday School beneficiaries are outside your authorized scope.'], 403);
+    }
+}
+$childScope->close();
 
 class BulkPaymentProcessor {
     private $conn;
@@ -126,16 +156,16 @@ class BulkPaymentProcessor {
         foreach ($member_ids as $mid) {
             $mid = intval($mid);
             if (!isset($amounts[$mid]) || !is_array($amounts[$mid])) {
+                $this->error_count++;
                 $this->errors[] = "Missing amounts for member $mid.";
-                $this->summary[] = ["debug" => "Skipping member $mid: no amounts."];
                 continue;
             }
             foreach ($amounts[$mid] as $ptid => $amt) {
                 $ptid = intval($ptid);
                 $amount = floatval($amt);
                 if ($amount <= 0) {
+                    $this->error_count++;
                     $this->errors[] = "Zero or negative amount for member $mid, type $ptid";
-                    $this->summary[] = ["debug" => "Skipping member $mid, type $ptid: amount $amount."];
                     continue;
                 }
                 $mode = isset($modes[$mid][$ptid]) ? $modes[$mid][$ptid] : 'Cash';
@@ -150,7 +180,6 @@ class BulkPaymentProcessor {
                 }
                 
 
-                $this->summary[] = ["debug" => "Attempting insert: member_id=$mid, sundayschool_id=NULL, church_id=$church_id, payment_type_id=$ptid, amount=$amount, mode=$mode, payment_date=$payment_date, payment_period=$period, description=$desc"];
                 $stmt = $this->conn->prepare('INSERT INTO payments (member_id, sundayschool_id, church_id, payment_type_id, amount, mode, payment_date, payment_period, payment_period_description, description, recorded_by) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 $stmt->bind_param('iiidsssssi', $mid, $church_id, $ptid, $amount, $mode, $payment_date, $period, $period_description, $desc, $this->recorded_by);
                 try {
@@ -158,8 +187,6 @@ class BulkPaymentProcessor {
                         $this->success_count++;
                         $payment_id = $this->conn->insert_id;
                         $this->summary[] = ['member_id' => $mid, 'payment_type_id' => $ptid, 'amount' => $amount, 'payment_id' => $payment_id];
-                        file_put_contents(__DIR__.'/bulk_payment_debug.log', "SUCCESS: Inserted payment ID $payment_id for member $mid, type $ptid, amount $amount\n", FILE_APPEND);
-                        
                         // Send SMS immediately for all payment types (harvest and non-harvest)
                         require_once __DIR__.'/../includes/payment_sms_template.php';
                         require_once __DIR__.'/../includes/sms.php';
@@ -213,22 +240,24 @@ class BulkPaymentProcessor {
                             );
                             $sms_type = $harvest_year !== null ? 'harvest_payment' : 'payment';
                             // Send SMS
-                            $sms_result = log_sms($member_data['phone'], $sms_message, $payment_id, $sms_type);
-                            error_log('Bulk Payment SMS sent to ' . $member_data['phone'] . ': ' . json_encode($sms_result));
+                            log_sms($member_data['phone'], $sms_message, $payment_id, $sms_type);
                         }
                         // (No queueing, all SMS are sent immediately)
 
                     } else {
                         $this->error_count++;
-                        $this->errors[] = "DB error for member $mid, type $ptid: ".$stmt->error;
-                        file_put_contents(__DIR__.'/bulk_payment_debug.log', "ERROR: Failed to insert payment for member $mid, type $ptid: ".$stmt->error."\n", FILE_APPEND);
+                        $this->errors[] = "Payment could not be recorded for member $mid, type $ptid.";
+                        error_log('Bulk payment insert failed: ' . $stmt->error);
                     }
                 } catch (mysqli_sql_exception $e) {
                     if ($e->getCode() == 1062) {
+                        $this->error_count++;
                         $this->errors[] = "Duplicate payment for member $mid, type $ptid.";
                         continue;
                     } else {
-                        $this->errors[] = $e->getMessage();
+                        $this->error_count++;
+                        $this->errors[] = "Payment could not be recorded for member $mid, type $ptid.";
+                        error_log('Bulk payment insert exception: ' . $e->getMessage());
                     }
                 }
             }
@@ -238,22 +267,22 @@ class BulkPaymentProcessor {
             // Ensure $sid is always an integer (strip 'ss_' prefix if present)
             $sid = is_numeric($sid) ? intval($sid) : intval(preg_replace('/^ss_/', '', $sid));
             if (!$sid) {
+                $this->error_count++;
                 $this->errors[] = "Invalid Sunday School ID: $sid.";
-                $this->summary[] = ["debug" => "Skipping invalid sunday school id: $sid."];
                 continue;
             }
             // Only insert as Sunday School payment: member_id=NULL, sundayschool_id=$sid
             if (!isset($amounts['ss_'.$sid]) || !is_array($amounts['ss_'.$sid])) {
+                $this->error_count++;
                 $this->errors[] = "Missing amounts for sunday school $sid.";
-                $this->summary[] = ["debug" => "Skipping sunday school $sid: no amounts."];
                 continue;
             }
             foreach ($amounts['ss_'.$sid] as $ptid => $amt) {
                 $ptid = intval($ptid);
                 $amount = floatval($amt);
                 if ($amount <= 0) {
+                    $this->error_count++;
                     $this->errors[] = "Zero or negative amount for sunday school $sid, type $ptid";
-                    $this->summary[] = ["debug" => "Skipping sunday school $sid, type $ptid: amount $amount."];
                     continue;
                 }
                 $mode = isset($modes['ss_'.$sid][$ptid]) ? $modes['ss_'.$sid][$ptid] : 'Cash';
@@ -266,7 +295,6 @@ class BulkPaymentProcessor {
                 if (empty($period_description) && !empty($period)) {
                     $period_description = date('F Y', strtotime($period));
                 }
-                $this->summary[] = ["debug" => "Attempting insert: member_id=NULL, sundayschool_id=$sid, church_id=$church_id, payment_type_id=$ptid, amount=$amount, mode=$mode, payment_date=$payment_date, payment_period=$period, description=$desc"];
                 $stmt = $this->conn->prepare('INSERT INTO payments (member_id, sundayschool_id, church_id, payment_type_id, amount, mode, payment_date, payment_period, payment_period_description, description, recorded_by) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 $stmt->bind_param('iiidsssssi', $sid, $church_id, $ptid, $amount, $mode, $payment_date, $period, $period_description, $desc, $this->recorded_by);
                 try {
@@ -278,14 +306,18 @@ class BulkPaymentProcessor {
                         $this->queueSMS($payment_id, null, $sid, $amount, $ptid, $payment_date, $desc);
                     } else {
                         $this->error_count++;
-                        $this->errors[] = "DB error for sunday school $sid, type $ptid: ".$stmt->error;
+                        $this->errors[] = "Payment could not be recorded for Sunday School beneficiary $sid, type $ptid.";
+                        error_log('Bulk Sunday School payment insert failed: ' . $stmt->error);
                     }
                 } catch (mysqli_sql_exception $e) {
                     if ($e->getCode() == 1062) {
+                        $this->error_count++;
                         $this->errors[] = "Duplicate payment for sunday school $sid, type $ptid.";
                         continue;
                     } else {
-                        $this->errors[] = $e->getMessage();
+                        $this->error_count++;
+                        $this->errors[] = "Payment could not be recorded for Sunday School beneficiary $sid, type $ptid.";
+                        error_log('Bulk Sunday School payment insert exception: ' . $e->getMessage());
                     }
                 }
             }
@@ -335,32 +367,15 @@ class BulkPaymentProcessor {
         $curl_error = curl_error($ch);
         curl_close($ch);
         
-        // Log SMS queue attempt for debugging
-        $log_data = [
-            'payment_id' => $payment_id,
-            'member_id' => $member_id,
-            'sundayschool_id' => $sundayschool_id,
-            'http_code' => $http_code,
-            'curl_error' => $curl_error,
-            'timestamp' => date('Y-m-d H:i:s')
-        ];
-        file_put_contents(__DIR__.'/sms_queue_debug.log', json_encode($log_data)."\n", FILE_APPEND);
+        if ($curl_error !== '') {
+            error_log('Bulk-payment SMS queue transport failed: ' . $curl_error);
+        }
     }
 }
 
 // Strict SRN/CRN separation: If sundayschool_ids is non-empty, ignore member_ids and only process SRN
 if (!empty($sundayschool_ids)) {
     $member_ids = [];
-    // Validate all amounts keys for SRN
-    foreach ($sundayschool_ids as $sid) {
-        if (!isset($amounts['ss_'.$sid]) || !is_array($amounts['ss_'.$sid])) {
-            file_put_contents(__DIR__.'/bulk_payment_debug.log', "SRN ERROR: Missing or invalid amounts key for ss_{$sid}\n", FILE_APPEND);
-        }
-    }
-    file_put_contents(__DIR__.'/bulk_payment_debug.log', "Processing as SRN only. sundayschool_ids=".json_encode($sundayschool_ids)."\n", FILE_APPEND);
-}
-if (!empty($member_ids) && empty($sundayschool_ids)) {
-    file_put_contents(__DIR__.'/bulk_payment_debug.log', "Processing as CRN only. member_ids=".json_encode($member_ids)."\n", FILE_APPEND);
 }
 
 try {
@@ -375,7 +390,6 @@ try {
 } catch (Throwable $e) {
     respond([
         'success' => false,
-        'msg' => 'Server error: ' . $e->getMessage(),
-        'trace' => $e->getTraceAsString()
+        'msg' => 'The bulk payment could not be completed. Please try again or contact support.'
     ], 500);
 }

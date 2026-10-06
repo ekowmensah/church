@@ -31,6 +31,12 @@ $action = (string) ($_POST['action'] ?? $_GET['action'] ?? 'list');
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !csrf_is_valid($_POST['csrf_token'] ?? null)) {
     assistant_json_error(419, 'Invalid or expired session token. Refresh the page and try again.');
 }
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && !in_array($action, ['list', 'history'], true)) {
+    assistant_json_error(405, 'This assistant action requires a protected POST request.');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !in_array($action, ['ask', 'archive'], true)) {
+    assistant_json_error(400, 'Invalid assistant action.');
+}
 
 $userId = (int) $_SESSION['user_id'];
 

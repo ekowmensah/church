@@ -1,26 +1,12 @@
 <?php
 require_once __DIR__.'/../config/config.php';
 require_once __DIR__.'/../helpers/auth.php';
+require_once __DIR__.'/../helpers/permissions_v2.php';
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-// Allow Super Admin (role_id==1 or role name 'Super Admin') to always access
-$super_admin = false;
-$role_id = $_SESSION['role_id'] ?? 0;
-if ($role_id == 1) {
-    $super_admin = true;
-} else {
-    $stmt = $conn->prepare("SELECT name FROM roles WHERE id = ? LIMIT 1");
-    $stmt->bind_param('i', $role_id);
-    $stmt->execute();
-    $stmt->bind_result($role_name);
-    $stmt->fetch();
-    $stmt->close();
-    if ($role_name === 'Super Admin') {
-        $super_admin = true;
-    }
-}
+$super_admin = is_super_admin();
 if (!$super_admin && !has_permission('health_statistics')) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;

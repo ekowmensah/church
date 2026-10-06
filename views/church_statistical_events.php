@@ -9,9 +9,7 @@ if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-$roleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
-if (isset($_SESSION['role_id'])) $roleIds[] = (int) $_SESSION['role_id'];
-$isSuperAdmin = in_array(1, $roleIds, true);
+$isSuperAdmin = is_super_admin();
 if (!$isSuperAdmin && !has_permission('manage_church_statistical_events')) {
     http_response_code(403);
     include __DIR__ . '/errors/403.php';

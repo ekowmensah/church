@@ -1,25 +1,31 @@
 <?php
 require_once __DIR__.'/../config/config.php';
-?>
-<link rel="stylesheet" href="sms_bulk_custom.css">
-<?php
 require_once __DIR__.'/../includes/sms_templates.php';
 require_once __DIR__.'/../helpers/auth.php';
-if (!is_logged_in() || !(isset($_SESSION['role_id']) && ($_SESSION['role_id'] == 1 || has_permission('send_bulk_sms')))) {
+require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../helpers/church_helper.php';
+if (!is_logged_in() || (!is_super_admin() && !has_permission('send_bulk_sms'))) {
     http_response_code(403);
     die("Forbidden: You do not have permission to access this page.");
 }
-$organizations = $conn->query('SELECT id, name FROM organizations ORDER BY name');
-$churches = $conn->query('SELECT id, name FROM churches ORDER BY name');
-$classes = $conn->query('SELECT id, name FROM bible_classes ORDER BY name');
+$smsChurchId = is_super_admin() ? 0 : (int) get_user_church_id($conn);
+$scopeSql = $smsChurchId > 0 ? ' WHERE church_id = ' . $smsChurchId : '';
+$organizations = $conn->query('SELECT id, name FROM organizations' . $scopeSql . ' ORDER BY name');
+$churches = $conn->query($smsChurchId > 0
+    ? 'SELECT id, name FROM churches WHERE id = ' . $smsChurchId
+    : 'SELECT id, name FROM churches ORDER BY name');
+$classes = $conn->query('SELECT id, name FROM bible_classes' . $scopeSql . ' ORDER BY name');
 $templates = $conn->query('SELECT * FROM sms_templates ORDER BY name');
 ob_start();
 ?>
+<link rel="stylesheet" href="sms_bulk_custom.css">
 <div class="bulk-sms-container mx-auto">
   <div class="bulk-sms-title">
     <span class="bulk-sms-icon"><i class="fas fa-sms"></i></span> Bulk SMS Sender
   </div>
   <form id="bulkSmsForm" method="post" action="send_bulk_sms.php" autocomplete="off">
+    <?= csrf_input() ?>
     <div class="bulk-sms-section">
       <div class="bulk-sms-label"><i class="fas fa-users bulk-sms-icon"></i>Recipient Type</div>
       <select class="form-control bulk-sms-select" id="recipient_type" name="recipient_type" required>
@@ -98,9 +104,6 @@ ob_start();
     </div>
   </form>
 </div>
-<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="sms_bulk_select2.js"></script>
 <script>
 $(function(){

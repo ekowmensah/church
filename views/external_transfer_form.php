@@ -6,9 +6,7 @@ require_once __DIR__ . '/../helpers/csrf.php';
 require_once __DIR__ . '/../services/UnifiedAttendanceReportService.php';
 
 if (!is_logged_in()) { header('Location: ' . BASE_URL . '/login.php'); exit; }
-$roleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
-if (isset($_SESSION['role_id'])) $roleIds[] = (int) $_SESSION['role_id'];
-$isSuperAdmin = in_array(1, $roleIds, true) || is_super_admin();
+$isSuperAdmin = is_super_admin();
 if (!$isSuperAdmin && !has_permission('create_transfer')) {
     http_response_code(403); include __DIR__ . '/errors/403.php'; exit;
 }

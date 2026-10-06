@@ -607,7 +607,7 @@ ob_start();
                                                 <a class="btn btn-sm btn-outline-primary" href="asset_document_download.php?id=<?= (int) $doc['id'] ?>"><i class="fas fa-download"></i></a>
                                             <?php endif; ?>
                                             <?php if ($canDeleteDoc): ?>
-                                                <a class="btn btn-sm btn-outline-danger" href="asset_document_delete.php?id=<?= (int) $doc['id'] ?>&asset_id=<?= $assetId ?>" onclick="return confirm('Delete document?');"><i class="fas fa-trash"></i></a>
+                                                <form method="post" action="asset_document_delete.php" class="d-inline" onsubmit="return confirm('Delete document?');"><?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $doc['id'] ?>"><input type="hidden" name="asset_id" value="<?= $assetId ?>"><button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button></form>
                                             <?php endif; ?>
                                         </td>
                                     </tr>
