@@ -1356,8 +1356,8 @@ ob_start();
                             <td class="text-center no-print">
                                 <div class="btn-group btn-group-sm">
                                     <?php if ($can_edit): ?>
-                                        <a href="payment_form.php?id=<?= $row['id'] ?>" 
-                                           class="btn btn-sm btn-outline-primary" title="Edit">
+                                        <a href="payment_edit.php?id=<?= $row['id'] ?>"
+                                           class="btn btn-sm btn-outline-primary" title="Correct payment">
                                             <i class="fas fa-edit"></i>
                                         </a>
                                     <?php endif; ?>

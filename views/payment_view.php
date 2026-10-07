@@ -86,6 +86,45 @@ if (!empty($payment['reversal_requested_at'])) {
     }
 }
 
+// Load audited manual-payment corrections when Phase 0084 is installed.
+$correction_history = [];
+$correctionTable = $conn->query("SHOW TABLES LIKE 'payment_correction_audit'");
+if ($correctionTable && $correctionTable->num_rows > 0) {
+    $correctionStmt = $conn->prepare(
+        'SELECT audit.id, audit.previous_snapshot, audit.new_snapshot,
+                audit.correction_reason, audit.created_at,
+                actor.name AS changed_by_name
+           FROM payment_correction_audit audit
+      LEFT JOIN users actor ON actor.id = audit.changed_by_user_id
+          WHERE audit.payment_id = ?
+          ORDER BY audit.created_at DESC, audit.id DESC'
+    );
+    $correctionStmt->bind_param('i', $id);
+    $correctionStmt->execute();
+    foreach ($correctionStmt->get_result()->fetch_all(MYSQLI_ASSOC) as $correctionRow) {
+        $previous = json_decode((string) $correctionRow['previous_snapshot'], true) ?: [];
+        $next = json_decode((string) $correctionRow['new_snapshot'], true) ?: [];
+        $changes = [];
+        $correctionFields = [
+            'payment_type' => 'Payment type',
+            'amount' => 'Amount',
+            'payment_date' => 'Transaction date',
+            'payment_period_description' => 'Reporting period',
+            'description' => 'Description',
+        ];
+        foreach ($correctionFields as $field => $label) {
+            $before = (string) ($previous[$field] ?? '');
+            $after = (string) ($next[$field] ?? '');
+            if ($before !== $after) {
+                $changes[] = ['label' => $label, 'before' => $before, 'after' => $after];
+            }
+        }
+        $correctionRow['changes'] = $changes;
+        $correction_history[] = $correctionRow;
+    }
+    $correctionStmt->close();
+}
+
 $page_title = 'Payment Details - TXN-' . str_pad($payment['id'], 6, '0', STR_PAD_LEFT);
 ob_start();
 ?>
@@ -263,6 +302,9 @@ ob_start();
 </style>
 
 <!-- Payment Header -->
+<?php if (isset($_GET['corrected']) && $_GET['corrected'] === '1'): ?>
+    <div class="alert alert-success no-print"><i class="fas fa-check-circle mr-2"></i>Payment correction saved with immutable before-and-after audit evidence.</div>
+<?php endif; ?>
 <div class="payment-header <?= $is_reversed ? 'reversed' : ($is_pending_reversal ? 'pending' : '') ?>">
     <div class="row align-items-center">
         <div class="col-md-8">
@@ -298,9 +340,9 @@ ob_start();
     <a href="payment_list.php" class="btn btn-banking btn-secondary">
         <i class="fas fa-arrow-left mr-2"></i>Back to List
     </a>
-    <?php if (has_permission('edit_payment') && $is_active): ?>
-        <a href="payment_form.php?id=<?= $payment['id'] ?>" class="btn btn-banking btn-primary">
-            <i class="fas fa-edit mr-2"></i>Edit Payment
+    <?php if ((is_super_admin() || has_permission('edit_payment')) && $is_active): ?>
+        <a href="payment_edit.php?id=<?= $payment['id'] ?>" class="btn btn-banking btn-primary">
+            <i class="fas fa-edit mr-2"></i>Correct Payment
         </a>
     <?php endif; ?>
     <a href="payment_history.php?member_id=<?= $payment['member_id'] ?>" class="btn btn-banking btn-info">
@@ -623,6 +665,44 @@ ob_start();
                             <td><?= htmlspecialchars($rev['reason'] ?? '-') ?></td>
                             <td><?= htmlspecialchars($rev['user_name'] ?? '-') ?></td>
                         </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if (!empty($correction_history)): ?>
+<!-- Payment Correction History -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="info-card">
+            <h5 class="mb-1"><i class="fas fa-file-signature mr-2"></i>Correction History</h5>
+            <p class="small text-muted mb-3">Immutable evidence of authorized changes to this ledger entry.</p>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead>
+                        <tr><th style="min-width:145px">Date</th><th style="min-width:140px">Changed by</th><th style="min-width:220px">Reason</th><th>Before &amp; after</th></tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($correction_history as $correction): ?>
+                            <tr>
+                                <td><?= date('M j, Y g:i A', strtotime((string) $correction['created_at'])) ?></td>
+                                <td><?= htmlspecialchars((string) ($correction['changed_by_name'] ?: 'Former user')) ?></td>
+                                <td><?= nl2br(htmlspecialchars((string) $correction['correction_reason'])) ?></td>
+                                <td>
+                                    <?php foreach ($correction['changes'] as $change): ?>
+                                        <div class="mb-2" style="word-break:break-word">
+                                            <span class="badge badge-light border mr-1"><?= htmlspecialchars($change['label']) ?></span>
+                                            <span class="text-muted"><del><?= htmlspecialchars($change['before'] !== '' ? $change['before'] : '-') ?></del></span>
+                                            <i class="fas fa-long-arrow-alt-right mx-1 text-primary"></i>
+                                            <strong><?= htmlspecialchars($change['after'] !== '' ? $change['after'] : '-') ?></strong>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </td>
+                            </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
