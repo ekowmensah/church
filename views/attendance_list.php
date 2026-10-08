@@ -4,6 +4,7 @@ require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/role_based_filter.php';
 require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../helpers/rbac_identity.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
@@ -18,14 +19,19 @@ if (!$is_super_admin && !has_permission('view_attendance_list')) {
     exit;
 }
 
-$attendance_role_ids = array_map('intval', $_SESSION['role_ids'] ?? [$_SESSION['role_id'] ?? 0]);
-if (in_array(6, $attendance_role_ids, true)
-    && !array_intersect([1, 2, 4], $attendance_role_ids)) {
+$attendanceUserId = (int) ($_SESSION['user_id'] ?? 0);
+$hasBroadAttendanceRoute = rbac_identity_has_any_role($conn, $attendanceUserId, [
+    'Super Admin', 'Super Administrator', 'Admin', 'Rev. Ministers',
+]);
+if (rbac_identity_has_any_role($conn, $attendanceUserId, [
+        'Organizational Leader', 'Assistant Organizational Leader',
+    ]) && !$hasBroadAttendanceRoute) {
     header('Location: my_organization_attendance.php');
     exit;
 }
-if (in_array(5, $attendance_role_ids, true)
-    && !array_intersect([1, 2, 4], $attendance_role_ids)) {
+if (rbac_identity_has_any_role($conn, $attendanceUserId, [
+        'Class Leader', 'Assistant Bible Class Leader',
+    ]) && !$hasBroadAttendanceRoute) {
     header('Location: my_bible_class_attendance.php');
     exit;
 }

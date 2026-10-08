@@ -32,6 +32,19 @@ if ($editing && !$account) {
     http_response_code(404);
     exit('The linked member user account was not found.');
 }
+if ($editing && !$isSuperAdmin) {
+    try {
+        (new UserAccessGovernanceService($conn))->assertAuthorized(
+            'edit_user',
+            (int) ($_SESSION['user_id'] ?? 0),
+            (int) ($account['church_id'] ?? 0)
+        );
+    } catch (Throwable $exception) {
+        http_response_code(403);
+        include __DIR__ . '/errors/403.php';
+        exit;
+    }
+}
 
 $memberId = $editing ? (int) $account['member_id'] : (int) ($_POST['member_id'] ?? 0);
 $selectedMember = $memberId > 0 ? $accessService->getMemberAccessProfile($memberId) : null;

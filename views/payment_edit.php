@@ -11,7 +11,7 @@ if (!is_logged_in()) {
 }
 
 $isSuperAdmin = is_super_admin();
-if (!$isSuperAdmin && !has_permission('edit_payment')) {
+if (!$isSuperAdmin && !has_permission('correct_payment')) {
     http_response_code(403);
     include __DIR__ . '/errors/403.php';
     exit;

@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/UserAccessGovernanceService.php';
+
 final class RoleOfServingAccessService {
     private mysqli $conn;
 
@@ -32,6 +34,7 @@ final class RoleOfServingAccessService {
         $this->assertRoleExists('roles', $accessRoleId, 'system access role');
         if ($isActive) {
             $this->assertServingRoleCanGrantAccess($servingRoleId);
+            $this->assertDerivedRoleIsNotSuperAdmin($accessRoleId);
         }
         $active = $isActive ? 1 : 0;
         $this->conn->begin_transaction();
@@ -96,11 +99,7 @@ final class RoleOfServingAccessService {
             $stmt->bind_param('ii', $actorUserId, $mappingId);
             $stmt->execute();
             $stmt->close();
-            $outcome = $this->syncAll($actorUserId, 'Role-of-Serving access mapping removed.');
-            $stmt = $this->conn->prepare('DELETE FROM role_of_serving_access_mappings WHERE id = ?');
-            $stmt->bind_param('i', $mappingId);
-            $stmt->execute();
-            $stmt->close();
+            $outcome = $this->syncAll($actorUserId, 'Role-of-Serving access mapping deactivated.');
             $this->conn->commit();
             return $outcome;
         } catch (Throwable $exception) {
@@ -300,6 +299,18 @@ final class RoleOfServingAccessService {
             throw new RuntimeException('This member has no mapped Role of Serving or manually selected system role.');
         }
 
+        $governance = new UserAccessGovernanceService($this->conn);
+        $actorId = (int) ($actorUserId ?? 0);
+        $governance->assertAuthorized(
+            $userId === null ? 'create_user' : 'edit_user',
+            $actorId,
+            (int) $member['church_id']
+        );
+        $beforeSnapshot = $userId === null ? null : $governance->getAccount($userId);
+        if ($beforeSnapshot !== null) {
+            $beforeSnapshot['manual_role_ids'] = $this->getManualAccessRoleIds($userId);
+        }
+
         $this->conn->begin_transaction();
         try {
             if ($userId === null) {
@@ -345,6 +356,20 @@ final class RoleOfServingAccessService {
             $this->replaceManualRoles($userId, $memberId, $manualRoleIds, $actorUserId);
             $sync = $this->syncMemberByUserId($userId, $actorUserId, 'User account saved.');
             $this->resolvePolicyIssues($userId, $officialEmail, $member['status'], $actorUserId);
+            $afterSnapshot = $governance->getAccount($userId);
+            if ($afterSnapshot !== null) {
+                $afterSnapshot['manual_role_ids'] = $this->getManualAccessRoleIds($userId);
+            }
+            $governance->recordChange(
+                $userId,
+                $memberId,
+                (int) $member['church_id'],
+                $created ? 'created' : 'updated',
+                $beforeSnapshot,
+                $afterSnapshot,
+                $created ? 'Back-office account created.' : 'Back-office account and access updated.',
+                $actorUserId
+            );
             $this->conn->commit();
             return [
                 'user_id' => $userId, 'created' => $created, 'first_name' => $member['first_name'],
@@ -455,6 +480,7 @@ final class RoleOfServingAccessService {
     }
 
     private function replaceManualRoles(int $userId, int $memberId, array $roleIds, ?int $actorUserId): void {
+        $this->assertLastSuperAdminRetained($userId, $roleIds);
         $stmt = $this->conn->prepare(
             "SELECT DISTINCT user_role.id, user_role.role_id
                FROM user_roles user_role
@@ -509,13 +535,61 @@ final class RoleOfServingAccessService {
 
     private function deleteUnsourcedUserRole(int $userRoleId): void {
         $stmt = $this->conn->prepare(
-            'DELETE user_role FROM user_roles user_role
-              LEFT JOIN user_role_sources source ON source.user_role_id = user_role.id
-             WHERE user_role.id = ? AND source.id IS NULL'
+            'UPDATE user_roles user_role
+                SET user_role.is_active = 0
+              WHERE user_role.id = ?
+                AND NOT EXISTS (
+                    SELECT 1 FROM user_role_sources source
+                     WHERE source.user_role_id = user_role.id
+                )'
         );
         $stmt->bind_param('i', $userRoleId);
         $stmt->execute();
         $stmt->close();
+    }
+
+    private function assertDerivedRoleIsNotSuperAdmin(int $accessRoleId): void {
+        $stmt = $this->conn->prepare('SELECT name FROM roles WHERE id = ? LIMIT 1');
+        $stmt->bind_param('i', $accessRoleId);
+        $stmt->execute();
+        $name = strtolower(trim((string) ($stmt->get_result()->fetch_assoc()['name'] ?? '')));
+        $stmt->close();
+        if (in_array($name, ['super admin', 'super administrator'], true)) {
+            throw new RuntimeException('Super Administrator access cannot be derived from a Role of Serving.');
+        }
+    }
+
+    private function assertLastSuperAdminRetained(int $userId, array $newRoleIds): void {
+        $stmt = $this->conn->prepare(
+            "SELECT role.id
+               FROM user_roles assignment
+               JOIN roles role ON role.id = assignment.role_id
+              WHERE assignment.user_id = ? AND assignment.is_active = 1
+                AND role.is_active = 1
+                AND LOWER(TRIM(role.name)) IN ('super admin','super administrator')
+                AND (assignment.expires_at IS NULL OR assignment.expires_at > NOW())
+              LIMIT 1"
+        );
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $superRoleId = (int) ($stmt->get_result()->fetch_assoc()['id'] ?? 0);
+        $stmt->close();
+        if ($superRoleId < 1 || in_array($superRoleId, array_map('intval', $newRoleIds), true)) return;
+
+        $result = $this->conn->query(
+            "SELECT COUNT(DISTINCT assignment.user_id) AS total
+               FROM user_roles assignment
+               JOIN roles role ON role.id = assignment.role_id
+               JOIN users account ON account.id = assignment.user_id
+              WHERE assignment.is_active = 1 AND role.is_active = 1
+                AND account.status = 'active'
+                AND LOWER(TRIM(role.name)) IN ('super admin','super administrator')
+                AND (assignment.expires_at IS NULL OR assignment.expires_at > NOW())"
+        );
+        $activeSuperAdmins = (int) ($result->fetch_assoc()['total'] ?? 0);
+        if ($activeSuperAdmins <= 1) {
+            throw new RuntimeException('The final active Super Administrator assignment cannot be removed.');
+        }
     }
 
     private function resolvePolicyIssues(int $userId, string $email, string $memberStatus, ?int $actorUserId): void {

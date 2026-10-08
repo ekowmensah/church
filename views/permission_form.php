@@ -66,7 +66,11 @@ document.getElementById('permissionForm').addEventListener('submit', function(e)
     }
     fetch(url, {
         method: method,
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': <?= json_encode(csrf_token()) ?>
+        },
         body: JSON.stringify(data)
     })
     .then(async res => {

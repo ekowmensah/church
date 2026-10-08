@@ -1,388 +1,100 @@
 <?php
-/**
- * Role Management Form - Create/Edit Roles with Permissions
- * Modern, responsive role management interface
- */
-
 session_start();
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/auth.php';
 require_once __DIR__ . '/../helpers/permissions_v2.php';
+require_once __DIR__ . '/../helpers/csrf.php';
 
-// Authentication check
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-
-// Permission check
-if (!has_permission('manage_roles')) {
+if (!is_super_admin() && !has_permission('manage_roles')) {
     http_response_code(403);
-    echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
+    require __DIR__ . '/errors/403.php';
     exit;
 }
 
-// Super admin check
-$is_super_admin = is_super_admin();
-
-// Initialize variables
-$role_id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: 0;
-$editing = $role_id > 0;
-$page_title = $editing ? 'Edit Role' : 'Create New Role';
-
-// Data containers
-$role = ['id' => 0, 'name' => '', 'description' => ''];
+$roleId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: 0;
+$editing = $roleId > 0;
+$requiredOperation = $editing ? 'edit_role' : 'create_role';
+if (!is_super_admin() && !has_permission($requiredOperation)) {
+    http_response_code(403);
+    require __DIR__ . '/errors/403.php';
+    exit;
+}
+$role = ['id' => 0, 'name' => '', 'description' => '', 'parent_id' => null, 'is_active' => 1, 'is_system' => 0];
 $errors = [];
 
-// Load role data if editing
-if ($editing && empty($errors)) {
-    try {
-        $stmt = $conn->prepare('SELECT * FROM roles WHERE id = ?');
-        $stmt->bind_param('i', $role_id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        if ($role_data = $result->fetch_assoc()) {
-            if (!$is_super_admin && strtolower($role_data['name']) === 'super admin') {
-                $errors[] = 'Super Admin role cannot be modified.';
-            } else {
-                $role = $role_data;
-            }
-        } else {
-            $errors[] = 'Role not found.';
-        }
-    } catch (Exception $e) {
-        $errors[] = 'Failed to load role data.';
-        error_log('Load Role Error: ' . $e->getMessage());
+if ($editing) {
+    $stmt = $conn->prepare('SELECT id, name, description, parent_id, is_active, is_system FROM roles WHERE id = ? LIMIT 1');
+    $stmt->bind_param('i', $roleId);
+    $stmt->execute();
+    $loadedRole = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$loadedRole) {
+        $errors[] = 'Role not found.';
+    } elseif ((int) $loadedRole['is_system'] === 1) {
+        $errors[] = 'Protected system roles are migration-managed. Their direct permissions may be reviewed from Access Roles by a Super Administrator.';
+    } else {
+        $role = $loadedRole;
     }
 }
 
-// Start output buffering
+$parentRoles = [];
+$parentResult = $conn->query("SELECT id, name FROM roles WHERE is_active = 1 AND is_system = 0 ORDER BY name");
+while ($parent = $parentResult->fetch_assoc()) {
+    if ((int) $parent['id'] !== $roleId) {
+        $parentRoles[] = $parent;
+    }
+}
+$basePath = rtrim((string) (parse_url(BASE_URL, PHP_URL_PATH) ?: ''), '/');
+
 ob_start();
 ?>
-
-<div class="role-form-wrapper">
-    <div class="container-fluid">
-        <div class="row justify-content-center">
-            <div class="col-12 col-lg-10 col-xl-8">
-                
-                <!-- Page Header -->
-                <div class="page-header mb-4">
-                    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center">
-                        <div class="header-content mb-3 mb-md-0">
-                            <h1 class="h2 mb-1 text-white">
-                                <i class="fas fa-user-tag mr-2"></i>
-                                <?= htmlspecialchars($page_title) ?>
-                            </h1>
-                            <p class="text-white-50 mb-0">
-                                <?= $editing ? 'Modify role settings' : 'Create a new role' ?>
-                            </p>
-                        </div>
-                        <div class="header-actions">
-                            <a href="role_list.php" class="btn btn-outline-light">
-                                <i class="fas fa-arrow-left mr-1"></i>
-                                Back to Roles
-                            </a>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Alert Container -->
-                <div id="alertContainer"></div>
-
-                <!-- Error Display -->
-                <?php if (!empty($errors)): ?>
-                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                        <i class="fas fa-exclamation-triangle mr-2"></i>
-                        <strong>Error:</strong>
-                        <ul class="mb-0 mt-2">
-                            <?php foreach ($errors as $error): ?>
-                                <li><?= htmlspecialchars($error) ?></li>
-                            <?php endforeach; ?>
-                        </ul>
-                        <button type="button" class="close" data-dismiss="alert">
-                            <span>&times;</span>
-                        </button>
-                    </div>
-                <?php endif; ?>
-
-                <!-- Main Form -->
-                <div class="card shadow-sm border-0">
-                    <div class="card-header bg-white border-bottom">
-                        <h5 class="card-title mb-0">
-                            <i class="fas fa-cog text-secondary mr-2"></i>
-                            Role Configuration
-                        </h5>
-                    </div>
-                    
-                    <div class="card-body p-4">
-                        <form id="roleForm" novalidate action="#" method="post">
-                            <!-- Role Name -->
-                            <div class="form-group mb-4">
-                                <label for="roleName" class="form-label font-weight-medium">
-                                    Role Name <span class="text-danger">*</span>
-                                </label>
-                                <input type="text" id="roleName" name="name" class="form-control form-control-lg" maxlength="50" required value="<?= htmlspecialchars($role['name']) ?>">
-                                <div class="invalid-feedback"></div>
-                                <small class="form-text text-muted">Choose a descriptive name that clearly identifies the role's purpose.</small>
-                            </div>
-
-                            <!-- Role Description -->
-                            <div class="form-group mb-4">
-                                <label for="roleDescription" class="form-label font-weight-medium">
-                                    Description <span class="text-muted">(Optional)</span>
-                                </label>
-                                <textarea id="roleDescription" name="description" class="form-control form-control-lg" maxlength="255" rows="2"><?= htmlspecialchars($role['description']) ?></textarea>
-                                <div class="invalid-feedback"></div>
-                                <small class="form-text text-muted">Provide additional context about this role's responsibilities.</small>
-                            </div>
-
-                            <div class="form-actions d-flex justify-content-end mt-4">
-                                <button type="button" class="btn btn-primary btn-lg" id="saveRoleBtn">
-                                    <i class="fas fa-save mr-2"></i>Save Role
-                                </button>
-                                <a href="role_list.php" class="btn btn-secondary btn-lg ml-2">Cancel</a>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+<style>
+.role-editor{max-width:900px;margin:0 auto}.role-editor-hero{border:0;border-radius:1rem;background:linear-gradient(135deg,#173f5f,#236b45);color:#fff}.role-editor-card{border:0;border-radius:1rem;box-shadow:0 .35rem 1.4rem rgba(23,63,95,.08)}.governance-note{border-left:4px solid #236b45;background:#f0f8f4;border-radius:.6rem;padding:1rem;color:#355747}
+</style>
+<div class="role-editor">
+    <section class="card role-editor-hero shadow-sm mb-4"><div class="card-body p-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center"><div><div class="small text-uppercase font-weight-bold mb-2" style="letter-spacing:.12em">Access governance</div><h1 class="h3 font-weight-bold mb-1"><?= $editing ? 'Edit custom role' : 'Create custom role' ?></h1><p class="mb-0 text-white-50">Define responsibility and inheritance here; assign direct permissions from the Access Roles workspace.</p></div><a href="role_list.php" class="btn btn-outline-light mt-3 mt-md-0"><i class="fas fa-arrow-left mr-2"></i>Access Roles</a></div></section>
+    <div id="roleFormAlert" aria-live="polite"></div>
+    <?php if ($errors): ?><div class="alert alert-danger"><strong>Unable to edit this role.</strong><ul class="mb-0 mt-2"><?php foreach ($errors as $error): ?><li><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></li><?php endforeach; ?></ul></div><?php endif; ?>
+    <?php if (!$errors): ?>
+    <section class="card role-editor-card mb-4"><div class="card-body p-4">
+        <form id="roleForm" novalidate>
+            <div class="form-group"><label for="roleName">Role name <span class="text-danger">*</span></label><input id="roleName" class="form-control form-control-lg" maxlength="100" required value="<?= htmlspecialchars($role['name'], ENT_QUOTES, 'UTF-8') ?>"><small class="form-text text-muted">Use a stable responsibility name such as Finance Reviewer or Bible Class Coordinator.</small></div>
+            <div class="form-group"><label for="roleDescription">Business purpose <span class="text-danger">*</span></label><textarea id="roleDescription" class="form-control" rows="3" maxlength="500" required><?= htmlspecialchars((string) $role['description'], ENT_QUOTES, 'UTF-8') ?></textarea><small class="form-text text-muted">Describe who should receive this role and what responsibility it represents.</small></div>
+            <div class="row"><div class="col-md-7 form-group"><label for="roleParent">Parent role</label><select id="roleParent" class="form-control"><option value="">No inherited role</option><?php foreach ($parentRoles as $parent): ?><option value="<?= (int) $parent['id'] ?>" <?= (int) ($role['parent_id'] ?? 0) === (int) $parent['id'] ? 'selected' : '' ?>><?= htmlspecialchars($parent['name'], ENT_QUOTES, 'UTF-8') ?></option><?php endforeach; ?></select><small class="form-text text-muted">The child receives the parent’s effective permissions without duplicating direct grants.</small></div><div class="col-md-5 form-group"><label class="d-block">Lifecycle</label><div class="custom-control custom-switch mt-2"><input id="roleActive" type="checkbox" class="custom-control-input" <?= (int) $role['is_active'] === 1 ? 'checked' : '' ?>><label class="custom-control-label" for="roleActive">Role is active</label></div></div></div>
+            <div class="governance-note mb-4"><i class="fas fa-shield-alt mr-2"></i>System roles cannot be created or edited in the browser. Changes here are audited and role hierarchy cycles are rejected server-side.</div>
+            <div class="d-flex justify-content-end"><a href="role_list.php" class="btn btn-outline-secondary mr-2">Cancel</a><button id="saveRole" class="btn btn-primary" type="submit"><i class="fas fa-save mr-2"></i>Save role</button></div>
+        </form>
+    </div></section>
+    <?php endif; ?>
 </div>
-
+<?php if (!$errors): ?>
 <script>
-const EDITING = <?= json_encode($editing) ?>;
-const ROLE_ID = <?= json_encode($role_id) ?>;
-const BASE_URL = <?= json_encode(rtrim(BASE_URL, '/')) ?>;
-const API_BASE = BASE_URL + '/api/rbac';
-
-document.addEventListener("DOMContentLoaded", function() {
-    const form = document.getElementById("roleForm");
-    const saveBtn = document.getElementById("saveRoleBtn");
-    const roleNameInput = document.getElementById("roleName");
-    const roleDescriptionInput = document.getElementById("roleDescription");
-    let lastDuplicateCheck = { value: roleNameInput.value.trim(), exists: false };
-    let checkingDuplicate = false;
-    let submitting = false;
-
-    function showAlert(message, type) {
-        const alertContainer = document.getElementById("alertContainer");
-        const alertId = "alert_" + Date.now();
-        const alertHTML = `
-            <div id="${alertId}" class="alert alert-${type} alert-dismissible fade show" role="alert">
-                <i class="fas fa-${type === "success" ? "check-circle" : "exclamation-triangle"} mr-2"></i>
-                ${message}
-                <button type="button" class="close" data-dismiss="alert">
-                    <span>&times;</span>
-                </button>
-            </div>
-        `;
-        alertContainer.innerHTML = alertHTML;
-        setTimeout(() => {
-            const alert = document.getElementById(alertId);
-            if (alert) alert.remove();
-        }, 5000);
+(() => {
+    'use strict';
+    const editing = <?= json_encode($editing) ?>;
+    const roleId = <?= json_encode($roleId) ?>;
+    const apiUrl = <?= json_encode($basePath . '/api/rbac/roles.php') ?>;
+    const listUrl = <?= json_encode($basePath . '/views/role_list.php') ?>;
+    const csrfToken = <?= json_encode(csrf_token()) ?>;
+    const byId = id => document.getElementById(id);
+    function showAlert(message, type = 'danger') { const alert = document.createElement('div'); alert.className = `alert alert-${type}`; alert.setAttribute('role', 'alert'); alert.textContent = message; byId('roleFormAlert').replaceChildren(alert); }
+    async function submitRole(event) {
+        event.preventDefault(); const form = byId('roleForm'); if (!form.reportValidity()) return;
+        const data = { name: byId('roleName').value.trim(), description: byId('roleDescription').value.trim(), parent_id: byId('roleParent').value ? Number(byId('roleParent').value) : null, is_active: byId('roleActive').checked, csrf_token: csrfToken };
+        const button = byId('saveRole'); button.disabled = true;
+        try { const response = await fetch(editing ? `${apiUrl}?id=${encodeURIComponent(roleId)}` : apiUrl, { method: editing ? 'PUT' : 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }, body: JSON.stringify(data) }); const raw = await response.text(); let payload; try { payload = JSON.parse(raw); } catch (_) { throw new Error(response.ok ? 'The server returned an invalid response.' : `Request failed (${response.status}).`); } if (!response.ok || payload.success === false) throw new Error(payload.message || payload.error || 'Role could not be saved.'); showAlert('Role saved successfully.', 'success'); window.setTimeout(() => { window.location.href = listUrl; }, 700); }
+        catch (error) { showAlert(error.message); }
+        finally { button.disabled = false; }
     }
-
-    // Real-time duplicate check
-    roleNameInput.addEventListener("input", function() {
-        const name = roleNameInput.value.trim();
-        if (!name) {
-            setInvalid("Role name is required.");
-            lastDuplicateCheck = { value: name, exists: false };
-            return;
-        }
-        checkingDuplicate = true;
-        fetch("ajax_validate_role.php", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            credentials: "same-origin",
-            body: `name=${encodeURIComponent(name)}&id=${encodeURIComponent(ROLE_ID)}`
-        })
-        .then(res => res.json())
-        .then(data => {
-            lastDuplicateCheck = { value: name, exists: data.exists };
-            if (data.exists) setInvalid("Role name already exists.");
-            else setValid();
-        })
-        .finally(() => { checkingDuplicate = false; });
-    });
-
-    saveBtn.addEventListener("click", function() {
-        if (submitting) return;
-        const name = roleNameInput.value.trim();
-        const desc = roleDescriptionInput.value.trim();
-        // Validate name
-        if (!name) {
-            setInvalid("Role name is required.");
-            roleNameInput.focus();
-            return;
-        }
-        if (name.length > 50) {
-            setInvalid("Role name must be 50 characters or less.");
-            roleNameInput.focus();
-            return;
-        }
-        // If duplicate check not run or value changed, force check
-        if (lastDuplicateCheck.value !== name) {
-            checkingDuplicate = true;
-            fetch("ajax_validate_role.php", {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                credentials: "same-origin",
-                body: `name=${encodeURIComponent(name)}&id=${encodeURIComponent(ROLE_ID)}`
-            })
-            .then(res => res.json())
-            .then(data => {
-                lastDuplicateCheck = { value: name, exists: data.exists };
-                if (data.exists) {
-                    setInvalid("Role name already exists.");
-                    roleNameInput.focus();
-                    return;
-                } else {
-                    setValid();
-                    doSubmit(name, desc);
-                }
-            })
-            .finally(() => { checkingDuplicate = false; });
-            return;
-        }
-        if (lastDuplicateCheck.exists) {
-            setInvalid("Role name already exists.");
-            roleNameInput.focus();
-            return;
-        }
-        doSubmit(name, desc);
-    });
-
-    function doSubmit(name, desc) {
-        submitting = true;
-        saveBtn.disabled = true;
-        const originalText = saveBtn.innerHTML;
-        saveBtn.innerHTML = `<i class=\"fas fa-spinner fa-spin mr-1\"></i>Saving...`;
-        const formData = {
-            name: name,
-            description: desc
-        };
-        
-        const url = EDITING ? `${API_BASE}/roles.php?id=${ROLE_ID}` : `${API_BASE}/roles.php`;
-        const method = EDITING ? "PUT" : "POST";
-        
-        fetch(url, {
-            method: method,
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(formData)
-        })
-        .then(response => {
-            console.log("Response status:", response.status);
-            console.log("Response headers:", response.headers);
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            console.log("Response data:", data);
-            if (data.success) {
-                showAlert("Role saved successfully!", "success");
-                setTimeout(() => window.location.href = "role_list.php", 1500);
-            } else {
-                const errorMsg = data.error || "Failed to save role.";
-                console.error("API Error:", errorMsg);
-                if (data.debug) {
-                    console.log("Debug info:", data.debug);
-                }
-                showAlert(errorMsg, "danger");
-            }
-        })
-        .catch(error => {
-            console.error("Fetch Error:", error);
-            showAlert(`Network error: ${error.message}`, "danger");
-        })
-        .finally(() => {
-            saveBtn.disabled = false;
-            saveBtn.innerHTML = originalText;
-            submitting = false;
-        });
-    }
-
-    function setInvalid(msg) {
-        roleNameInput.classList.add("is-invalid");
-        roleNameInput.classList.remove("is-valid");
-        roleNameInput.nextElementSibling.textContent = msg;
-    }
-    function setValid() {
-        roleNameInput.classList.remove("is-invalid");
-        roleNameInput.classList.add("is-valid");
-        roleNameInput.nextElementSibling.textContent = "";
-    }
-
-    // Prevent form submit fallback
-    form.addEventListener("submit", function(e) { e.preventDefault(); });
-});
+    byId('roleForm').addEventListener('submit', submitRole);
+})();
 </script>
-
+<?php endif; ?>
 <?php
 $page_content = ob_get_clean();
-
-// Additional CSS for modern styling and layout fixes
-$additional_css = '
-<style>
-.role-form-wrapper {
-    margin-left: 0;
-    padding: 1rem;
-    min-height: 100vh;
-    background-color: #f8f9fa;
-}
-
-.page-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 2rem;
-    border-radius: 0.5rem;
-    margin-bottom: 2rem;
-}
-
-.card {
-    border: none;
-    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
-    border-radius: 0.5rem;
-}
-
-.form-control-lg {
-    padding: 0.75rem 1rem;
-    font-size: 1.1rem;
-}
-
-.form-actions {
-    background-color: #f8f9fa;
-    margin: 0 -1.5rem -1.5rem;
-    padding: 1.5rem;
-    border-radius: 0 0 0.5rem 0.5rem;
-}
-
-@media (max-width: 768px) {
-    .role-form-wrapper {
-        padding: 0.5rem;
-    }
-    
-    .page-header {
-        padding: 1.5rem;
-        text-align: center;
-    }
-}
-</style>
-';
-
-// Additional JavaScript for enhanced functionality
-$additional_js = '
-<script>
-</script>
-';
-
-// Include layout with proper variables
-require __DIR__ . '/../includes/layout.php';
+require_once __DIR__ . '/../includes/layout.php';
 ?>

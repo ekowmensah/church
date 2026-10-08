@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/report_pagination.php';
+require_once __DIR__ . '/../includes/asset_workspace_nav.php';
 
 asset_require_permission('view_asset_audit');
 
@@ -19,6 +21,7 @@ if ($isSuper) {
 }
 
 $rows = [];
+$pageData = ['total_rows' => 0, 'page' => 1, 'per_page' => 25];
 $departmentNames = [];
 if ($tableExists) {
     $deptRes = $conn->query('SELECT id, name FROM asset_departments');
@@ -53,17 +56,9 @@ if ($tableExists) {
         $params[] = $action;
     }
 
-    $sql .= ' ORDER BY aal.performed_at DESC';
-    $stmt = $conn->prepare($sql);
-    if ($types !== '') {
-        $stmt->bind_param($types, ...$params);
-    }
-    $stmt->execute();
-    $res = $stmt->get_result();
-    while ($row = $res->fetch_assoc()) {
-        $rows[] = $row;
-    }
-    $stmt->close();
+    $pageData = report_paginate_query($conn, $sql . ' ORDER BY aal.performed_at DESC', $types, $params, 25);
+    $rows = $pageData['result']->fetch_all(MYSQLI_ASSOC);
+    $pageData['statement']->close();
 }
 
 $normalizeAuditPayload = static function (?string $json, array $departmentNames): array {
@@ -121,19 +116,15 @@ $renderAuditPayload = static function (?string $json, array $departmentNames) us
 
 ob_start();
 ?>
-<div class="container-fluid mt-4">
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
-        <div>
-            <h2 class="mb-1"><i class="fas fa-user-shield mr-2"></i>Asset Audit Log</h2>
-            <small class="text-muted">Immutable activity history for asset operations.</small>
-        </div>
-        <a href="asset_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>" class="btn btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i> Back to Assets</a>
-    </div>
+<link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
+<div class="container-fluid mt-4 asset-workspace">
+    <?php render_asset_workspace_hero('Control evidence', 'Asset Audit Log', 'Immutable before-and-after evidence for register, movement, approval, custody and maintenance activity.', 'fa-user-shield'); ?>
+    <?php render_asset_workspace_nav('audit', $churchId); ?>
 
     <?php if (!$tableExists): ?>
         <div class="alert alert-warning">Asset audit table not found. Run the enterprise assets patch to enable audit logging.</div>
     <?php else: ?>
-        <div class="card shadow-sm mb-3">
+        <div class="card asset-panel mb-3">
             <div class="card-body">
                 <form method="get" class="form-row align-items-end">
                     <?php if ($isSuper): ?>
@@ -162,7 +153,7 @@ ob_start();
             </div>
         </div>
 
-        <div class="card shadow-sm">
+        <div class="card asset-panel">
             <div class="card-body table-responsive">
                 <table class="table table-bordered table-hover" id="assetAuditTable">
                     <thead class="thead-light">
@@ -187,21 +178,15 @@ ob_start();
                             </tr>
                         <?php endforeach; ?>
                         <?php if (empty($rows)): ?>
-                            <tr><td colspan="6" class="text-center">No audit records found.</td></tr>
+                            <tr><td colspan="6" class="asset-empty-state"><i class="fas fa-shield-alt"></i>No audit records match these filters.</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
+                <?php report_render_server_pagination($pageData['total_rows'], $pageData['page'], $pageData['per_page'], 'Asset audit pages'); ?>
             </div>
         </div>
     <?php endif; ?>
 </div>
-<script>
-$(function(){
-  if ($.fn.DataTable) {
-    $('#assetAuditTable').DataTable({pageLength: 25, order:[[0,'desc']]});
-  }
-});
-</script>
 <?php
 $page_content = ob_get_clean();
 include __DIR__ . '/../includes/layout.php';

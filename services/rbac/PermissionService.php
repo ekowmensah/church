@@ -34,10 +34,15 @@ class PermissionService {
                 p.*,
                 pc.name as category_name,
                 pc.slug as category_slug,
-                parent.name as parent_permission_name
+                parent.name as parent_permission_name,
+                context_policy.context_type,
+                context_policy.context_key
             FROM permissions p
             LEFT JOIN permission_categories pc ON p.category_id = pc.id
             LEFT JOIN permissions parent ON p.parent_id = parent.id
+            LEFT JOIN permission_context_policies context_policy
+              ON context_policy.permission_id = p.id
+             AND context_policy.is_active = 1
             WHERE 1=1
         ";
         
@@ -99,10 +104,15 @@ class PermissionService {
                 p.*,
                 pc.name as category_name,
                 pc.slug as category_slug,
-                parent.name as parent_permission_name
+                parent.name as parent_permission_name,
+                context_policy.context_type,
+                context_policy.context_key
             FROM permissions p
             LEFT JOIN permission_categories pc ON p.category_id = pc.id
             LEFT JOIN permissions parent ON p.parent_id = parent.id
+            LEFT JOIN permission_context_policies context_policy
+              ON context_policy.permission_id = p.id
+             AND context_policy.is_active = 1
             WHERE p.id = ?
         ");
         $stmt->bind_param('i', $permissionId);
@@ -208,14 +218,28 @@ class PermissionService {
      * @return int|false Permission ID or false on failure
      */
     public function createPermission($data, $createdBy = null) {
+        $data['name'] = trim((string) ($data['name'] ?? ''));
         // Validate required fields
         if (empty($data['name'])) {
             throw new Exception('Permission name is required');
+        }
+        if (!preg_match('/^[a-z][a-z0-9_.-]{2,119}$/', $data['name'])) {
+            throw new Exception('Permission names must use lowercase letters, numbers, dots, dashes or underscores');
         }
         
         // Check for duplicate name
         if ($this->permissionExists($data['name'])) {
             throw new Exception('Permission with this name already exists');
+        }
+        $permissionCode = trim((string) ($data['permission_code'] ?? $data['name']));
+        if (!preg_match('/^[a-z][a-z0-9_.-]{2,119}$/', $permissionCode)) {
+            throw new Exception('Permission codes must use lowercase letters, numbers, dots, dashes or underscores');
+        }
+        if ($this->permissionCodeExists($permissionCode)) {
+            throw new Exception('Permission code already exists');
+        }
+        if (!empty($data['parent_id']) && !$this->getPermissionById((int) $data['parent_id'])) {
+            throw new Exception('The selected parent permission is unavailable');
         }
         
         $this->conn->begin_transaction();
@@ -223,39 +247,49 @@ class PermissionService {
         try {
             $stmt = $this->conn->prepare("
                 INSERT INTO permissions (
-                    name, 
+                    name,
+                    permission_code,
                     description, 
                     category_id, 
                     parent_id,
                     permission_type,
                     is_system,
                     requires_context,
+                    risk_level,
                     sort_order,
                     is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             
             $permissionType = $data['permission_type'] ?? 'action';
             $isSystem = isset($data['is_system']) ? (int)$data['is_system'] : 0;
             $requiresContext = isset($data['requires_context']) ? (int)$data['requires_context'] : 0;
+            $riskLevel = $data['risk_level'] ?? 'standard';
+            if (!in_array($riskLevel, ['standard','sensitive','financial','privileged','system_critical'], true)) {
+                throw new Exception('Choose a valid permission risk level');
+            }
             $sortOrder = $data['sort_order'] ?? 0;
             $isActive = isset($data['is_active']) ? (int)$data['is_active'] : 1;
             
             $stmt->bind_param(
-                'ssiisisii',
+                'sssiisiisii',
                 $data['name'],
+                $permissionCode,
                 $data['description'],
                 $data['category_id'],
                 $data['parent_id'],
                 $permissionType,
                 $isSystem,
                 $requiresContext,
+                $riskLevel,
                 $sortOrder,
                 $isActive
             );
             
             $stmt->execute();
             $permissionId = $this->conn->insert_id;
+
+            $this->syncContextPolicy($permissionId, $requiresContext === 1, $data);
             
             // Log audit
             if ($this->auditLogger && $createdBy) {
@@ -296,6 +330,17 @@ class PermissionService {
         if (!$permission) {
             throw new Exception('Permission not found');
         }
+
+        if (isset($data['name'])) {
+            $data['name'] = trim((string) $data['name']);
+            if (!preg_match('/^[a-z][a-z0-9_.-]{2,119}$/', $data['name'])) {
+                throw new Exception('Permission names must use lowercase letters, numbers, dots, dashes or underscores');
+            }
+        }
+        if (isset($data['risk_level'])
+            && !in_array($data['risk_level'], ['standard','sensitive','financial','privileged','system_critical'], true)) {
+            throw new Exception('Choose a valid permission risk level');
+        }
         
         // Prevent updating system permissions
         if ($permission['is_system'] && !isset($data['allow_system_update'])) {
@@ -306,6 +351,14 @@ class PermissionService {
         if (isset($data['name']) && $data['name'] !== $permission['name']) {
             if ($this->permissionExists($data['name'], $permissionId)) {
                 throw new Exception('Permission with this name already exists');
+            }
+        }
+
+        if (array_key_exists('parent_id', $data)) {
+            $parentId = (int) ($data['parent_id'] ?? 0);
+            if ($parentId === (int) $permissionId
+                || ($parentId > 0 && $this->wouldCreatePermissionCycle((int) $permissionId, $parentId))) {
+                throw new Exception('A permission cannot inherit from itself or one of its descendants');
             }
         }
         
@@ -323,12 +376,16 @@ class PermissionService {
                 'parent_id' => 'i',
                 'permission_type' => 's',
                 'requires_context' => 'i',
+                'risk_level' => 's',
                 'sort_order' => 'i',
                 'is_active' => 'i'
             ];
             
             foreach ($allowedFields as $field => $type) {
-                if (isset($data[$field])) {
+                if (array_key_exists($field, $data)) {
+                    if ($field === 'parent_id' && ((int) $data[$field]) < 1) {
+                        $data[$field] = null;
+                    }
                     $updates[] = "$field = ?";
                     $params[] = $data[$field];
                     $types .= $type;
@@ -346,6 +403,15 @@ class PermissionService {
             $stmt = $this->conn->prepare($sql);
             $stmt->bind_param($types, ...$params);
             $stmt->execute();
+
+            if (array_key_exists('requires_context', $data)
+                || array_key_exists('context_type', $data)
+                || array_key_exists('context_key', $data)) {
+                $requiresContext = array_key_exists('requires_context', $data)
+                    ? (int) $data['requires_context'] === 1
+                    : (int) $permission['requires_context'] === 1;
+                $this->syncContextPolicy((int) $permissionId, $requiresContext, $data);
+            }
             
             // Log audit
             if ($this->auditLogger && $updatedBy) {
@@ -390,21 +456,16 @@ class PermissionService {
         if ($permission['is_system']) {
             throw new Exception('Cannot delete system permission');
         }
+        if ($hardDelete) {
+            throw new Exception('Permissions are immutable catalog records; deactivate this permission instead');
+        }
         
         $this->conn->begin_transaction();
         
         try {
-            if ($hardDelete) {
-                // Hard delete - remove from database
-                $stmt = $this->conn->prepare("DELETE FROM permissions WHERE id = ?");
-                $stmt->bind_param('i', $permissionId);
-                $stmt->execute();
-            } else {
-                // Soft delete - mark as inactive
-                $stmt = $this->conn->prepare("UPDATE permissions SET is_active = 0 WHERE id = ?");
-                $stmt->bind_param('i', $permissionId);
-                $stmt->execute();
-            }
+            $stmt = $this->conn->prepare("UPDATE permissions SET is_active = 0 WHERE id = ?");
+            $stmt->bind_param('i', $permissionId);
+            $stmt->execute();
             
             // Log audit
             if ($this->auditLogger && $deletedBy) {
@@ -418,7 +479,7 @@ class PermissionService {
                     json_encode($permission),
                     null,
                     'success',
-                    $hardDelete ? 'Permission deleted (hard)' : 'Permission deleted (soft)'
+                    'Permission deactivated'
                 );
             }
             
@@ -456,6 +517,74 @@ class PermissionService {
         $row = $result->fetch_assoc();
         
         return $row['count'] > 0;
+    }
+
+    private function permissionCodeExists($code, $excludeId = null) {
+        $sql = 'SELECT COUNT(*) AS total FROM permissions WHERE permission_code = ?';
+        $params = [trim((string) $code)];
+        $types = 's';
+        if ($excludeId) {
+            $sql .= ' AND id <> ?';
+            $params[] = (int) $excludeId;
+            $types .= 'i';
+        }
+        $stmt = $this->conn->prepare($sql);
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $exists = (int) $stmt->get_result()->fetch_assoc()['total'] > 0;
+        $stmt->close();
+        return $exists;
+    }
+
+    private function wouldCreatePermissionCycle($permissionId, $candidateParentId) {
+        $current = (int) $candidateParentId;
+        $visited = [];
+        while ($current > 0 && !isset($visited[$current])) {
+            if ($current === (int) $permissionId) return true;
+            $visited[$current] = true;
+            $stmt = $this->conn->prepare('SELECT parent_id FROM permissions WHERE id = ? LIMIT 1');
+            $stmt->bind_param('i', $current);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            $current = (int) ($row['parent_id'] ?? 0);
+        }
+        return false;
+    }
+
+    private function syncContextPolicy($permissionId, $requiresContext, array $data) {
+        $permissionId = (int) $permissionId;
+        $this->conn->query(
+            'UPDATE permission_context_policies SET is_active = 0
+             WHERE permission_id = ' . $permissionId
+        );
+        if (!$requiresContext) return;
+
+        $contextType = trim((string) ($data['context_type'] ?? 'church'));
+        $validTypes = ['church', 'bible_class', 'organization', 'organization_unit'];
+        if (!in_array($contextType, $validTypes, true)) {
+            throw new Exception('Choose a valid permission context type');
+        }
+        $defaultKeys = [
+            'church' => 'church_id',
+            'bible_class' => 'class_id',
+            'organization' => 'organization_id',
+            'organization_unit' => 'organization_unit_id',
+        ];
+        $contextKey = trim((string) ($data['context_key'] ?? $defaultKeys[$contextType]));
+        if (!preg_match('/^[a-z][a-z0-9_]{1,59}$/', $contextKey)) {
+            throw new Exception('Choose a valid permission context key');
+        }
+
+        $stmt = $this->conn->prepare(
+            'INSERT INTO permission_context_policies
+                (permission_id, context_type, context_key, is_active)
+             VALUES (?, ?, ?, 1)
+             ON DUPLICATE KEY UPDATE is_active = 1, updated_at = CURRENT_TIMESTAMP'
+        );
+        $stmt->bind_param('iss', $permissionId, $contextType, $contextKey);
+        $stmt->execute();
+        $stmt->close();
     }
     
     /**

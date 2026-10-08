@@ -13,7 +13,7 @@ function report_scope_is_super_admin(): bool
         return is_super_admin();
     }
 
-    return !empty($_SESSION['is_super_admin']);
+    return false;
 }
 
 function report_scope_current_church_id(mysqli $conn): int

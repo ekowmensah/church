@@ -1,10 +1,12 @@
 <?php
 
+require_once __DIR__ . '/rbac/CanonicalPermissionChecker.php';
+
 final class AttendanceScopeService {
     private mysqli $conn;
     private ?int $userId;
     private ?int $memberId;
-    private array $roleIds = [];
+    private ?PermissionChecker $permissionChecker = null;
 
     public function __construct(mysqli $conn, ?int $userId, ?int $memberId) {
         $this->conn = $conn;
@@ -12,6 +14,7 @@ final class AttendanceScopeService {
         $this->memberId = $memberId && $memberId > 0 ? $memberId : null;
 
         if ($this->userId !== null) {
+            $this->permissionChecker = new PermissionChecker($this->conn);
             if ($this->memberId === null) {
                 $stmt = $this->conn->prepare('SELECT member_id FROM users WHERE id = ? LIMIT 1');
                 $stmt->bind_param('i', $this->userId);
@@ -23,18 +26,6 @@ final class AttendanceScopeService {
                 }
             }
 
-            $stmt = $this->conn->prepare(
-                'SELECT role_id FROM user_roles
-                  WHERE user_id = ? AND is_active = 1
-                    AND (expires_at IS NULL OR expires_at > NOW())'
-            );
-            $stmt->bind_param('i', $this->userId);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            while ($row = $result->fetch_assoc()) {
-                $this->roleIds[] = (int) $row['role_id'];
-            }
-            $stmt->close();
         }
     }
 
@@ -55,7 +46,7 @@ final class AttendanceScopeService {
     }
 
     public function isAdministrator(): bool {
-        return (bool) array_intersect([1, 2], $this->roleIds);
+        return $this->userHasPermission('manage_attendance');
     }
 
     public function getSession(int $sessionId): array {
@@ -83,13 +74,31 @@ final class AttendanceScopeService {
 
     public function getOrganizationContexts(): array {
         if ($this->isAdministrator()) {
-            $result = $this->conn->query(
-                "SELECT organization.id AS organization_id, organization.name AS organization_name,
-                        organization.church_id, 1 AS can_review,
-                        NULL AS unit_id, NULL AS unit_name, NULL AS leader_role
-                   FROM organizations organization
-                  ORDER BY organization.name"
-            );
+            if ($this->permissionChecker && $this->permissionChecker->hasPermission('*', $this->userId)) {
+                $result = $this->conn->query(
+                    "SELECT organization.id AS organization_id, organization.name AS organization_name,
+                            organization.church_id, 1 AS can_review,
+                            NULL AS unit_id, NULL AS unit_name, NULL AS leader_role
+                       FROM organizations organization
+                      ORDER BY organization.name"
+                );
+            } else {
+                $stmt = $this->conn->prepare(
+                    "SELECT organization.id AS organization_id, organization.name AS organization_name,
+                            organization.church_id, 1 AS can_review,
+                            NULL AS unit_id, NULL AS unit_name, NULL AS leader_role
+                       FROM organizations organization
+                       JOIN users account ON account.church_id = organization.church_id
+                      WHERE account.id = ? AND account.status = 'active'
+                      ORDER BY organization.name"
+                );
+                $stmt->bind_param('i', $this->userId);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $rows = $result->fetch_all(MYSQLI_ASSOC);
+                $stmt->close();
+                return $rows;
+            }
             return $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
         }
 
@@ -135,7 +144,7 @@ final class AttendanceScopeService {
     }
 
     public function canMark(array $session): bool {
-        if ($this->isAdministrator() || in_array(4, $this->roleIds, true)) {
+        if ($this->canManageChurch((int) ($session['church_id'] ?? 0))) {
             return true;
         }
 
@@ -160,16 +169,16 @@ final class AttendanceScopeService {
             return $this->canMark($session) || $this->canReview($session);
         }
         return $this->isAdministrator()
-            || $this->userHasPermission('view_attendance_list')
-            || $this->userHasPermission('mark_attendance');
+            ? $this->canManageChurch((int) ($session['church_id'] ?? 0))
+            : ($this->userHasPermission('view_attendance_list')
+                || $this->userHasPermission('mark_attendance'));
     }
 
     public function canReview(array $session): bool {
         if (($session['attendance_scope'] ?? '') !== 'organization') {
             return false;
         }
-        return $this->isAdministrator()
-            || in_array(4, $this->roleIds, true)
+        return $this->canManageChurch((int) ($session['church_id'] ?? 0))
             || $this->leadsOrganization((int) ($session['scope_id'] ?? 0), true);
     }
 
@@ -408,10 +417,6 @@ final class AttendanceScopeService {
         string $title,
         string $serviceDate
     ): int {
-        $contextSession = ['attendance_scope' => 'organization', 'scope_id' => $organizationId];
-        if (!$this->isAdministrator() && !$this->leadsOrganization($organizationId)) {
-            throw new RuntimeException('Only the organization leader or an administrator can create this session.');
-        }
         $title = trim($title);
         if ($title === '') {
             throw new RuntimeException('Enter a session title.');
@@ -428,6 +433,10 @@ final class AttendanceScopeService {
         $stmt->close();
         if (!$organization) {
             throw new RuntimeException('Organization not found.');
+        }
+        if (!$this->canManageChurch((int) $organization['church_id'])
+            && !$this->leadsOrganization($organizationId)) {
+            throw new RuntimeException('Only the organization leader or an authorized attendance manager can create this session.');
         }
         if ($unitId !== null) {
             $stmt = $this->conn->prepare(
@@ -589,33 +598,17 @@ final class AttendanceScopeService {
     }
 
     private function userHasPermission(string $permission): bool {
-        if ($this->userId === null) {
-            return false;
-        }
-        $stmt = $this->conn->prepare(
-            'SELECT 1
-               FROM permissions permission
-              WHERE permission.name = ?
-                AND (
-                    EXISTS (
-                        SELECT 1 FROM user_roles user_role
-                        JOIN role_permissions role_permission
-                          ON role_permission.role_id = user_role.role_id
-                       WHERE user_role.user_id = ?
-                         AND role_permission.permission_id = permission.id
-                    )
-                    OR EXISTS (
-                        SELECT 1 FROM user_permissions user_permission
-                         WHERE user_permission.user_id = ?
-                           AND user_permission.permission_id = permission.id
-                           AND user_permission.allowed = 1
-                    )
-                ) LIMIT 1'
-        );
-        $stmt->bind_param('sii', $permission, $this->userId, $this->userId);
-        $stmt->execute();
-        $found = (bool) $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        return $found;
+        return $this->permissionChecker !== null
+            && $this->permissionChecker->hasPermission($permission, $this->userId);
+    }
+
+    private function canManageChurch(int $churchId): bool {
+        if ($churchId < 1 || $this->permissionChecker === null || $this->userId === null) return false;
+        return (bool) $this->permissionChecker->authorize(
+            'manage_attendance',
+            $this->userId,
+            ['church_id' => $churchId],
+            false
+        )['allowed'];
     }
 }

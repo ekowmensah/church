@@ -1,13 +1,22 @@
 <?php
-require_once __DIR__ . '/../config/config.php';
-
-$role_id = 1; // Super Admin
-$res = $conn->query("SELECT p.name FROM role_permissions rp JOIN permissions p ON rp.permission_id = p.id WHERE rp.role_id = $role_id");
-$has_access_dashboard = false;
-echo "Permissions for Super Admin (role_id=1):\n";
-while ($row = $res->fetch_assoc()) {
-    echo "- {$row['name']}\n";
-    if ($row['name'] === 'access_dashboard') $has_access_dashboard = true;
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
 }
-echo "access_dashboard present: ".($has_access_dashboard ? 'YES' : 'NO')."\n";
-?>
+
+require_once __DIR__ . '/../config/config.php';
+$stmt = $conn->prepare(
+    "SELECT permission.name
+       FROM roles role
+       JOIN role_permissions grant_row ON grant_row.role_id = role.id
+       JOIN permissions permission ON permission.id = grant_row.permission_id
+      WHERE LOWER(TRIM(role.name)) = 'super admin'
+        AND role.is_active = 1 AND grant_row.is_active = 1
+        AND permission.is_active = 1
+        AND (grant_row.expires_at IS NULL OR grant_row.expires_at > NOW())
+      ORDER BY permission.name"
+);
+$stmt->execute();
+foreach ($stmt->get_result()->fetch_all(MYSQLI_ASSOC) as $row) {
+    echo $row['name'] . PHP_EOL;
+}

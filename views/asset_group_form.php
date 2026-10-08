@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../includes/asset_workspace_nav.php';
 
 asset_require_permission('manage_asset_groups');
 
@@ -65,6 +67,10 @@ if ($isSuper) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        http_response_code(419);
+        exit('Your form expired. Refresh the page and try again.');
+    }
     $name = trim((string) ($_POST['name'] ?? ''));
     $groupCode = strtoupper(trim((string) ($_POST['group_code'] ?? '')));
     $defaultQuantity = max(1, (int) ($_POST['default_quantity'] ?? 1));
@@ -131,7 +137,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 ob_start();
 ?>
-<div class="container-fluid mt-4">
+<link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
+<div class="container-fluid mt-4 asset-workspace">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2 class="mb-0"><i class="fas fa-layer-group mr-2"></i><?= $isEdit ? 'Edit' : 'Add' ?> Item Category</h2>
         <a href="asset_group_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>" class="btn btn-secondary">
@@ -139,13 +146,16 @@ ob_start();
         </a>
     </div>
 
-    <div class="card shadow-sm">
+    <?php render_asset_workspace_nav('register', $churchId); ?>
+    <div class="card asset-panel asset-form-shell">
+        <div class="card-header"><strong>Category definition</strong><small class="d-block text-muted">The category code becomes a stable segment in every generated asset identity.</small></div>
         <div class="card-body">
             <?php if ($error): ?>
                 <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
             <?php endif; ?>
 
             <form method="post" autocomplete="off">
+                <?= csrf_input() ?>
                 <?php if ($isSuper): ?>
                     <div class="form-group">
                         <label for="church_id">Church <span class="text-danger">*</span></label>
@@ -197,7 +207,7 @@ ob_start();
                     <textarea class="form-control" id="description" name="description" rows="3"><?= htmlspecialchars($description) ?></textarea>
                 </div>
 
-                <button type="submit" class="btn btn-primary"><i class="fas fa-save mr-1"></i> Save Category</button>
+                <div class="asset-action-bar"><a href="asset_group_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>" class="btn btn-outline-secondary">Cancel</a><button type="submit" class="btn btn-primary"><i class="fas fa-save mr-1"></i>Save category</button></div>
             </form>
         </div>
     </div>

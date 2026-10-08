@@ -33,12 +33,15 @@ class RoleService {
             SELECT 
                 r.*,
                 parent.name as parent_role_name,
-                COUNT(DISTINCT ur.user_id) as user_count,
+                COUNT(DISTINCT account.id) as user_count,
                 COUNT(DISTINCT rp.permission_id) as permission_count
             FROM roles r
             LEFT JOIN roles parent ON r.parent_id = parent.id
             LEFT JOIN user_roles ur ON r.id = ur.role_id AND ur.is_active = 1
+                AND (ur.expires_at IS NULL OR ur.expires_at > NOW())
+            LEFT JOIN users account ON account.id = ur.user_id AND account.status = 'active'
             LEFT JOIN role_permissions rp ON r.id = rp.role_id AND rp.is_active = 1
+                AND (rp.expires_at IS NULL OR rp.expires_at > NOW())
             WHERE 1=1
         ";
         
@@ -91,12 +94,15 @@ class RoleService {
             SELECT 
                 r.*,
                 parent.name as parent_role_name,
-                COUNT(DISTINCT ur.user_id) as user_count,
+                COUNT(DISTINCT account.id) as user_count,
                 COUNT(DISTINCT rp.permission_id) as permission_count
             FROM roles r
             LEFT JOIN roles parent ON r.parent_id = parent.id
             LEFT JOIN user_roles ur ON r.id = ur.role_id AND ur.is_active = 1
+                AND (ur.expires_at IS NULL OR ur.expires_at > NOW())
+            LEFT JOIN users account ON account.id = ur.user_id AND account.status = 'active'
             LEFT JOIN role_permissions rp ON r.id = rp.role_id AND rp.is_active = 1
+                AND (rp.expires_at IS NULL OR rp.expires_at > NOW())
             WHERE r.id = ?
             GROUP BY r.id
         ");
@@ -132,6 +138,9 @@ class RoleService {
      * @return int|false Role ID or false on failure
      */
     public function createRole($data, $createdBy = null) {
+        $data['name'] = trim((string) ($data['name'] ?? ''));
+        $data['description'] = trim((string) ($data['description'] ?? ''));
+        $data['parent_id'] = !empty($data['parent_id']) ? (int) $data['parent_id'] : null;
         // Validate required fields
         if (empty($data['name'])) {
             throw new Exception('Role name is required');
@@ -149,9 +158,10 @@ class RoleService {
             $level = 0;
             if (!empty($data['parent_id'])) {
                 $parent = $this->getRoleById($data['parent_id']);
-                if ($parent) {
-                    $level = $parent['level'] + 1;
+                if (!$parent || !(int) $parent['is_active']) {
+                    throw new Exception('The selected parent role is unavailable');
                 }
+                $level = $parent['level'] + 1;
             }
             
             $stmt = $this->conn->prepare("
@@ -231,6 +241,19 @@ class RoleService {
                 throw new Exception('Role with this name already exists');
             }
         }
+
+        if (array_key_exists('parent_id', $data)) {
+            $parentId = (int) ($data['parent_id'] ?? 0);
+            if ($parentId === (int) $roleId || ($parentId > 0 && $this->wouldCreateRoleCycle((int) $roleId, $parentId))) {
+                throw new Exception('A role cannot inherit from itself or one of its descendants');
+            }
+            if ($parentId > 0) {
+                $parent = $this->getRoleById($parentId);
+                if (!$parent || !(int) $parent['is_active']) {
+                    throw new Exception('The selected parent role is unavailable');
+                }
+            }
+        }
         
         $this->conn->begin_transaction();
         
@@ -247,7 +270,10 @@ class RoleService {
             ];
             
             foreach ($allowedFields as $field => $type) {
-                if (isset($data[$field])) {
+                if (array_key_exists($field, $data)) {
+                    if ($field === 'parent_id' && ((int) $data[$field]) < 1) {
+                        $data[$field] = null;
+                    }
                     $updates[] = "$field = ?";
                     $params[] = $data[$field];
                     $types .= $type;
@@ -255,7 +281,7 @@ class RoleService {
             }
             
             // Recalculate level if parent changed
-            if (isset($data['parent_id'])) {
+            if (array_key_exists('parent_id', $data)) {
                 $level = 0;
                 if ($data['parent_id']) {
                     $parent = $this->getRoleById($data['parent_id']);
@@ -279,6 +305,10 @@ class RoleService {
             $stmt = $this->conn->prepare($sql);
             $stmt->bind_param($types, ...$params);
             $stmt->execute();
+
+            if (array_key_exists('parent_id', $data)) {
+                $this->recalculateDescendantLevels((int) $roleId, $level);
+            }
             
             // Log audit
             if ($this->auditLogger && $updatedBy) {
@@ -324,25 +354,19 @@ class RoleService {
             throw new Exception('Cannot delete system role');
         }
         
-        // Check if role has users
-        if ($role['user_count'] > 0 && $hardDelete) {
-            throw new Exception('Cannot delete role with assigned users. Remove users first.');
+        if ($hardDelete) {
+            throw new Exception('Roles are immutable catalog records; deactivate an unused role instead');
+        }
+        if ((int) $role['user_count'] > 0) {
+            throw new Exception('Reassign active users before deactivating this role');
         }
         
         $this->conn->begin_transaction();
         
         try {
-            if ($hardDelete) {
-                // Hard delete - remove from database
-                $stmt = $this->conn->prepare("DELETE FROM roles WHERE id = ?");
-                $stmt->bind_param('i', $roleId);
-                $stmt->execute();
-            } else {
-                // Soft delete - mark as inactive
-                $stmt = $this->conn->prepare("UPDATE roles SET is_active = 0 WHERE id = ?");
-                $stmt->bind_param('i', $roleId);
-                $stmt->execute();
-            }
+            $stmt = $this->conn->prepare("UPDATE roles SET is_active = 0 WHERE id = ?");
+            $stmt->bind_param('i', $roleId);
+            $stmt->execute();
             
             // Log audit
             if ($this->auditLogger && $deletedBy) {
@@ -356,7 +380,7 @@ class RoleService {
                     json_encode($role),
                     null,
                     'success',
-                    $hardDelete ? 'Role deleted (hard)' : 'Role deleted (soft)'
+                    'Role deactivated'
                 );
             }
             
@@ -435,43 +459,43 @@ class RoleService {
      */
     public function getRolePermissions($roleId, $includeInherited = true) {
         $permissions = [];
-        
-        // Get direct permissions
-        $stmt = $this->conn->prepare("
-            SELECT 
-                p.*,
-                rp.granted_by,
-                rp.granted_at,
-                rp.expires_at,
-                rp.conditions
-            FROM role_permissions rp
-            JOIN permissions p ON rp.permission_id = p.id
-            WHERE rp.role_id = ? AND rp.is_active = 1 AND p.is_active = 1
-            ORDER BY p.name
-        ");
-        $stmt->bind_param('i', $roleId);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        while ($row = $result->fetch_assoc()) {
-            $row['source'] = 'direct';
-            $permissions[$row['id']] = $row;
-        }
-        
-        // Get inherited permissions from parent roles
-        if ($includeInherited) {
-            $role = $this->getRoleById($roleId);
-            if ($role && $role['parent_id']) {
-                $parentPermissions = $this->getRolePermissions($role['parent_id'], true);
-                foreach ($parentPermissions as $perm) {
-                    if (!isset($permissions[$perm['id']])) {
-                        $perm['source'] = 'inherited';
-                        $permissions[$perm['id']] = $perm;
-                    }
+
+        $currentRoleId = (int) $roleId;
+        $visited = [];
+        $depth = 0;
+        while ($currentRoleId > 0 && !isset($visited[$currentRoleId]) && $depth <= 16) {
+            $visited[$currentRoleId] = true;
+            $stmt = $this->conn->prepare(
+                "SELECT p.*, rp.granted_by, rp.granted_at, rp.expires_at, rp.conditions
+                   FROM role_permissions rp
+                   JOIN permissions p ON p.id = rp.permission_id
+                   JOIN roles r ON r.id = rp.role_id
+                  WHERE rp.role_id = ? AND rp.is_active = 1
+                    AND p.is_active = 1 AND r.is_active = 1
+                    AND (rp.expires_at IS NULL OR rp.expires_at > NOW())
+                  ORDER BY p.name"
+            );
+            $stmt->bind_param('i', $currentRoleId);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            while ($row = $result->fetch_assoc()) {
+                if (!isset($permissions[$row['id']])) {
+                    $row['source'] = $depth === 0 ? 'direct' : 'inherited';
+                    $permissions[$row['id']] = $row;
                 }
             }
+            $stmt->close();
+
+            if (!$includeInherited) break;
+            $stmt = $this->conn->prepare('SELECT parent_id FROM roles WHERE id = ? AND is_active = 1');
+            $stmt->bind_param('i', $currentRoleId);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            $currentRoleId = (int) ($row['parent_id'] ?? 0);
+            $depth++;
         }
-        
+
         return array_values($permissions);
     }
     
@@ -485,6 +509,22 @@ class RoleService {
      * @return bool
      */
     public function grantPermission($roleId, $permissionId, $grantedBy, $options = []) {
+        $role = $this->getRoleById((int) $roleId);
+        if (!$role || !(int) $role['is_active']) {
+            throw new Exception('Role not found or inactive');
+        }
+        $permissionId = (int) $permissionId;
+        $stmt = $this->conn->prepare(
+            'SELECT id FROM permissions WHERE id = ? AND is_active = 1 LIMIT 1'
+        );
+        $stmt->bind_param('i', $permissionId);
+        $stmt->execute();
+        $permissionAvailable = $stmt->get_result()->num_rows === 1;
+        $stmt->close();
+        if (!$permissionAvailable) {
+            throw new Exception('Permission not found or inactive');
+        }
+
         // Look up both active and inactive rows. The database enforces one row
         // per role/permission pair, so a revoked grant must be reactivated.
         $stmt = $this->conn->prepare("
@@ -623,6 +663,34 @@ class RoleService {
      * @return bool
      */
     public function syncPermissions($roleId, $permissionIds, $syncedBy) {
+        $roleId = (int) $roleId;
+        $syncedBy = (int) $syncedBy;
+        $permissionIds = array_values(array_unique(array_filter(array_map('intval', (array) $permissionIds), function ($id) {
+            return $id > 0;
+        })));
+
+        $role = $this->getRoleById($roleId);
+        if (!$role || !(int) $role['is_active']) {
+            throw new Exception('Role not found or inactive');
+        }
+
+        if (!empty($permissionIds)) {
+            $placeholders = implode(',', array_fill(0, count($permissionIds), '?'));
+            $types = str_repeat('i', count($permissionIds));
+            $stmt = $this->conn->prepare(
+                "SELECT COUNT(*) AS total FROM permissions
+                  WHERE is_active = 1 AND id IN ({$placeholders})"
+            );
+            $stmt->bind_param($types, ...$permissionIds);
+            $stmt->execute();
+            $validCount = (int) $stmt->get_result()->fetch_assoc()['total'];
+            $stmt->close();
+            if ($validCount !== count($permissionIds)) {
+                throw new Exception('One or more selected permissions are unavailable');
+            }
+        }
+
+        $before = array_column($this->getRolePermissions($roleId, false), 'id');
         $this->conn->begin_transaction();
         
         try {
@@ -650,7 +718,8 @@ class RoleService {
                     // Reactivate existing
                     $stmt = $this->conn->prepare("
                         UPDATE role_permissions 
-                        SET is_active = 1, granted_by = ?, granted_at = NOW()
+                        SET is_active = 1, granted_by = ?, granted_at = NOW(),
+                            expires_at = NULL, conditions = NULL
                         WHERE role_id = ? AND permission_id = ?
                     ");
                     $stmt->bind_param('iii', $syncedBy, $roleId, $permissionId);
@@ -675,7 +744,7 @@ class RoleService {
                     $roleId,
                     null,
                     $roleId,
-                    null,
+                    json_encode(['permission_ids' => array_values(array_map('intval', $before))]),
                     json_encode(['permission_ids' => $permissionIds]),
                     'success',
                     'Role permissions synced'
@@ -688,6 +757,46 @@ class RoleService {
         } catch (Exception $e) {
             $this->conn->rollback();
             throw $e;
+        }
+    }
+
+    private function wouldCreateRoleCycle($roleId, $candidateParentId) {
+        $current = (int) $candidateParentId;
+        $visited = [];
+        while ($current > 0 && !isset($visited[$current])) {
+            if ($current === (int) $roleId) return true;
+            $visited[$current] = true;
+            $stmt = $this->conn->prepare('SELECT parent_id FROM roles WHERE id = ? LIMIT 1');
+            $stmt->bind_param('i', $current);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            $current = (int) ($row['parent_id'] ?? 0);
+        }
+        return false;
+    }
+
+    private function recalculateDescendantLevels($roleId, $parentLevel) {
+        $queue = [[(int) $roleId, (int) $parentLevel]];
+        $visited = [];
+        while ($queue) {
+            [$parentId, $level] = array_shift($queue);
+            if (isset($visited[$parentId])) continue;
+            $visited[$parentId] = true;
+            $stmt = $this->conn->prepare('SELECT id FROM roles WHERE parent_id = ?');
+            $stmt->bind_param('i', $parentId);
+            $stmt->execute();
+            $children = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $stmt->close();
+            foreach ($children as $child) {
+                $childId = (int) $child['id'];
+                $childLevel = $level + 1;
+                $update = $this->conn->prepare('UPDATE roles SET level = ? WHERE id = ?');
+                $update->bind_param('ii', $childLevel, $childId);
+                $update->execute();
+                $update->close();
+                $queue[] = [$childId, $childLevel];
+            }
         }
     }
 }

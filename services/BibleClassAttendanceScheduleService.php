@@ -1,10 +1,11 @@
 <?php
 
+require_once __DIR__ . '/../helpers/rbac_identity.php';
+
 final class BibleClassAttendanceScheduleService {
     private mysqli $conn;
     private ?int $userId;
     private ?int $memberId;
-    private array $roleIds = [];
 
     public function __construct(mysqli $conn, ?int $userId = null, ?int $memberId = null) {
         $this->conn = $conn;
@@ -19,14 +20,6 @@ final class BibleClassAttendanceScheduleService {
                 $this->memberId = (int) ($stmt->get_result()->fetch_assoc()['member_id'] ?? 0) ?: null;
                 $stmt->close();
             }
-            $stmt = $this->conn->prepare('SELECT role_id FROM user_roles WHERE user_id = ?');
-            $stmt->bind_param('i', $this->userId);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            while ($row = $result->fetch_assoc()) {
-                $this->roleIds[] = (int) $row['role_id'];
-            }
-            $stmt->close();
         }
     }
 
@@ -36,16 +29,11 @@ final class BibleClassAttendanceScheduleService {
             isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null,
             isset($_SESSION['member_id']) ? (int) $_SESSION['member_id'] : null
         );
-        $sessionRoles = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
-        if (isset($_SESSION['role_id'])) {
-            $sessionRoles[] = (int) $_SESSION['role_id'];
-        }
-        $service->roleIds = array_values(array_unique(array_merge($service->roleIds, $sessionRoles)));
         return $service;
     }
 
     public function getLeaderClasses(): array {
-        if ($this->isAdministrator() || in_array(4, $this->roleIds, true)) {
+        if ($this->isAdministrator() || $this->hasMinistryOversight()) {
             $result = $this->conn->query(
                 'SELECT class.id AS class_id, class.name AS class_name, class.code,
                         class.church_id, class.class_group_id, class_group.name AS group_name,
@@ -80,7 +68,7 @@ final class BibleClassAttendanceScheduleService {
     }
 
     public function canAccessClass(int $classId): bool {
-        if ($this->isAdministrator() || in_array(4, $this->roleIds, true)) {
+        if ($this->isAdministrator() || $this->hasMinistryOversight()) {
             return true;
         }
         foreach ($this->getLeaderClasses() as $class) {
@@ -577,6 +565,12 @@ final class BibleClassAttendanceScheduleService {
     }
 
     private function isAdministrator(): bool {
-        return (bool) array_intersect([1, 2], $this->roleIds);
+        return rbac_identity_has_any_role($this->conn, $this->userId, [
+            'Super Admin', 'Super Administrator', 'Admin',
+        ]);
+    }
+
+    private function hasMinistryOversight(): bool {
+        return rbac_identity_has_any_role($this->conn, $this->userId, ['Rev. Ministers']);
     }
 }

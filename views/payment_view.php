@@ -340,7 +340,7 @@ ob_start();
     <a href="payment_list.php" class="btn btn-banking btn-secondary">
         <i class="fas fa-arrow-left mr-2"></i>Back to List
     </a>
-    <?php if ((is_super_admin() || has_permission('edit_payment')) && $is_active): ?>
+    <?php if ((is_super_admin() || has_permission('correct_payment')) && $is_active): ?>
         <a href="payment_edit.php?id=<?= $payment['id'] ?>" class="btn btn-banking btn-primary">
             <i class="fas fa-edit mr-2"></i>Correct Payment
         </a>

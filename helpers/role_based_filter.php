@@ -35,10 +35,13 @@ function role_filter_is_super_admin($user_id = null) {
         "SELECT 1
            FROM user_roles user_role
            JOIN roles role ON role.id = user_role.role_id
+           JOIN users account ON account.id = user_role.user_id
           WHERE user_role.user_id = ?
+            AND account.status = 'active'
             AND user_role.is_active = 1
-            AND (user_role.expires_at IS NULL OR user_role.expires_at >= NOW())
-            AND (role.id = 1 OR LOWER(TRIM(role.name)) = 'super admin')
+            AND role.is_active = 1
+            AND (user_role.expires_at IS NULL OR user_role.expires_at > NOW())
+            AND LOWER(TRIM(role.name)) = 'super admin'
           LIMIT 1"
     );
     $stmt->bind_param('i', $user_id);

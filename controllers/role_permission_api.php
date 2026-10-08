@@ -36,9 +36,16 @@ if ($method === 'GET') {
         exit;
     }
     $perms = [];
-    $all = $conn->query("SELECT id, name FROM permissions ORDER BY name ASC");
+    $all = $conn->query("SELECT id, name FROM permissions WHERE is_active = 1 ORDER BY name ASC");
     $assigned = [];
-    $res = $conn->query("SELECT permission_id FROM role_permissions WHERE role_id = $role_id");
+    $assignedStmt = $conn->prepare(
+        'SELECT permission_id FROM role_permissions
+          WHERE role_id = ? AND is_active = 1
+            AND (expires_at IS NULL OR expires_at > NOW())'
+    );
+    $assignedStmt->bind_param('i', $role_id);
+    $assignedStmt->execute();
+    $res = $assignedStmt->get_result();
     while ($row = $res->fetch_assoc()) {
         $assigned[$row['permission_id']] = true;
     }
@@ -71,24 +78,15 @@ if ($method === 'POST') {
         })))
         : [];
 
-    $conn->begin_transaction();
     try {
-        $delete = $conn->prepare('DELETE FROM role_permissions WHERE role_id = ?');
-        $delete->bind_param('i', $role_id);
-        $delete->execute();
-
-        if (!empty($perms)) {
-            $insert = $conn->prepare('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)');
-            foreach ($perms as $permission_id) {
-                $insert->bind_param('ii', $role_id, $permission_id);
-                $insert->execute();
-            }
-        }
-
-        $conn->commit();
+        RBACServiceFactory::setConnection($conn);
+        RBACServiceFactory::getRoleService()->syncPermissions(
+            $role_id,
+            $perms,
+            (int) ($_SESSION['user_id'] ?? 0)
+        );
         echo json_encode(['success' => true]);
     } catch (Throwable $e) {
-        $conn->rollback();
         error_log('ROLE PERMISSION SAVE ERROR: ' . $e->getMessage());
         http_response_code(500);
         echo json_encode(['success' => false, 'error' => 'Unable to save role permissions']);

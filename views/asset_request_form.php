@@ -1,14 +1,17 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../includes/asset_workspace_nav.php';
 
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
-if (!asset_use_requests_available($conn) || !asset_request_lines_available($conn)) {
+if (!asset_use_requests_available($conn) || !asset_request_lines_available($conn)
+    || !asset_column_exists($conn, 'asset_items', 'custody_status')) {
     http_response_code(503);
-    exit('Multi-item asset requests are not available. Run Phase 0024 first.');
+    exit('Asset custody requests are not available. Run Phase 0092 first.');
 }
 
 $isSuper = asset_is_super_admin();
@@ -30,6 +33,8 @@ $assetSql = "
            COUNT(item.id) AS available_units
     FROM assets asset
     JOIN asset_items item ON item.asset_id = asset.id AND item.status = 'active'
+        AND item.custody_status = 'available'
+        AND item.lifecycle_status NOT IN ('under_maintenance','retired','disposed')
     LEFT JOIN asset_departments department ON department.id = asset.department_id
     LEFT JOIN asset_groups category ON category.id = asset.asset_group_id
     WHERE asset.status = 'active'
@@ -57,6 +62,10 @@ $assetMap = [];
 foreach ($assets as $asset) $assetMap[(int) $asset['id']] = $asset;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        http_response_code(419);
+        exit('Your form expired. Refresh the page and try again.');
+    }
     $selectedAssetIds = array_values(array_filter(array_map('intval', (array) ($_POST['asset_ids'] ?? []))));
     if (count($selectedAssetIds) > 50) {
         $error = 'A request can contain at most 50 selected items.';
@@ -152,14 +161,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 ob_start();
 ?>
-<div class="container-fluid mt-4">
+<link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
+<div class="container-fluid mt-4 asset-workspace">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div><h2 class="mb-1"><i class="fas fa-hand-holding mr-2"></i>Request Asset Use</h2><small class="text-muted">Add one row for each physical item needed. Quantity is counted automatically.</small></div>
         <a href="asset_request_list.php" class="btn btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i> Back</a>
     </div>
-    <div class="card shadow-sm"><div class="card-body">
+    <?php render_asset_workspace_nav('custody', $churchId); ?>
+    <div class="alert alert-info border-0 shadow-sm"><strong>What happens next?</strong> An authorized reviewer selects and reserves exact physical unit numbers. Assets are not in your custody until an officer confirms Issue.</div>
+    <div class="card asset-panel asset-form-shell"><div class="card-header"><strong>Custody request</strong><small class="d-block text-muted">Choose one category row for every physical unit required.</small></div><div class="card-body">
         <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
         <form method="post" autocomplete="off" id="assetRequestForm">
+            <?= csrf_input() ?>
             <div class="form-row">
                 <div class="form-group col-md-6"><label>Requester</label><input class="form-control" value="<?= htmlspecialchars((string) $actor['name']) ?>" readonly></div>
                 <div class="form-group col-md-6"><label>Requester Phone</label><input class="form-control" value="<?= htmlspecialchars((string) ($actor['phone'] ?? '')) ?>" readonly></div>
@@ -188,7 +201,7 @@ ob_start();
                 <div class="form-group col-md-6"><label>Expected Return <span class="text-danger">*</span></label><input type="date" name="expected_return_date" class="form-control" value="<?= htmlspecialchars($expectedReturnDate) ?>" required></div>
             </div>
             <div class="form-group"><label>Request Note</label><textarea name="request_note" class="form-control" rows="3" maxlength="255"><?= htmlspecialchars($requestNote) ?></textarea></div>
-            <button class="btn btn-primary" type="submit"><i class="fas fa-paper-plane mr-1"></i>Submit Request</button>
+            <div class="asset-action-bar"><a href="asset_request_list.php" class="btn btn-outline-secondary">Cancel</a><button class="btn btn-primary" type="submit"><i class="fas fa-paper-plane mr-1"></i>Submit custody request</button></div>
         </form>
     </div></div>
 </div>

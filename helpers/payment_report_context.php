@@ -102,7 +102,7 @@ function payment_report_is_super_admin(): bool
         return is_super_admin();
     }
 
-    return !empty($_SESSION['is_super_admin']);
+    return false;
 }
 
 function payment_report_member_scope_condition(mysqli $conn, string $memberAlias = 'm'): string

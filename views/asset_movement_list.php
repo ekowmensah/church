@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/report_pagination.php';
+require_once __DIR__ . '/../includes/asset_workspace_nav.php';
 
 asset_require_permission('view_asset_movements');
 
@@ -50,27 +52,16 @@ if ($q !== '') {
     $params[] = $like;
 }
 
-$sql .= ' ORDER BY am.moved_at DESC';
-
-$stmt = $conn->prepare($sql);
-if ($types !== '') {
-    $stmt->bind_param($types, ...$params);
-}
-$stmt->execute();
-$res = $stmt->get_result();
-$rows = [];
-while ($row = $res->fetch_assoc()) {
-    $rows[] = $row;
-}
-$stmt->close();
+$pageData = report_paginate_query($conn, $sql . ' ORDER BY am.moved_at DESC', $types, $params, 25);
+$rows = $pageData['result']->fetch_all(MYSQLI_ASSOC);
+$pageData['statement']->close();
 
 ob_start();
 ?>
-<div class="container-fluid mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2 class="mb-0"><i class="fas fa-history mr-2"></i>Asset Movements</h2>
-        <a href="asset_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>" class="btn btn-secondary"><i class="fas fa-arrow-left mr-1"></i> Back to Assets</a>
-    </div>
+<link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
+<div class="container-fluid mt-4 asset-workspace">
+    <section class="asset-hero p-4 mb-3"><div class="d-flex justify-content-between align-items-center"><div><div class="eyebrow">Chain of location</div><h2 class="mb-1"><i class="fas fa-exchange-alt mr-2"></i>Asset Movements</h2><p class="mb-0">Every physical-unit transfer, previous department, destination and responsible officer.</p></div></div></section>
+    <?php render_asset_workspace_nav('movements', $churchId); ?>
 
     <div class="card shadow-sm mb-3">
         <div class="card-body">
@@ -97,7 +88,7 @@ ob_start();
         </div>
     </div>
 
-    <div class="card shadow-sm">
+    <div class="card shadow-sm asset-panel">
         <div class="card-body table-responsive">
             <table class="table table-bordered table-hover" id="assetMovementTable">
                 <thead class="thead-light">
@@ -132,16 +123,10 @@ ob_start();
                 <?php endif; ?>
                 </tbody>
             </table>
+            <?php report_render_server_pagination($pageData['total_rows'], $pageData['page'], $pageData['per_page'], 'Asset movement pages'); ?>
         </div>
     </div>
 </div>
-<script>
-$(function(){
-  if ($.fn.DataTable) {
-    $('#assetMovementTable').DataTable({pageLength: 25, order:[[0,'desc']]});
-  }
-});
-</script>
 <?php
 $page_content = ob_get_clean();
 include __DIR__ . '/../includes/layout.php';

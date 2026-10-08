@@ -4,6 +4,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/auth.php';
 require_once __DIR__ . '/../helpers/permissions_v2.php';
 require_once __DIR__ . '/../services/RoleOfServingAccessService.php';
+require_once __DIR__ . '/../services/UserAccessGovernanceService.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -44,6 +45,11 @@ try {
     }
 
     $member = $matches[0];
+    (new UserAccessGovernanceService($conn))->assertAuthorized(
+        'create_user',
+        (int) ($_SESSION['user_id'] ?? 0),
+        (int) ($member['church_id'] ?? 0)
+    );
     if (strtolower((string) $member['status']) !== 'active') {
         user_access_json(409, ['success' => false, 'message' => 'This member is not active and is not eligible for a new user account.']);
     }
@@ -56,6 +62,8 @@ try {
 
     unset($member['email'], $member['existing_user_id'], $member['status']);
     user_access_json(200, ['success' => true, 'member' => $member]);
+} catch (UserAccessAuthorizationException $exception) {
+    user_access_json(403, ['success' => false, 'message' => $exception->getMessage()]);
 } catch (Throwable $exception) {
     error_log('User access CRN lookup failed: ' . $exception->getMessage());
     user_access_json(500, ['success' => false, 'message' => 'The member lookup could not be completed. Try again.']);

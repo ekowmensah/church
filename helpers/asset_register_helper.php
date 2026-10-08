@@ -585,10 +585,99 @@ if (!function_exists('asset_assert_item_number_available')) {
     }
 }
 
+if (!function_exists('asset_assert_asset_code_available')) {
+    /**
+     * Keep the register identity unique when a department movement rewrites
+     * the department segment of a parent asset code.
+     */
+    function asset_assert_asset_code_available(
+        mysqli $conn,
+        int $churchId,
+        string $assetCode,
+        int $excludeAssetId = 0
+    ): void {
+        $stmt = $conn->prepare(
+            'SELECT id FROM assets
+              WHERE church_id = ? AND asset_code = ? AND id <> ? LIMIT 1'
+        );
+        $stmt->bind_param('isi', $churchId, $assetCode, $excludeAssetId);
+        $stmt->execute();
+        $collision = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($collision) {
+            throw new RuntimeException(
+                'The destination would duplicate asset code ' . $assetCode
+                . '. Resolve the destination numbering conflict before completing this movement.'
+            );
+        }
+    }
+}
+
+if (!function_exists('asset_move_parent_to_department')) {
+    /**
+     * Move a legacy/category-level asset and rewrite its department segment
+     * using the same canonical convention used for physical item movements.
+     * Callers are expected to own the surrounding transaction.
+     *
+     * @return array{old_asset_code:string,new_asset_code:string,department_id:int}
+     */
+    function asset_move_parent_to_department(mysqli $conn, int $assetId, int $departmentId): array {
+        $stmt = $conn->prepare(
+            'SELECT id, church_id, asset_code FROM assets WHERE id = ? FOR UPDATE'
+        );
+        $stmt->bind_param('i', $assetId);
+        $stmt->execute();
+        $asset = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$asset) {
+            throw new RuntimeException('Asset no longer exists.');
+        }
+
+        $churchId = (int) $asset['church_id'];
+        $stmt = $conn->prepare(
+            'SELECT name, department_code FROM asset_departments
+              WHERE id = ? AND church_id = ? LIMIT 1'
+        );
+        $stmt->bind_param('ii', $departmentId, $churchId);
+        $stmt->execute();
+        $department = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$department) {
+            throw new RuntimeException('Destination department not found for this church.');
+        }
+
+        $oldAssetCode = (string) $asset['asset_code'];
+        $newAssetCode = asset_replace_department_segment(
+            $oldAssetCode,
+            (string) ($department['department_code'] ?: $department['name'])
+        );
+        asset_assert_asset_code_available($conn, $churchId, $newAssetCode, $assetId);
+
+        $stmt = $conn->prepare('UPDATE assets SET department_id = ?, asset_code = ? WHERE id = ?');
+        $stmt->bind_param('isi', $departmentId, $newAssetCode, $assetId);
+        $stmt->execute();
+        $stmt->close();
+
+        return [
+            'old_asset_code' => $oldAssetCode,
+            'new_asset_code' => $newAssetCode,
+            'department_id' => $departmentId,
+        ];
+    }
+}
+
 if (!function_exists('asset_sync_parent_from_items')) {
-    function asset_sync_parent_from_items(mysqli $conn, int $assetId): void {
+    /**
+     * Synchronize the category record from active physical items. When every
+     * active item is in one department, the parent code follows that
+     * department as well. A split category keeps its existing parent code and
+     * receives a NULL department because no single destination represents it.
+     *
+     * @return array{old_asset_code:string,new_asset_code:string,department_id:?int}
+     */
+    function asset_sync_parent_from_items(mysqli $conn, int $assetId): array {
         if (!asset_item_tracking_available($conn)) {
-            return;
+            return ['old_asset_code' => '', 'new_asset_code' => '', 'department_id' => null];
         }
         $stmt = $conn->prepare(
             "SELECT COUNT(*) AS active_count, COUNT(DISTINCT department_id) AS departments,
@@ -604,10 +693,50 @@ if (!function_exists('asset_sync_parent_from_items')) {
             ? (int) ($summary['department_id'] ?? 0)
             : null;
         $status = $quantity > 0 ? 'active' : 'disposed';
-        $stmt = $conn->prepare('UPDATE assets SET quantity = ?, department_id = ?, status = ? WHERE id = ?');
-        $stmt->bind_param('iisi', $quantity, $departmentId, $status, $assetId);
+
+        $stmt = $conn->prepare('SELECT church_id, asset_code FROM assets WHERE id = ? FOR UPDATE');
+        $stmt->bind_param('i', $assetId);
+        $stmt->execute();
+        $parent = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$parent) {
+            throw new RuntimeException('Asset parent no longer exists.');
+        }
+
+        $oldAssetCode = (string) $parent['asset_code'];
+        $newAssetCode = $oldAssetCode;
+        if ($departmentId !== null && $departmentId > 0) {
+            $stmt = $conn->prepare(
+                'SELECT name, department_code FROM asset_departments
+                  WHERE id = ? AND church_id = ? LIMIT 1'
+            );
+            $churchId = (int) $parent['church_id'];
+            $stmt->bind_param('ii', $departmentId, $churchId);
+            $stmt->execute();
+            $department = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$department) {
+                throw new RuntimeException('The physical item department is not valid for this church.');
+            }
+            $newAssetCode = asset_replace_department_segment(
+                $oldAssetCode,
+                (string) ($department['department_code'] ?: $department['name'])
+            );
+            asset_assert_asset_code_available($conn, $churchId, $newAssetCode, $assetId);
+        }
+
+        $stmt = $conn->prepare(
+            'UPDATE assets SET quantity = ?, department_id = ?, status = ?, asset_code = ? WHERE id = ?'
+        );
+        $stmt->bind_param('iissi', $quantity, $departmentId, $status, $newAssetCode, $assetId);
         $stmt->execute();
         $stmt->close();
+
+        return [
+            'old_asset_code' => $oldAssetCode,
+            'new_asset_code' => $newAssetCode,
+            'department_id' => $departmentId,
+        ];
     }
 }
 

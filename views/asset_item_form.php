@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../includes/asset_workspace_nav.php';
 
 asset_require_permission('create_asset');
 
@@ -48,6 +50,10 @@ $conditionStatus = trim((string) ($_POST['condition_status'] ?? $asset['conditio
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        http_response_code(419);
+        exit('Your form expired. Refresh the page and try again.');
+    }
     $validDepartment = false;
     foreach ($departments as $department) {
         if ((int) $department['id'] === $departmentId) {
@@ -116,7 +122,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 ob_start();
 ?>
-<div class="container-fluid mt-4">
+<link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
+<div class="container-fluid mt-4 asset-workspace">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <h2 class="mb-1"><i class="fas fa-plus-circle mr-2"></i>Register Physical Item</h2>
@@ -125,12 +132,15 @@ ob_start();
         <a href="asset_view.php?id=<?= $assetId ?>&tab=items" class="btn btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i>Back</a>
     </div>
 
+    <?php render_asset_workspace_nav('register', $churchId); ?>
     <?php if ($error !== ''): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 
-    <div class="card shadow-sm">
+    <div class="card asset-panel asset-form-shell">
+        <div class="card-header"><strong>Physical identity and location</strong><small class="d-block text-muted">One record represents one traceable unit. Its generated number changes only when its accountable department changes.</small></div>
         <div class="card-body">
             <p class="text-muted">Register one physical item at a time. The item number is generated automatically and the category quantity increases only after this item is saved.</p>
             <form method="post">
+                <?= csrf_input() ?>
                 <input type="hidden" name="asset_id" value="<?= $assetId ?>">
                 <div class="form-row">
                     <div class="form-group col-md-6">
@@ -155,7 +165,7 @@ ob_start();
                         </select>
                     </div>
                 </div>
-                <button type="submit" class="btn btn-success"><i class="fas fa-save mr-1"></i>Register Item</button>
+                <div class="asset-action-bar"><a href="asset_view.php?id=<?= $assetId ?>&tab=items" class="btn btn-outline-secondary">Cancel</a><button type="submit" class="btn btn-success"><i class="fas fa-save mr-1"></i>Register physical item</button></div>
             </form>
         </div>
     </div>

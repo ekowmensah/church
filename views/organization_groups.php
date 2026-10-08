@@ -8,6 +8,7 @@ require_once __DIR__.'/../helpers/auth.php';
 require_once __DIR__.'/../helpers/permissions_v2.php';
 require_once __DIR__.'/../helpers/leader_helpers.php';
 require_once __DIR__.'/../helpers/csrf.php';
+require_once __DIR__.'/../helpers/rbac_identity.php';
 require_once __DIR__.'/../services/OrganizationGroupService.php';
 require_once __DIR__.'/../services/OrganizationLogoService.php';
 
@@ -25,15 +26,18 @@ if (!is_logged_in()) {
 
 $sessionUserId = (int) ($_SESSION['user_id'] ?? 0);
 $sessionMemberId = (int) ($_SESSION['member_id'] ?? 0);
-$sessionRoleId = (int) ($_SESSION['role_id'] ?? 0);
 $leaderOrganizations = is_organization_leader($conn, $sessionUserId ?: null, $sessionMemberId ?: null);
 $leaderOrganizationIds = $leaderOrganizations
     ? array_map('intval', array_column($leaderOrganizations, 'organization_id'))
     : [];
-$canManageAll = in_array($sessionRoleId, [1, 2], true);
+$canManageAll = rbac_identity_has_any_role($conn, $sessionUserId, [
+    'Super Admin', 'Super Administrator', 'Admin',
+]);
 $canViewByPermission = has_permission('view_organization_groups');
 $mustScopeToLedOrganizations = !$canManageAll
-    && ($sessionRoleId === 6 || !empty($leaderOrganizationIds));
+    && (rbac_identity_has_any_role($conn, $sessionUserId, [
+        'Organizational Leader', 'Assistant Organizational Leader',
+    ]) || !empty($leaderOrganizationIds));
 
 if (!$canManageAll && (($mustScopeToLedOrganizations && !$leaderOrganizationIds) || (!$mustScopeToLedOrganizations && !$canViewByPermission))) {
     http_response_code(403);

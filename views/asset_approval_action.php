@@ -91,6 +91,10 @@ try {
             $assetItemId = (int) ($payload['asset_item_id'] ?? 0);
             $fromDepartmentId = (int) ($payload['from_department_id'] ?? $request['current_department_id'] ?? 0);
             $note = (string) ($payload['note'] ?? '');
+            $codeChange = [
+                'old_asset_code' => (string) ($request['asset_code'] ?? ''),
+                'new_asset_code' => (string) ($request['asset_code'] ?? ''),
+            ];
             if ($toDepartmentId <= 0 || $toDepartmentId === $fromDepartmentId) {
                 throw new RuntimeException('Invalid transfer payload.');
             }
@@ -115,12 +119,14 @@ try {
                 );
                 $stmt = $conn->prepare('UPDATE asset_items SET department_id = ?, item_number = ? WHERE id = ?');
                 $stmt->bind_param('isi', $toDepartmentId, $newItemNumber, $assetItemId); $stmt->execute(); $stmt->close();
-                asset_sync_parent_from_items($conn, $assetId);
+                $codeChange = asset_sync_parent_from_items($conn, $assetId);
             } else {
-                $stmt = $conn->prepare('UPDATE assets SET department_id = ? WHERE id = ?');
-                $stmt->bind_param('ii', $toDepartmentId, $assetId); $stmt->execute(); $stmt->close();
+                $codeChange = asset_move_parent_to_department($conn, $assetId, $toDepartmentId);
                 $assetItemId = null;
             }
+
+            $payload['old_asset_code'] = $codeChange['old_asset_code'];
+            $payload['new_asset_code'] = $codeChange['new_asset_code'];
 
             $stmt = $conn->prepare('INSERT INTO asset_movements (asset_id, asset_item_id, from_department_id, to_department_id, moved_by, notes) VALUES (?, ?, ?, ?, ?, ?)');
             $stmt->bind_param('iiiiis', $assetId, $assetItemId, $fromDepartmentId, $toDepartmentId, $reviewedBy, $note);
@@ -199,7 +205,7 @@ try {
 
     asset_log_action('asset_approval_' . $newStatus, 'asset_approval_request', $requestId, [
         'asset_id' => (int) $request['asset_id'],
-        'asset_code' => $assetLabel,
+        'asset_code' => (string) ($payload['new_asset_code'] ?? $assetLabel),
         'asset_name' => $assetName,
         'church_id' => (int) $request['church_id'],
         'request_type' => (string) $request['request_type'],

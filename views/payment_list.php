@@ -31,7 +31,7 @@ if (!$is_super_admin && !has_permission('view_payment_list')) {
 
 // Set permission flags for UI elements
 $can_add = $is_super_admin || has_permission('create_payment');
-$can_edit = $is_super_admin || has_permission('edit_payment');
+$can_edit = $is_super_admin || has_permission('correct_payment');
 $can_delete = $is_super_admin || has_permission('delete_payment');
 $can_view_all = $is_super_admin || has_permission('view_all_payments');
 $can_review_gateway = $is_super_admin || has_permission('review_payment_gateway_integrity');

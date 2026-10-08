@@ -8,7 +8,7 @@
  * GET    /api/rbac/permissions.php?id={id}      - Get specific permission
  * POST   /api/rbac/permissions.php              - Create permission
  * PUT    /api/rbac/permissions.php?id={id}      - Update permission
- * DELETE /api/rbac/permissions.php?id={id}      - Delete permission
+ * DELETE /api/rbac/permissions.php?id={id}      - Deactivate custom permission
  * 
  * @package RBAC\API
  * @version 2.0
@@ -44,6 +44,7 @@ class PermissionsAPI extends BaseAPI {
      */
     protected function handlePost() {
         $this->requirePermission('manage_permissions');
+        $this->requirePermission('create_permission');
         $this->createPermission();
     }
     
@@ -52,6 +53,7 @@ class PermissionsAPI extends BaseAPI {
      */
     protected function handlePut() {
         $this->requirePermission('manage_permissions');
+        $this->requirePermission('edit_permission');
         $id = $this->getRequiredParam('id');
         $this->updatePermission($id);
     }
@@ -61,6 +63,7 @@ class PermissionsAPI extends BaseAPI {
      */
     protected function handleDelete() {
         $this->requirePermission('manage_permissions');
+        $this->requirePermission('delete_permission');
         $id = $this->getRequiredParam('id');
         $this->deletePermission($id);
     }
@@ -71,7 +74,10 @@ class PermissionsAPI extends BaseAPI {
     private function listPermissions() {
         $startTime = microtime(true);
         
-        $this->requirePermission('view_permission_list');
+        if (!has_permission('view_permission_list', $this->userId)
+            && !has_permission('manage_permissions', $this->userId)) {
+            $this->sendError('Forbidden', 403);
+        }
         
         // Get filters
         $filters = [];
@@ -105,6 +111,22 @@ class PermissionsAPI extends BaseAPI {
             // Get flat list
             $data = $this->permissionService->getAllPermissions($filters);
         }
+        if ($this->getParam('delegation') === 'true') {
+            $delegableIds = [];
+            if (is_super_admin()) {
+                foreach ($data as $permission) {
+                    $delegableIds[(int) $permission['id']] = true;
+                }
+            } else {
+                foreach (get_user_permissions(true) as $permission) {
+                    $delegableIds[(int) $permission['id']] = true;
+                }
+            }
+            foreach ($data as &$permission) {
+                $permission['can_delegate'] = isset($delegableIds[(int) $permission['id']]);
+            }
+            unset($permission);
+        }
         $queryTime = microtime(true) - $queryStart;
         
         $totalTime = microtime(true) - $startTime;
@@ -124,7 +146,10 @@ class PermissionsAPI extends BaseAPI {
      * Get specific permission
      */
     private function getPermission($id) {
-        $this->requirePermission('view_permission_list');
+        if (!has_permission('view_permission_list', $this->userId)
+            && !has_permission('manage_permissions', $this->userId)) {
+            $this->sendError('Forbidden', 403);
+        }
         $id = $this->validateInt($id, 'id');
         
         $permission = $this->permissionService->getPermissionById($id);
@@ -153,8 +178,14 @@ class PermissionsAPI extends BaseAPI {
             'category_id' => $this->validateInt($this->getRequiredParam('category_id'), 'category_id'),
             'parent_id' => $this->getParam('parent_id'),
             'permission_type' => $this->getParam('permission_type', 'action'),
-            'is_system' => $this->getParam('is_system', false),
+            // System capabilities are deployment-owned catalog entries. A web
+            // request may create a custom capability, but cannot make it
+            // immutable by labelling it as a system capability.
+            'is_system' => false,
             'requires_context' => $this->getParam('requires_context', false),
+            'context_type' => $this->getParam('context_type', 'church'),
+            'context_key' => $this->getParam('context_key', 'church_id'),
+            'risk_level' => $this->getParam('risk_level', 'standard'),
             'sort_order' => $this->getParam('sort_order', 0),
             'is_active' => $this->getParam('is_active', true)
         ];
@@ -188,7 +219,8 @@ class PermissionsAPI extends BaseAPI {
         // Get allowed update fields
         $allowedFields = [
             'name', 'description', 'category_id', 'parent_id',
-            'permission_type', 'requires_context', 'sort_order', 'is_active'
+            'permission_type', 'requires_context', 'risk_level',
+            'context_type', 'context_key', 'sort_order', 'is_active'
         ];
         
         $data = [];
@@ -222,23 +254,23 @@ class PermissionsAPI extends BaseAPI {
     }
     
     /**
-     * Delete permission
+     * Deactivate a custom permission while retaining audit evidence.
      */
     private function deletePermission($id) {
         $id = $this->validateInt($id, 'id');
-        $hardDelete = $this->getParam('hard_delete') === 'true';
+        $hardDelete = false;
         
         try {
             $this->permissionService->deletePermission($id, $this->userId, $hardDelete);
             
             $this->logActivity('delete_permission', [
                 'permission_id' => $id,
-                'hard_delete' => $hardDelete
+                'hard_delete' => false
             ]);
             
             $this->sendSuccess(
                 [],
-                $hardDelete ? 'Permission permanently deleted' : 'Permission deactivated'
+                'Permission deactivated'
             );
         } catch (Exception $e) {
             $this->sendError($e->getMessage(), 400);

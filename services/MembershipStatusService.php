@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../helpers/rbac_identity.php';
 
 final class MembershipStatusService {
     public const STATUSES = [
@@ -25,12 +26,11 @@ final class MembershipStatusService {
     }
 
     public static function fromSession(mysqli $conn): self {
-        $roleIds = array_map('intval', (array) ($_SESSION['role_ids'] ?? []));
-        if (isset($_SESSION['role_id'])) $roleIds[] = (int) $_SESSION['role_id'];
+        $userId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
         return new self(
             $conn,
-            isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null,
-            !empty($_SESSION['is_super_admin']) || in_array(1, $roleIds, true)
+            $userId,
+            rbac_identity_is_super_admin($conn, $userId)
         );
     }
 

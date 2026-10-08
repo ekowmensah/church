@@ -1,17 +1,17 @@
 <?php
 
+require_once __DIR__ . '/../helpers/rbac_identity.php';
+
 final class UnifiedAttendanceReportService {
     private mysqli $conn;
     private ?int $userId;
     private ?int $memberId;
-    private array $roleIds;
     private ?array $leaderScopes = null;
 
     public function __construct(mysqli $conn, ?int $userId, ?int $memberId, array $roleIds = []) {
         $this->conn = $conn;
         $this->userId = $userId && $userId > 0 ? $userId : null;
         $this->memberId = $memberId && $memberId > 0 ? $memberId : null;
-        $this->roleIds = array_values(array_unique(array_filter(array_map('intval', $roleIds))));
 
         if ($this->userId !== null) {
             if ($this->memberId === null) {
@@ -21,28 +21,15 @@ final class UnifiedAttendanceReportService {
                 $this->memberId = (int) ($stmt->get_result()->fetch_assoc()['member_id'] ?? 0) ?: null;
                 $stmt->close();
             }
-            $stmt = $this->conn->prepare('SELECT role_id FROM user_roles WHERE user_id = ?');
-            $stmt->bind_param('i', $this->userId);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            while ($row = $result->fetch_assoc()) {
-                $this->roleIds[] = (int) $row['role_id'];
-            }
-            $stmt->close();
-            $this->roleIds = array_values(array_unique($this->roleIds));
         }
     }
 
     public static function fromSession(mysqli $conn): self {
-        $roles = (array) ($_SESSION['role_ids'] ?? []);
-        if (isset($_SESSION['role_id'])) {
-            $roles[] = (int) $_SESSION['role_id'];
-        }
         return new self(
             $conn,
             isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null,
             isset($_SESSION['member_id']) ? (int) $_SESSION['member_id'] : null,
-            $roles
+            []
         );
     }
 
@@ -387,15 +374,18 @@ final class UnifiedAttendanceReportService {
     }
 
     private function isSuperAdministrator(): bool {
-        return in_array(1, $this->roleIds, true);
+        return rbac_identity_is_super_admin($this->conn, $this->userId);
     }
 
     private function hasBroadChurchAccess(): bool {
-        return (bool) array_intersect([1, 2, 3, 4, 11], $this->roleIds);
+        return rbac_identity_has_any_role($this->conn, $this->userId, [
+            'Super Admin', 'Super Administrator', 'Admin', 'Stewards',
+            'Rev. Ministers', 'Statistician',
+        ]);
     }
 
     private function hasSundaySchoolAccess(): bool {
-        return in_array(10, $this->roleIds, true);
+        return rbac_identity_has_any_role($this->conn, $this->userId, ['Sunday School']);
     }
 
     private function assertChurchAllowed(int $churchId): void {

@@ -116,12 +116,15 @@ final class SystemNotificationService
             "SELECT DISTINCT user_account.id"
             . " FROM users user_account"
             . " JOIN user_roles user_role ON user_role.user_id = user_account.id AND user_role.is_active = 1"
+            . " AND (user_role.expires_at IS NULL OR user_role.expires_at > NOW())"
             . " JOIN roles access_role ON access_role.id = user_role.role_id AND access_role.is_active = 1"
             . " JOIN role_permissions role_permission ON role_permission.role_id = access_role.id AND role_permission.is_active = 1"
+            . " AND (role_permission.expires_at IS NULL OR role_permission.expires_at > NOW())"
             . " JOIN permissions permission ON permission.id = role_permission.permission_id AND permission.is_active = 1"
             . " LEFT JOIN members member ON member.id = user_account.member_id"
             . " WHERE user_account.status = 'active' AND permission.name = ?"
-            . " AND (access_role.id = 1 OR ? = 0 OR COALESCE(user_account.church_id, member.church_id) = ?)"
+            . " AND (LOWER(TRIM(access_role.name)) = 'super admin' OR ? = 0"
+            . " OR COALESCE(user_account.church_id, member.church_id) = ?)"
         );
         $stmt->bind_param('sii', $permission, $churchId, $churchId);
         $stmt->execute();

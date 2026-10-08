@@ -10,6 +10,7 @@
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../services/rbac/RBACServiceFactory.php';
 require_once __DIR__ . '/../../helpers/permissions_v2.php';
+require_once __DIR__ . '/../../helpers/csrf.php';
 
 abstract class BaseAPI {
     protected $conn;
@@ -20,10 +21,10 @@ abstract class BaseAPI {
     
     public function __construct() {
         // Set headers
-        header('Content-Type: application/json');
-        header('Access-Control-Allow-Origin: *');
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store, private');
         header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-        header('Access-Control-Allow-Headers: Content-Type, Authorization');
+        header('Access-Control-Allow-Headers: Content-Type, X-CSRF-Token');
         
         // Handle preflight requests
         if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -43,6 +44,11 @@ abstract class BaseAPI {
         // Authenticate
         if (!$this->authenticate()) {
             $this->sendError('Unauthorized', 401);
+            exit;
+        }
+
+        if ($this->requestMethod !== 'GET' && !$this->validCsrfToken()) {
+            $this->sendError('Your session token expired. Refresh the page and try again.', 419);
             exit;
         }
     }
@@ -68,8 +74,9 @@ abstract class BaseAPI {
                 default:
                     $this->sendError('Method not allowed', 405);
             }
-        } catch (Exception $e) {
-            $this->sendError($e->getMessage(), 500);
+        } catch (Throwable $e) {
+            error_log('RBAC API failure: ' . $e->getMessage());
+            $this->sendError('The access-control operation could not be completed.', 500);
         }
     }
     
@@ -87,8 +94,21 @@ abstract class BaseAPI {
             return false;
         }
         
-        $this->userId = $_SESSION['user_id'];
-        return true;
+        $this->userId = (int) $_SESSION['user_id'];
+        $stmt = $this->conn->prepare("SELECT 1 FROM users WHERE id = ? AND status = 'active' LIMIT 1");
+        $stmt->bind_param('i', $this->userId);
+        $stmt->execute();
+        $active = $stmt->get_result()->num_rows === 1;
+        $stmt->close();
+        return $active;
+    }
+
+    /**
+     * Validate either a JSON/form token or the same-origin X-CSRF-Token header.
+     */
+    protected function validCsrfToken() {
+        $token = $this->requestData['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? null);
+        return csrf_is_valid($token);
     }
     
     /**

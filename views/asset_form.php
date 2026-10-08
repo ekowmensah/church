@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../includes/asset_workspace_nav.php';
 
 $isEdit = isset($_GET['id']) && (int) $_GET['id'] > 0;
 asset_require_permission($isEdit ? 'edit_asset' : 'create_asset');
@@ -160,6 +162,10 @@ foreach ($departments as $departmentRow) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        http_response_code(419);
+        exit('Your form expired. Refresh the page and try again.');
+    }
     $churchId = $isSuper ? (int) ($_POST['church_id'] ?? 0) : (int) asset_current_church_id($conn);
     $departments = asset_fetch_departments($conn, $churchId > 0 ? $churchId : null, false);
     $groups = $hasGroups ? asset_fetch_groups($conn, $churchId > 0 ? $churchId : null, false) : [];
@@ -557,28 +563,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 ob_start();
 ?>
-<style>
-.asset-form-shell {
-    background: linear-gradient(145deg, #f7f9fc, #eef3f8);
-    border: 1px solid #dde5ee;
-    border-radius: 14px;
-}
-.asset-form-shell .card-header {
-    background: #0f3557;
-    color: #fff;
-    border-radius: 14px 14px 0 0;
-}
-</style>
-<div class="container-fluid mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h2 class="mb-1"><i class="fas fa-box mr-2"></i><?= $isEdit ? 'Edit Asset' : 'Add Asset' ?></h2>
-            <small class="text-muted">Capture structured asset data, acquisition details, and serial tracking.</small>
-        </div>
-        <a href="asset_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>" class="btn btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i> Back</a>
-    </div>
+<link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
+<div class="container-fluid mt-4 asset-workspace">
+    <?php
+    $backUrl = 'asset_list.php' . ($churchId ? '?church_id=' . (int) $churchId : '');
+    render_asset_workspace_hero(
+        $isEdit ? 'Controlled master-data update' : 'Physical asset onboarding',
+        $isEdit ? 'Edit Asset Record' : 'Register an Asset',
+        'Capture ownership, acquisition evidence, value, condition and the identity used throughout custody and movement workflows.',
+        'fa-box',
+        '<a href="' . htmlspecialchars($backUrl, ENT_QUOTES, 'UTF-8') . '" class="btn btn-light"><i class="fas fa-arrow-left mr-1"></i>Back to register</a>'
+    );
+    render_asset_workspace_nav('register', $churchId);
+    ?>
 
-    <div class="card asset-form-shell shadow-sm">
+    <div class="card asset-panel asset-form-shell">
         <div class="card-header py-3">
             <strong><?= $isEdit ? 'Asset Update' : 'Asset Onboarding' ?></strong>
         </div>
@@ -586,6 +585,7 @@ ob_start();
             <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 
             <form method="post" autocomplete="off">
+                <?= csrf_input() ?>
                 <?php if ($isEdit): ?>
                     <input type="hidden" name="original_updated_at" value="<?= htmlspecialchars($originalUpdatedAt) ?>">
                 <?php endif; ?>
@@ -716,8 +716,9 @@ ob_start();
                         <input type="text" name="primary_serial_number" class="form-control" value="<?= htmlspecialchars($primarySerialNumber) ?>" maxlength="120" placeholder="Unique per item">
                     </div>
                     <div class="form-group col-md-3">
-                        <label>Amount</label>
+                        <label>Total Recorded Acquisition Value</label>
                         <input type="number" step="0.01" min="0" name="amount" class="form-control" value="<?= htmlspecialchars($amount) ?>">
+                        <small class="text-muted">Total value for this asset record; portfolio reports allocate it proportionally across active physical units.</small>
                     </div>
                 </div>
 
@@ -760,7 +761,10 @@ ob_start();
                     <input type="text" name="allocation_note" class="form-control" value="<?= htmlspecialchars($allocationNote) ?>" maxlength="180" placeholder="Department/location note">
                 </div>
 
-                <button type="submit" class="btn btn-primary"><i class="fas fa-save mr-1"></i> Save Asset</button>
+                <div class="asset-action-bar">
+                    <a href="<?= htmlspecialchars($backUrl, ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save mr-1"></i> Save Asset</button>
+                </div>
             </form>
         </div>
     </div>

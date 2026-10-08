@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
 require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../includes/asset_workspace_nav.php';
 
 if (!asset_is_super_admin() && !has_permission('view_asset_detail') && !has_permission('view_asset_register')) {
     asset_require_permission('view_asset_detail');
@@ -29,7 +30,7 @@ if ($assetId <= 0) {
 }
 
 $tab = trim((string) ($_GET['tab'] ?? 'overview'));
-if (!in_array($tab, ['overview', 'items', 'movements', 'audit', 'financial', 'documents', 'approvals'], true)) {
+if (!in_array($tab, ['overview', 'items', 'custody', 'movements', 'audit', 'financial', 'documents', 'approvals'], true)) {
     $tab = 'overview';
 }
 
@@ -68,6 +69,10 @@ $error = '';
 $success = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        http_response_code(419);
+        exit('Your form expired. Refresh the page and try again.');
+    }
     $action = trim((string) ($_POST['asset_action'] ?? ''));
     $assetIdPost = (int) ($_POST['id'] ?? 0);
     if ($assetIdPost !== $assetId) {
@@ -236,7 +241,24 @@ $movements = [];
 $documents = [];
 $auditRows = [];
 $approvalRows = [];
+$custodyEvents = [];
 $departments = asset_fetch_departments($conn, $churchId, false);
+
+if ($tab === 'custody' && asset_table_exists($conn, 'asset_custody_events')) {
+    $stmt = $conn->prepare("SELECT event.*, item.item_number,
+                                  CONCAT_WS(' ', member.first_name, member.middle_name, member.last_name) AS member_name,
+                                  custodian.name AS user_name, actor.name AS actor_name
+                             FROM asset_custody_events event
+                             JOIN asset_items item ON item.id = event.asset_item_id
+                             LEFT JOIN members member ON member.id = event.custodian_member_id
+                             LEFT JOIN users custodian ON custodian.id = event.custodian_user_id
+                             LEFT JOIN users actor ON actor.id = event.performed_by_user_id
+                            WHERE event.asset_id = ? ORDER BY event.occurred_at DESC LIMIT 100");
+    $stmt->bind_param('i', $assetId);
+    $stmt->execute();
+    $custodyEvents = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+}
 
 if ($tab === 'movements' || $tab === 'overview') {
     $stmt = $conn->prepare("
@@ -327,7 +349,8 @@ if (!empty($asset['purchase_date']) && $purchaseAmount > 0) {
 
 ob_start();
 ?>
-<div class="container-fluid mt-4">
+<link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
+<div class="container-fluid mt-4 asset-workspace">
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
         <div>
             <h2 class="mb-1"><i class="fas fa-cube mr-2"></i>Asset Workspace</h2>
@@ -353,6 +376,8 @@ ob_start();
         </div>
     </div>
 
+    <?php render_asset_workspace_nav('register', $churchId); ?>
+
     <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
     <?php if (isset($_GET['doc_saved'])): ?><div class="alert alert-success">Document uploaded successfully.</div><?php endif; ?>
     <?php if (isset($_GET['request_saved'])): ?><div class="alert alert-success">Approval request submitted.</div><?php endif; ?>
@@ -365,6 +390,7 @@ ob_start();
                 $tabs = [
                     'overview' => 'Overview',
                     'items' => 'Physical Items',
+                    'custody' => 'Custody History',
                     'movements' => 'Movements',
                     'audit' => 'Audit',
                     'financial' => 'Financial',
@@ -425,6 +451,7 @@ ob_start();
                     <div class="card-body">
                         <?php if ($canRequestApproval): ?>
                             <form method="post" class="mb-3">
+                                <?= csrf_input() ?>
                                 <input type="hidden" name="id" value="<?= $assetId ?>">
                                 <input type="hidden" name="asset_action" value="request_dispose">
                                 <div class="form-group">
@@ -442,6 +469,7 @@ ob_start();
                             </form>
 
                             <form method="post">
+                                <?= csrf_input() ?>
                                 <input type="hidden" name="id" value="<?= $assetId ?>">
                                 <input type="hidden" name="asset_action" value="request_status_change">
                                 <div class="form-group">
@@ -482,7 +510,7 @@ ob_start();
             </div>
             <div class="card-body table-responsive">
                 <table class="table table-bordered table-hover">
-                    <thead class="thead-light"><tr><th>Item Number</th><th>Department</th><th>Serial</th><th>Condition</th><th>Status</th><th>Registered</th></tr></thead>
+                    <thead class="thead-light"><tr><th>Item Number</th><th>Department</th><th>Serial</th><th>Condition</th><th>Custody</th><th>Lifecycle</th><th>Registered</th></tr></thead>
                     <tbody>
                     <?php foreach ($physicalItems as $physicalItem): ?>
                         <tr>
@@ -490,14 +518,23 @@ ob_start();
                             <td><?= htmlspecialchars((string) ($physicalItem['department_name'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string) (($physicalItem['serial_number'] ?? '') !== '' ? $physicalItem['serial_number'] : '-')) ?></td>
                             <td><?= htmlspecialchars((string) $physicalItem['condition_status']) ?></td>
-                            <td><span class="badge badge-<?= (string) $physicalItem['status'] === 'active' ? 'success' : 'secondary' ?>"><?= htmlspecialchars(ucfirst((string) $physicalItem['status'])) ?></span></td>
+                            <td><span class="badge badge-<?= ($physicalItem['custody_status'] ?? 'available') === 'available' ? 'success' : (($physicalItem['custody_status'] ?? '') === 'issued' ? 'primary' : 'warning') ?>"><?= htmlspecialchars(ucfirst((string) ($physicalItem['custody_status'] ?? 'available'))) ?></span></td>
+                            <td><?= htmlspecialchars(asset_lifecycle_label((string) ($physicalItem['lifecycle_status'] ?? 'in_use'))) ?></td>
                             <td><?= htmlspecialchars((string) $physicalItem['created_at']) ?></td>
                         </tr>
                     <?php endforeach; ?>
-                    <?php if (!$physicalItems): ?><tr><td colspan="6" class="text-center">No physical items are registered.</td></tr><?php endif; ?>
+                    <?php if (!$physicalItems): ?><tr><td colspan="7" class="text-center">No physical items are registered.</td></tr><?php endif; ?>
                     </tbody>
                 </table>
             </div>
+        </div>
+    <?php elseif ($tab === 'custody'): ?>
+        <div class="card shadow-sm asset-panel">
+            <div class="card-header"><strong>Immutable custody history</strong><small class="d-block text-muted">Reservations, physical handovers and inspected returns for this asset.</small></div>
+            <div class="card-body table-responsive"><table class="table table-hover mb-0"><thead><tr><th>When</th><th>Physical unit</th><th>Event</th><th>Custodian</th><th>Condition</th><th>Recorded by</th><th>Notes</th></tr></thead><tbody>
+                <?php foreach ($custodyEvents as $event): ?><tr><td><?= htmlspecialchars((string) $event['occurred_at']) ?></td><td><strong><?= htmlspecialchars((string) $event['item_number']) ?></strong></td><td><span class="badge badge-info"><?= htmlspecialchars(ucwords(str_replace('_',' ',(string) $event['event_type']))) ?></span></td><td><?= htmlspecialchars((string) ($event['member_name'] ?: $event['user_name'] ?: '-')) ?></td><td><?= htmlspecialchars(trim((string) ($event['condition_before'] ?? '') . (($event['condition_before'] ?? '') && ($event['condition_after'] ?? '') ? ' → ' : '') . (string) ($event['condition_after'] ?? '')) ?: '-') ?></td><td><?= htmlspecialchars((string) ($event['actor_name'] ?? '-')) ?></td><td><?= htmlspecialchars((string) ($event['notes'] ?? '')) ?></td></tr><?php endforeach; ?>
+                <?php if (!$custodyEvents): ?><tr><td colspan="7" class="text-center text-muted py-4">No custody events have been recorded for this asset.</td></tr><?php endif; ?>
+            </tbody></table></div>
         </div>
     <?php elseif ($tab === 'movements'): ?>
         <div class="card shadow-sm">
@@ -564,6 +601,7 @@ ob_start();
                     <div class="card-body">
                         <?php if ($canUploadDoc && asset_table_exists($conn, 'asset_documents')): ?>
                             <form method="post" enctype="multipart/form-data">
+                                <?= csrf_input() ?>
                                 <input type="hidden" name="id" value="<?= $assetId ?>">
                                 <input type="hidden" name="asset_action" value="upload_document">
                                 <div class="form-group">
@@ -627,6 +665,7 @@ ob_start();
                     <div class="card-body">
                         <?php if ($canRequestApproval): ?>
                             <form method="post">
+                                <?= csrf_input() ?>
                                 <input type="hidden" name="id" value="<?= $assetId ?>">
                                 <input type="hidden" name="asset_action" value="request_transfer">
                                 <div class="form-group">

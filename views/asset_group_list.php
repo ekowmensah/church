@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../includes/asset_workspace_nav.php';
 
 asset_require_permission('manage_asset_groups');
 
@@ -21,19 +22,16 @@ $groups = asset_fetch_groups($conn, $selectedChurchId, true);
 
 ob_start();
 ?>
-<div class="container-fluid mt-4">
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
-        <h2 class="mb-0"><i class="fas fa-layer-group mr-2"></i>Item Categories</h2>
-        <a href="asset_group_form.php<?= $selectedChurchId ? '?church_id=' . (int) $selectedChurchId : '' ?>" class="btn btn-primary">
-            <i class="fas fa-plus mr-1"></i> Add Category
-        </a>
-    </div>
+<link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
+<div class="container-fluid mt-4 asset-workspace">
+    <?php ob_start(); ?><a href="asset_group_form.php<?= $selectedChurchId ? '?church_id=' . (int) $selectedChurchId : '' ?>" class="btn btn-warning"><i class="fas fa-plus mr-1"></i>Add category</a><?php $heroActions = ob_get_clean(); render_asset_workspace_hero('Register configuration', 'Asset Categories', 'Define stable categories, codes and quantity rules used when assets and physical units are registered.', 'fa-layer-group', $heroActions); ?>
+    <?php render_asset_workspace_nav('register', $selectedChurchId); ?>
 
     <?php if (isset($_GET['saved'])): ?>
         <div class="alert alert-success">Item category saved successfully.</div>
     <?php endif; ?>
 
-    <div class="card shadow-sm mb-3">
+    <div class="card asset-panel mb-3">
         <div class="card-body">
             <form method="get" class="form-row align-items-end">
                 <?php if ($isSuper): ?>
@@ -59,7 +57,7 @@ ob_start();
         </div>
     </div>
 
-    <div class="card shadow-sm">
+    <div class="card asset-panel">
         <div class="card-body table-responsive">
             <table class="table table-bordered table-hover" id="assetGroupsTable">
                 <thead class="thead-light">
@@ -102,12 +100,12 @@ ob_start();
                             </span>
                         </td>
                         <td class="text-nowrap">
-                            <a href="asset_group_form.php?id=<?= (int) $group['id'] ?>" class="btn btn-sm btn-warning"><i class="fas fa-edit"></i></a>
+                            <a href="asset_group_form.php?id=<?= (int) $group['id'] ?>" class="btn btn-sm btn-outline-primary" title="Edit category" aria-label="Edit <?= htmlspecialchars((string) $group['name'], ENT_QUOTES, 'UTF-8') ?>"><i class="fas fa-edit"></i></a>
                         </td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($groups)): ?>
-                    <tr><td colspan="<?= $isSuper ? 8 : 7 ?>" class="text-center">No item categories found.</td></tr>
+                    <tr><td colspan="<?= $isSuper ? 8 : 7 ?>" class="asset-empty-state"><i class="fas fa-layer-group"></i>No asset categories match this church.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

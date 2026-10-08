@@ -36,6 +36,37 @@ function has_permission($permission, $user_id = null, $context = []) {
 }
 
 /**
+ * Make a fail-closed authorization decision for a contextual resource.
+ * Unlike has_permission(), this requires a valid context for permissions
+ * marked requires_context and returns the decision evidence for diagnostics.
+ *
+ * @return array{allowed:bool,reason:string,source:string,permission_id:?int,permission_name:string}
+ */
+function authorize_permission($permission, $context, $user_id = null, $log_check = true) {
+    try {
+        if (isset($GLOBALS['conn'])) {
+            RBACServiceFactory::setConnection($GLOBALS['conn']);
+        }
+
+        return RBACServiceFactory::getPermissionChecker()->authorize(
+            $permission,
+            $user_id,
+            is_array($context) ? $context : [],
+            (bool) $log_check
+        );
+    } catch (Throwable $e) {
+        error_log('Authorization decision failed: ' . $e->getMessage());
+        return [
+            'allowed' => false,
+            'reason' => 'authorization_service_error',
+            'source' => 'system',
+            'permission_id' => null,
+            'permission_name' => (string) $permission,
+        ];
+    }
+}
+
+/**
  * Check if user has all permissions (AND logic)
  * 
  * @param array $permissions Array of permission names
@@ -240,13 +271,9 @@ function is_super_admin() {
         return false;
     }
     
-    // Check session first
-    if (isset($_SESSION['is_super_admin']) && $_SESSION['is_super_admin']) {
-        return true;
-    }
-    
-    // Check via permission system
-    return has_permission('*') || has_role('Super Admin');
+    // Never trust a long-lived session flag for a privileged bypass. The
+    // canonical checker revalidates the active account, role and assignment.
+    return has_role('Super Admin');
 }
 
 /**

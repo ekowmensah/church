@@ -10,7 +10,7 @@
 // Include all service classes
 require_once __DIR__ . '/PermissionService.php';
 require_once __DIR__ . '/RoleService.php';
-require_once __DIR__ . '/PermissionChecker.php';
+require_once __DIR__ . '/CanonicalPermissionChecker.php';
 require_once __DIR__ . '/AuditLogger.php';
 require_once __DIR__ . '/RoleTemplateService.php';
 

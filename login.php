@@ -81,11 +81,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['user_name'] = $user['name']; // For dashboard compatibility
                 $_SESSION['email'] = $user['email'];
                 $_SESSION['must_change_password'] = (int) $user['must_change_password'];
-                // Robust super admin session flag - check if user has role_id = 1 (super admin role)
+                // Compatibility flag only; authorization always revalidates RBAC.
                 $_SESSION['is_super_admin'] = false;
                 // Fetch all roles for this user
                 $role_stmt = $conn->prepare(
-                    'SELECT user_role.role_id
+                    'SELECT user_role.role_id, access_role.name AS role_name
                        FROM user_roles user_role
                        JOIN roles access_role ON access_role.id = user_role.role_id
                       WHERE user_role.user_id = ?
@@ -97,8 +97,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $role_stmt->execute();
                 $role_result = $role_stmt->get_result();
                 $role_ids = [];
+                $isSuperAdminAssignment = false;
                 while ($row = $role_result->fetch_assoc()) {
                     $role_ids[] = (int)$row['role_id'];
+                    if (strtolower(trim((string) $row['role_name'])) === 'super admin') {
+                        $isSuperAdminAssignment = true;
+                    }
                 }
                 $role_stmt->close();
                 if (empty($role_ids)) {
@@ -116,10 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // For backward compatibility, set role_id to the first (lowest) role
                     $_SESSION['role_id'] = $role_ids[0];
                     
-                    // Set super admin flag if user has role_id = 1
-                    if (in_array(1, $role_ids)) {
-                        $_SESSION['is_super_admin'] = true;
-                    }
+                    $_SESSION['is_super_admin'] = $isSuperAdminAssignment;
                     
                     // Load user permissions into session
                     $permissions = [];
@@ -143,10 +144,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     require_once __DIR__.'/helpers/global_audit_log.php';
                     log_activity('login_success', 'user', $user['id'], json_encode(['username'=>$email, 'ip'=>$_SERVER['REMOTE_ADDR']]));
-                    // Super Admin override: always set role_id to 1 if present
-                    if (in_array(1, $role_ids)) {
-                        $_SESSION['role_id'] = 1;
-                    }
                     $destination = (int) $user['must_change_password'] === 1
                         ? '/views/change_user_password.php'
                         : '/index.php';

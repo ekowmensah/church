@@ -2,6 +2,8 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
 require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../helpers/report_pagination.php';
+require_once __DIR__ . '/../includes/asset_workspace_nav.php';
 
 asset_require_permission('view_asset_register');
 
@@ -9,6 +11,7 @@ $isSuper = asset_is_super_admin();
 $hasLifecycle = asset_can_use_lifecycle($conn);
 $hasGroups = asset_can_use_groups($conn);
 $hasAcquisitionMode = asset_column_exists($conn, 'assets', 'acquisition_mode');
+$hasCustody = asset_column_exists($conn, 'asset_items', 'custody_status');
 $churchId = $isSuper ? (isset($_GET['church_id']) && (int) $_GET['church_id'] > 0 ? (int) $_GET['church_id'] : null) : asset_current_church_id($conn);
 $departmentId = isset($_GET['department_id']) && (int) $_GET['department_id'] > 0 ? (int) $_GET['department_id'] : null;
 $assetGroupId = isset($_GET['asset_group_id']) && (int) $_GET['asset_group_id'] > 0 ? (int) $_GET['asset_group_id'] : null;
@@ -43,68 +46,68 @@ if ($isSuper) {
     }
 }
 
-$sql = "
-    SELECT a.*, d.name AS department_name, c.name AS church_name,
-           (SELECT GROUP_CONCAT(item.item_number ORDER BY item.item_number SEPARATOR ', ')
-              FROM asset_items item
-             WHERE item.asset_id = a.id AND item.status = 'active') AS active_item_numbers" . ($hasGroups ? ", g.name AS asset_group_name, g.group_code AS asset_group_code" : "") . "
+$custodySelect = $hasCustody
+    ? ", (SELECT COUNT(*) FROM asset_items available_item WHERE available_item.asset_id = a.id AND available_item.status = 'active' AND available_item.custody_status = 'available') AS available_item_count,
+         (SELECT COUNT(*) FROM asset_items reserved_item WHERE reserved_item.asset_id = a.id AND reserved_item.status = 'active' AND reserved_item.custody_status = 'reserved') AS reserved_item_count,
+         (SELECT COUNT(*) FROM asset_items issued_item WHERE issued_item.asset_id = a.id AND issued_item.status = 'active' AND issued_item.custody_status = 'issued') AS issued_item_count"
+    : ", a.quantity AS available_item_count, 0 AS reserved_item_count, 0 AS issued_item_count";
+$fromSql = "
     FROM assets a
     LEFT JOIN asset_departments d ON d.id = a.department_id
     LEFT JOIN churches c ON c.id = a.church_id
-    " . ($hasGroups ? "LEFT JOIN asset_groups g ON g.id = a.asset_group_id" : "") . "
-    WHERE 1
-";
+    " . ($hasGroups ? "LEFT JOIN asset_groups g ON g.id = a.asset_group_id" : "");
+$whereSql = ' WHERE 1';
 $types = '';
 $params = [];
 
 if ($churchId !== null) {
-    $sql .= ' AND a.church_id = ?';
+    $whereSql .= ' AND a.church_id = ?';
     $types .= 'i';
     $params[] = $churchId;
 }
 if ($departmentId !== null) {
-    $sql .= ' AND a.department_id = ?';
+    $whereSql .= ' AND a.department_id = ?';
     $types .= 'i';
     $params[] = $departmentId;
 }
 if ($hasGroups && $assetGroupId !== null) {
-    $sql .= ' AND a.asset_group_id = ?';
+    $whereSql .= ' AND a.asset_group_id = ?';
     $types .= 'i';
     $params[] = $assetGroupId;
 }
 if ($condition !== '' && in_array($condition, $conditions, true)) {
-    $sql .= ' AND a.condition_status = ?';
+    $whereSql .= ' AND a.condition_status = ?';
     $types .= 's';
     $params[] = $condition;
 }
 if ($status !== '' && in_array($status, ['active', 'disposed'], true)) {
-    $sql .= ' AND a.status = ?';
+    $whereSql .= ' AND a.status = ?';
     $types .= 's';
     $params[] = $status;
 }
 if ($hasLifecycle && $lifecycle !== '' && in_array($lifecycle, $lifecycleOptions, true)) {
-    $sql .= ' AND a.lifecycle_status = ?';
+    $whereSql .= ' AND a.lifecycle_status = ?';
     $types .= 's';
     $params[] = $lifecycle;
 }
 if ($hasAcquisitionMode && $acquisitionMode !== '' && array_key_exists($acquisitionMode, $acquisitionModes)) {
-    $sql .= ' AND a.acquisition_mode = ?';
+    $whereSql .= ' AND a.acquisition_mode = ?';
     $types .= 's';
     $params[] = $acquisitionMode;
 }
 if ($q !== '') {
-    $sql .= ' AND (a.asset_code LIKE ? OR a.item_name LIKE ? OR a.item_group LIKE ? OR a.receipt_or_serial_number LIKE ?';
+    $whereSql .= ' AND (a.asset_code LIKE ? OR a.item_name LIKE ? OR a.item_group LIKE ? OR a.receipt_or_serial_number LIKE ?';
     if (asset_column_exists($conn, 'assets', 'receipt_number')) {
-        $sql .= ' OR a.receipt_number LIKE ?';
+        $whereSql .= ' OR a.receipt_number LIKE ?';
     }
     if (asset_column_exists($conn, 'assets', 'serial_number')) {
-        $sql .= ' OR a.serial_number LIKE ?';
+        $whereSql .= ' OR a.serial_number LIKE ?';
     }
     if ($hasGroups) {
-        $sql .= ' OR g.name LIKE ? OR g.group_code LIKE ?';
+        $whereSql .= ' OR g.name LIKE ? OR g.group_code LIKE ?';
     }
-    $sql .= ' OR EXISTS (SELECT 1 FROM asset_items searched_item WHERE searched_item.asset_id = a.id AND searched_item.item_number LIKE ?)';
-    $sql .= ')';
+    $whereSql .= ' OR EXISTS (SELECT 1 FROM asset_items searched_item WHERE searched_item.asset_id = a.id AND searched_item.item_number LIKE ?)';
+    $whereSql .= ')';
     $types .= 'ssss';
     $like = '%' . $q . '%';
     $params[] = $like;
@@ -128,48 +131,40 @@ if ($q !== '') {
     $params[] = $like;
 }
 
-$sql .= ' ORDER BY a.created_at DESC';
+$sql = "SELECT a.*, d.name AS department_name, c.name AS church_name,
+               (SELECT GROUP_CONCAT(item.item_number ORDER BY item.item_number SEPARATOR ', ')
+                  FROM asset_items item
+                 WHERE item.asset_id = a.id AND item.status = 'active') AS active_item_numbers"
+     . $custodySelect
+     . ($hasGroups ? ", g.name AS asset_group_name, g.group_code AS asset_group_code" : "")
+     . $fromSql . $whereSql;
 
-$stmt = $conn->prepare($sql);
-if ($types !== '') {
-    $stmt->bind_param($types, ...$params);
-}
-$stmt->execute();
-$res = $stmt->get_result();
-$assets = [];
-while ($row = $res->fetch_assoc()) {
-    $assets[] = $row;
-}
-$stmt->close();
+$summarySql = 'SELECT COUNT(*) AS total_assets,
+                      SUM(a.status = "active") AS active_assets,
+                      SUM(a.status = "disposed") AS disposed_assets,
+                      COALESCE(SUM(a.quantity), 0) AS physical_units,
+                      SUM(a.lifecycle_status = "under_maintenance" OR a.condition_status = "Under Maintenance") AS maintenance_assets,
+                      COALESCE(SUM(a.amount), 0) AS total_amount'
+              . $fromSql . $whereSql;
+$summaryStmt = $conn->prepare($summarySql);
+if ($types !== '') $summaryStmt->bind_param($types, ...$params);
+$summaryStmt->execute();
+$registerSummary = $summaryStmt->get_result()->fetch_assoc() ?: [];
+$summaryStmt->close();
 
-$totalAssets = count($assets);
-$activeAssets = 0;
-$disposedAssets = 0;
-$underMaintenanceAssets = 0;
-$totalAmount = 0.0;
-
-foreach ($assets as $asset) {
-    $assetStatus = (string) ($asset['status'] ?? 'active');
-    $assetCondition = (string) ($asset['condition_status'] ?? '');
-    $effectiveLifecycle = $hasLifecycle
-        ? (string) ($asset['lifecycle_status'] ?? asset_default_lifecycle($assetStatus, $assetCondition))
-        : asset_default_lifecycle($assetStatus, $assetCondition);
-
-    if ($assetStatus === 'disposed') {
-        $disposedAssets++;
-    } else {
-        $activeAssets++;
-    }
-    if ($effectiveLifecycle === 'under_maintenance' || $assetCondition === 'Under Maintenance') {
-        $underMaintenanceAssets++;
-    }
-    if ($asset['amount'] !== null) {
-        $totalAmount += (float) $asset['amount'];
-    }
-}
+$pageData = report_paginate_query($conn, $sql . ' ORDER BY a.created_at DESC', $types, $params, 25);
+$assets = $pageData['result']->fetch_all(MYSQLI_ASSOC);
+$pageData['statement']->close();
+$totalAssets = (int) ($registerSummary['total_assets'] ?? 0);
+$activeAssets = (int) ($registerSummary['active_assets'] ?? 0);
+$disposedAssets = (int) ($registerSummary['disposed_assets'] ?? 0);
+$physicalUnits = (int) ($registerSummary['physical_units'] ?? 0);
+$underMaintenanceAssets = (int) ($registerSummary['maintenance_assets'] ?? 0);
+$totalAmount = (float) ($registerSummary['total_amount'] ?? 0);
 
 ob_start();
 ?>
+<link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
 <style>
 .asset-kpi {
     border-radius: 14px;
@@ -197,12 +192,13 @@ ob_start();
     color: rgba(255, 255, 255, .84);
 }
 </style>
-<div class="container-fluid mt-4">
+<div class="container-fluid mt-4 asset-workspace">
     <div class="asset-hero p-3 p-md-4 mb-3 shadow-sm">
         <div class="d-flex flex-wrap justify-content-between align-items-center">
             <div>
+                <div class="eyebrow">Physical asset control</div>
                 <h2 class="mb-1"><i class="fas fa-boxes mr-2"></i>Asset Register</h2>
-                <small>Enterprise tracking for assets, condition, lifecycle, and department accountability.</small>
+                <small>Catalog records group related equipment; physical item numbers remain the operational identities for location, custody and maintenance.</small>
             </div>
             <div class="mt-2 mt-md-0">
                 <?php if ($canViewAudit): ?>
@@ -230,6 +226,12 @@ ob_start();
         </div>
     </div>
 
+    <?php render_asset_workspace_nav('register', $churchId); ?>
+
+    <div class="asset-lifecycle-steps mb-3">
+        <div class="asset-lifecycle-step"><strong>1. Register</strong><small>Category &amp; unit identity</small></div><div class="asset-lifecycle-step"><strong>2. Locate</strong><small>Department ownership</small></div><div class="asset-lifecycle-step"><strong>3. Request</strong><small>Custody purpose</small></div><div class="asset-lifecycle-step"><strong>4. Issue / Return</strong><small>Named custodian</small></div><div class="asset-lifecycle-step"><strong>5. Maintain</strong><small>Service work orders</small></div><div class="asset-lifecycle-step"><strong>6. Retire</strong><small>Approved disposal</small></div>
+    </div>
+
     <?php if (isset($_GET['saved'])): ?><div class="alert alert-success">Asset saved successfully.</div><?php endif; ?>
     <?php if (isset($_GET['deleted'])): ?><div class="alert alert-success">Asset deleted successfully.</div><?php endif; ?>
     <?php if (isset($_GET['transferred'])): ?><div class="alert alert-success">Asset transferred successfully.</div><?php endif; ?>
@@ -239,14 +241,14 @@ ob_start();
     <div class="row mb-3">
         <div class="col-md-3 mb-2">
             <div class="asset-kpi p-3 h-100">
-                <div class="label">Total Assets</div>
+                <div class="label">Catalog records</div>
                 <div class="value"><?= number_format($totalAssets) ?></div>
             </div>
         </div>
         <div class="col-md-3 mb-2">
             <div class="asset-kpi p-3 h-100">
-                <div class="label">Active Assets</div>
-                <div class="value"><?= number_format($activeAssets) ?></div>
+                <div class="label">Physical units</div>
+                <div class="value"><?= number_format($physicalUnits) ?></div>
             </div>
         </div>
         <div class="col-md-3 mb-2">
@@ -349,7 +351,7 @@ ob_start();
         </div>
     </div>
 
-    <div class="card shadow-sm">
+    <div class="card shadow-sm asset-panel">
         <div class="card-body table-responsive">
             <table class="table table-bordered table-hover" id="assetTable">
                 <thead class="thead-light">
@@ -383,9 +385,11 @@ ob_start();
                             <td><?= htmlspecialchars((string) $asset['asset_code']) ?></td>
                             <td>
                                 <?php if (!empty($asset['active_item_numbers'])): ?>
-                                    <?php foreach (explode(', ', (string) $asset['active_item_numbers']) as $itemNumber): ?>
+                                    <?php $itemNumbers = explode(', ', (string) $asset['active_item_numbers']); foreach (array_slice($itemNumbers, 0, 3) as $itemNumber): ?>
                                         <span class="badge badge-light border mr-1 mb-1"><?= htmlspecialchars($itemNumber) ?></span>
                                     <?php endforeach; ?>
+                                    <?php if (count($itemNumbers) > 3): ?><small class="d-block text-muted">+<?= number_format(count($itemNumbers) - 3) ?> more in detail view</small><?php endif; ?>
+                                    <?php if ($hasCustody): ?><small class="d-block mt-1"><span class="text-success"><?= (int) $asset['available_item_count'] ?> available</span> &middot; <span class="text-warning"><?= (int) $asset['reserved_item_count'] ?> reserved</span> &middot; <span class="text-primary"><?= (int) $asset['issued_item_count'] ?> issued</span></small><?php endif; ?>
                                 <?php else: ?>
                                     <span class="text-muted">No active physical items</span>
                                 <?php endif; ?>
@@ -430,16 +434,10 @@ ob_start();
                     <?php endif; ?>
                 </tbody>
             </table>
+            <?php report_render_server_pagination($pageData['total_rows'], $pageData['page'], $pageData['per_page'], 'Asset register pages'); ?>
         </div>
     </div>
 </div>
-<script>
-$(function(){
-  if ($.fn.DataTable) {
-    $('#assetTable').DataTable({pageLength: 25, order:[[0,'desc']]});
-  }
-});
-</script>
 <?php
 $page_content = ob_get_clean();
 include __DIR__ . '/../includes/layout.php';

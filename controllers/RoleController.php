@@ -89,17 +89,31 @@ class RoleController {
         }
     }
 
-    // Delete a role and its permission assignments
+    // Deactivate a role while preserving catalog and grant evidence.
     public function delete($id) {
         $this->conn->begin_transaction();
         try {
-            $this->conn->query('DELETE FROM role_permissions WHERE role_id = '.$id);
-            $stmt = $this->conn->prepare('DELETE FROM roles WHERE id=?');
+            $stmt = $this->conn->prepare(
+                'UPDATE roles role
+                 SET role.is_active = 0
+                 WHERE role.id = ? AND role.is_system = 0
+                   AND NOT EXISTS (
+                       SELECT 1 FROM user_roles assignment
+                       JOIN users account ON account.id = assignment.user_id
+                       WHERE assignment.role_id = role.id
+                         AND assignment.is_active = 1
+                         AND account.status = \'active\'
+                         AND (assignment.expires_at IS NULL OR assignment.expires_at > NOW())
+                   )'
+            );
             $stmt->bind_param('i', $id);
             $stmt->execute();
+            if ($stmt->affected_rows !== 1) {
+                throw new RuntimeException('Protected or assigned roles cannot be deactivated.');
+            }
             // Audit log
             $user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : null;
-            write_audit_log('delete', 'role', $id, '', $user_id);
+            write_audit_log('deactivate', 'role', $id, '', $user_id);
             $this->conn->commit();
             return true;
         } catch (Exception $e) {

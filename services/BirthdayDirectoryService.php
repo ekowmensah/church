@@ -1,26 +1,23 @@
 <?php
 
+require_once __DIR__ . '/../helpers/rbac_identity.php';
+
 final class BirthdayDirectoryService {
     private mysqli $conn;
     private ?int $userId;
     private ?int $memberId;
     private ?int $churchId;
-    private array $roleIds;
 
     public function __construct(mysqli $conn, ?int $userId, ?int $memberId, array $roleIds) {
         $this->conn = $conn;
         $this->userId = $userId && $userId > 0 ? $userId : null;
         $this->memberId = $memberId && $memberId > 0 ? $memberId : null;
         $this->churchId = null;
-        $this->roleIds = array_values(array_unique(array_filter(array_map('intval', $roleIds))));
 
         if ($this->userId !== null) {
             $stmt = $this->conn->prepare(
-                "SELECT user_account.member_id, user_account.church_id, user_role.role_id
+                "SELECT user_account.member_id, user_account.church_id
                    FROM users user_account
-                   LEFT JOIN user_roles user_role
-                     ON user_role.user_id = user_account.id AND user_role.is_active = 1
-                    AND (user_role.expires_at IS NULL OR user_role.expires_at > NOW())
                   WHERE user_account.id = ?"
             );
             $stmt->bind_param('i', $this->userId);
@@ -29,10 +26,8 @@ final class BirthdayDirectoryService {
             while ($row = $result->fetch_assoc()) {
                 if ($this->memberId === null && !empty($row['member_id'])) $this->memberId = (int) $row['member_id'];
                 if ($this->churchId === null && !empty($row['church_id'])) $this->churchId = (int) $row['church_id'];
-                if (!empty($row['role_id'])) $this->roleIds[] = (int) $row['role_id'];
             }
             $stmt->close();
-            $this->roleIds = array_values(array_unique($this->roleIds));
         }
 
         if ($this->churchId === null && $this->memberId !== null) {
@@ -45,13 +40,11 @@ final class BirthdayDirectoryService {
     }
 
     public static function fromSession(mysqli $conn): self {
-        $roles = (array) ($_SESSION['role_ids'] ?? []);
-        if (isset($_SESSION['role_id'])) $roles[] = (int) $_SESSION['role_id'];
         return new self(
             $conn,
             isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null,
             isset($_SESSION['member_id']) ? (int) $_SESSION['member_id'] : null,
-            $roles
+            []
         );
     }
 
@@ -191,10 +184,13 @@ final class BirthdayDirectoryService {
     }
 
     private function isSuperAdmin(): bool {
-        return in_array(1, $this->roleIds, true);
+        return rbac_identity_is_super_admin($this->conn, $this->userId);
     }
 
     private function hasBroadAccess(): bool {
-        return (bool) array_intersect([1, 2, 3, 4, 11], $this->roleIds);
+        return rbac_identity_has_any_role($this->conn, $this->userId, [
+            'Super Admin', 'Super Administrator', 'Admin', 'Stewards',
+            'Rev. Ministers', 'Statistician',
+        ]);
     }
 }

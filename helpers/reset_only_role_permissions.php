@@ -1,7 +1,8 @@
 <?php
-require_once __DIR__.'/../config/config.php';
-// 1. Clear all role_permissions
-$conn->query('DELETE FROM role_permissions');
-// 2. Reseed role_permissions only (not roles)
-require __DIR__.'/seed_roles_permissions.php';
-echo "role_permissions table cleared and reseeded based on current roles.\n";
+// Retired because it erased grant provenance and bypassed authorization audit.
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+}
+fwrite(PHP_SAPI === 'cli' ? STDERR : fopen('php://output', 'wb'),
+    "This destructive role-permission reset is retired. Use role administration or migrations.\n");
+exit(1);

@@ -1,587 +1,154 @@
 <?php
 session_start();
-require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../helpers/auth.php';
+require_once __DIR__ . '/../helpers/permissions_v2.php';
+require_once __DIR__ . '/../helpers/csrf.php';
 
-// Only allow logged-in users
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
 
-// Robust super admin bypass and permission check
-$is_super_admin = is_super_admin();
-
-if (!$is_super_admin && !has_permission('manage_roles')) {
+$isSuperAdmin = is_super_admin();
+$canManageRoles = $isSuperAdmin || has_permission('manage_roles');
+if (!$canManageRoles && !has_permission('view_role_list')) {
     http_response_code(403);
-    if (file_exists(__DIR__.'/errors/403.php')) {
-        include __DIR__.'/errors/403.php';
-    } else if (file_exists(dirname(__DIR__).'/views/errors/403.php')) {
-        include dirname(__DIR__).'/views/errors/403.php';
-    } else {
-        echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this page.</p></div>';
-    }
+    require __DIR__ . '/errors/403.php';
     exit;
 }
 
-// Set permission flags for UI elements
-$can_add = $is_super_admin || has_permission('create_role');
-$can_edit = $is_super_admin || has_permission('edit_role');
-$can_delete = $is_super_admin || has_permission('delete_role');
-$can_view = true; // Already validated above
+$basePath = (string) (parse_url(BASE_URL, PHP_URL_PATH) ?: '');
+$basePath = rtrim($basePath, '/');
+$canCreate = $isSuperAdmin || ($canManageRoles && has_permission('create_role'));
+$canEdit = $isSuperAdmin || ($canManageRoles && has_permission('edit_role'));
+$canDeactivate = $isSuperAdmin || ($canManageRoles && has_permission('delete_role'));
 
 ob_start();
 ?>
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h1 class="h4 mb-0 text-gray-800"><i class="fas fa-user-tag mr-2"></i>Roles</h1>
-    <a href="role_form.php" class="btn btn-primary"><i class="fas fa-plus mr-1"></i> Add Role</a>
-</div>
-<div id="roleAlert"></div>
-<div class="card shadow mb-4">
-    <div class="card-header py-3 bg-primary text-white">
-        <h6 class="m-0 font-weight-bold">Role List</h6>
-    </div>
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-bordered table-hover" id="rolesTable">
-                <thead class="thead-light">
-                    <tr>
-                        <th>ID</th>
-                        <th>Name</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="rolesTbody">
-                    <tr><td colspan="3" class="text-center"><span id="rolesLoading"><i class="fas fa-spinner fa-spin"></i> Loading...</span></td></tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-<?php
-require_once __DIR__.'/../config/config.php';
-// Use BASE_URL from config.php, but use only the path part for AJAX
-$parsed = parse_url(BASE_URL);
-$AJAX_BASE = isset($parsed['path']) ? rtrim($parsed['path'], '/') : '';
-?>
-<script>
-const BASE_URL = "<?= $AJAX_BASE ?>";
-const API_BASE = BASE_URL + '/api/rbac';
-
-function fetchRoles() {
-    fetch(API_BASE + '/roles.php')
-        .then(res => res.json())
-        .then(data => {
-            const tbody = document.getElementById('rolesTbody');
-            tbody.innerHTML = '';
-            if (data.success && data.data.roles.length > 0) {
-                data.data.roles.forEach(role => {
-                    if (role.name.toLowerCase() === 'super admin') return;
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td>${role.id}</td>
-                        <td>${role.name}</td>
-                        <td>
-    <a href="role_form.php?id=${role.id}" class="btn btn-sm btn-warning mr-1" title="Edit"><i class="fas fa-edit"></i></a>
-    <button class="btn btn-sm btn-info mr-1" title="Manage Permissions" onclick="openPermissionsModal(${role.id}, '${role.name.replace(/'/g, "&#39;")}')"><i class="fas fa-key"></i></button>
-    <button class="btn btn-sm btn-danger" title="Delete" onclick="deleteRole(${role.id}, this)"><i class="fas fa-trash"></i></button>
-</td>
-                    `;
-                    tbody.appendChild(tr);
-                });
-            } else {
-                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No roles found.</td></tr>';
-            }
-        })
-        .catch(() => {
-            document.getElementById('rolesTbody').innerHTML = '<tr><td colspan="3" class="text-center text-danger">Error loading roles.</td></tr>';
-        });
-}
-function deleteRole(id, btn) {
-    if (!confirm('Are you sure you want to delete this role?')) return;
-    btn.disabled = true;
-    fetch(API_BASE + '/roles.php?id=' + encodeURIComponent(id), {
-        method: 'DELETE',
-        headers: {'Content-Type': 'application/json'}
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.success) {
-            showRoleAlert('Role deleted successfully.', 'success');
-            fetchRoles();
-        } else {
-            showRoleAlert('Failed to delete role: ' + (data.error || 'Unknown error'), 'danger');
-        }
-    })
-    .catch(() => {
-        showRoleAlert('Error deleting role.', 'danger');
-    })
-    .finally(() => { btn.disabled = false; });
-}
-function showRoleAlert(msg, type) {
-    const alertDiv = document.getElementById('roleAlert');
-    alertDiv.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
-        ${msg}
-        <button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>
-    </div>`;
-    setTimeout(() => { alertDiv.innerHTML = ''; }, 5000);
-}
-document.addEventListener('DOMContentLoaded', fetchRoles);
-
-// Permissions Modal logic
-function openPermissionsModal(roleId, roleName) {
-    $('#permissionsRoleName').text(roleName);
-    $('#permissionsRoleId').val(roleId);
-    $('#permissionsModal').modal('show');
-    loadRolePermissions(roleId);
-}
-
-function loadRolePermissions(roleId) {
-    $('#permissionsList').html('<div class="text-center py-4"><i class="fas fa-spinner fa-spin"></i> Loading permissions...</div>');
-    
-    console.log('Loading permissions for role:', roleId);
-    console.log('API URLs:', {
-        role: API_BASE + '/roles.php?id=' + encodeURIComponent(roleId) + '&permissions',
-        permissions: API_BASE + '/permissions.php?grouped=true'
-    });
-    
-    // Load role with permissions and all available permissions
-    Promise.all([
-        fetch(API_BASE + '/roles.php?id=' + encodeURIComponent(roleId) + '&permissions')
-            .then(r => {
-                console.log('Role API status:', r.status);
-                if (!r.ok) throw new Error('Role API failed: ' + r.status);
-                return r.json();
-            }),
-        fetch(API_BASE + '/permissions.php?grouped=true')
-            .then(r => {
-                console.log('Permissions API status:', r.status);
-                if (!r.ok) throw new Error('Permissions API failed: ' + r.status);
-                return r.json();
-            })
-    ])
-    .then(([roleData, permsData]) => {
-        console.log('Role data:', roleData);
-        console.log('Permissions data:', permsData);
-        console.log('Role data structure:', {
-            success: roleData.success,
-            hasData: !!roleData.data,
-            hasPermissions: !!(roleData.data && roleData.data.permissions),
-            permissionsCount: roleData.data && roleData.data.permissions ? roleData.data.permissions.length : 0
-        });
-        console.log('Perms data structure:', {
-            success: permsData.success,
-            hasData: !!permsData.data,
-            hasPermissions: !!(permsData.data && permsData.data.permissions)
-        });
-        
-        if (!roleData.success || !permsData.success) {
-            const error = !roleData.success ? (roleData.error || 'Unknown role error') : (permsData.error || 'Unknown permissions error');
-            console.error('API returned success=false:', {roleData, permsData});
-            $('#permissionsList').html('<div class="alert alert-danger">Failed to load permissions: ' + error + '</div>');
-            return;
-        }
-        
-        // The API returns permissions directly in data, not in data.role
-        if (!roleData.data || !roleData.data.permissions) {
-            console.error('Invalid role data structure:', roleData);
-            $('#permissionsList').html('<div class="alert alert-danger">Invalid role data structure. Expected data.permissions</div>');
-            return;
-        }
-        
-        if (!permsData.data || !permsData.data.permissions) {
-            console.error('Invalid permissions data structure:', permsData);
-            $('#permissionsList').html('<div class="alert alert-danger">Invalid permissions data structure</div>');
-            return;
-        }
-        
-        const rolePermissions = roleData.data.permissions || [];
-        const rolePermissionIds = rolePermissions.map(p => p.id);
-        const groupedPermissions = permsData.data.permissions;
-        
-        console.log('Processing:', {
-            rolePermissionsCount: rolePermissions.length,
-            groupedCategoriesCount: Object.keys(groupedPermissions).length
-        });
-        
-        // Convert grouped permissions to flat list with assigned flag
-        const permissions = [];
-        const categories = {};
-        
-        Object.entries(groupedPermissions).forEach(([category, perms]) => {
-            categories[category] = [];
-            perms.forEach(perm => {
-                perm.assigned = rolePermissionIds.includes(perm.id);
-                permissions.push(perm);
-                categories[category].push(perm.name);
-            });
-        });
-        
-        // Create search and bulk actions
-        let html = `
-            <div class="mb-3">
-                <div class="row">
-                    <div class="col-md-8">
-                        <div class="input-group">
-                            <div class="input-group-prepend">
-                                <span class="input-group-text"><i class="fas fa-search"></i></span>
-                            </div>
-                            <input type="text" class="form-control" id="permissionSearch" placeholder="Search permissions...">
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="btn-group w-100">
-                            <button type="button" class="btn btn-outline-success btn-sm" id="selectAllPerms">
-                                <i class="fas fa-check-double"></i> Select All
-                            </button>
-                            <button type="button" class="btn btn-outline-danger btn-sm" id="deselectAllPerms">
-                                <i class="fas fa-times"></i> Clear All
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <form id="rolePermissionsForm">
-                <div class="accordion" id="permissionsAccordion">
-        `;
-        
-        // Group permissions by category
-        const permissionsByCategory = {};
-        const categoryIcons = {
-            'Dashboard': 'fas fa-tachometer-alt',
-            'Members': 'fas fa-users',
-            'Attendance': 'fas fa-calendar-check',
-            'Payments': 'fas fa-credit-card',
-            'Reports': 'fas fa-chart-line',
-            'Bible Classes': 'fas fa-book-open',
-            'Class Groups': 'fas fa-layer-group',
-            'Organizations': 'fas fa-building',
-            'Events': 'fas fa-calendar-alt',
-            'Feedback': 'fas fa-comments',
-            'Health': 'fas fa-heartbeat',
-            'SMS': 'fas fa-sms',
-            'Visitors': 'fas fa-user-plus',
-            'Sunday School': 'fas fa-church',
-            'Transfers': 'fas fa-exchange-alt',
-            'Roles & Permissions': 'fas fa-key',
-            'Audit & Logs': 'fas fa-clipboard-list',
-            'User Management': 'fas fa-user-cog',
-            'AJAX/API': 'fas fa-code',
-            'Bulk': 'fas fa-layer-group',
-            'Advanced': 'fas fa-cogs',
-            'System': 'fas fa-server'
-        };
-        
-        // Initialize categories
-        Object.keys(categories).forEach(cat => {
-            permissionsByCategory[cat] = [];
-        });
-        permissionsByCategory['Other'] = [];
-        
-        // Categorize permissions
-        permissions.forEach(perm => {
-            let categorized = false;
-            for (const [category, categoryPerms] of Object.entries(categories)) {
-                if (categoryPerms.includes(perm.name)) {
-                    permissionsByCategory[category].push(perm);
-                    categorized = true;
-                    break;
-                }
-            }
-            if (!categorized) {
-                permissionsByCategory['Other'].push(perm);
-            }
-        });
-        
-        // Generate accordion for each category
-        let categoryIndex = 0;
-        Object.entries(permissionsByCategory).forEach(([category, categoryPerms]) => {
-            if (categoryPerms.length === 0) return;
-            
-            const categoryId = `category_${categoryIndex}`;
-            const icon = categoryIcons[category] || 'fas fa-folder';
-            const assignedCount = categoryPerms.filter(p => p.assigned).length;
-            const totalCount = categoryPerms.length;
-            
-            html += `
-                <div class="card">
-                    <div class="card-header p-0" id="heading_${categoryId}">
-                        <h6 class="mb-0">
-                            <button class="btn btn-link btn-block text-left d-flex justify-content-between align-items-center" 
-                                    type="button" data-toggle="collapse" data-target="#collapse_${categoryId}" 
-                                    aria-expanded="true" aria-controls="collapse_${categoryId}">
-                                <span>
-                                    <i class="${icon} mr-2"></i>
-                                    ${category}
-                                    <small class="text-muted ml-2">(${assignedCount}/${totalCount})</small>
-                                </span>
-                                <div class="btn-group btn-group-sm" onclick="event.stopPropagation();">
-                                    <button type="button" class="btn btn-outline-success btn-xs category-select-all" 
-                                            data-category="${categoryId}" title="Select all in ${category}">
-                                        <i class="fas fa-check"></i>
-                                    </button>
-                                    <button type="button" class="btn btn-outline-danger btn-xs category-select-none" 
-                                            data-category="${categoryId}" title="Deselect all in ${category}">
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
-                            </button>
-                        </h6>
-                    </div>
-                    <div id="collapse_${categoryId}" class="collapse ${categoryIndex === 0 ? 'show' : ''}" 
-                         aria-labelledby="heading_${categoryId}" data-parent="#permissionsAccordion">
-                        <div class="card-body">
-                            <div class="row">
-            `;
-            
-            // Add permissions in this category
-            categoryPerms.forEach((perm, index) => {
-                const permDescription = getPermissionDescription(perm.name);
-                html += `
-                    <div class="col-md-6 mb-2 permission-item" data-permission-name="${perm.name.toLowerCase()}">
-                        <div class="custom-control custom-checkbox">
-                            <input type="checkbox" class="custom-control-input category-${categoryId}" 
-                                   id="perm_${perm.id}" name="permissions[]" value="${perm.id}" 
-                                   ${perm.assigned ? 'checked' : ''}>
-                            <label class="custom-control-label" for="perm_${perm.id}">
-                                <strong>${formatPermissionName(perm.name)}</strong>
-                                ${permDescription ? `<br><small class="text-muted">${permDescription}</small>` : ''}
-                            </label>
-                        </div>
-                    </div>
-                `;
-            });
-            
-            html += `
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-            categoryIndex++;
-        });
-        
-        html += `
-                </div>
-            </form>
-        `;
-        
-        $('#permissionsList').html(html);
-        
-        // Bind search functionality
-        $('#permissionSearch').on('input', function() {
-            const searchTerm = $(this).val().toLowerCase();
-            $('.permission-item').each(function() {
-                const permissionName = $(this).data('permission-name');
-                if (permissionName.includes(searchTerm)) {
-                    $(this).show();
-                } else {
-                    $(this).hide();
-                }
-            });
-        });
-        
-        // Bind bulk actions
-        $('#selectAllPerms').on('click', function() {
-            $('#rolePermissionsForm input[type="checkbox"]').prop('checked', true);
-        });
-        
-        $('#deselectAllPerms').on('click', function() {
-            $('#rolePermissionsForm input[type="checkbox"]').prop('checked', false);
-        });
-        
-        // Bind category bulk actions
-        $('.category-select-all').on('click', function() {
-            const category = $(this).data('category');
-            $(`.category-${category}`).prop('checked', true);
-        });
-        
-        $('.category-select-none').on('click', function() {
-            const category = $(this).data('category');
-            $(`.category-${category}`).prop('checked', false);
-        });
-        
-    })
-    .catch((error) => {
-        console.error('Error loading permissions:', error);
-        $('#permissionsList').html('<div class="alert alert-danger">Error loading permissions: ' + error.message + '<br><small>Check console for details</small></div>');
-    });
-}
-
-// Helper function to format permission names
-function formatPermissionName(name) {
-    return name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-}
-
-// Helper function to get permission descriptions
-function getPermissionDescription(name) {
-    const descriptions = {
-        'view_dashboard': 'Access the main dashboard',
-        'create_member': 'Add new church members',
-        'edit_member': 'Modify member information',
-        'delete_member': 'Remove members from the system',
-        'view_payment_list': 'View all payment records',
-        'make_payment': 'Process member payments',
-        'send_sms': 'Send SMS messages to members',
-        'view_reports_dashboard': 'Access reports overview',
-        'manage_roles': 'Create and modify user roles',
-        'manage_permissions': 'Assign permissions to roles',
-        'backup_database': 'Create system backups',
-        'restore_database': 'Restore from backups'
-    };
-    return descriptions[name] || '';
-}
-
-$('#savePermissionsBtn').on('click', function() {
-    const roleId = $('#permissionsRoleId').val();
-    const selectedPermissions = [];
-    $('#rolePermissionsForm input[type="checkbox"]:checked').each(function() {
-        selectedPermissions.push(parseInt($(this).val()));
-    });
-    
-    $('#savePermissionsBtn').prop('disabled', true).text('Saving...');
-    fetch(API_BASE + '/roles.php?id=' + encodeURIComponent(roleId) + '&sync', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        credentials: 'same-origin',
-        body: JSON.stringify({ permission_ids: selectedPermissions })
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.success) {
-            $('#permissionsModal').modal('hide');
-            showRoleAlert('Permissions updated.', 'success');
-        } else {
-            $('#permissionsModalError').text('Failed to update permissions.');
-        }
-    })
-    .catch(() => {
-        $('#permissionsModalError').text('Error updating permissions.');
-    })
-    .finally(() => {
-        $('#savePermissionsBtn').prop('disabled', false).text('Save Changes');
-    });
-});
-</script>
-
 <style>
-.permission-item {
-  transition: all 0.2s ease;
-}
-
-.permission-item:hover {
-  background-color: #f8f9fa;
-  border-radius: 4px;
-  padding: 2px;
-}
-
-.custom-control-label {
-  cursor: pointer;
-  font-size: 0.9rem;
-}
-
-.custom-control-label strong {
-  color: #495057;
-}
-
-.accordion .card {
-  border: 1px solid #dee2e6;
-  margin-bottom: 2px;
-}
-
-.accordion .card-header {
-  background-color: #f8f9fa;
-  border-bottom: 1px solid #dee2e6;
-}
-
-.accordion .btn-link {
-  color: #495057;
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.accordion .btn-link:hover {
-  color: #007bff;
-  text-decoration: none;
-}
-
-.btn-xs {
-  padding: 0.125rem 0.25rem;
-  font-size: 0.75rem;
-  line-height: 1.2;
-  border-radius: 0.15rem;
-}
-
-#permissionSearch {
-  border-radius: 0.375rem;
-}
-
-.input-group-text {
-  background-color: #e9ecef;
-  border-color: #ced4da;
-}
-
-.modal-xl {
-  max-width: 1200px;
-}
-
-@media (max-width: 768px) {
-  .modal-xl {
-    max-width: 95%;
-    margin: 1rem auto;
-  }
-  
-  .permission-item {
-    margin-bottom: 0.5rem;
-  }
-  
-  .btn-group .btn {
-    font-size: 0.8rem;
-    padding: 0.25rem 0.5rem;
-  }
-}
+.access-workspace{max-width:1500px;margin:0 auto}.access-hero{border:0;border-radius:1rem;background:linear-gradient(135deg,#173f5f,#236b45);color:#fff;overflow:hidden}.access-hero .card-body{padding:1.5rem}.access-hero p{color:rgba(255,255,255,.78);max-width:720px}.access-metric{border:1px solid #e7edf3;border-radius:.9rem;background:#fff;padding:1rem;height:100%}.access-metric strong{display:block;font-size:1.55rem;color:#173f5f}.access-card{border:0;border-radius:1rem;box-shadow:0 .35rem 1.4rem rgba(23,63,95,.08)}.access-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) 180px 180px;gap:.75rem}.access-table th{border-top:0;color:#526071;font-size:.73rem;text-transform:uppercase;letter-spacing:.055em}.role-name{font-weight:700;color:#173f5f}.role-description{color:#6b7785;font-size:.86rem;max-width:520px}.status-pill,.type-pill{display:inline-flex;align-items:center;border-radius:999px;padding:.24rem .55rem;font-size:.72rem;font-weight:700}.status-active{background:#e5f6ed;color:#176b3a}.status-inactive{background:#f2f3f5;color:#67717d}.type-system{background:#e7eff8;color:#173f5f}.type-custom{background:#f2eafd;color:#633b8c}.permission-editor{border:1px solid #dce7ef;border-radius:1rem;background:#f8fbfd}.permission-group{border:1px solid #e3eaf0;border-radius:.75rem;background:#fff;padding:.85rem}.permission-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}.permission-option{display:flex;align-items:flex-start;gap:.55rem;padding:.45rem;border-radius:.55rem}.permission-option:hover{background:#f2f7fa}.permission-code{font-weight:650;color:#213547;overflow-wrap:anywhere}.permission-note{font-size:.75rem;color:#7a8794}.empty-state{padding:3rem 1rem;text-align:center;color:#718096}@media(max-width:900px){.access-toolbar{grid-template-columns:1fr}.permission-grid{grid-template-columns:1fr}}@media(max-width:767px){.access-table thead{display:none}.access-table,.access-table tbody,.access-table tr,.access-table td{display:block;width:100%}.access-table tr{border:1px solid #e7edf3;border-radius:.8rem;margin-bottom:.8rem;padding:.7rem}.access-table td{border:0;padding:.3rem}.access-table td[data-label]:before{content:attr(data-label);display:block;font-size:.68rem;font-weight:700;text-transform:uppercase;color:#8793a1}}
 </style>
 
-<?php ob_start(); ?>
-<!-- Permissions Modal -->
-<div class="modal fade" id="permissionsModal" tabindex="-1" role="dialog" aria-labelledby="permissionsModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-xl" role="document">
-    <div class="modal-content">
-      <div class="modal-header bg-primary text-white">
-        <h5 class="modal-title" id="permissionsModalLabel">
-          <i class="fas fa-key mr-2"></i>Manage Permissions for <span id="permissionsRoleName"></span>
-        </h5>
-        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-          <span aria-hidden="true">&times;</span>
-        </button>
-      </div>
-      <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
-        <input type="hidden" id="permissionsRoleId">
-        <div id="permissionsModalError" class="alert alert-danger" style="display: none;"></div>
-        <div id="permissionsList"></div>
-      </div>
-      <div class="modal-footer bg-light">
-        <div class="d-flex justify-content-between w-100">
-          <div class="text-muted small">
-            <i class="fas fa-info-circle mr-1"></i>
-            Use search to quickly find permissions, or use category bulk actions
-          </div>
-          <div>
-            <button type="button" class="btn btn-secondary" data-dismiss="modal">
-              <i class="fas fa-times mr-1"></i>Cancel
-            </button>
-            <button type="button" class="btn btn-primary" id="savePermissionsBtn">
-              <i class="fas fa-save mr-1"></i>Save Changes
-            </button>
-          </div>
+<div class="access-workspace">
+    <section class="card access-hero shadow-sm mb-4">
+        <div class="card-body d-flex flex-column flex-lg-row align-items-lg-center justify-content-between">
+            <div>
+                <div class="small text-uppercase font-weight-bold mb-2" style="letter-spacing:.12em">Access governance</div>
+                <h1 class="h3 font-weight-bold mb-2">Access Roles</h1>
+                <p class="mb-0">Design responsibilities, review assignments and govern direct capabilities without duplicating inherited access.</p>
+            </div>
+            <?php if ($canCreate): ?>
+                <a class="btn btn-light font-weight-bold mt-3 mt-lg-0" href="role_form.php"><i class="fas fa-plus mr-2"></i>Create custom role</a>
+            <?php endif; ?>
         </div>
-      </div>
+    </section>
+
+    <div id="roleAlert" aria-live="polite"></div>
+
+    <div class="row mb-4">
+        <div class="col-6 col-xl-3 mb-3 mb-xl-0"><div class="access-metric"><span class="text-muted small">Total roles</span><strong id="metricTotal">—</strong></div></div>
+        <div class="col-6 col-xl-3 mb-3 mb-xl-0"><div class="access-metric"><span class="text-muted small">Active roles</span><strong id="metricActive">—</strong></div></div>
+        <div class="col-6 col-xl-3"><div class="access-metric"><span class="text-muted small">Protected roles</span><strong id="metricSystem">—</strong></div></div>
+        <div class="col-6 col-xl-3"><div class="access-metric"><span class="text-muted small">Active assignments</span><strong id="metricAssignments">—</strong></div></div>
     </div>
-  </div>
+
+    <section class="card access-card mb-4">
+        <div class="card-body">
+            <div class="access-toolbar mb-3">
+                <label class="mb-0"><span class="sr-only">Search roles</span><input id="roleSearch" class="form-control" type="search" placeholder="Search role, description or parent…"></label>
+                <label class="mb-0"><span class="sr-only">Status</span><select id="roleStatus" class="form-control"><option value="all">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option></select></label>
+                <label class="mb-0"><span class="sr-only">Role type</span><select id="roleType" class="form-control"><option value="all">All role types</option><option value="system">Protected system</option><option value="custom">Custom</option></select></label>
+            </div>
+            <div class="table-responsive">
+                <table class="table access-table mb-0" aria-describedby="roleTableCaption">
+                    <caption id="roleTableCaption" class="sr-only">Configured access roles and their direct permission and user counts.</caption>
+                    <thead><tr><th>Role</th><th>Parent</th><th>Users</th><th>Direct grants</th><th>Status</th><th class="text-right">Actions</th></tr></thead>
+                    <tbody id="rolesTbody"><tr><td colspan="6" class="empty-state"><i class="fas fa-spinner fa-spin mr-2"></i>Loading roles…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section id="permissionEditor" class="permission-editor p-3 p-lg-4 mb-4" hidden>
+        <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start mb-3">
+            <div><div class="small text-uppercase text-muted font-weight-bold">Direct access grants</div><h2 id="permissionEditorTitle" class="h5 mb-1">Role permissions</h2><p class="text-muted mb-0">Inherited permissions remain effective through the parent role and are intentionally not copied into this list.</p></div>
+            <button id="closePermissionEditor" type="button" class="btn btn-sm btn-outline-secondary mt-2 mt-lg-0"><i class="fas fa-times mr-1"></i>Close</button>
+        </div>
+        <div class="d-flex flex-column flex-md-row mb-3">
+            <input id="permissionSearch" class="form-control mr-md-2 mb-2 mb-md-0" type="search" placeholder="Filter the permission catalogue…">
+            <div class="btn-group"><button id="selectVisiblePermissions" type="button" class="btn btn-outline-primary">Select visible</button><button id="clearVisiblePermissions" type="button" class="btn btn-outline-secondary">Clear visible</button></div>
+        </div>
+        <div id="permissionCatalogue" class="row"><div class="col-12 empty-state"><i class="fas fa-spinner fa-spin mr-2"></i>Loading permissions…</div></div>
+        <div class="d-flex justify-content-between align-items-center mt-3"><span id="permissionSelectionSummary" class="small text-muted">0 direct permissions selected</span><button id="saveRolePermissions" class="btn btn-primary" type="button"><i class="fas fa-save mr-2"></i>Save direct grants</button></div>
+    </section>
 </div>
-<?php $modal_html = ob_get_clean(); ?>
+
+<script>
+(() => {
+    'use strict';
+    const apiBase = <?= json_encode($basePath . '/api/rbac') ?>;
+    const csrfToken = <?= json_encode(csrf_token()) ?>;
+    const roleFormUrl = <?= json_encode($basePath . '/views/role_form.php') ?>;
+    const capabilities = <?= json_encode(['edit' => $canEdit, 'deactivate' => $canDeactivate, 'permissions' => $canManageRoles, 'superAdmin' => $isSuperAdmin]) ?>;
+    const state = { roles: [], permissions: [], selected: new Set(), currentRole: null };
+    const byId = id => document.getElementById(id);
+
+    function icon(name, extraClass = '') { const node = document.createElement('i'); node.className = `fas fa-${name}${extraClass ? ` ${extraClass}` : ''}`; return node; }
+    function textNode(tag, value, className = '') { const node = document.createElement(tag); if (className) node.className = className; node.textContent = value == null || value === '' ? '—' : String(value); return node; }
+    function showAlert(message, type = 'danger') { const alert = document.createElement('div'); alert.className = `alert alert-${type} alert-dismissible fade show`; alert.setAttribute('role', 'alert'); alert.textContent = message; const close = document.createElement('button'); close.type = 'button'; close.className = 'close'; close.setAttribute('data-dismiss', 'alert'); close.setAttribute('aria-label', 'Close'); close.appendChild(document.createTextNode('×')); alert.appendChild(close); byId('roleAlert').replaceChildren(alert); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    async function request(url, options = {}) { const response = await fetch(url, { credentials: 'same-origin', ...options, headers: { Accept: 'application/json', ...(options.body ? { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken } : {}), ...(options.headers || {}) } }); const raw = await response.text(); let payload; try { payload = JSON.parse(raw); } catch (_) { throw new Error(response.ok ? 'The server returned an invalid response.' : `Request failed (${response.status}).`); } if (!response.ok || payload.success === false) throw new Error(payload.message || payload.error || `Request failed (${response.status}).`); return payload; }
+    function valueIsTrue(value) { return value === true || value === 1 || value === '1'; }
+
+    async function loadRoles() {
+        try { const payload = await request(`${apiBase}/roles.php`); state.roles = payload.data.roles || []; updateMetrics(); renderRoles(); }
+        catch (error) { byId('rolesTbody').replaceChildren(emptyRow(error.message)); showAlert(error.message); }
+    }
+    function emptyRow(message) { const tr = document.createElement('tr'); const td = textNode('td', message, 'empty-state'); td.colSpan = 6; tr.appendChild(td); return tr; }
+    function updateMetrics() { byId('metricTotal').textContent = state.roles.length; byId('metricActive').textContent = state.roles.filter(role => valueIsTrue(role.is_active)).length; byId('metricSystem').textContent = state.roles.filter(role => valueIsTrue(role.is_system)).length; byId('metricAssignments').textContent = state.roles.reduce((sum, role) => sum + Number(role.user_count || 0), 0); }
+    function filteredRoles() { const query = byId('roleSearch').value.trim().toLowerCase(); const status = byId('roleStatus').value; const type = byId('roleType').value; return state.roles.filter(role => { const active = valueIsTrue(role.is_active); const system = valueIsTrue(role.is_system); const haystack = [role.name, role.description, role.parent_role_name].join(' ').toLowerCase(); return (!query || haystack.includes(query)) && (status === 'all' || (status === 'active') === active) && (type === 'all' || (type === 'system') === system); }); }
+    function actionButton(label, iconName, className, handler) { const button = document.createElement('button'); button.type = 'button'; button.className = `btn btn-sm ${className} ml-1 mb-1`; button.title = label; button.append(icon(iconName, 'mr-1'), document.createTextNode(label)); button.addEventListener('click', handler); return button; }
+    function renderRoles() {
+        const tbody = byId('rolesTbody'); tbody.replaceChildren(); const roles = filteredRoles(); if (!roles.length) { tbody.appendChild(emptyRow('No roles match these filters.')); return; }
+        roles.forEach(role => {
+            const active = valueIsTrue(role.is_active), system = valueIsTrue(role.is_system); const tr = document.createElement('tr');
+            const roleCell = document.createElement('td'); roleCell.dataset.label = 'Role'; roleCell.append(textNode('div', role.name, 'role-name'), textNode('div', role.description || 'No description provided.', 'role-description')); const badge = textNode('span', system ? 'Protected system' : 'Custom', `type-pill mt-1 ${system ? 'type-system' : 'type-custom'}`); roleCell.appendChild(badge);
+            const parentCell = textNode('td', role.parent_role_name || 'No parent'); parentCell.dataset.label = 'Parent';
+            const userCell = textNode('td', role.user_count || 0); userCell.dataset.label = 'Users';
+            const permissionCell = textNode('td', role.permission_count || 0); permissionCell.dataset.label = 'Direct grants';
+            const statusCell = document.createElement('td'); statusCell.dataset.label = 'Status'; statusCell.appendChild(textNode('span', active ? 'Active' : 'Inactive', `status-pill ${active ? 'status-active' : 'status-inactive'}`));
+            const actions = document.createElement('td'); actions.dataset.label = 'Actions'; actions.className = 'text-right';
+            const mayManageProtected = !system || capabilities.superAdmin;
+            if (capabilities.edit && !system) { const link = document.createElement('a'); link.className = 'btn btn-sm btn-outline-secondary ml-1 mb-1'; link.href = `${roleFormUrl}?id=${encodeURIComponent(role.id)}`; link.append(icon('pen', 'mr-1'), document.createTextNode('Edit')); actions.appendChild(link); }
+            if (capabilities.permissions && mayManageProtected && active) actions.appendChild(actionButton('Permissions', 'key', 'btn-outline-primary', () => openPermissionEditor(role)));
+            if (capabilities.deactivate && !system && active && Number(role.user_count || 0) === 0) actions.appendChild(actionButton('Deactivate', 'archive', 'btn-outline-danger', () => deactivateRole(role)));
+            tr.append(roleCell, parentCell, userCell, permissionCell, statusCell, actions); tbody.appendChild(tr);
+        });
+    }
+    async function deactivateRole(role) { if (!window.confirm(`Deactivate “${role.name}”? Historical assignments and audit evidence will be preserved.`)) return; try { await request(`${apiBase}/roles.php?id=${encodeURIComponent(role.id)}`, { method: 'DELETE', body: JSON.stringify({ csrf_token: csrfToken }) }); showAlert('Role deactivated. Existing evidence was preserved.', 'success'); await loadRoles(); } catch (error) { showAlert(error.message); } }
+    async function openPermissionEditor(role) {
+        state.currentRole = role; state.selected.clear(); byId('permissionEditor').hidden = false; byId('permissionEditorTitle').textContent = `${role.name}: direct permissions`; byId('permissionCatalogue').replaceChildren(textNode('div', 'Loading the permission catalogue…', 'col-12 empty-state'));
+        try { const [catalogue, direct] = await Promise.all([request(`${apiBase}/permissions.php?is_active=true&delegation=true`), request(`${apiBase}/roles.php?id=${encodeURIComponent(role.id)}&permissions&include_inherited=false`)]); state.permissions = catalogue.data.permissions || []; (direct.data.permissions || []).forEach(permission => state.selected.add(Number(permission.id || permission.permission_id))); renderPermissions(); byId('permissionEditor').scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (error) { showAlert(error.message); byId('permissionEditor').hidden = true; }
+    }
+    function visiblePermissions() { const query = byId('permissionSearch').value.trim().toLowerCase(); return state.permissions.filter(permission => !query || [permission.name, permission.description, permission.category_name].join(' ').toLowerCase().includes(query)); }
+    function renderPermissions() {
+        const container = byId('permissionCatalogue'); container.replaceChildren(); const grouped = new Map(); visiblePermissions().forEach(permission => { const category = permission.category_name || 'Uncategorised'; if (!grouped.has(category)) grouped.set(category, []); grouped.get(category).push(permission); });
+        if (!grouped.size) { container.appendChild(textNode('div', 'No permissions match this search.', 'col-12 empty-state')); updateSelectionSummary(); return; }
+        grouped.forEach((permissions, category) => { const column = document.createElement('div'); column.className = 'col-12 col-xl-6 mb-3'; const group = document.createElement('div'); group.className = 'permission-group h-100'; group.appendChild(textNode('h3', category, 'h6 font-weight-bold text-primary')); const grid = document.createElement('div'); grid.className = 'permission-grid'; permissions.forEach(permission => { const label = document.createElement('label'); label.className = 'permission-option mb-0'; const input = document.createElement('input'); input.type = 'checkbox'; input.className = 'mt-1'; input.value = permission.id; input.checked = state.selected.has(Number(permission.id)); input.disabled = permission.can_delegate === false; input.addEventListener('change', () => { input.checked ? state.selected.add(Number(permission.id)) : state.selected.delete(Number(permission.id)); updateSelectionSummary(); }); const copy = document.createElement('span'); copy.append(textNode('span', permission.name, 'permission-code d-block'), textNode('span', permission.can_delegate === false ? 'Retained as-is; this capability is outside your delegated authority.' : (permission.description || 'No description.'), 'permission-note d-block')); label.append(input, copy); grid.appendChild(label); }); group.appendChild(grid); column.appendChild(group); container.appendChild(column); }); updateSelectionSummary();
+    }
+    function updateSelectionSummary() { byId('permissionSelectionSummary').textContent = `${state.selected.size} direct permission${state.selected.size === 1 ? '' : 's'} selected`; }
+    async function savePermissions() { if (!state.currentRole) return; const button = byId('saveRolePermissions'); button.disabled = true; try { await request(`${apiBase}/roles.php?id=${encodeURIComponent(state.currentRole.id)}&sync`, { method: 'POST', body: JSON.stringify({ permission_ids: Array.from(state.selected), csrf_token: csrfToken }) }); showAlert(`Direct permissions for ${state.currentRole.name} were updated.`, 'success'); await loadRoles(); } catch (error) { showAlert(error.message); } finally { button.disabled = false; } }
+
+    ['roleSearch', 'roleStatus', 'roleType'].forEach(id => byId(id).addEventListener(id === 'roleSearch' ? 'input' : 'change', renderRoles));
+    byId('permissionSearch').addEventListener('input', renderPermissions);
+    byId('selectVisiblePermissions').addEventListener('click', () => { visiblePermissions().filter(permission => permission.can_delegate !== false).forEach(permission => state.selected.add(Number(permission.id))); renderPermissions(); });
+    byId('clearVisiblePermissions').addEventListener('click', () => { visiblePermissions().filter(permission => permission.can_delegate !== false).forEach(permission => state.selected.delete(Number(permission.id))); renderPermissions(); });
+    byId('closePermissionEditor').addEventListener('click', () => { byId('permissionEditor').hidden = true; state.currentRole = null; });
+    byId('saveRolePermissions').addEventListener('click', savePermissions);
+    loadRoles();
+})();
+</script>
 <?php
 $page_content = ob_get_clean();
-echo $modal_html;
-require_once __DIR__.'/../includes/layout.php';
+require_once __DIR__ . '/../includes/layout.php';
+?>

@@ -3,6 +3,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/auth.php';
 require_once __DIR__ . '/../helpers/permissions_v2.php';
 require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../services/UserAccessGovernanceService.php';
 
 $allowed = is_super_admin() || has_permission('activate_user') || has_permission('edit_user');
 if (!is_logged_in() || !$allowed) {
@@ -14,32 +15,39 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_is_valid($_POST['csrf_token']
     exit('A valid form submission is required.');
 }
 $userId = (int) ($_POST['id'] ?? 0);
-$stmt = $conn->prepare(
-    "SELECT user_account.status, member.status AS member_status,
-            EXISTS(SELECT 1 FROM user_roles WHERE user_id = user_account.id AND is_active = 1) AS has_role
-       FROM users user_account
-       JOIN members member ON member.id = user_account.member_id
-      WHERE user_account.id = ? LIMIT 1"
-);
-$stmt->bind_param('i', $userId);
-$stmt->execute();
-$account = $stmt->get_result()->fetch_assoc();
-$stmt->close();
-if (!$account) {
-    http_response_code(404);
-    exit('User account not found.');
+$activateLinkedMembership = (string) ($_POST['activate_linked_member'] ?? '') === '1';
+try {
+    $permission = is_super_admin() || has_permission('activate_user')
+        ? 'activate_user'
+        : 'edit_user';
+    (new UserAccessGovernanceService($conn))->changeStatus(
+        $userId,
+        'active',
+        (int) ($_SESSION['user_id'] ?? 0),
+        $permission,
+        $activateLinkedMembership
+            ? 'Linked membership activation and the back-office access prerequisite were reconciled through the governed user administration workflow.'
+            : 'User access activated from the user administration workspace.',
+        'activated',
+        $activateLinkedMembership
+    );
+} catch (UserAccessAuthorizationException $exception) {
+    http_response_code(403);
+    exit('You are not authorized to complete this activation.');
+} catch (mysqli_sql_exception $exception) {
+    error_log('Governed user activation failed: ' . $exception->getMessage());
+    $_SESSION['flash_error'] = 'The activation could not be completed. Review the account prerequisites and try again.';
+    header('Location: user_list.php?activation=failed');
+    exit;
+} catch (InvalidArgumentException | RuntimeException $exception) {
+    $_SESSION['flash_error'] = $exception->getMessage();
+    header('Location: user_list.php?activation=failed');
+    exit;
+} catch (Throwable $exception) {
+    error_log('Unexpected governed user activation failure: ' . $exception->getMessage());
+    $_SESSION['flash_error'] = 'The activation could not be completed safely.';
+    header('Location: user_list.php?activation=failed');
+    exit;
 }
-if ($account['member_status'] !== 'active') {
-    http_response_code(409);
-    exit('Activate the linked membership before activating back-office access.');
-}
-if (!(int) $account['has_role']) {
-    http_response_code(409);
-    exit('Assign mapped or manual access before activating this account.');
-}
-$stmt = $conn->prepare("UPDATE users SET status = 'active' WHERE id = ?");
-$stmt->bind_param('i', $userId);
-$stmt->execute();
-$stmt->close();
-header('Location: user_list.php?activated=1');
+header('Location: user_list.php?activated=1' . ($activateLinkedMembership ? '&membership_activated=1' : ''));
 exit;

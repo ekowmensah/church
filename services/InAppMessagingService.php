@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/../helpers/rbac_identity.php';
+
 final class InAppMessagingService
 {
     private mysqli $db;
@@ -756,18 +758,9 @@ final class InAppMessagingService
     private function isAdministrativeUser(): bool
     {
         if ($this->actorType !== 'user') return false;
-        if ($this->actorId === 1) return true;
-        $stmt = $this->db->prepare("SELECT 1
-            FROM user_roles role_link
-            JOIN roles access_role ON access_role.id = role_link.role_id
-            WHERE role_link.user_id = ? AND role_link.is_active = 1
-              AND access_role.is_active = 1
-              AND (access_role.id IN (1,2)
-                   OR LOWER(access_role.name) IN ('super admin','super administrator','admin','administrator'))
-            LIMIT 1");
-        $stmt->bind_param('i', $this->actorId); $stmt->execute();
-        $isAdmin = (bool) $stmt->get_result()->fetch_row(); $stmt->close();
-        return $isAdmin;
+        return rbac_identity_has_any_role($this->db, $this->actorId, [
+            'Super Admin', 'Super Administrator', 'Admin', 'Administrator',
+        ]);
     }
 
     private function isLeader(int $memberId): bool
@@ -838,9 +831,15 @@ final class InAppMessagingService
             }
             $admins = $this->db->prepare("INSERT IGNORE INTO chat_thread_members (thread_id, user_id, member_role)
                 SELECT DISTINCT ?, user_account.id, 'admin' FROM users user_account
-                JOIN user_roles user_role ON user_role.user_id = user_account.id AND user_role.is_active = 1
+                JOIN user_roles user_role ON user_role.user_id = user_account.id
+                    AND user_role.is_active = 1
+                    AND (user_role.expires_at IS NULL OR user_role.expires_at > NOW())
+                JOIN roles access_role ON access_role.id = user_role.role_id
+                    AND access_role.is_active = 1
                 LEFT JOIN members member ON member.id = user_account.member_id
-                WHERE user_role.role_id IN (1,2) AND user_account.status = 'active'
+                WHERE LOWER(TRIM(access_role.name)) IN
+                        ('super admin','super administrator','admin','administrator')
+                  AND user_account.status = 'active'
                   AND COALESCE(user_account.church_id, member.church_id) = ?");
             $admins->bind_param('ii', $threadId, $this->churchId); $admins->execute(); $admins->close();
         }
@@ -923,8 +922,14 @@ final class InAppMessagingService
             $stmt = $this->db->prepare("SELECT 1 FROM users recipient
                 LEFT JOIN members recipient_member ON recipient_member.id = recipient.member_id
                 WHERE recipient.id = ? AND (
-                  EXISTS (SELECT 1 FROM user_roles role_link
-                          WHERE role_link.user_id = recipient.id AND role_link.role_id IN (1,2) AND role_link.is_active = 1)
+                  EXISTS (SELECT 1
+                            FROM user_roles role_link
+                            JOIN roles access_role ON access_role.id = role_link.role_id
+                           WHERE role_link.user_id = recipient.id
+                             AND role_link.is_active = 1 AND access_role.is_active = 1
+                             AND (role_link.expires_at IS NULL OR role_link.expires_at > NOW())
+                             AND LOWER(TRIM(access_role.name)) IN
+                                 ('super admin','super administrator','admin','administrator'))
                   OR EXISTS (SELECT 1 FROM members actor_member
                        JOIN bible_class_leaders leader ON leader.class_id = actor_member.class_id AND leader.status = 'active'
                        WHERE actor_member.id = ?

@@ -2,35 +2,36 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
 require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../includes/asset_workspace_nav.php';
 
 asset_require_permission('manage_asset_departments');
 
+$isSuper = asset_is_super_admin();
 $selectedChurchId = null;
-if (asset_is_super_admin()) {
+if ($isSuper) {
     $selectedChurchId = isset($_GET['church_id']) && (int) $_GET['church_id'] > 0 ? (int) $_GET['church_id'] : null;
 } else {
     $selectedChurchId = asset_current_church_id($conn);
 }
 
 $churches = [];
-if (asset_is_super_admin()) {
+if ($isSuper) {
     $resChurches = $conn->query('SELECT id, name FROM churches ORDER BY name ASC');
     while ($row = $resChurches->fetch_assoc()) {
         $churches[] = $row;
     }
 }
+$churchNames = [];
+foreach ($churches as $church) $churchNames[(int) $church['id']] = (string) $church['name'];
 
 $departments = asset_fetch_departments($conn, $selectedChurchId, true);
 
 ob_start();
 ?>
-<div class="container-fluid mt-4">
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
-        <h2 class="mb-0"><i class="fas fa-sitemap mr-2"></i>Asset Departments</h2>
-        <a href="asset_department_form.php<?= $selectedChurchId ? '?church_id=' . (int) $selectedChurchId : '' ?>" class="btn btn-primary">
-            <i class="fas fa-plus mr-1"></i> Add Department
-        </a>
-    </div>
+<link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
+<div class="container-fluid mt-4 asset-workspace">
+    <?php ob_start(); ?><a href="asset_department_form.php<?= $selectedChurchId ? '?church_id=' . (int) $selectedChurchId : '' ?>" class="btn btn-warning"><i class="fas fa-plus mr-1"></i>Add department</a><?php $heroActions = ob_get_clean(); render_asset_workspace_hero('Location governance', 'Asset Departments', 'Maintain the accountable locations used in physical-item identities, transfers and reporting.', 'fa-sitemap', $heroActions); ?>
+    <?php render_asset_workspace_nav('register', $selectedChurchId); ?>
 
     <?php if (isset($_GET['saved'])): ?>
         <div class="alert alert-success">Department saved successfully.</div>
@@ -40,10 +41,10 @@ ob_start();
         <div class="alert alert-success">Department status updated.</div>
     <?php endif; ?>
 
-    <div class="card shadow-sm mb-3">
+    <div class="card asset-panel mb-3">
         <div class="card-body">
             <form method="get" class="form-row align-items-end">
-                <?php if (asset_is_super_admin()): ?>
+                <?php if ($isSuper): ?>
                     <div class="form-group col-md-4">
                         <label for="church_id">Church</label>
                         <select name="church_id" id="church_id" class="form-control">
@@ -66,7 +67,7 @@ ob_start();
         </div>
     </div>
 
-    <div class="card shadow-sm">
+    <div class="card asset-panel">
         <div class="card-body table-responsive">
             <table class="table table-bordered table-hover" id="assetDepartmentsTable">
                 <thead class="thead-light">
@@ -74,7 +75,7 @@ ob_start();
                         <th>Code</th>
                         <th>Name</th>
                         <th>Description</th>
-                        <?php if (asset_is_super_admin()): ?><th>Church</th><?php endif; ?>
+                        <?php if ($isSuper): ?><th>Church</th><?php endif; ?>
                         <th>Status</th>
                         <th>Actions</th>
                     </tr>
@@ -85,22 +86,8 @@ ob_start();
                         <td><?= htmlspecialchars((string) ($dept['department_code'] ?? '')) ?></td>
                         <td><?= htmlspecialchars($dept['name']) ?></td>
                         <td><?= htmlspecialchars((string) ($dept['description'] ?? '')) ?></td>
-                        <?php if (asset_is_super_admin()): ?>
-                            <td>
-                                <?php
-                                $churchName = '-';
-                                if (isset($dept['church_id'])) {
-                                    $stmtC = $conn->prepare('SELECT name FROM churches WHERE id = ? LIMIT 1');
-                                    $cid = (int) $dept['church_id'];
-                                    $stmtC->bind_param('i', $cid);
-                                    $stmtC->execute();
-                                    $churchRow = $stmtC->get_result()->fetch_assoc();
-                                    $churchName = $churchRow['name'] ?? '-';
-                                    $stmtC->close();
-                                }
-                                echo htmlspecialchars($churchName);
-                                ?>
-                            </td>
+                        <?php if ($isSuper): ?>
+                            <td><?= htmlspecialchars((string) ($churchNames[(int) ($dept['church_id'] ?? 0)] ?? '-'), ENT_QUOTES, 'UTF-8') ?></td>
                         <?php endif; ?>
                         <td>
                             <span class="badge badge-<?= (int) $dept['is_active'] === 1 ? 'success' : 'secondary' ?>">
@@ -108,13 +95,13 @@ ob_start();
                             </span>
                         </td>
                         <td class="text-nowrap">
-                            <a href="asset_department_form.php?id=<?= (int) $dept['id'] ?>" class="btn btn-sm btn-warning"><i class="fas fa-edit"></i></a>
-                            <form method="post" action="asset_department_toggle.php" class="d-inline" onsubmit="return confirm('Change department status?');"><?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $dept['id'] ?>"><button type="submit" class="btn btn-sm btn-<?= (int) $dept['is_active'] === 1 ? 'secondary' : 'success' ?>"><i class="fas fa-power-off"></i></button></form>
+                            <a href="asset_department_form.php?id=<?= (int) $dept['id'] ?>" class="btn btn-sm btn-outline-primary" title="Edit department"><i class="fas fa-edit"></i></a>
+                            <form method="post" action="asset_department_toggle.php" class="d-inline" onsubmit="return confirm('Change department status?');"><?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $dept['id'] ?>"><button type="submit" class="btn btn-sm btn-outline-<?= (int) $dept['is_active'] === 1 ? 'secondary' : 'success' ?>" title="<?= (int) $dept['is_active'] === 1 ? 'Deactivate' : 'Activate' ?> department"><i class="fas fa-power-off"></i></button></form>
                         </td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($departments)): ?>
-                    <tr><td colspan="<?= asset_is_super_admin() ? 6 : 5 ?>" class="text-center">No departments found.</td></tr>
+                    <tr><td colspan="<?= $isSuper ? 6 : 5 ?>" class="asset-empty-state"><i class="fas fa-sitemap"></i>No asset departments match this church.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

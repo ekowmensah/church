@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
 require_once __DIR__ . '/../helpers/csrf.php';
+require_once __DIR__ . '/../includes/asset_workspace_nav.php';
 
 asset_require_permission('transfer_asset');
 
@@ -39,10 +40,17 @@ if (!$asset) {
 
 $churchId = (int) $asset['church_id'];
 $physicalItems = asset_fetch_physical_items($conn, $id, true);
-if (!$physicalItems) {
-    http_response_code(409);
-    exit('This asset has no active physical items to transfer.');
-}
+$hasCustodyState = asset_column_exists($conn, 'asset_items', 'custody_status');
+$hasItemLifecycle = asset_column_exists($conn, 'asset_items', 'lifecycle_status');
+$physicalItems = array_values(array_filter($physicalItems, static function (array $item) use ($hasCustodyState, $hasItemLifecycle): bool {
+    if ($hasCustodyState && (string) ($item['custody_status'] ?? 'available') !== 'available') {
+        return false;
+    }
+    if ($hasItemLifecycle && in_array((string) ($item['lifecycle_status'] ?? ''), ['under_maintenance', 'retired', 'disposed'], true)) {
+        return false;
+    }
+    return true;
+}));
 $selectedItemId = (int) ($_POST['asset_item_id'] ?? $_GET['asset_item_id'] ?? (count($physicalItems) === 1 ? $physicalItems[0]['id'] : 0));
 $selectedItem = null;
 foreach ($physicalItems as $physicalItem) {
@@ -114,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->execute();
                 $stmt->close();
 
-                asset_sync_parent_from_items($conn, $id);
+                $codeChange = asset_sync_parent_from_items($conn, $id);
 
                 $movedBy = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
                 $stmt = $conn->prepare('INSERT INTO asset_movements (asset_id, asset_item_id, from_department_id, to_department_id, moved_by, notes) VALUES (?, ?, ?, ?, ?, ?)');
@@ -136,11 +144,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $after = [
                     'department_id' => $toDepartmentId,
                     'department_name' => $toDepartmentName,
+                    'asset_code' => $codeChange['new_asset_code'],
                 ];
 
                 asset_log_action('asset_transfer', 'asset_movement', $movementId, [
                     'asset_id' => $id,
-                    'asset_code' => $asset['asset_code'],
+                    'asset_code' => $codeChange['new_asset_code'],
+                    'old_asset_code' => $codeChange['old_asset_code'],
+                    'new_asset_code' => $codeChange['new_asset_code'],
                     'asset_item_id' => $selectedItemId,
                     'old_item_number' => (string) $selectedItem['item_number'],
                     'new_item_number' => $newItemNumber,
@@ -161,15 +172,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 ob_start();
 ?>
-<div class="container-fluid mt-4">
+<link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
+<div class="container-fluid mt-4 asset-workspace">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2 class="mb-0"><i class="fas fa-exchange-alt mr-2"></i>Transfer Asset</h2>
         <a href="asset_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>" class="btn btn-secondary"><i class="fas fa-arrow-left mr-1"></i> Back</a>
     </div>
+    <?php render_asset_workspace_nav('movements', $churchId); ?>
 
-    <div class="card shadow-sm">
+    <div class="card asset-panel asset-form-shell">
+        <div class="card-header"><strong>Physical-unit transfer</strong><small class="d-block text-muted">The movement keeps a complete location trail and rewrites only the department segment of the item number.</small></div>
         <div class="card-body">
             <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+
+            <?php if (!$physicalItems): ?>
+                <div class="asset-empty-state">
+                    <i class="fas fa-lock"></i>
+                    <strong>No transferable physical units</strong>
+                    <div>Reserved, issued, maintenance, retired and disposed units must complete their current workflow before a department transfer.</div>
+                </div>
+            <?php else: ?>
 
             <div class="mb-3">
                 <strong>Asset Category Code:</strong> <?= htmlspecialchars($asset['asset_code']) ?><br>
@@ -177,8 +199,8 @@ ob_start();
                 <?php if ($selectedItem): ?><strong>Item Number:</strong> <?= htmlspecialchars((string) $selectedItem['item_number']) ?><br><strong>Current Department:</strong> <?= htmlspecialchars((string) ($selectedItem['department_name'] ?? '-')) ?><?php endif; ?>
             </div>
 
-                <form method="post">
-                    <?= csrf_input() ?>
+            <form method="post">
+                <?= csrf_input() ?>
                 <input type="hidden" name="id" value="<?= (int) $id ?>">
 
                 <div class="form-group">
@@ -212,6 +234,7 @@ ob_start();
                     <button type="submit" class="btn btn-primary"><i class="fas fa-check mr-1"></i> Confirm Transfer</button>
                 <?php endif; ?>
             </form>
+            <?php endif; ?>
         </div>
     </div>
 </div>

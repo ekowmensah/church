@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../helpers/asset_register_helper.php';
+require_once __DIR__ . '/../includes/asset_workspace_nav.php';
 
 asset_require_permission('view_asset_reports');
 
@@ -20,11 +21,11 @@ $conditionRows = [];
 $deptValueRows = [];
 $maintenanceRows = [];
 
-$sqlCond = 'SELECT condition_status, COUNT(*) AS total FROM assets WHERE 1';
+$sqlCond = "SELECT item.condition_status, COUNT(*) AS total FROM asset_items item WHERE item.status = 'active'";
 $types = '';
 $params = [];
 if ($churchId !== null) {
-    $sqlCond .= ' AND church_id = ?';
+    $sqlCond .= ' AND item.church_id = ?';
     $types = 'i';
     $params[] = $churchId;
 }
@@ -42,11 +43,13 @@ $stmt->close();
 
 $sqlDept = "
     SELECT d.name AS department_name,
-           COUNT(a.id) AS asset_count,
-           SUM(COALESCE(a.amount, 0) * COALESCE(a.quantity, 1)) AS total_value
-    FROM assets a
-    LEFT JOIN asset_departments d ON d.id = a.department_id
-    WHERE 1
+           COUNT(item.id) AS asset_count,
+           SUM(CASE WHEN active_count.unit_count > 0 THEN COALESCE(a.amount, 0) / active_count.unit_count ELSE 0 END) AS total_value
+    FROM asset_items item
+    JOIN assets a ON a.id = item.asset_id
+    LEFT JOIN asset_departments d ON d.id = item.department_id
+    LEFT JOIN (SELECT asset_id, COUNT(*) AS unit_count FROM asset_items WHERE status = 'active' GROUP BY asset_id) active_count ON active_count.asset_id = a.id
+    WHERE item.status = 'active'
 ";
 $types = '';
 $params = [];
@@ -121,16 +124,12 @@ $stmt->close();
 
 ob_start();
 ?>
-<div class="container-fluid mt-4">
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
-        <div>
-            <h2 class="mb-1"><i class="fas fa-chart-line mr-2"></i>Asset Reports</h2>
-            <small class="text-muted">Condition trends, valuation by department, and maintenance scheduling insights.</small>
-        </div>
-        <a href="asset_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>" class="btn btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i> Back to Assets</a>
-    </div>
+<link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
+<div class="container-fluid mt-4 asset-workspace">
+    <?php render_asset_workspace_hero('Portfolio intelligence', 'Asset Reports', 'Physical-unit condition, proportional recorded value by location, movement activity and maintenance exposure.', 'fa-chart-line'); ?>
+    <?php render_asset_workspace_nav('reports', $churchId); ?>
 
-    <div class="card shadow-sm mb-3">
+    <div class="card asset-panel mb-3">
         <div class="card-body">
             <form method="get" class="form-row align-items-end">
                 <?php if ($isSuper): ?>
@@ -153,7 +152,7 @@ ob_start();
 
     <div class="row">
         <div class="col-lg-4 mb-3">
-            <div class="card shadow-sm h-100">
+            <div class="card asset-panel h-100">
                 <div class="card-header"><strong>Condition Distribution</strong></div>
                 <div class="card-body">
                     <?php $conditionTotal = array_sum(array_map(static fn($r) => (int) $r['total'], $conditionRows)); ?>
@@ -170,11 +169,11 @@ ob_start();
         </div>
 
         <div class="col-lg-8 mb-3">
-            <div class="card shadow-sm h-100">
-                <div class="card-header"><strong>Department Valuation</strong></div>
+            <div class="card asset-panel h-100">
+                <div class="card-header"><strong>Department Portfolio</strong><small class="d-block text-muted">Recorded asset value is allocated proportionally where a category has units in multiple departments.</small></div>
                 <div class="card-body table-responsive">
                     <table class="table table-bordered table-hover">
-                        <thead class="thead-light"><tr><th>Department</th><th>Assets</th><th>Total Value</th></tr></thead>
+                        <thead class="thead-light"><tr><th>Department</th><th>Physical Units</th><th>Allocated Recorded Value</th></tr></thead>
                         <tbody>
                             <?php foreach ($deptValueRows as $row): ?>
                                 <tr>
@@ -193,7 +192,7 @@ ob_start();
 
     <div class="row">
         <div class="col-lg-6 mb-3">
-            <div class="card shadow-sm h-100">
+            <div class="card asset-panel h-100">
                 <div class="card-header"><strong>Monthly Movement Trend (12 Months)</strong></div>
                 <div class="card-body table-responsive">
                     <table class="table table-bordered table-hover mb-0">
@@ -209,7 +208,7 @@ ob_start();
             </div>
         </div>
         <div class="col-lg-6 mb-3">
-            <div class="card shadow-sm h-100">
+            <div class="card asset-panel h-100">
                 <div class="card-header"><strong>Maintenance Due Schedule</strong></div>
                 <div class="card-body table-responsive">
                     <?php if ($hasMaintenanceFields): ?>
