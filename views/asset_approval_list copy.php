@@ -35,16 +35,11 @@ if ($isSuper) {
     }
 }
 
-// aar.* already includes snapshot columns when they exist.
-// Supply NULL aliases only for missing columns to avoid duplicate names
-// when the pagination helper wraps this SELECT in a derived table.
-$snapshotSelect = '';
-if (!asset_column_exists($conn, 'asset_approval_requests', 'asset_code_snapshot')) {
-    $snapshotSelect .= ', NULL AS asset_code_snapshot';
-}
-if (!asset_column_exists($conn, 'asset_approval_requests', 'asset_name_snapshot')) {
-    $snapshotSelect .= ', NULL AS asset_name_snapshot';
-}
+$hasAssetSnapshots = asset_column_exists($conn, 'asset_approval_requests', 'asset_code_snapshot')
+    && asset_column_exists($conn, 'asset_approval_requests', 'asset_name_snapshot');
+$snapshotSelect = $hasAssetSnapshots
+    ? ', aar.asset_code_snapshot, aar.asset_name_snapshot'
+    : ', NULL AS asset_code_snapshot, NULL AS asset_name_snapshot';
 
 $sql = "
     SELECT aar.*, a.id AS linked_asset_id, a.asset_code, a.item_name,
