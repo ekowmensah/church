@@ -92,7 +92,7 @@ if (isset($_SESSION['member_id'])) {
             <div class="nav-icon-wrapper">
               <i class="nav-icon fas fa-hand-holding"></i>
             </div>
-            <span class="nav-text">Asset Requests</span>
+            <span class="nav-text">Asset Lending</span>
             <div class="nav-indicator"></div>
           </a>
         </li>

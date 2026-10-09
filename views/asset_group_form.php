@@ -26,6 +26,9 @@ $defaultQuantity = 1;
 $quantityRule = 'fixed';
 $description = '';
 $isActive = 1;
+$usageCount = 0;
+$originalChurchId = $churchId;
+$originalGroupCode = '';
 
 if ($isEdit) {
     $sql = 'SELECT * FROM asset_groups WHERE id = ?';
@@ -50,12 +53,20 @@ if ($isEdit) {
     }
 
     $churchId = (int) $row['church_id'];
+    $originalChurchId = $churchId;
     $name = (string) ($row['name'] ?? '');
     $groupCode = (string) ($row['group_code'] ?? '');
+    $originalGroupCode = $groupCode;
     $defaultQuantity = (int) ($row['default_quantity'] ?? 1);
     $quantityRule = (string) ($row['quantity_rule'] ?? 'fixed');
     $description = (string) ($row['description'] ?? '');
     $isActive = (int) ($row['is_active'] ?? 1);
+
+    $usageStmt = $conn->prepare('SELECT COUNT(*) AS total FROM assets WHERE asset_group_id = ?');
+    $usageStmt->bind_param('i', $groupId);
+    $usageStmt->execute();
+    $usageCount = (int) ($usageStmt->get_result()->fetch_assoc()['total'] ?? 0);
+    $usageStmt->close();
 }
 
 $churches = [];
@@ -73,55 +84,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $name = trim((string) ($_POST['name'] ?? ''));
     $groupCode = strtoupper(trim((string) ($_POST['group_code'] ?? '')));
-    $defaultQuantity = max(1, (int) ($_POST['default_quantity'] ?? 1));
-    $quantityRule = trim((string) ($_POST['quantity_rule'] ?? 'fixed'));
+    // Modern registration tracks every physical unit individually. Retain the
+    // legacy columns only as compatibility values, not as a second workflow.
+    $defaultQuantity = 1;
+    $quantityRule = 'fixed';
     $description = trim((string) ($_POST['description'] ?? ''));
     $isActive = isset($_POST['is_active']) ? 1 : 0;
 
     if ($isSuper) {
         $churchId = (int) ($_POST['church_id'] ?? 0);
     }
+    if ($isEdit && $usageCount > 0) {
+        $churchId = (int) $originalChurchId;
+        $groupCode = (string) $originalGroupCode;
+    }
 
     if ($churchId === null || $churchId <= 0) {
         $error = 'Please select a church.';
     } elseif ($name === '') {
-        $error = 'Item category name is required.';
+        $error = 'Asset category name is required.';
     } elseif ($groupCode === '') {
         $error = 'Category code is required.';
-    } elseif (!in_array($quantityRule, ['fixed', 'manual'], true)) {
-        $error = 'Invalid quantity rule.';
+    } elseif (!preg_match('/^[A-Z0-9]{2,10}$/', $groupCode)) {
+        $error = 'Category code must contain 2 to 10 uppercase letters or numbers.';
     } else {
-        if ($isEdit) {
-            $sql = 'UPDATE asset_groups SET church_id = ?, name = ?, group_code = ?, default_quantity = ?, quantity_rule = ?, description = ?, is_active = ? WHERE id = ?';
-            if (!$isSuper) {
-                $sql .= ' AND church_id = ?';
-            }
-            $stmt = $conn->prepare($sql);
-            if ($isSuper) {
-                $stmt->bind_param('ississii', $churchId, $name, $groupCode, $defaultQuantity, $quantityRule, $description, $isActive, $groupId);
-            } else {
-                $stmt->bind_param('ississiii', $churchId, $name, $groupCode, $defaultQuantity, $quantityRule, $description, $isActive, $groupId, $churchId);
-            }
-            $ok = $stmt->execute();
-            $stmt->close();
-            if ($ok) {
+        $conn->begin_transaction();
+        try {
+            if ($isEdit) {
+                $sql = 'UPDATE asset_groups SET church_id = ?, name = ?, group_code = ?, default_quantity = 1, quantity_rule = \'fixed\', description = ?, is_active = ? WHERE id = ?';
+                if (!$isSuper) {
+                    $sql .= ' AND church_id = ?';
+                }
+                $stmt = $conn->prepare($sql);
+                if ($isSuper) {
+                    $stmt->bind_param('isssii', $churchId, $name, $groupCode, $description, $isActive, $groupId);
+                } else {
+                    $stmt->bind_param('isssiii', $churchId, $name, $groupCode, $description, $isActive, $groupId, $churchId);
+                }
+                $stmt->execute();
+                $stmt->close();
+                $stmt = $conn->prepare('UPDATE assets SET item_group = ? WHERE asset_group_id = ? AND church_id = ?');
+                $stmt->bind_param('sii', $name, $groupId, $churchId);
+                $stmt->execute();
+                $stmt->close();
+                $conn->commit();
                 asset_log_action('asset_group_update', 'asset_group', $groupId, [
                     'church_id' => $churchId,
                     'name' => $name,
                     'group_code' => $groupCode,
+                    'linked_asset_count' => $usageCount,
                 ]);
                 header('Location: asset_group_list.php?saved=1' . ($churchId ? '&church_id=' . $churchId : ''));
                 exit;
-            }
-            $error = 'Failed to update item category. The code or name may already exist for this church.';
-        } else {
-            $createdBy = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
-            $stmt = $conn->prepare('INSERT INTO asset_groups (church_id, name, group_code, default_quantity, quantity_rule, description, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-            $stmt->bind_param('ississii', $churchId, $name, $groupCode, $defaultQuantity, $quantityRule, $description, $isActive, $createdBy);
-            $ok = $stmt->execute();
-            $newId = (int) $conn->insert_id;
-            $stmt->close();
-            if ($ok) {
+            } else {
+                $createdBy = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
+                $stmt = $conn->prepare("INSERT INTO asset_groups (church_id, name, group_code, default_quantity, quantity_rule, description, is_active, created_by) VALUES (?, ?, ?, 1, 'fixed', ?, ?, ?)");
+                $stmt->bind_param('isssii', $churchId, $name, $groupCode, $description, $isActive, $createdBy);
+                $stmt->execute();
+                $newId = (int) $conn->insert_id;
+                $stmt->close();
+                $conn->commit();
                 asset_log_action('asset_group_create', 'asset_group', $newId, [
                     'church_id' => $churchId,
                     'name' => $name,
@@ -130,7 +152,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header('Location: asset_group_list.php?saved=1' . ($churchId ? '&church_id=' . $churchId : ''));
                 exit;
             }
-            $error = 'Failed to create item category. The code or name may already exist for this church.';
+        } catch (Throwable $exception) {
+            $conn->rollback();
+            error_log('Asset category save failed: ' . $exception->getMessage());
+            $error = $exception instanceof mysqli_sql_exception && (int) $exception->getCode() === 1062
+                ? 'That category name or code already exists for this church.'
+                : 'The asset category could not be saved. Please retry.';
         }
     }
 }
@@ -140,7 +167,7 @@ ob_start();
 <link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
 <div class="container-fluid mt-4 asset-workspace">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2 class="mb-0"><i class="fas fa-layer-group mr-2"></i><?= $isEdit ? 'Edit' : 'Add' ?> Item Category</h2>
+        <h2 class="mb-0"><i class="fas fa-layer-group mr-2"></i><?= $isEdit ? 'Edit' : 'Add' ?> Asset Category</h2>
         <a href="asset_group_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>" class="btn btn-secondary">
             <i class="fas fa-arrow-left mr-1"></i> Back
         </a>
@@ -148,7 +175,7 @@ ob_start();
 
     <?php render_asset_workspace_nav('register', $churchId); ?>
     <div class="card asset-panel asset-form-shell">
-        <div class="card-header"><strong>Category definition</strong><small class="d-block text-muted">The category code becomes a stable segment in every generated asset identity.</small></div>
+        <div class="card-header"><strong>Category definition</strong><small class="d-block text-muted">Every asset must belong to one category. Its code becomes a stable segment in generated asset and physical-unit identities.</small></div>
         <div class="card-body">
             <?php if ($error): ?>
                 <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
@@ -159,7 +186,7 @@ ob_start();
                 <?php if ($isSuper): ?>
                     <div class="form-group">
                         <label for="church_id">Church <span class="text-danger">*</span></label>
-                        <select class="form-control" id="church_id" name="church_id" required>
+                        <select class="form-control" id="church_id" name="church_id" required <?= $isEdit && $usageCount > 0 ? 'disabled' : '' ?>>
                             <option value="">-- Select Church --</option>
                             <?php foreach ($churches as $church): ?>
                                 <option value="<?= (int) $church['id'] ?>" <?= $churchId === (int) $church['id'] ? 'selected' : '' ?>>
@@ -167,6 +194,7 @@ ob_start();
                                 </option>
                             <?php endforeach; ?>
                         </select>
+                        <?php if ($isEdit && $usageCount > 0): ?><input type="hidden" name="church_id" value="<?= (int) $churchId ?>"><small class="text-muted">The church cannot change after assets use this category.</small><?php endif; ?>
                     </div>
                 <?php endif; ?>
 
@@ -177,29 +205,22 @@ ob_start();
                     </div>
                     <div class="form-group col-md-6">
                         <label for="group_code">Category Code <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control text-uppercase" id="group_code" name="group_code" value="<?= htmlspecialchars($groupCode) ?>" maxlength="10" required>
-                        <small class="text-muted">Used in asset codes, for example `COM` or `TRM`.</small>
+                        <input type="text" class="form-control text-uppercase" id="group_code" name="group_code" value="<?= htmlspecialchars($groupCode) ?>" minlength="2" maxlength="10" pattern="[A-Za-z0-9]{2,10}" required <?= $isEdit && $usageCount > 0 ? 'readonly' : '' ?>>
+                        <small class="text-muted"><?= $isEdit && $usageCount > 0 ? 'Locked because ' . number_format($usageCount) . ' asset record(s) already use this identity segment.' : 'Used in asset codes, for example COM or TRM.' ?></small>
                     </div>
                 </div>
 
+                <div class="alert alert-light border">
+                    <strong>Physical-unit model:</strong> quantities are not configured on categories. Each physical asset is registered and numbered individually beneath an asset record.
+                </div>
                 <div class="form-row">
-                    <div class="form-group col-md-4">
-                        <label for="quantity_rule">Quantity Rule <span class="text-danger">*</span></label>
-                        <select class="form-control" id="quantity_rule" name="quantity_rule" required>
-                            <option value="fixed" <?= $quantityRule === 'fixed' ? 'selected' : '' ?>>Fixed Quantity</option>
-                            <option value="manual" <?= $quantityRule === 'manual' ? 'selected' : '' ?>>Manual Quantity</option>
-                        </select>
-                    </div>
-                    <div class="form-group col-md-4">
-                        <label for="default_quantity">Default Quantity <span class="text-danger">*</span></label>
-                        <input type="number" class="form-control" id="default_quantity" name="default_quantity" value="<?= (int) $defaultQuantity ?>" min="1" required>
-                    </div>
-                    <div class="form-group col-md-4 d-flex align-items-center">
+                    <div class="form-group col-md-6 d-flex align-items-center">
                         <div class="form-check mt-4">
                             <input type="checkbox" class="form-check-input" id="is_active" name="is_active" value="1" <?= $isActive === 1 ? 'checked' : '' ?>>
                             <label class="form-check-label" for="is_active">Active</label>
                         </div>
                     </div>
+                    <div class="form-group col-md-6"><label>Linked assets</label><div class="form-control bg-light"><?= number_format($usageCount) ?> asset record(s)</div></div>
                 </div>
 
                 <div class="form-group">

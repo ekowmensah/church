@@ -19,6 +19,22 @@ $stmt->close();
 
 // Get user permissions
 $user_permissions = $is_super_admin ? null : array_values(array_filter(array_column(get_user_permissions(), 'name')));
+$can_view_menu_item = static function (array $item) use ($is_super_admin, $user_permissions): bool {
+    if ($is_super_admin) return true;
+    if (!is_array($user_permissions)) return false;
+    if (in_array((string) ($item['permission_name'] ?? ''), $user_permissions, true)) return true;
+
+    // The Asset Approval Queue combines two independently governed decision
+    // types. The destination still enforces the appropriate permission for
+    // every row; this OR only makes the shared queue discoverable.
+    if (($item['url'] ?? '') === 'views/asset_approval_list.php') {
+        return (bool) array_intersect(
+            ['approve_asset_request', 'request_asset_approval', 'approve_asset_use_request'],
+            $user_permissions
+        );
+    }
+    return false;
+};
 
 // Branding: logo, name, address
 $logo_path = BASE_URL . '/uploads/logo.png';
@@ -199,7 +215,7 @@ $current_url = $_SERVER['REQUEST_URI'] ?? '';
     if (isset($menu['Dashboard'])) {
       $dashboard_items = [];
       foreach ($menu['Dashboard'] as $item) {
-        if ($is_super_admin || (is_array($user_permissions) && in_array($item['permission_name'], $user_permissions))) {
+        if ($can_view_menu_item($item)) {
           $dashboard_items[] = $item;
         }
       }
@@ -225,7 +241,7 @@ $current_url = $_SERVER['REQUEST_URI'] ?? '';
     if (isset($menu['Reports'])) {
       foreach ($menu['Reports'] as $item) {
         if ($item['url'] !== 'views/reports.php') continue;
-        if (!$is_super_admin && (!is_array($user_permissions) || !in_array($item['permission_name'], $user_permissions, true))) continue;
+        if (!$can_view_menu_item($item)) continue;
         $is_active = strpos($current_url, '/views/reports') !== false;
         echo '<ul class="nav nav-pills nav-sidebar flex-column" role="menu" style="margin-bottom: 1em;">';
         echo '<li class="nav-item">';
@@ -325,7 +341,7 @@ $current_url = $_SERVER['REQUEST_URI'] ?? '';
       
       $visible_items = [];
       foreach ($items as $item) {
-        if ($is_super_admin || (is_array($user_permissions) && in_array($item['permission_name'], $user_permissions))) {
+        if ($can_view_menu_item($item)) {
           $visible_items[] = $item;
         }
       }

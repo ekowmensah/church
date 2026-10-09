@@ -39,7 +39,7 @@ $stmt->close();
 
 if (!$asset) {
     http_response_code(404);
-    exit('Asset category not found.');
+    exit('Shared asset record not found.');
 }
 
 $churchId = (int) $asset['church_id'];
@@ -113,9 +113,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         } catch (Throwable $e) {
             $conn->rollback();
-            $error = $e instanceof mysqli_sql_exception && (int) $e->getCode() === 1062
-                ? 'That physical item number or serial number already exists.'
-                : $e->getMessage();
+            error_log('Physical asset item registration failed: ' . $e->getMessage());
+            if ($e instanceof mysqli_sql_exception) {
+                $error = (int) $e->getCode() === 1062
+                    ? 'That physical item number or serial number already exists.'
+                    : 'The physical item could not be registered. Please retry.';
+            } else {
+                $error = $e->getMessage();
+            }
         }
     }
 }
@@ -126,7 +131,7 @@ ob_start();
 <div class="container-fluid mt-4 asset-workspace">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
-            <h2 class="mb-1"><i class="fas fa-plus-circle mr-2"></i>Register Physical Item</h2>
+            <h2 class="mb-1"><i class="fas fa-plus-circle mr-2"></i>Register Another Physical Unit</h2>
             <div class="text-muted"><?= htmlspecialchars((string) $asset['item_name']) ?> · <?= htmlspecialchars((string) $asset['asset_code']) ?> · <?= htmlspecialchars((string) $asset['church_name']) ?></div>
         </div>
         <a href="asset_view.php?id=<?= $assetId ?>&tab=items" class="btn btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i>Back</a>
@@ -138,7 +143,7 @@ ob_start();
     <div class="card asset-panel asset-form-shell">
         <div class="card-header"><strong>Physical identity and location</strong><small class="d-block text-muted">One record represents one traceable unit. Its generated number changes only when its accountable department changes.</small></div>
         <div class="card-body">
-            <p class="text-muted">Register one physical item at a time. The item number is generated automatically and the category quantity increases only after this item is saved.</p>
+            <p class="text-muted">Use this only when another physical unit shares the same category, asset name and acquisition details. The new unit receives its own generated number, department, serial, condition and custody history.</p>
             <form method="post">
                 <?= csrf_input() ?>
                 <input type="hidden" name="asset_id" value="<?= $assetId ?>">
@@ -165,7 +170,7 @@ ob_start();
                         </select>
                     </div>
                 </div>
-                <div class="asset-action-bar"><a href="asset_view.php?id=<?= $assetId ?>&tab=items" class="btn btn-outline-secondary">Cancel</a><button type="submit" class="btn btn-success"><i class="fas fa-save mr-1"></i>Register physical item</button></div>
+                <div class="asset-action-bar"><a href="asset_view.php?id=<?= $assetId ?>&tab=items" class="btn btn-outline-secondary">Cancel</a><button type="submit" class="btn btn-success"><i class="fas fa-save mr-1"></i>Register physical unit</button></div>
             </form>
         </div>
     </div>

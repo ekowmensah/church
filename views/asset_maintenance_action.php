@@ -121,8 +121,11 @@ try {
             $stmt->execute();
             $stmt->close();
         } elseif ($action === 'cancel') {
-            $stmt = $conn->prepare("UPDATE asset_maintenance_work_orders SET status = 'cancelled', completed_at = NOW(), completed_by_user_id = ? WHERE id = ?");
-            $stmt->bind_param('ii', $actorId, $workOrderId);
+            $cancelReason = trim((string) ($_POST['cancel_reason'] ?? ''));
+            if ($cancelReason === '') throw new RuntimeException('A cancellation reason is required.');
+            if (mb_strlen($cancelReason) > 500) throw new RuntimeException('The cancellation reason must be 500 characters or fewer.');
+            $stmt = $conn->prepare("UPDATE asset_maintenance_work_orders SET status = 'cancelled', completed_at = NOW(), completed_by_user_id = ?, work_notes = CONCAT_WS(CHAR(10), NULLIF(work_notes,''), CONCAT('Cancelled: ', ?)) WHERE id = ?");
+            $stmt->bind_param('isi', $actorId, $cancelReason, $workOrderId);
             $stmt->execute();
             $stmt->close();
             $condition = (string) $workOrder['condition_before'];
@@ -143,7 +146,10 @@ try {
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('Asset maintenance action failed: ' . $exception->getMessage());
-    header('Location: asset_maintenance_list.php?err=' . urlencode($exception->getMessage()));
+    $message = $exception instanceof mysqli_sql_exception
+        ? 'The maintenance update could not be completed. Please retry or contact an administrator.'
+        : $exception->getMessage();
+    header('Location: asset_maintenance_list.php?err=' . urlencode($message));
     exit;
 }
 

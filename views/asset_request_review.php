@@ -20,6 +20,7 @@ if (!(new AssetCustodyService($conn))->isAvailable()) {
 }
 
 $requestId = (int) ($_GET['id'] ?? 0);
+$returnToApprovalQueue = (string) ($_GET['return_to'] ?? '') === 'approval_queue';
 $isSuper = asset_is_super_admin();
 $churchId = $isSuper ? null : asset_current_church_id($conn);
 $sql = 'SELECT request.*, church.name AS church_name FROM asset_use_requests request LEFT JOIN churches church ON church.id = request.church_id WHERE request.id = ?';
@@ -31,7 +32,8 @@ $stmt->execute();
 $request = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 if (!$request || (string) $request['status'] !== 'pending') {
-    header('Location: asset_request_list.php?err=' . urlencode('Only a pending request can be reviewed.'));
+    $target = $returnToApprovalQueue ? 'asset_approval_list.php' : 'asset_request_list.php';
+    header('Location: ' . $target . '?err=' . urlencode('Only a pending request can be reviewed.'));
     exit;
 }
 
@@ -100,7 +102,7 @@ ob_start();
                 <h2 class="mb-1">Review request #<?= $requestId ?></h2>
                 <p class="mb-0"><?= htmlspecialchars((string) $request['requester_name'], ENT_QUOTES, 'UTF-8') ?> &middot; <?= htmlspecialchars((string) $request['church_name'], ENT_QUOTES, 'UTF-8') ?></p>
             </div>
-            <a href="asset_request_list.php" class="btn btn-light mt-2 mt-md-0"><i class="fas fa-arrow-left mr-1"></i>Back to custody queue</a>
+            <a href="<?= $returnToApprovalQueue ? 'asset_approval_list.php' : 'asset_request_list.php' ?>" class="btn btn-light mt-2 mt-md-0"><i class="fas fa-arrow-left mr-1"></i><?= $returnToApprovalQueue ? 'Back to Approval Queue' : 'Back to Lending &amp; Returns' ?></a>
         </div>
     </section>
     <?php render_asset_workspace_nav('custody', $isSuper ? $requestChurchId : $churchId); ?>
@@ -119,6 +121,7 @@ ob_start();
                 <?= csrf_input() ?>
                 <input type="hidden" name="id" value="<?= $requestId ?>">
                 <input type="hidden" name="request_action" value="approve">
+                <?php if ($returnToApprovalQueue): ?><input type="hidden" name="return_to" value="approval_queue"><?php endif; ?>
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <div><h3 class="h6 font-weight-bold mb-0">Requested physical units</h3><small class="text-muted">Confirm the category and reserve a traceable unit number.</small></div>
                     <span class="badge badge-primary p-2"><span id="reviewLineCount">0</span> line(s)</span>
@@ -128,7 +131,7 @@ ob_start();
                     <div class="review-line border rounded p-3 mb-3 bg-light">
                         <input type="hidden" name="line_id[]" value="<?= (int) $line['id'] ?>">
                         <div class="form-row align-items-end">
-                            <div class="form-group col-lg-4"><label>Asset category</label><select name="line_asset_id[]" class="form-control line-asset" required><?php $renderAssetOptions($selectedAsset); ?></select></div>
+                            <div class="form-group col-lg-4"><label>Asset name / shared details</label><select name="line_asset_id[]" class="form-control line-asset" required><?php $renderAssetOptions($selectedAsset); ?></select></div>
                             <div class="form-group col-lg-4"><label>Physical unit to reserve</label><select name="line_asset_item_id[]" class="form-control line-item"><?php $renderItemOptions($selectedAsset); ?></select><small class="form-text text-muted">Unit number, serial, location and condition.</small></div>
                             <div class="form-group col-lg-2"><label>Decision</label><select name="line_decision[]" class="form-control line-decision"><option value="approved">Approve &amp; reserve</option><option value="rejected">Reject line</option></select></div>
                             <div class="form-group col-lg-2"><button type="button" class="btn btn-outline-danger btn-block remove-review-line">Remove</button></div>
@@ -155,7 +158,7 @@ ob_start();
     <div class="review-line border rounded p-3 mb-3 bg-light">
         <input type="hidden" name="line_id[]" value="0">
         <div class="form-row align-items-end">
-            <div class="form-group col-lg-4"><label>Asset category</label><select name="line_asset_id[]" class="form-control line-asset" required><option value="">-- Select --</option><?php $renderAssetOptions(); ?></select></div>
+            <div class="form-group col-lg-4"><label>Asset name / shared details</label><select name="line_asset_id[]" class="form-control line-asset" required><option value="">-- Select --</option><?php $renderAssetOptions(); ?></select></div>
             <div class="form-group col-lg-4"><label>Physical unit to reserve</label><select name="line_asset_item_id[]" class="form-control line-item"><?php $renderItemOptions(-1); ?></select></div>
             <div class="form-group col-lg-2"><label>Decision</label><select name="line_decision[]" class="form-control line-decision"><option value="approved">Approve &amp; reserve</option><option value="rejected">Reject line</option></select></div>
             <div class="form-group col-lg-2"><button type="button" class="btn btn-outline-danger btn-block remove-review-line">Remove</button></div>

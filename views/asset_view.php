@@ -354,7 +354,7 @@ ob_start();
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
         <div>
             <h2 class="mb-1"><i class="fas fa-cube mr-2"></i>Asset Workspace</h2>
-            <small class="text-muted"><?= htmlspecialchars((string) $asset['asset_code']) ?> - <?= htmlspecialchars((string) $asset['item_name']) ?></small>
+            <small class="text-muted">Shared details: <?= htmlspecialchars((string) $asset['asset_code']) ?> - <?= htmlspecialchars((string) $asset['item_name']) ?></small>
         </div>
         <div>
             <a href="asset_list.php<?= $churchId ? '?church_id=' . $churchId : '' ?>" class="btn btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i> Back</a>
@@ -362,13 +362,13 @@ ob_start();
                 <a href="asset_request_form.php?asset_id=<?= $assetId ?>" class="btn btn-outline-success ml-1"><i class="fas fa-hand-holding mr-1"></i> Request Use</a>
             <?php endif; ?>
             <?php if ($canViewUseRequests && asset_use_requests_available($conn)): ?>
-                <a href="asset_request_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>" class="btn btn-outline-info ml-1"><i class="fas fa-clipboard-list mr-1"></i> Requests</a>
+                <a href="asset_request_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>" class="btn btn-outline-info ml-1"><i class="fas fa-hand-holding mr-1"></i> Lending &amp; Returns</a>
             <?php endif; ?>
             <?php if ($canEdit): ?>
                 <a href="asset_form.php?id=<?= $assetId ?>" class="btn btn-warning ml-1"><i class="fas fa-edit mr-1"></i> Edit</a>
             <?php endif; ?>
             <?php if ($canCreate && asset_item_tracking_available($conn)): ?>
-                <a href="asset_item_form.php?asset_id=<?= $assetId ?>" class="btn btn-success ml-1"><i class="fas fa-plus mr-1"></i> Register Item</a>
+                <a href="asset_item_form.php?asset_id=<?= $assetId ?>" class="btn btn-success ml-1"><i class="fas fa-plus mr-1"></i> Register Another Unit</a>
             <?php endif; ?>
             <?php if ($canTransfer): ?>
                 <a href="asset_transfer.php?id=<?= $assetId ?>" class="btn btn-primary ml-1"><i class="fas fa-exchange-alt mr-1"></i> Transfer</a>
@@ -381,7 +381,8 @@ ob_start();
     <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
     <?php if (isset($_GET['doc_saved'])): ?><div class="alert alert-success">Document uploaded successfully.</div><?php endif; ?>
     <?php if (isset($_GET['request_saved'])): ?><div class="alert alert-success">Approval request submitted.</div><?php endif; ?>
-    <?php if (isset($_GET['item_saved'])): ?><div class="alert alert-success">Physical item registered. The derived quantity has been updated.</div><?php endif; ?>
+    <?php if (isset($_GET['created'])): ?><div class="alert alert-success">Physical asset registered successfully. Its first uniquely numbered unit is shown below.</div><?php endif; ?>
+    <?php if (isset($_GET['item_saved'])): ?><div class="alert alert-success">Another physical unit was registered successfully.</div><?php endif; ?>
 
     <div class="card shadow-sm mb-3">
         <div class="card-body">
@@ -389,7 +390,7 @@ ob_start();
                 <?php
                 $tabs = [
                     'overview' => 'Overview',
-                    'items' => 'Physical Items',
+                    'items' => 'Physical Units',
                     'custody' => 'Custody History',
                     'movements' => 'Movements',
                     'audit' => 'Audit',
@@ -411,11 +412,11 @@ ob_start();
         <div class="row">
             <div class="col-lg-7 mb-3">
                 <div class="card shadow-sm h-100">
-                    <div class="card-header"><strong>Asset Profile</strong></div>
+                    <div class="card-header"><strong>Shared Asset Details</strong></div>
                     <div class="card-body">
                         <div class="row">
                             <div class="col-md-6 mb-2"><strong>Code:</strong> <?= htmlspecialchars((string) $asset['asset_code']) ?></div>
-                            <div class="col-md-6 mb-2"><strong>Item Category:</strong> <?= htmlspecialchars((string) (($asset['asset_group_name'] ?? $asset['item_group'] ?? '') !== '' ? (($asset['asset_group_name'] ?? $asset['item_group'] ?? '') . (!empty($asset['asset_group_code']) ? ' (' . $asset['asset_group_code'] . ')' : '')) : '-')) ?></div>
+                            <div class="col-md-6 mb-2"><strong>Asset Category:</strong> <?= htmlspecialchars((string) (($asset['asset_group_name'] ?? $asset['item_group'] ?? '') !== '' ? (($asset['asset_group_name'] ?? $asset['item_group'] ?? '') . (!empty($asset['asset_group_code']) ? ' (' . $asset['asset_group_code'] . ')' : '')) : '-')) ?></div>
                             <div class="col-md-6 mb-2"><strong>Department:</strong> <?= htmlspecialchars((string) ($asset['department_name'] ?? '-')) ?></div>
                             <?php if (asset_column_exists($conn, 'assets', 'acquisition_mode')): ?>
                                 <div class="col-md-6 mb-2"><strong>Acquisition:</strong> <?= htmlspecialchars((string) (asset_acquisition_mode_options()[(string) ($asset['acquisition_mode'] ?? '')] ?? ucfirst(str_replace('_', ' ', (string) ($asset['acquisition_mode'] ?? ''))))) ?></div>
@@ -425,7 +426,7 @@ ob_start();
                             <?php if ($hasLifecycle): ?>
                                 <div class="col-md-6 mb-2"><strong>Lifecycle:</strong> <?= htmlspecialchars(asset_lifecycle_label((string) ($asset['lifecycle_status'] ?? asset_default_lifecycle((string) $asset['status'], (string) $asset['condition_status'])))) ?></div>
                             <?php endif; ?>
-                            <div class="col-md-6 mb-2"><strong>Qty:</strong> <?= (int) ($asset['quantity'] ?? 0) ?></div>
+                            <div class="col-md-6 mb-2"><strong>Registered Physical Units:</strong> <?= count($physicalItems) ?></div>
                             <div class="col-md-6 mb-2"><strong>Purchase Date:</strong> <?= htmlspecialchars((string) ($asset['purchase_date'] ?? '-')) ?></div>
                             <div class="col-md-6 mb-2"><strong>Amount:</strong> <?= $asset['amount'] !== null ? number_format((float) $asset['amount'], 2) : '-' ?></div>
                             <?php if (asset_column_exists($conn, 'assets', 'receipt_number')): ?>
@@ -505,8 +506,8 @@ ob_start();
     <?php elseif ($tab === 'items'): ?>
         <div class="card shadow-sm">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <strong>Physical Items</strong>
-                <?php if ($canCreate): ?><a href="asset_item_form.php?asset_id=<?= $assetId ?>" class="btn btn-sm btn-success"><i class="fas fa-plus mr-1"></i>Register Item</a><?php endif; ?>
+                <strong>Physical Units</strong>
+                <?php if ($canCreate): ?><a href="asset_item_form.php?asset_id=<?= $assetId ?>" class="btn btn-sm btn-success"><i class="fas fa-plus mr-1"></i>Register Another Unit</a><?php endif; ?>
             </div>
             <div class="card-body table-responsive">
                 <table class="table table-bordered table-hover">
@@ -590,7 +591,7 @@ ob_start();
                 <div class="card shadow-sm"><div class="card-body"><div class="text-muted">Estimated Book Value</div><div class="h4 mb-0"><?= number_format($bookValue, 2) ?></div></div></div>
             </div>
             <div class="col-md-4 mb-3">
-                <div class="card shadow-sm"><div class="card-body"><div class="text-muted">Quantity</div><div class="h4 mb-0"><?= (int) ($asset['quantity'] ?? 0) ?></div></div></div>
+                <div class="card shadow-sm"><div class="card-body"><div class="text-muted">Registered Physical Units</div><div class="h4 mb-0"><?= count($physicalItems) ?></div></div></div>
             </div>
         </div>
     <?php elseif ($tab === 'documents'): ?>

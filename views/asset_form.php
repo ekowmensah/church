@@ -40,7 +40,8 @@ $inferBindTypes = static function (array $values): string {
 $bindAndExecute = static function (mysqli $conn, string $sql, array $values) use ($inferBindTypes): array {
     $stmt = $conn->prepare($sql);
     if (!$stmt) {
-        throw new RuntimeException('Failed to prepare asset query: ' . $conn->error);
+        error_log('Failed to prepare asset query: ' . $conn->error);
+        throw new RuntimeException('The asset operation could not be prepared. Please retry.');
     }
 
     if (!empty($values)) {
@@ -79,6 +80,12 @@ $warrantyExpiryDate = '';
 $lastMaintenanceDate = '';
 $nextMaintenanceDate = '';
 $originalUpdatedAt = '';
+$physicalItemCount = 0;
+$hasMultiplePhysicalItems = false;
+
+if (!$isEdit && isset($_GET['asset_group_id'])) {
+    $assetGroupId = max(0, (int) $_GET['asset_group_id']);
+}
 
 if ($isEdit) {
     $sql = 'SELECT * FROM assets WHERE id = ?';
@@ -115,6 +122,8 @@ if ($isEdit) {
     $primarySerialNumber = (string) ($asset['serial_number'] ?? '');
     if ($hasItemTracking) {
         $physicalItems = asset_fetch_physical_items($conn, $assetId);
+        $physicalItemCount = count($physicalItems);
+        $hasMultiplePhysicalItems = $physicalItemCount > 1;
         $quantity = count(array_filter($physicalItems, static function (array $item): bool {
             return (string) ($item['status'] ?? '') === 'active';
         }));
@@ -154,7 +163,7 @@ if ($isSuper) {
 }
 
 $departments = asset_fetch_departments($conn, $churchId > 0 ? $churchId : null, false);
-$groups = $hasGroups ? asset_fetch_groups($conn, $churchId > 0 ? $churchId : null, false) : [];
+$groups = $hasGroups ? asset_fetch_groups($conn, $churchId > 0 ? $churchId : null, $isEdit) : [];
 $groupMap = asset_group_map_by_id($groups);
 $departmentMap = [];
 foreach ($departments as $departmentRow) {
@@ -168,7 +177,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $churchId = $isSuper ? (int) ($_POST['church_id'] ?? 0) : (int) asset_current_church_id($conn);
     $departments = asset_fetch_departments($conn, $churchId > 0 ? $churchId : null, false);
-    $groups = $hasGroups ? asset_fetch_groups($conn, $churchId > 0 ? $churchId : null, false) : [];
+    $groups = $hasGroups ? asset_fetch_groups($conn, $churchId > 0 ? $churchId : null, $isEdit) : [];
     $groupMap = asset_group_map_by_id($groups);
     $departmentMap = [];
     foreach ($departments as $departmentRow) {
@@ -199,6 +208,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $lifecycleStatus = $hasLifecycle
         ? trim((string) ($_POST['lifecycle_status'] ?? ''))
         : asset_default_lifecycle($status, $conditionStatus);
+
+    // Operational state belongs to individual units when a shared record has
+    // more than one physical asset. Preserve that state here instead of
+    // silently applying a master-form value to an arbitrary unit.
+    if ($isEdit && $hasItemTracking) {
+        $postedPhysicalItems = asset_fetch_physical_items($conn, $assetId);
+        $physicalItemCount = count($postedPhysicalItems);
+        $hasMultiplePhysicalItems = $physicalItemCount > 1;
+        if ($hasMultiplePhysicalItems) {
+            $primarySerialNumber = (string) ($asset['serial_number'] ?? '');
+            $conditionStatus = (string) ($asset['condition_status'] ?? 'Good');
+            $status = (string) ($asset['status'] ?? 'active');
+            $lifecycleStatus = $hasLifecycle
+                ? (string) ($asset['lifecycle_status'] ?? asset_default_lifecycle($status, $conditionStatus))
+                : asset_default_lifecycle($status, $conditionStatus);
+        }
+    }
 
     $selectedGroup = $hasGroups && $assetGroupId > 0 ? ($groupMap[$assetGroupId] ?? null) : null;
     if ($selectedGroup) {
@@ -240,9 +266,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (!isset($departmentMap[$departmentId])) {
         $error = 'Please select a department that belongs to the chosen church.';
     } elseif ($hasGroups && $assetGroupId <= 0) {
-        $error = 'Item category is required.';
+        $error = 'Asset category is required.';
     } elseif ($hasGroups && !$selectedGroup) {
-        $error = 'Please select an item category that belongs to the chosen church.';
+        $error = 'Please select an asset category that belongs to the chosen church.';
+    } elseif ($hasGroups
+        && (int) ($selectedGroup['is_active'] ?? 0) !== 1
+        && (!$isEdit || $assetGroupId !== (int) ($asset['asset_group_id'] ?? 0))) {
+        $error = 'Inactive categories cannot be assigned to new asset records.';
     } elseif ($itemName === '') {
         $error = 'Item name is required.';
     } elseif ($quantity <= 0) {
@@ -365,7 +395,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('Failed to update asset.');
                 }
 
-                if ($hasSerialTracking) {
+                if ($hasSerialTracking && !$hasMultiplePhysicalItems) {
                     $sync = asset_sync_serial_numbers($conn, $churchId, $assetId, $serials);
                     if (!$sync['ok']) {
                         throw new RuntimeException($sync['message']);
@@ -552,11 +582,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'next_maintenance_date' => $hasMaintenanceFields ? $nextMaintenanceDb : null,
             ]);
 
-            header('Location: asset_list.php?saved=1' . ($churchId ? '&church_id=' . $churchId : ''));
+            header('Location: asset_view.php?id=' . $newId . '&tab=items&created=1');
             exit;
         } catch (Throwable $e) {
             $conn->rollback();
-            $error = $e->getMessage();
+            error_log('Asset save failed: ' . $e->getMessage());
+            $error = $e instanceof mysqli_sql_exception
+                ? 'The asset could not be saved. Please check the entered information and retry.'
+                : $e->getMessage();
         }
     }
 }
@@ -568,9 +601,11 @@ ob_start();
     <?php
     $backUrl = 'asset_list.php' . ($churchId ? '?church_id=' . (int) $churchId : '');
     render_asset_workspace_hero(
-        $isEdit ? 'Controlled master-data update' : 'Physical asset onboarding',
-        $isEdit ? 'Edit Asset Record' : 'Register an Asset',
-        'Capture ownership, acquisition evidence, value, condition and the identity used throughout custody and movement workflows.',
+        $isEdit ? 'Shared details for related physical units' : 'One form, one traceable unit',
+        $isEdit ? 'Edit Shared Asset Details' : 'Register Physical Asset',
+        $isEdit
+            ? 'Update the common category, name, acquisition and financial details. Location, custody and operational condition remain unit-specific.'
+            : 'Choose a category and register the first uniquely numbered physical unit. Additional related units can be added from the resulting asset workspace.',
         'fa-box',
         '<a href="' . htmlspecialchars($backUrl, ENT_QUOTES, 'UTF-8') . '" class="btn btn-light"><i class="fas fa-arrow-left mr-1"></i>Back to register</a>'
     );
@@ -579,7 +614,7 @@ ob_start();
 
     <div class="card asset-panel asset-form-shell">
         <div class="card-header py-3">
-            <strong><?= $isEdit ? 'Asset Update' : 'Asset Onboarding' ?></strong>
+            <strong><?= $isEdit ? 'Shared Asset Details' : 'Physical Asset Registration' ?></strong>
         </div>
         <div class="card-body">
             <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
@@ -615,10 +650,10 @@ ob_start();
                 <div class="form-row">
                     <div class="form-group col-md-4">
                         <label>Department <span class="text-danger">*</span></label>
-                        <select name="department_id" class="form-control" required>
+                            <select name="department_id" id="department_id" class="form-control" required>
                             <option value="">-- Select Department --</option>
                             <?php foreach ($departments as $department): ?>
-                                <option value="<?= (int) $department['id'] ?>" <?= $departmentId === (int) $department['id'] ? 'selected' : '' ?>>
+                                <option value="<?= (int) $department['id'] ?>" data-church-id="<?= (int) ($department['church_id'] ?? 0) ?>" <?= $departmentId === (int) $department['id'] ? 'selected' : '' ?>>
                                     <?= htmlspecialchars((string) $department['name']) ?><?= !empty($department['department_code']) ? ' (' . htmlspecialchars((string) $department['department_code']) . ')' : '' ?>
                                 </option>
                             <?php endforeach; ?>
@@ -626,42 +661,54 @@ ob_start();
                     </div>
                     <?php if ($hasGroups): ?>
                     <div class="form-group col-md-4">
-                        <label>Item Category <span class="text-danger">*</span></label>
+                        <label>Asset Category <span class="text-danger">*</span></label>
                         <select name="asset_group_id" id="asset_group_id" class="form-control" required>
-                            <option value="">-- Select Item Category --</option>
+                            <option value="">-- Select Asset Category --</option>
                             <?php foreach ($groups as $group): ?>
                                 <option
                                     value="<?= (int) $group['id'] ?>"
+                                    data-church-id="<?= (int) ($group['church_id'] ?? 0) ?>"
+                                    data-category-code="<?= htmlspecialchars((string) ($group['group_code'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                                    data-description="<?= htmlspecialchars((string) ($group['description'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                                     data-default-quantity="<?= (int) ($group['default_quantity'] ?? 1) ?>"
                                     data-quantity-rule="<?= htmlspecialchars((string) ($group['quantity_rule'] ?? 'fixed')) ?>"
                                     data-group-name="<?= htmlspecialchars((string) ($group['name'] ?? '')) ?>"
                                     <?= $assetGroupId === (int) $group['id'] ? 'selected' : '' ?>
                                 >
-                                    <?= htmlspecialchars((string) $group['name']) ?><?= !empty($group['group_code']) ? ' (' . htmlspecialchars((string) $group['group_code']) . ')' : '' ?>
+                                    <?= htmlspecialchars((string) $group['name']) ?><?= !empty($group['group_code']) ? ' (' . htmlspecialchars((string) $group['group_code']) . ')' : '' ?><?= (int) ($group['is_active'] ?? 1) === 0 ? ' - Inactive' : '' ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
+                        <input type="hidden" name="item_group" id="item_group" value="<?= htmlspecialchars($itemGroup) ?>">
+                        <small class="text-muted">Controls classification, filtering and the category segment of generated asset numbers.</small>
+                        <?php if (asset_is_super_admin() || has_permission('manage_asset_groups')): ?><a class="small d-block mt-1" href="asset_group_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>">Manage asset categories</a><?php endif; ?>
                     </div>
                     <div class="form-group col-md-4">
-                        <label>Category Name</label>
-                        <input type="text" id="item_group_display" class="form-control" value="<?= htmlspecialchars($itemGroup) ?>" readonly>
-                        <input type="hidden" name="item_group" id="item_group" value="<?= htmlspecialchars($itemGroup) ?>">
-                        <small class="text-muted">Filled automatically from the selected item category.</small>
+                        <label>Asset Name <span class="text-danger">*</span></label>
+                        <input type="text" name="item_name" class="form-control" value="<?= htmlspecialchars($itemName) ?>" required maxlength="180" placeholder="e.g. Toyota Hiace, Yamaha keyboard">
+                        <small class="text-muted">The specific asset, model or recognizable register name.</small>
                     </div>
                     <?php else: ?>
-                    <div class="form-group col-md-8">
+                    <div class="form-group col-md-4">
                         <label>Item Category</label>
                         <input type="text" name="item_group" class="form-control" value="<?= htmlspecialchars($itemGroup) ?>" maxlength="120" placeholder="e.g. Sound Equipment">
                     </div>
-                    <?php endif; ?>
-                </div>
-
-                <div class="form-row">
                     <div class="form-group col-md-4">
-                        <label>Item Name <span class="text-danger">*</span></label>
+                        <label>Asset Name <span class="text-danger">*</span></label>
                         <input type="text" name="item_name" class="form-control" value="<?= htmlspecialchars($itemName) ?>" required maxlength="180">
                     </div>
-                    <div class="form-group col-md-4">
+                    <?php endif; ?>
+                </div>
+                <?php if ($hasGroups): ?>
+                    <?php if (!$groups): ?><div class="alert alert-warning">No active asset categories are available for this church. Create a category before registering an asset.</div><?php endif; ?>
+                    <div id="asset_category_context" class="alert alert-light border py-2" style="display:none">
+                        <strong id="asset_category_context_title"></strong>
+                        <span id="asset_category_context_description" class="text-muted ml-1"></span>
+                    </div>
+                <?php endif; ?>
+
+                <div class="form-row">
+                    <div class="form-group col-md-6">
                         <label>Acquisition Mode <span class="text-danger">*</span></label>
                         <select name="acquisition_mode" id="acquisition_mode" class="form-control" required>
                             <?php foreach ($acquisitionModes as $key => $label): ?>
@@ -674,7 +721,7 @@ ob_start();
                             <small class="text-muted" id="acquisition_mode_help"></small>
                         <?php endif; ?>
                     </div>
-                    <div class="form-group col-md-4" id="acquisition_mode_other_wrap" style="<?= $acquisitionMode === 'other' ? '' : 'display:none;' ?>">
+                    <div class="form-group col-md-6" id="acquisition_mode_other_wrap" style="<?= $acquisitionMode === 'other' ? '' : 'display:none;' ?>">
                         <label>Specify Other Mode <span class="text-danger">*</span></label>
                         <input type="text" name="acquisition_mode_other" class="form-control" value="<?= htmlspecialchars($acquisitionModeOther) ?>" maxlength="180">
                     </div>
@@ -701,33 +748,48 @@ ob_start();
                     <?php endif; ?>
                 </div>
 
-                <div class="form-row">
-                    <div class="form-group col-md-2">
-                        <label><?= $hasItemTracking ? 'Derived Quantity' : 'Quantity' ?> <span class="text-danger">*</span></label>
-                        <input type="number" name="quantity" id="quantity" class="form-control" value="<?= (int) $quantity ?>" min="<?= $hasItemTracking && $isEdit ? 0 : 1 ?>" required <?= $hasItemTracking ? 'readonly data-derived="1"' : '' ?>>
-                        <?php if ($hasItemTracking): ?><small class="text-muted"><?= $isEdit ? 'Counted from active physical items.' : 'Each registration creates one uniquely numbered physical item.' ?></small><?php endif; ?>
+                <?php if ($hasItemTracking): ?>
+                    <input type="hidden" name="quantity" id="quantity" value="<?= $isEdit ? max(0, (int) $quantity) : 1 ?>" data-derived="1">
+                    <div class="alert alert-info py-2">
+                        <?php if ($isEdit): ?>
+                            This shared record contains <strong><?= (int) $physicalItemCount ?> physical unit<?= $physicalItemCount === 1 ? '' : 's' ?></strong>.
+                            Add related units from the Physical Units tab; use Transfer, Custody, Maintenance or Disposal for unit-level changes.
+                        <?php else: ?>
+                            Saving this form creates exactly <strong>one uniquely numbered physical asset</strong>. It does not create a category or a bulk quantity.
+                        <?php endif; ?>
                     </div>
-                    <div class="form-group col-md-4">
+                <?php endif; ?>
+
+                <div class="form-row">
+                    <?php if (!$hasItemTracking): ?>
+                    <div class="form-group col-md-3">
+                        <label>Quantity <span class="text-danger">*</span></label>
+                        <input type="number" name="quantity" id="quantity" class="form-control" value="<?= (int) $quantity ?>" min="1" required>
+                    </div>
+                    <?php endif; ?>
+                    <div class="form-group <?= $hasItemTracking ? 'col-md-4' : 'col-md-3' ?>">
                         <label>Receipt Number</label>
                         <input type="text" name="receipt_number" class="form-control" value="<?= htmlspecialchars($receiptNumber) ?>" maxlength="120" placeholder="One receipt can cover multiple items">
                     </div>
-                    <div class="form-group col-md-3">
+                    <div class="form-group <?= $hasItemTracking ? 'col-md-4' : 'col-md-3' ?>">
                         <label><?= $hasItemTracking ? 'Item Serial Number' : 'Primary Serial Number' ?></label>
-                        <input type="text" name="primary_serial_number" class="form-control" value="<?= htmlspecialchars($primarySerialNumber) ?>" maxlength="120" placeholder="Unique per item">
+                        <input type="text" name="primary_serial_number" class="form-control" value="<?= htmlspecialchars($primarySerialNumber) ?>" maxlength="120" placeholder="Unique per item" <?= $hasItemTracking && $isEdit && $physicalItemCount > 1 ? 'readonly' : '' ?>>
+                        <?php if ($hasItemTracking && $isEdit && $physicalItemCount > 1): ?><small class="text-muted">Serials are maintained on individual physical units.</small><?php endif; ?>
                     </div>
-                    <div class="form-group col-md-3">
+                    <div class="form-group <?= $hasItemTracking ? 'col-md-4' : 'col-md-3' ?>">
                         <label>Total Recorded Acquisition Value</label>
                         <input type="number" step="0.01" min="0" name="amount" class="form-control" value="<?= htmlspecialchars($amount) ?>">
-                        <small class="text-muted">Total value for this asset record; portfolio reports allocate it proportionally across active physical units.</small>
+                        <small class="text-muted">Total value for this shared record; unit-level reports allocate it proportionally across its registered physical units.</small>
                     </div>
                 </div>
 
                 <div class="form-group" <?= $hasItemTracking ? 'style="display:none"' : '' ?>>
                     <label>All Serial Numbers</label>
-                    <textarea name="serial_numbers_text" class="form-control" rows="3" placeholder="Enter one serial per line, or separate with commas"><?= htmlspecialchars($serialNumbersText) ?></textarea>
+                    <textarea name="serial_numbers_text" class="form-control" rows="3" placeholder="Enter one serial per line, or separate with commas" <?= $hasItemTracking ? 'disabled' : '' ?>><?= htmlspecialchars($serialNumbersText) ?></textarea>
                     <small class="text-muted">Useful when one asset record covers multiple individually tracked items.</small>
                 </div>
 
+                <?php if (!($hasItemTracking && $isEdit && $physicalItemCount > 1)): ?>
                 <div class="form-row">
                     <div class="form-group col-md-4">
                         <label>Condition Status <span class="text-danger">*</span></label>
@@ -755,6 +817,12 @@ ob_start();
                     </div>
                     <?php endif; ?>
                 </div>
+                <?php else: ?>
+                    <div class="alert alert-light border">
+                        <strong>Operational state is managed per physical unit.</strong>
+                        Condition, availability and lifecycle are intentionally not editable here because this shared record contains multiple units.
+                    </div>
+                <?php endif; ?>
 
                 <div class="form-group">
                     <label>Allocation Note</label>
@@ -763,7 +831,7 @@ ob_start();
 
                 <div class="asset-action-bar">
                     <a href="<?= htmlspecialchars($backUrl, ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline-secondary">Cancel</a>
-                    <button type="submit" class="btn btn-primary"><i class="fas fa-save mr-1"></i> Save Asset</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save mr-1"></i> <?= $isEdit ? 'Save Shared Details' : 'Register Physical Asset' ?></button>
                 </div>
             </form>
         </div>
@@ -778,7 +846,11 @@ ob_start();
     var groupSelect = document.getElementById('asset_group_id');
     var quantityInput = document.getElementById('quantity');
     var itemGroupInput = document.getElementById('item_group');
-    var itemGroupDisplayInput = document.getElementById('item_group_display');
+    var churchSelect = document.querySelector('select[name="church_id"]');
+    var departmentSelect = document.getElementById('department_id');
+    var categoryContext = document.getElementById('asset_category_context');
+    var categoryContextTitle = document.getElementById('asset_category_context_title');
+    var categoryContextDescription = document.getElementById('asset_category_context_description');
 
     function syncAcquisitionMode() {
         if (!acquisitionSelect) {
@@ -807,8 +879,12 @@ ob_start();
         if (itemGroupInput) {
             itemGroupInput.value = groupName;
         }
-        if (itemGroupDisplayInput) {
-            itemGroupDisplayInput.value = groupName;
+        var categoryCode = option.getAttribute('data-category-code') || '';
+        var description = option.getAttribute('data-description') || '';
+        if (categoryContext) {
+            categoryContext.style.display = groupName ? '' : 'none';
+            categoryContextTitle.textContent = groupName ? groupName + (categoryCode ? ' (' + categoryCode + ')' : '') : '';
+            categoryContextDescription.textContent = description || (groupName ? 'This category will be used in the generated asset identity.' : '');
         }
         if (quantityInput.getAttribute('data-derived') === '1') {
             quantityInput.value = <?= $isEdit ? (int) $quantity : 1 ?>;
@@ -823,6 +899,27 @@ ob_start();
         }
     }
 
+    function filterChurchOptions(select, churchId) {
+        if (!select) return;
+        Array.prototype.forEach.call(select.options, function (option) {
+            if (!option.value) return;
+            var optionChurch = option.getAttribute('data-church-id') || '';
+            option.disabled = !!churchId && optionChurch !== churchId;
+            option.hidden = !!churchId && optionChurch !== churchId;
+        });
+        if (select.selectedOptions.length && select.selectedOptions[0].disabled) {
+            select.value = '';
+        }
+    }
+
+    function syncChurchOptions() {
+        if (!churchSelect) return;
+        var churchId = churchSelect.value || '';
+        filterChurchOptions(departmentSelect, churchId);
+        filterChurchOptions(groupSelect, churchId);
+        syncGroupQuantity();
+    }
+
     if (acquisitionSelect) {
         acquisitionSelect.addEventListener('change', syncAcquisitionMode);
         syncAcquisitionMode();
@@ -830,6 +927,10 @@ ob_start();
     if (groupSelect) {
         groupSelect.addEventListener('change', syncGroupQuantity);
         syncGroupQuantity();
+    }
+    if (churchSelect) {
+        churchSelect.addEventListener('change', syncChurchOptions);
+        syncChurchOptions();
     }
 })();
 </script>

@@ -18,19 +18,32 @@ $hasLifecycle = asset_can_use_lifecycle($conn);
 $hasMaintenanceFields = asset_can_use_maintenance_fields($conn);
 $hasGroups = asset_can_use_groups($conn);
 $hasAcquisitionMode = asset_column_exists($conn, 'assets', 'acquisition_mode');
+$hasCustody = asset_column_exists($conn, 'asset_items', 'custody_status');
 $acquisitionModes = asset_acquisition_mode_options();
 
+if (!asset_item_tracking_available($conn)) {
+    http_response_code(503);
+    exit('Physical asset tracking is not available.');
+}
+
 $sql = "
-    SELECT a.asset_code" . ($hasGroups ? ", g.name AS asset_group_name, g.group_code AS asset_group_code" : "") . ",
+    SELECT item.item_number, a.asset_code" . ($hasGroups ? ", g.name AS asset_group_name, g.group_code AS asset_group_code" : "") . ",
            a.item_group, a.item_name" . ($hasAcquisitionMode ? ", a.acquisition_mode, a.acquisition_mode_other" : "") . ",
            d.name AS department_name, c.name AS church_name,
            a.purchase_date" . ($hasMaintenanceFields ? ", a.warranty_expiry_date, a.last_maintenance_date, a.next_maintenance_date" : "") . ",
-           a.quantity, a.receipt_or_serial_number" . (asset_column_exists($conn, 'assets', 'receipt_number') ? ", a.receipt_number" : "") . (asset_column_exists($conn, 'assets', 'serial_number') ? ", a.serial_number" : "") . ",
-           a.amount, a.condition_status,
-           a.status" . ($hasLifecycle ? ", a.lifecycle_status" : "") . ", a.allocation_note, a.created_at, a.updated_at
-    FROM assets a
-    LEFT JOIN asset_departments d ON d.id = a.department_id
+           a.receipt_or_serial_number" . (asset_column_exists($conn, 'assets', 'receipt_number') ? ", a.receipt_number" : "") . ",
+           item.serial_number, item.condition_status, item.status" . ($hasLifecycle ? ", item.lifecycle_status" : "") . ",
+           " . ($hasCustody ? "item.custody_status" : "'available' AS custody_status") . ",
+           CASE WHEN COALESCE(unit_total.unit_count, 0) > 0
+                THEN COALESCE(a.amount, 0) / unit_total.unit_count
+                ELSE COALESCE(a.amount, 0) END AS allocated_unit_value,
+           a.allocation_note, item.created_at, item.updated_at
+    FROM asset_items item
+    INNER JOIN assets a ON a.id = item.asset_id
+    LEFT JOIN asset_departments d ON d.id = item.department_id
     LEFT JOIN churches c ON c.id = a.church_id
+    LEFT JOIN (SELECT asset_id, COUNT(*) AS unit_count FROM asset_items GROUP BY asset_id) unit_total
+      ON unit_total.asset_id = a.id
     " . ($hasGroups ? "LEFT JOIN asset_groups g ON g.id = a.asset_group_id" : "") . "
     WHERE 1
 ";
@@ -43,7 +56,7 @@ if ($churchId !== null) {
     $params[] = $churchId;
 }
 if ($departmentId !== null) {
-    $sql .= ' AND a.department_id = ?';
+    $sql .= ' AND item.department_id = ?';
     $types .= 'i';
     $params[] = $departmentId;
 }
@@ -53,12 +66,12 @@ if ($hasGroups && $assetGroupId !== null) {
     $params[] = $assetGroupId;
 }
 if ($condition !== '' && in_array($condition, $conditions, true)) {
-    $sql .= ' AND a.condition_status = ?';
+    $sql .= ' AND item.condition_status = ?';
     $types .= 's';
     $params[] = $condition;
 }
 if ($status !== '' && in_array($status, ['active', 'disposed'], true)) {
-    $sql .= ' AND a.status = ?';
+    $sql .= ' AND item.status = ?';
     $types .= 's';
     $params[] = $status;
 }
@@ -68,7 +81,7 @@ if ($hasAcquisitionMode && $acquisitionMode !== '' && array_key_exists($acquisit
     $params[] = $acquisitionMode;
 }
 if ($q !== '') {
-    $sql .= ' AND (a.asset_code LIKE ? OR a.item_name LIKE ? OR a.item_group LIKE ? OR a.receipt_or_serial_number LIKE ?';
+    $sql .= ' AND (a.asset_code LIKE ? OR item.item_number LIKE ? OR item.serial_number LIKE ? OR a.item_name LIKE ? OR a.item_group LIKE ? OR a.receipt_or_serial_number LIKE ?';
     if (asset_column_exists($conn, 'assets', 'receipt_number')) {
         $sql .= ' OR a.receipt_number LIKE ?';
     }
@@ -79,8 +92,10 @@ if ($q !== '') {
         $sql .= ' OR g.name LIKE ? OR g.group_code LIKE ?';
     }
     $sql .= ')';
-    $types .= 'ssss';
+    $types .= 'ssssss';
     $like = '%' . $q . '%';
+    $params[] = $like;
+    $params[] = $like;
     $params[] = $like;
     $params[] = $like;
     $params[] = $like;
@@ -100,7 +115,7 @@ if ($q !== '') {
     }
 }
 
-$sql .= ' ORDER BY a.created_at DESC';
+$sql .= ' ORDER BY item.created_at DESC, item.id DESC';
 
 $stmt = $conn->prepare($sql);
 if ($types !== '') {
@@ -115,13 +130,13 @@ header('Content-Disposition: attachment; filename="asset_register_' . date('Ymd_
 $out = fopen('php://output', 'w');
 
 $header = [
-    'Asset Code'
+    'Physical Asset Number', 'Shared Record Code'
 ];
 if ($hasGroups) {
-    $header[] = 'Item Category';
+    $header[] = 'Asset Category';
     $header[] = 'Category Code';
 } else {
-    $header[] = 'Item Category';
+    $header[] = 'Asset Category';
 }
 $header[] = 'Item Name';
 if ($hasAcquisitionMode) {
@@ -137,18 +152,13 @@ if ($hasMaintenanceFields) {
     $header[] = 'Last Maintenance';
     $header[] = 'Next Maintenance';
 }
-$header = array_merge($header, [
-    'Quantity', 'Receipt/Serial Number'
-]);
+$header[] = 'Receipt/Serial Reference';
 if (asset_column_exists($conn, 'assets', 'receipt_number')) {
     $header[] = 'Receipt Number';
 }
-if (asset_column_exists($conn, 'assets', 'serial_number')) {
-    $header[] = 'Primary Serial Number';
-}
+$header[] = 'Unit Serial Number';
 $header = array_merge($header, [
-    'Amount', 'Condition Status',
-    'Status'
+    'Allocated Unit Value', 'Condition Status', 'Status', 'Custody Status'
 ]);
 if ($hasLifecycle) {
     $header[] = 'Lifecycle Status';
@@ -160,7 +170,7 @@ fputcsv($out, $header);
 
 while ($row = $res->fetch_assoc()) {
     $line = [
-        $row['asset_code']
+        $row['item_number'], $row['asset_code']
     ];
 
     if ($hasGroups) {
@@ -184,19 +194,15 @@ while ($row = $res->fetch_assoc()) {
         $line[] = $row['next_maintenance_date'];
     }
 
-    $line = array_merge($line, [
-        $row['quantity'],
-        $row['receipt_or_serial_number'],
-    ]);
+    $line[] = $row['receipt_or_serial_number'];
     if (array_key_exists('receipt_number', $row)) {
         $line[] = $row['receipt_number'];
     }
-    if (array_key_exists('serial_number', $row)) {
-        $line[] = $row['serial_number'];
-    }
-    $line[] = $row['amount'];
+    $line[] = $row['serial_number'];
+    $line[] = $row['allocated_unit_value'];
     $line[] = $row['condition_status'];
     $line[] = $row['status'];
+    $line[] = $row['custody_status'];
 
     if ($hasLifecycle) {
         $line[] = (string) ($row['lifecycle_status'] ?? asset_default_lifecycle((string) ($row['status'] ?? 'active'), (string) ($row['condition_status'] ?? '')));

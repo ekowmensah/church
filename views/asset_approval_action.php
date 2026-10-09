@@ -22,8 +22,17 @@ if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
 
 $requestId = isset($_POST['id']) ? (int) $_POST['id'] : 0;
 $decision = trim((string) ($_POST['decision'] ?? ''));
+$reviewNoteInput = trim((string) ($_POST['review_note'] ?? ''));
 if ($requestId <= 0 || !in_array($decision, ['approve', 'reject'], true)) {
     header('Location: asset_approval_list.php?err=' . urlencode('Invalid approval request.'));
+    exit;
+}
+if ($decision === 'reject' && $reviewNoteInput === '') {
+    header('Location: asset_approval_list.php?err=' . urlencode('A rejection reason is required.'));
+    exit;
+}
+if (mb_strlen($reviewNoteInput) > 255) {
+    header('Location: asset_approval_list.php?err=' . urlencode('The review note must be 255 characters or fewer.'));
     exit;
 }
 
@@ -195,7 +204,9 @@ try {
     }
 
     $newStatus = $decision === 'approve' ? 'approved' : 'rejected';
-    $reviewNote = $decision === 'approve' ? 'Approved from queue' : 'Rejected from queue';
+    $reviewNote = $reviewNoteInput !== ''
+        ? $reviewNoteInput
+        : ($decision === 'approve' ? 'Approved from queue' : 'Rejected from queue');
     $stmt = $conn->prepare('UPDATE asset_approval_requests SET status = ?, reviewed_by = ?, reviewed_at = NOW(), review_note = ? WHERE id = ?');
     $stmt->bind_param('sisi', $newStatus, $reviewedBy, $reviewNote, $requestId);
     $stmt->execute();
@@ -212,7 +223,11 @@ try {
     ], [], $payload);
 } catch (Throwable $e) {
     $conn->rollback();
-    header('Location: asset_approval_list.php?err=' . urlencode($e->getMessage()));
+    error_log('Asset operational approval failed: ' . $e->getMessage());
+    $message = $e instanceof mysqli_sql_exception
+        ? 'The approval could not be completed. Please retry or contact an administrator.'
+        : $e->getMessage();
+    header('Location: asset_approval_list.php?err=' . urlencode($message));
     exit;
 }
 

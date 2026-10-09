@@ -232,3 +232,5 @@ tests/report_pagination_smoke.php
 tests/unified_asset_approval_inbox_smoke.php
 tests/view_output_integrity_smoke.php
 tests/organization_attendance_page_smoke.php
+tests/organization_attendance_page_smoke.php
+tests/bible_class_attendance_schedule_smoke.php

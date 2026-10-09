@@ -209,6 +209,21 @@ if (!function_exists('asset_request_status_badge_class')) {
     }
 }
 
+if (!function_exists('asset_request_status_label')) {
+    function asset_request_status_label(string $status): string {
+        $map = [
+            'pending' => 'Awaiting Review',
+            'approved' => 'Reserved - Awaiting Handover',
+            'rejected' => 'Rejected',
+            'checked_out' => 'Issued - With Custodian',
+            'returned' => 'Returned / Closed',
+            'cancelled' => 'Cancelled',
+            'overdue' => 'Issued - Overdue',
+        ];
+        return $map[$status] ?? ucwords(str_replace('_', ' ', $status));
+    }
+}
+
 if (!function_exists('asset_normalize_code_part')) {
     function asset_normalize_code_part(string $value, int $length = 3, string $fallback = 'UNK'): string {
         $clean = strtoupper((string) preg_replace('/[^A-Za-z0-9]/', '', $value));
@@ -262,8 +277,8 @@ if (!function_exists('asset_generate_code')) {
 
         $groupCode = asset_normalize_code_part($itemGroup, 3, 'GEN');
         if ($assetGroupId !== null && $assetGroupId > 0 && asset_table_exists($conn, 'asset_groups')) {
-            $stmt = $conn->prepare("SELECT name, group_code FROM asset_groups WHERE id = ? LIMIT 1");
-            $stmt->bind_param('i', $assetGroupId);
+            $stmt = $conn->prepare("SELECT name, group_code FROM asset_groups WHERE id = ? AND church_id = ? LIMIT 1");
+            $stmt->bind_param('ii', $assetGroupId, $churchId);
             $stmt->execute();
             $group = $stmt->get_result()->fetch_assoc();
             $stmt->close();

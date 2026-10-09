@@ -30,6 +30,7 @@ $isSuper = asset_is_super_admin();
 $actorUserId = (int) ($_SESSION['user_id'] ?? 0) ?: null;
 $actorMemberId = (int) ($_SESSION['member_id'] ?? 0) ?: null;
 $scopeChurchId = $isSuper ? null : asset_current_church_id($conn);
+$returnToApprovalQueue = (string) ($_POST['return_to'] ?? '') === 'approval_queue';
 
 // Cancellation is an owner action. Every other transition is an explicit
 // custody-management capability and remains enforced server-side.
@@ -49,11 +50,24 @@ try {
         $actorUserId,
         $actorMemberId
     );
-    header('Location: asset_request_list.php?done=1');
+    if ($returnToApprovalQueue && $action === 'approve') {
+        $accepted = in_array('approved', array_map('strval', (array) ($_POST['line_decision'] ?? [])), true);
+        if ($accepted) {
+            header('Location: asset_request_list.php?request_id=' . $requestId . '&done=reserved');
+        } else {
+            header('Location: asset_approval_list.php?done=borrowing_rejected');
+        }
+    } else {
+        header('Location: asset_request_list.php?done=1');
+    }
     exit;
 } catch (Throwable $exception) {
     error_log('Asset custody action failed: ' . $exception->getMessage());
-    header('Location: asset_request_list.php?err=' . urlencode($exception->getMessage()));
+    $message = $exception instanceof mysqli_sql_exception
+        ? 'The custody update could not be completed. Please retry or contact an administrator.'
+        : $exception->getMessage();
+    $target = $returnToApprovalQueue ? 'asset_approval_list.php?borrowing_id=' . $requestId . '&err=' : 'asset_request_list.php?err=';
+    header('Location: ' . $target . urlencode($message));
     exit;
 }
 

@@ -13,8 +13,8 @@ if (!function_exists('render_asset_workspace_nav')) {
         $super = asset_is_super_admin();
         $items = [
             ['register', 'asset_list.php', 'fa-boxes', 'Register', $super || has_permission('view_asset_register')],
-            ['approvals', 'asset_approval_list.php', 'fa-clipboard-check', 'Approvals', $super || has_permission('approve_asset_request') || has_permission('request_asset_approval') || has_permission('view_asset_requests') || has_permission('approve_asset_use_request')],
-            ['custody', 'asset_request_list.php', 'fa-hand-holding', 'Custody', isset($_SESSION['member_id']) || asset_user_can_view_use_requests()],
+            ['custody', 'asset_request_list.php', 'fa-hand-holding', 'Lending & Returns', isset($_SESSION['member_id']) || asset_user_can_view_use_requests()],
+            ['approvals', 'asset_approval_list.php', 'fa-clipboard-check', 'Approval Queue', $super || has_permission('approve_asset_request') || has_permission('request_asset_approval') || has_permission('approve_asset_use_request')],
             ['movements', 'asset_movement_list.php', 'fa-exchange-alt', 'Movements', $super || has_permission('view_asset_movements')],
             ['maintenance', 'asset_maintenance_list.php', 'fa-tools', 'Maintenance', $super || has_permission('view_asset_maintenance') || has_permission('manage_asset_maintenance')],
             ['reports', 'asset_reports.php', 'fa-chart-line', 'Reports', $super || has_permission('view_asset_reports')],

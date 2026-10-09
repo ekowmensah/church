@@ -216,8 +216,8 @@ final class SystemNotificationService
                     $subjectName . ' registered for an event.',
                 ],
                 'asset.requested' => [
-                    'Asset request awaiting review',
-                    $subjectName . ' submitted an asset-use request.',
+                    'Asset borrowing request awaiting review',
+                    $subjectName . ' submitted a borrowing request for the Asset Approval Queue.',
                 ],
                 'attendance.submitted' => [
                     'Attendance awaiting approval',
@@ -308,8 +308,8 @@ final class SystemNotificationService
                 'A health screening record was added to your account. Open your health records to review the authorized details.',
             ],
             'asset.requested' => [
-                'Your asset request was submitted',
-                'Your asset-use request is awaiting an authorized decision.',
+                'Your asset borrowing request was submitted',
+                'Your borrowing request is awaiting review in Asset Lending & Returns.',
             ],
             'attendance.submitted' => [
                 'Your attendance record was submitted',
