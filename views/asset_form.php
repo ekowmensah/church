@@ -684,7 +684,7 @@ ob_start();
                         <?php if (asset_is_super_admin() || has_permission('manage_asset_groups')): ?><a class="small d-block mt-1" href="asset_group_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>">Manage asset categories</a><?php endif; ?>
                     </div>
                     <div class="form-group col-md-4">
-                        <label>Asset Name <span class="text-danger">*</span></label>
+                        <label>Asset Type / Model <span class="text-danger">*</span></label>
                         <input type="text" name="item_name" class="form-control" value="<?= htmlspecialchars($itemName) ?>" required maxlength="180" placeholder="e.g. Toyota Hiace, Yamaha keyboard">
                         <small class="text-muted">The specific asset, model or recognizable register name.</small>
                     </div>
@@ -694,7 +694,7 @@ ob_start();
                         <input type="text" name="item_group" class="form-control" value="<?= htmlspecialchars($itemGroup) ?>" maxlength="120" placeholder="e.g. Sound Equipment">
                     </div>
                     <div class="form-group col-md-4">
-                        <label>Asset Name <span class="text-danger">*</span></label>
+                        <label>Asset Type / Model <span class="text-danger">*</span></label>
                         <input type="text" name="item_name" class="form-control" value="<?= htmlspecialchars($itemName) ?>" required maxlength="180">
                     </div>
                     <?php endif; ?>

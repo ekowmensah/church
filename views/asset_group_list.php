@@ -60,7 +60,7 @@ ob_start();
 
     <div class="alert alert-info border-0 shadow-sm">
         <strong>How the register is structured:</strong>
-        a category classifies assets (for example <em>Vehicles</em>), the asset name holds common details (for example <em>Toyota Hiace</em>), and every actual vehicle is registered as its own uniquely numbered physical unit.
+        a category classifies assets (for example <em>Vehicles</em>), the asset type/model holds shared details (for example <em>Toyota Hiace</em>), and every actual vehicle is registered as its own uniquely numbered physical unit.
         Creating a category never creates an asset or changes stock quantity.
     </div>
 
@@ -101,7 +101,7 @@ ob_start();
                     <tr>
                         <th>Code</th>
                         <th>Asset Category</th>
-                        <th>Asset Names / Models</th>
+                        <th>Asset Types / Models</th>
                         <th>Active Physical Units</th>
                         <th>Recorded Value</th>
                         <th>Description</th>
@@ -141,7 +141,7 @@ ob_start();
                         </td>
                         <td class="text-nowrap">
                             <a href="asset_group_form.php?id=<?= (int) $group['id'] ?>" class="btn btn-sm btn-outline-primary" title="Edit category" aria-label="Edit <?= htmlspecialchars((string) $group['name'], ENT_QUOTES, 'UTF-8') ?>"><i class="fas fa-edit"></i></a>
-                            <?php if ($canCreateAssets && (int) ($group['is_active'] ?? 0) === 1): ?><a href="asset_form.php?<?= http_build_query(array_filter(['church_id' => (int) $group['church_id'], 'asset_group_id' => (int) $group['id']])) ?>" class="btn btn-sm btn-primary" title="Register a physical asset in this category"><i class="fas fa-plus mr-1"></i>Physical Asset</a><?php endif; ?>
+                            <?php if ($canCreateAssets && (int) ($group['is_active'] ?? 0) === 1): ?><a href="asset_form.php?<?= http_build_query(array_filter(['church_id' => (int) $group['church_id'], 'asset_group_id' => (int) $group['id']])) ?>" class="btn btn-sm btn-primary" title="Register a physical unit in this category"><i class="fas fa-plus mr-1"></i>Register unit</a><?php endif; ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>
