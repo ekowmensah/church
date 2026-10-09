@@ -14,6 +14,7 @@ $hasMaintenanceFields = asset_can_use_maintenance_fields($conn);
 $hasGroups = asset_can_use_groups($conn);
 $canTransfer = $isSuper || has_permission('transfer_asset');
 $canEdit = $isSuper || has_permission('edit_asset');
+$canDelete = $isSuper || has_permission('delete_asset');
 $canCreate = $isSuper || has_permission('create_asset');
 $canUploadDoc = $isSuper || has_permission('upload_asset_document');
 $canDeleteDoc = $isSuper || has_permission('delete_asset_document');
@@ -78,7 +79,7 @@ if ($requestedAssetItemId > 0 && !$selectedAssetItem) {
     exit('Asset identity not found.');
 }
 $selectedAssetItemId = (int) ($selectedAssetItem['id'] ?? 0);
-$canEditSelectedAsset = $canEdit && count($physicalItems) <= 1;
+$selectedAssetDisposed = $selectedAssetItem ? asset_item_is_disposed($selectedAssetItem) : false;
 $error = '';
 $success = '';
 
@@ -377,20 +378,31 @@ ob_start();
         </div>
         <div>
             <a href="asset_list.php<?= $churchId ? '?church_id=' . $churchId : '' ?>" class="btn btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i> Back</a>
-            <?php if ($canCreateUseRequest && asset_use_requests_available($conn)): ?>
+            <?php if ($canCreateUseRequest && asset_use_requests_available($conn) && !$selectedAssetDisposed): ?>
                 <a href="asset_request_form.php?asset_id=<?= $assetId ?>" class="btn btn-outline-success ml-1"><i class="fas fa-hand-holding mr-1"></i> Request Use</a>
             <?php endif; ?>
             <?php if ($canViewUseRequests && asset_use_requests_available($conn)): ?>
                 <a href="asset_request_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>" class="btn btn-outline-info ml-1"><i class="fas fa-hand-holding mr-1"></i> Lending &amp; Returns</a>
             <?php endif; ?>
-            <?php if ($canEditSelectedAsset): ?>
-                <a href="asset_form.php?id=<?= $assetId ?>" class="btn btn-warning ml-1"><i class="fas fa-edit mr-1"></i> Edit</a>
+            <?php if ($canEdit): ?>
+                <a href="asset_form.php?id=<?= $assetId ?><?= $selectedAssetItemId > 0 ? '&asset_item_id=' . $selectedAssetItemId : '' ?>" class="btn btn-warning ml-1" title="<?= count($physicalItems) > 1 ? 'Edit this asset plus the shared descriptive fields of its migrated record' : 'Edit this asset' ?>"><i class="fas fa-edit mr-1"></i> Edit</a>
             <?php endif; ?>
             <?php if ($canCreate): ?>
                 <a href="asset_form.php?church_id=<?= (int) $churchId ?>" class="btn btn-success ml-1"><i class="fas fa-plus mr-1"></i> Register Asset</a>
             <?php endif; ?>
-            <?php if ($canTransfer): ?>
+            <?php if ($canTransfer && !$selectedAssetDisposed): ?>
                 <a href="asset_transfer.php?id=<?= $assetId ?><?= $selectedAssetItemId > 0 ? '&asset_item_id=' . $selectedAssetItemId : '' ?>" class="btn btn-primary ml-1"><i class="fas fa-exchange-alt mr-1"></i> Transfer</a>
+            <?php endif; ?>
+            <?php if ($canDelete && count($physicalItems) <= 1): ?>
+                <form method="post" action="asset_delete.php" class="d-inline" onsubmit="return prepareAssetDeletion(this)">
+                    <?= csrf_input() ?>
+                    <input type="hidden" name="id" value="<?= $assetId ?>">
+                    <input type="hidden" name="asset_item_id" value="<?= $selectedAssetItemId ?>">
+                    <input type="hidden" name="deletion_reason" value="">
+                    <button type="submit" class="btn btn-outline-danger ml-1" title="Delete only an unused asset registered by mistake"><i class="fas fa-trash-alt mr-1"></i> Delete</button>
+                </form>
+            <?php elseif ($canDelete): ?>
+                <button type="button" class="btn btn-outline-secondary ml-1" disabled title="This migrated record contains multiple assets and cannot be deleted as one"><i class="fas fa-lock mr-1"></i> Delete</button>
             <?php endif; ?>
         </div>
     </div>
@@ -469,6 +481,7 @@ ob_start();
                     <div class="card-header"><strong>Quick Actions</strong></div>
                     <div class="card-body">
                         <?php if ($canRequestApproval): ?>
+                            <?php if (!$selectedAssetDisposed): ?>
                             <form method="post" class="mb-3">
                                 <?= csrf_input() ?>
                                 <input type="hidden" name="id" value="<?= $assetId ?>">
@@ -487,6 +500,9 @@ ob_start();
                                 </div>
                                 <button type="submit" class="btn btn-outline-danger btn-sm">Request Disposal</button>
                             </form>
+                            <?php else: ?>
+                                <div class="alert alert-secondary py-2"><strong>Disposed asset.</strong> It is retained for history and cannot be requested, issued or transferred.</div>
+                            <?php endif; ?>
 
                             <form method="post">
                                 <?= csrf_input() ?>
@@ -533,12 +549,13 @@ ob_start();
                     <thead class="thead-light"><tr><th>Asset Number</th><th>Department</th><th>Serial</th><th>Condition</th><th>Custody</th><th>Lifecycle</th><th>Registered</th></tr></thead>
                     <tbody>
                     <?php foreach ($selectedAssetItem ? [$selectedAssetItem] : [] as $physicalItem): ?>
+                        <?php $itemOperationalState = asset_operational_state($physicalItem); ?>
                         <tr>
                             <td><strong><?= htmlspecialchars((string) $physicalItem['item_number']) ?></strong></td>
                             <td><?= htmlspecialchars((string) ($physicalItem['department_name'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string) (($physicalItem['serial_number'] ?? '') !== '' ? $physicalItem['serial_number'] : '-')) ?></td>
                             <td><?= htmlspecialchars((string) $physicalItem['condition_status']) ?></td>
-                            <td><span class="badge badge-<?= ($physicalItem['custody_status'] ?? 'available') === 'available' ? 'success' : (($physicalItem['custody_status'] ?? '') === 'issued' ? 'primary' : 'warning') ?>"><?= htmlspecialchars(ucfirst((string) ($physicalItem['custody_status'] ?? 'available'))) ?></span></td>
+                            <td><span class="badge badge-<?= htmlspecialchars($itemOperationalState['badge']) ?>"><i class="<?= htmlspecialchars($itemOperationalState['icon']) ?> mr-1"></i><?= htmlspecialchars($itemOperationalState['label']) ?></span></td>
                             <td><?= htmlspecialchars(asset_lifecycle_label((string) ($physicalItem['lifecycle_status'] ?? 'in_use'))) ?></td>
                             <td><?= htmlspecialchars((string) $physicalItem['created_at']) ?></td>
                         </tr>
@@ -751,6 +768,19 @@ ob_start();
         </div>
     <?php endif; ?>
 </div>
+<script>
+function prepareAssetDeletion(form) {
+    var reason = window.prompt('Why is this unused asset record being deleted? (minimum 10 characters)');
+    if (reason === null) return false;
+    reason = reason.trim();
+    if (reason.length < 10) {
+        window.alert('Enter a clear deletion reason of at least 10 characters.');
+        return false;
+    }
+    form.querySelector('[name="deletion_reason"]').value = reason;
+    return window.confirm('Delete this unused asset record? This is only allowed when no operational history exists.');
+}
+</script>
 <?php
 $page_content = ob_get_clean();
 include __DIR__ . '/../includes/layout.php';

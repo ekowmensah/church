@@ -10,6 +10,8 @@ $departmentId = isset($_GET['department_id']) && (int) $_GET['department_id'] > 
 $assetGroupId = isset($_GET['asset_group_id']) && (int) $_GET['asset_group_id'] > 0 ? (int) $_GET['asset_group_id'] : null;
 $condition = trim((string) ($_GET['condition_status'] ?? ''));
 $status = trim((string) ($_GET['status'] ?? ''));
+$lifecycle = trim((string) ($_GET['lifecycle_status'] ?? ''));
+$custody = trim((string) ($_GET['custody_status'] ?? ''));
 $acquisitionMode = trim((string) ($_GET['acquisition_mode'] ?? ''));
 $q = trim((string) ($_GET['q'] ?? ''));
 
@@ -74,6 +76,18 @@ if ($status !== '' && in_array($status, ['active', 'disposed'], true)) {
     $sql .= ' AND item.status = ?';
     $types .= 's';
     $params[] = $status;
+}
+if ($hasCustody && $custody !== '' && in_array($custody, ['available', 'reserved', 'issued'], true)) {
+    $sql .= " AND item.custody_status = ? AND item.status = 'active'
+              AND item.lifecycle_status NOT IN ('retired','disposed')
+              AND item.condition_status <> 'Disposed'";
+    $types .= 's';
+    $params[] = $custody;
+}
+if ($hasLifecycle && $lifecycle !== '' && in_array($lifecycle, asset_lifecycle_options(), true)) {
+    $sql .= ' AND item.lifecycle_status = ?';
+    $types .= 's';
+    $params[] = $lifecycle;
 }
 if ($hasAcquisitionMode && $acquisitionMode !== '' && array_key_exists($acquisitionMode, $acquisitionModes)) {
     $sql .= ' AND a.acquisition_mode = ?';
@@ -158,7 +172,7 @@ if (asset_column_exists($conn, 'assets', 'receipt_number')) {
 }
 $header[] = 'Serial Number';
 $header = array_merge($header, [
-    'Recorded Asset Value', 'Condition Status', 'Status', 'Custody Status'
+    'Recorded Asset Value', 'Condition Status', 'Status', 'Operational State'
 ]);
 if ($hasLifecycle) {
     $header[] = 'Lifecycle Status';
@@ -202,7 +216,7 @@ while ($row = $res->fetch_assoc()) {
     $line[] = $row['allocated_unit_value'];
     $line[] = $row['condition_status'];
     $line[] = $row['status'];
-    $line[] = $row['custody_status'];
+    $line[] = asset_operational_state($row)['label'];
 
     if ($hasLifecycle) {
         $line[] = (string) ($row['lifecycle_status'] ?? asset_default_lifecycle((string) ($row['status'] ?? 'active'), (string) ($row['condition_status'] ?? '')));

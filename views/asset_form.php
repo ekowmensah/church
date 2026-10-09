@@ -21,6 +21,8 @@ $hasSeparatedReceiptFields = asset_column_exists($conn, 'assets', 'receipt_numbe
 $hasSerialTracking = asset_table_exists($conn, 'asset_serial_numbers');
 $hasItemTracking = asset_item_tracking_available($conn);
 $assetId = $isEdit ? (int) $_GET['id'] : 0;
+$assetItemId = $isEdit ? max(0, (int) ($_GET['asset_item_id'] ?? $_POST['asset_item_id'] ?? 0)) : 0;
+$selectedPhysicalItem = null;
 $error = '';
 
 $inferBindTypes = static function (array $values): string {
@@ -153,10 +155,21 @@ if ($isEdit) {
         $physicalItems = asset_fetch_physical_items($conn, $assetId);
         $physicalItemCount = count($physicalItems);
         $hasMultiplePhysicalItems = $physicalItemCount > 1;
+        foreach ($physicalItems as $physicalItem) {
+            if ($assetItemId === 0 || (int) $physicalItem['id'] === $assetItemId) {
+                $selectedPhysicalItem = $physicalItem;
+                $assetItemId = (int) $physicalItem['id'];
+                break;
+            }
+        }
+        if ($assetItemId > 0 && !$selectedPhysicalItem) {
+            http_response_code(404);
+            exit('Asset identity not found.');
+        }
         $quantity = count(array_filter($physicalItems, static function (array $item): bool {
             return (string) ($item['status'] ?? '') === 'active';
         }));
-        $primarySerialNumber = (string) ($physicalItems[0]['serial_number'] ?? $primarySerialNumber);
+        $primarySerialNumber = (string) ($selectedPhysicalItem['serial_number'] ?? $primarySerialNumber);
         $serialNumbersText = implode("\n", array_values(array_filter(array_column($physicalItems, 'serial_number'))));
     } elseif ($hasSerialTracking) {
         $serialNumbersText = implode("\n", asset_fetch_serial_numbers($conn, $assetId));
@@ -180,6 +193,14 @@ if ($isEdit) {
         $lifecycleStatus = $existingLifecycleStatus !== '' ? $existingLifecycleStatus : asset_default_lifecycle($status, $conditionStatus);
     } else {
         $lifecycleStatus = asset_default_lifecycle($status, $conditionStatus);
+    }
+
+    if ($selectedPhysicalItem) {
+        $departmentId = (int) ($selectedPhysicalItem['department_id'] ?? $departmentId);
+        $conditionStatus = (string) ($selectedPhysicalItem['condition_status'] ?? $conditionStatus);
+        $status = (string) ($selectedPhysicalItem['status'] ?? $status);
+        $existingLifecycleStatus = (string) ($selectedPhysicalItem['lifecycle_status'] ?? asset_default_lifecycle($status, $conditionStatus));
+        $lifecycleStatus = $existingLifecycleStatus;
     }
 }
 
@@ -238,20 +259,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ? trim((string) ($_POST['lifecycle_status'] ?? ''))
         : asset_default_lifecycle($status, $conditionStatus);
 
-    // Older quantity-based records may still contain more than one asset.
-    // Preserve their individual operational states instead of applying one
-    // master-form value to every migrated asset.
+    // Older quantity-based records may still share descriptive parent data,
+    // but this form always edits the exact selected asset identity.
     if ($isEdit && $hasItemTracking) {
         $postedPhysicalItems = asset_fetch_physical_items($conn, $assetId);
         $physicalItemCount = count($postedPhysicalItems);
         $hasMultiplePhysicalItems = $physicalItemCount > 1;
-        if ($hasMultiplePhysicalItems) {
-            $primarySerialNumber = (string) ($asset['serial_number'] ?? '');
-            $conditionStatus = (string) ($asset['condition_status'] ?? 'Good');
-            $status = (string) ($asset['status'] ?? 'active');
-            $lifecycleStatus = $hasLifecycle
-                ? (string) ($asset['lifecycle_status'] ?? asset_default_lifecycle($status, $conditionStatus))
-                : asset_default_lifecycle($status, $conditionStatus);
+        $selectedPhysicalItem = null;
+        foreach ($postedPhysicalItems as $physicalItem) {
+            if ((int) $physicalItem['id'] === $assetItemId) {
+                $selectedPhysicalItem = $physicalItem;
+                break;
+            }
+        }
+        if (!$selectedPhysicalItem) {
+            $error = 'The selected asset identity no longer exists.';
         }
     }
 
@@ -267,10 +289,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($status === 'disposed') {
         $lifecycleStatus = 'disposed';
+        $conditionStatus = 'Disposed';
     }
     if ($conditionStatus === 'Disposed') {
         $status = 'disposed';
         $lifecycleStatus = 'disposed';
+    }
+    if ($lifecycleStatus === 'disposed') {
+        $status = 'disposed';
+        $conditionStatus = 'Disposed';
     }
 
     if (!array_key_exists($acquisitionMode, $acquisitionModes)) {
@@ -288,7 +315,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         array_unshift($serials, $primarySerialNumber);
     }
 
-    if ($churchId <= 0) {
+    if ($error !== '') {
+        // Preserve an identity/concurrency error discovered above.
+    } elseif ($churchId <= 0) {
         $error = 'Church is required.';
     } elseif ($departmentId <= 0) {
         $error = 'Department is required.';
@@ -314,6 +343,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Invalid lifecycle status.';
     } elseif ($hasLifecycle && $isEdit && !asset_validate_lifecycle_transition($existingLifecycleStatus, $lifecycleStatus)) {
         $error = 'Invalid lifecycle transition from ' . asset_lifecycle_label($existingLifecycleStatus) . ' to ' . asset_lifecycle_label($lifecycleStatus) . '.';
+    } elseif ($isEdit && $status === 'disposed'
+        && (string) ($selectedPhysicalItem['status'] ?? 'active') !== 'disposed'
+        && (string) ($selectedPhysicalItem['custody_status'] ?? 'available') !== 'available') {
+        $error = 'A reserved or issued asset cannot be disposed. Release or receive it first.';
+    } elseif ($isEdit && $status === 'disposed'
+        && (string) ($selectedPhysicalItem['status'] ?? 'active') !== 'disposed'
+        && $allocationNote === '') {
+        $error = 'Enter the disposal reason in Allocation Note before disposing this asset.';
     } elseif ($acquisitionMode === 'other' && $acquisitionModeOther === '') {
         $error = 'Please specify the acquisition mode when "Other" is selected.';
     } elseif ($hasItemTracking && count($serials) > 1) {
@@ -433,13 +470,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($hasItemTracking) {
                     $items = asset_fetch_physical_items($conn, $assetId);
-                    if (count($items) === 1) {
-                        $itemId = (int) $items[0]['id'];
-                        $stmt = $conn->prepare(
-                            'UPDATE asset_items SET serial_number = ?, condition_status = ?, status = ?, lifecycle_status = ? WHERE id = ?'
-                        );
+                    if ($assetItemId > 0) {
+                        $itemId = $assetItemId;
                         $serialDb = $primarySerialNumber !== '' ? $primarySerialNumber : null;
-                        $stmt->bind_param('ssssi', $serialDb, $conditionStatus, $status, $lifecycleStatus, $itemId);
+                        if ($status === 'disposed') {
+                            $disposedBy = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
+                            $stmt = $conn->prepare(
+                                "UPDATE asset_items
+                                 SET serial_number = ?, condition_status = ?, status = 'disposed',
+                                     lifecycle_status = 'disposed', disposed_by_user_id = ?,
+                                     disposed_at = COALESCE(disposed_at, NOW()), disposal_reason = ?
+                                 WHERE id = ? AND asset_id = ?"
+                            );
+                            $stmt->bind_param('ssisii', $serialDb, $conditionStatus, $disposedBy, $allocationNote, $itemId, $assetId);
+                        } else {
+                            $stmt = $conn->prepare(
+                                'UPDATE asset_items SET serial_number = ?, condition_status = ?, status = ?, lifecycle_status = ? WHERE id = ? AND asset_id = ?'
+                            );
+                            $stmt->bind_param('ssssii', $serialDb, $conditionStatus, $status, $lifecycleStatus, $itemId, $assetId);
+                        }
                         $stmt->execute();
                         $stmt->close();
                     }
@@ -652,6 +701,7 @@ ob_start();
                 <?= csrf_input() ?>
                 <?php if ($isEdit): ?>
                     <input type="hidden" name="original_updated_at" value="<?= htmlspecialchars($originalUpdatedAt) ?>">
+                    <input type="hidden" name="asset_item_id" value="<?= (int) $assetItemId ?>">
                 <?php endif; ?>
                 <?php if ($isSuper): ?>
                     <div class="form-row">
@@ -781,8 +831,8 @@ ob_start();
                     <input type="hidden" name="quantity" id="quantity" value="<?= $isEdit ? max(0, (int) $quantity) : 1 ?>" data-derived="1">
                     <div class="alert alert-info py-2">
                         <?php if ($isEdit): ?>
-                            This is a migrated quantity-based record containing <strong><?= (int) $physicalItemCount ?> assets</strong>.
-                            Existing identifiers and histories remain separate. New assets must be registered with the Register Asset form.
+                            Editing asset <strong><?= htmlspecialchars((string) ($selectedPhysicalItem['item_number'] ?? $assetCode)) ?></strong>.
+                            <?php if ($hasMultiplePhysicalItems): ?>Its category, name and acquisition details are shared with <?= (int) $physicalItemCount ?> migrated assets; condition, status, lifecycle and serial changes apply only to this selected asset.<?php endif; ?>
                         <?php else: ?>
                             Saving this form creates exactly <strong>one uniquely numbered asset</strong> under the selected category and department.
                         <?php endif; ?>
@@ -802,8 +852,8 @@ ob_start();
                     </div>
                     <div class="form-group <?= $hasItemTracking ? 'col-md-4' : 'col-md-3' ?>">
                         <label><?= $hasItemTracking ? 'Asset Serial Number' : 'Primary Serial Number' ?></label>
-                        <input type="text" name="primary_serial_number" class="form-control" value="<?= htmlspecialchars($primarySerialNumber) ?>" maxlength="120" placeholder="Unique per asset" <?= $hasItemTracking && $isEdit && $physicalItemCount > 1 ? 'readonly' : '' ?>>
-                        <?php if ($hasItemTracking && $isEdit && $physicalItemCount > 1): ?><small class="text-muted">Serials remain attached to each migrated asset.</small><?php endif; ?>
+                        <input type="text" name="primary_serial_number" class="form-control" value="<?= htmlspecialchars($primarySerialNumber) ?>" maxlength="120" placeholder="Unique per asset">
+                        <?php if ($hasItemTracking && $isEdit && $physicalItemCount > 1): ?><small class="text-muted">This serial remains attached only to the selected asset.</small><?php endif; ?>
                     </div>
                     <div class="form-group <?= $hasItemTracking ? 'col-md-4' : 'col-md-3' ?>">
                         <label>Total Recorded Acquisition Value</label>
@@ -818,7 +868,6 @@ ob_start();
                     <small class="text-muted">Legacy-only field for quantity-based records.</small>
                 </div>
 
-                <?php if (!($hasItemTracking && $isEdit && $physicalItemCount > 1)): ?>
                 <div class="form-row">
                     <div class="form-group col-md-4">
                         <label>Condition Status <span class="text-danger">*</span></label>
@@ -846,12 +895,6 @@ ob_start();
                     </div>
                     <?php endif; ?>
                 </div>
-                <?php else: ?>
-                    <div class="alert alert-light border">
-                        <strong>This migrated record contains multiple assets.</strong>
-                        Manage condition, availability and lifecycle from the individual asset operations so one change is not applied to every asset.
-                    </div>
-                <?php endif; ?>
 
                 <div class="form-group">
                     <label>Allocation Note</label>

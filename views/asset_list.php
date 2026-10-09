@@ -27,6 +27,7 @@ $lifecycleOptions = asset_lifecycle_options();
 $acquisitionModes = asset_acquisition_mode_options();
 $canCreate = $isSuper || has_permission('create_asset');
 $canEdit = $isSuper || has_permission('edit_asset');
+$canDelete = $isSuper || has_permission('delete_asset');
 $canTransfer = $isSuper || has_permission('transfer_asset');
 $canExport = $isSuper || has_permission('export_asset_register');
 $canViewDetail = $isSuper || has_permission('view_asset_detail') || has_permission('view_asset_register');
@@ -87,7 +88,9 @@ if ($status !== '' && in_array($status, ['active', 'disposed'], true)) {
     $params[] = $status;
 }
 if ($hasCustody && $custody !== '' && in_array($custody, ['available', 'reserved', 'issued'], true)) {
-    $whereSql .= ' AND item.custody_status = ?';
+    $whereSql .= " AND item.custody_status = ? AND item.status = 'active'
+                   AND item.lifecycle_status NOT IN ('retired','disposed')
+                   AND item.condition_status <> 'Disposed'";
     $types .= 's';
     $params[] = $custody;
 }
@@ -156,9 +159,9 @@ $summarySql = 'SELECT COUNT(*) AS asset_count,
                       SUM(item.status = "active") AS active_units,
                       SUM(item.status = "disposed") AS disposed_units,
                       ' . ($hasCustody
-                          ? 'SUM(item.custody_status = "available") AS available_units,
-                             SUM(item.custody_status = "reserved") AS reserved_units,
-                             SUM(item.custody_status = "issued") AS issued_units,'
+                          ? 'SUM(item.status = "active" AND item.lifecycle_status NOT IN ("retired","disposed") AND item.condition_status <> "Disposed" AND item.custody_status = "available") AS available_units,
+                             SUM(item.status = "active" AND item.lifecycle_status NOT IN ("retired","disposed") AND item.condition_status <> "Disposed" AND item.custody_status = "reserved") AS reserved_units,
+                             SUM(item.status = "active" AND item.lifecycle_status NOT IN ("retired","disposed") AND item.condition_status <> "Disposed" AND item.custody_status = "issued") AS issued_units,'
                           : 'SUM(item.status = "active") AS available_units,
                              0 AS reserved_units,
                              0 AS issued_units,') . '
@@ -234,6 +237,11 @@ ob_start();
         <div class="asset-guide-step"><span class="asset-guide-number">3</span><div><strong>Department</strong><small>The department currently responsible for the asset.</small></div></div>
     </div>
 
+    <div class="alert alert-light border d-flex align-items-start mb-3">
+        <i class="fas fa-info-circle text-primary mt-1 mr-2"></i>
+        <div><strong>Dispose is not delete.</strong> Disposal removes an asset from service but preserves its register, approval, custody and financial history. Delete is reserved for an unused record created by mistake.</div>
+    </div>
+
     <?php if (isset($_GET['saved'])): ?><div class="alert alert-success">Asset saved successfully.</div><?php endif; ?>
     <?php if (isset($_GET['deleted'])): ?><div class="alert alert-success">Asset deleted successfully.</div><?php endif; ?>
     <?php if (isset($_GET['transferred'])): ?><div class="alert alert-success">Asset transferred successfully.</div><?php endif; ?>
@@ -301,22 +309,33 @@ ob_start();
                         $effectiveLifecycle = $hasLifecycle
                             ? (string) ($asset['lifecycle_status'] ?? asset_default_lifecycle($assetStatus, $assetCondition))
                             : asset_default_lifecycle($assetStatus, $assetCondition);
+                        $operationalState = asset_operational_state($asset + ['lifecycle_status' => $effectiveLifecycle]);
+                        $isDisposed = $operationalState['key'] === 'disposed';
                         ?>
                         <?php $categoryLabel = (string) (($asset['asset_group_name'] ?? $asset['item_group'] ?? '') ?: 'Unclassified'); ?>
                         <tr>
                             <td class="asset-identity"><span class="asset-unit-number"><?= htmlspecialchars((string) $asset['item_number']) ?></span><span class="asset-meta">Serial: <?= htmlspecialchars((string) ($asset['serial_number'] ?: 'Not recorded')) ?></span><span class="asset-meta">Register status: <?= htmlspecialchars(ucfirst($assetStatus)) ?></span></td>
                             <td style="min-width:230px"><span class="asset-model-name"><?= htmlspecialchars((string) $asset['item_name']) ?></span><span class="asset-category-chip"><i class="fas fa-layer-group mr-1"></i><?= htmlspecialchars($categoryLabel) ?><?= !empty($asset['asset_group_code']) ? ' &middot; ' . htmlspecialchars((string) $asset['asset_group_code']) : '' ?></span><?php if ($hasAcquisitionMode): ?><span class="asset-meta mt-1">Acquired by <?= htmlspecialchars((string) ($acquisitionModes[(string) ($asset['acquisition_mode'] ?? '')] ?? ucfirst(str_replace('_', ' ', (string) ($asset['acquisition_mode'] ?? 'unknown'))))) ?></span><?php endif; ?></td>
                             <td><strong><?= htmlspecialchars((string) ($asset['department_name'] ?? 'Unassigned')) ?></strong><?php if ($isSuper): ?><span class="asset-meta"><?= htmlspecialchars((string) ($asset['church_name'] ?? '-')) ?></span><?php endif; ?></td>
-                            <td><div class="asset-state-stack"><span class="badge badge-<?= $asset['custody_status'] === 'available' ? 'success' : ($asset['custody_status'] === 'issued' ? 'primary' : 'warning') ?>"><i class="fas fa-hand-holding mr-1"></i><?= htmlspecialchars(ucfirst((string) $asset['custody_status'])) ?></span><span class="badge badge-<?= asset_condition_badge_class($assetCondition) ?>"><?= htmlspecialchars($assetCondition ?: 'Condition unknown') ?></span><?php if ($hasLifecycle): ?><span class="badge badge-<?= asset_lifecycle_badge_class($effectiveLifecycle) ?>"><?= htmlspecialchars(asset_lifecycle_label($effectiveLifecycle)) ?></span><?php endif; ?></div></td>
+                            <td><div class="asset-state-stack"><span class="badge badge-<?= htmlspecialchars($operationalState['badge']) ?>"><i class="<?= htmlspecialchars($operationalState['icon']) ?> mr-1"></i><?= htmlspecialchars($operationalState['label']) ?></span><span class="badge badge-<?= asset_condition_badge_class($assetCondition) ?>"><?= htmlspecialchars($assetCondition ?: 'Condition unknown') ?></span><?php if ($hasLifecycle && $effectiveLifecycle !== $operationalState['key']): ?><span class="badge badge-<?= asset_lifecycle_badge_class($effectiveLifecycle) ?>"><?= htmlspecialchars(asset_lifecycle_label($effectiveLifecycle)) ?></span><?php endif; ?></div></td>
                             <td><strong><?= number_format((float) $asset['allocated_unit_value'], 2) ?></strong><span class="asset-meta">Recorded asset value</span></td>
                             <td><div class="asset-row-actions">
                                 <?php if ($canViewDetail): ?>
                                     <a href="asset_view.php?id=<?= (int) $asset['asset_id'] ?>&tab=items&asset_item_id=<?= (int) $asset['asset_item_id'] ?>" class="btn btn-sm btn-outline-dark"><i class="fas fa-eye mr-1"></i>Open</a>
                                 <?php endif; ?>
-                                <?php if ($canTransfer): ?>
+                                <?php if ($canTransfer && !$isDisposed): ?>
                                     <a href="asset_transfer.php?id=<?= (int) $asset['asset_id'] ?>&asset_item_id=<?= (int) $asset['asset_item_id'] ?>" class="btn btn-sm btn-primary"><i class="fas fa-exchange-alt mr-1"></i>Move</a>
                                 <?php endif; ?>
-                                <?php if ($canEdit && (int) $asset['grouped_asset_count'] === 1): ?><a href="asset_form.php?id=<?= (int) $asset['asset_id'] ?>" class="btn btn-sm btn-outline-warning" title="Edit this asset"><i class="fas fa-edit mr-1"></i>Edit</a><?php endif; ?>
+                                <?php if ($canEdit): ?><a href="asset_form.php?id=<?= (int) $asset['asset_id'] ?>&asset_item_id=<?= (int) $asset['asset_item_id'] ?>" class="btn btn-sm btn-outline-warning" title="<?= (int) $asset['grouped_asset_count'] > 1 ? 'Edit this asset plus the shared descriptive fields of its migrated record' : 'Edit this asset' ?>"><i class="fas fa-edit mr-1"></i>Edit</a><?php endif; ?>
+                                <?php if ($canDelete && (int) $asset['grouped_asset_count'] === 1): ?>
+                                    <form method="post" action="asset_delete.php" class="d-inline" onsubmit="return prepareAssetDeletion(this)">
+                                        <?= csrf_input() ?>
+                                        <input type="hidden" name="id" value="<?= (int) $asset['asset_id'] ?>">
+                                        <input type="hidden" name="asset_item_id" value="<?= (int) $asset['asset_item_id'] ?>">
+                                        <input type="hidden" name="deletion_reason" value="">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete only an unused asset registered by mistake"><i class="fas fa-trash-alt mr-1"></i>Delete</button>
+                                    </form>
+                                <?php elseif ($canDelete): ?><button type="button" class="btn btn-sm btn-outline-secondary" disabled title="This migrated row shares a legacy record with other assets and cannot be deleted individually"><i class="fas fa-lock mr-1"></i>Delete</button><?php endif; ?>
                             </div></td>
                         </tr>
                     <?php endforeach; ?>
@@ -329,6 +348,19 @@ ob_start();
         </div>
     </div>
 </div>
+<script>
+function prepareAssetDeletion(form) {
+    var reason = window.prompt('Why is this unused asset record being deleted? (minimum 10 characters)');
+    if (reason === null) return false;
+    reason = reason.trim();
+    if (reason.length < 10) {
+        window.alert('Enter a clear deletion reason of at least 10 characters.');
+        return false;
+    }
+    form.querySelector('[name="deletion_reason"]').value = reason;
+    return window.confirm('Delete this unused asset record? This is only allowed when no operational history exists.');
+}
+</script>
 <?php
 $page_content = ob_get_clean();
 include __DIR__ . '/../includes/layout.php';

@@ -16,23 +16,30 @@ if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
 }
 
 $id = isset($_POST['id']) ? (int) $_POST['id'] : 0;
+$assetItemId = isset($_POST['asset_item_id']) ? (int) $_POST['asset_item_id'] : 0;
+$deletionReason = trim((string) ($_POST['deletion_reason'] ?? ''));
 if ($id <= 0) {
     header('Location: asset_list.php');
     exit;
 }
+if (strlen($deletionReason) < 10 || strlen($deletionReason) > 500) {
+    header('Location: asset_list.php?err=' . urlencode('Enter a clear deletion reason between 10 and 500 characters.'));
+    exit;
+}
 
-$churchId = asset_is_super_admin() ? null : asset_current_church_id($conn);
+$isSuper = asset_is_super_admin();
+$scopeChurchId = $isSuper ? null : asset_current_church_id($conn);
 $sql = 'SELECT id, church_id, asset_code, item_name, department_id, status, condition_status FROM assets WHERE id = ?';
-if (!asset_is_super_admin()) {
+if (!$isSuper) {
     $sql .= ' AND church_id = ?';
 }
 $sql .= ' LIMIT 1';
 
 $stmt = $conn->prepare($sql);
-if (asset_is_super_admin()) {
+if ($isSuper) {
     $stmt->bind_param('i', $id);
 } else {
-    $stmt->bind_param('ii', $id, $churchId);
+    $stmt->bind_param('ii', $id, $scopeChurchId);
 }
 $stmt->execute();
 $asset = $stmt->get_result()->fetch_assoc();
@@ -45,67 +52,119 @@ if (!$asset) {
 
 $churchId = (int) $asset['church_id'];
 $assetCode = (string) $asset['asset_code'];
-
 $blockingReasons = [];
-if (asset_table_exists($conn, 'asset_approval_requests')) {
-    $check = $conn->prepare('SELECT COUNT(*) AS total FROM asset_approval_requests WHERE asset_id = ?');
-    $check->bind_param('i', $id);
-    $check->execute();
-    if ((int) ($check->get_result()->fetch_assoc()['total'] ?? 0) > 0) {
-        $blockingReasons[] = 'approval history';
-    }
-    $check->close();
+if (!asset_table_exists($conn, 'asset_audit_log')) {
+    $blockingReasons[] = 'no deletion-audit storage';
 }
+
+$evidenceExists = static function (mysqli $conn, string $table, string $column, int $assetId): bool {
+    if (!asset_table_exists($conn, $table) || !asset_column_exists($conn, $table, $column)) {
+        return false;
+    }
+    $sql = sprintf('SELECT 1 FROM `%s` WHERE `%s` = ? LIMIT 1', $table, $column);
+    $check = $conn->prepare($sql);
+    $check->bind_param('i', $assetId);
+    $check->execute();
+    $exists = $check->get_result()->fetch_row() !== null;
+    $check->close();
+    return $exists;
+};
+
+$assetItems = [];
 if (asset_table_exists($conn, 'asset_items')) {
-    $check = $conn->prepare('SELECT COUNT(*) AS total FROM asset_items WHERE asset_id = ?');
+    $columns = 'id, item_number, serial_number, status, lifecycle_status';
+    if (asset_column_exists($conn, 'asset_items', 'custody_status')) {
+        $columns .= ', custody_status';
+    }
+    $check = $conn->prepare("SELECT {$columns} FROM asset_items WHERE asset_id = ? ORDER BY id");
     $check->bind_param('i', $id);
     $check->execute();
-    if ((int) ($check->get_result()->fetch_assoc()['total'] ?? 0) > 0) {
-        $blockingReasons[] = 'registered asset identities';
-    }
+    $assetItems = $check->get_result()->fetch_all(MYSQLI_ASSOC);
     $check->close();
+
+    if (count($assetItems) > 1) {
+        $blockingReasons[] = 'multiple migrated asset identities';
+    } elseif ($assetItemId > 0 && isset($assetItems[0]) && (int) $assetItems[0]['id'] !== $assetItemId) {
+        $blockingReasons[] = 'an identity mismatch';
+    }
 }
-if (asset_table_exists($conn, 'asset_movements')) {
-    $check = $conn->prepare('SELECT COUNT(*) AS total FROM asset_movements WHERE asset_id = ?');
-    $check->bind_param('i', $id);
-    $check->execute();
-    if ((int) ($check->get_result()->fetch_assoc()['total'] ?? 0) > 0) {
-        $blockingReasons[] = 'movement history';
+
+$evidenceChecks = [
+    ['asset_approval_requests', 'asset_id', 'approval history'],
+    ['asset_movements', 'asset_id', 'movement history'],
+    ['asset_use_requests', 'asset_id', 'borrowing-request history'],
+    ['asset_use_request_items', 'asset_id', 'borrowing-request history'],
+    ['asset_custody_events', 'asset_id', 'custody history'],
+    ['asset_maintenance_work_orders', 'asset_id', 'maintenance history'],
+    ['asset_documents', 'asset_id', 'stored documents'],
+];
+foreach ($evidenceChecks as [$table, $column, $reason]) {
+    if ($evidenceExists($conn, $table, $column, $id) && !in_array($reason, $blockingReasons, true)) {
+        $blockingReasons[] = $reason;
     }
-    $check->close();
-}
-if (asset_table_exists($conn, 'asset_use_request_items')) {
-    $check = $conn->prepare('SELECT COUNT(*) AS total FROM asset_use_request_items WHERE asset_id = ?');
-    $check->bind_param('i', $id);
-    $check->execute();
-    if ((int) ($check->get_result()->fetch_assoc()['total'] ?? 0) > 0) {
-        $blockingReasons[] = 'member-request history';
-    }
-    $check->close();
 }
 
 if ($blockingReasons) {
     $message = 'This asset cannot be deleted because it has ' . implode(', ', $blockingReasons)
-        . '. Use the governed disposal/status workflow instead.';
+        . '. Delete is only for an unused mistaken registration; use disposal to retain established records.';
     header('Location: asset_list.php?err=' . urlencode($message) . '&church_id=' . $churchId);
     exit;
 }
 
-$stmt = $conn->prepare('DELETE FROM assets WHERE id = ?');
-$stmt->bind_param('i', $id);
-$stmt->execute();
-$stmt->close();
+try {
+    $conn->begin_transaction();
+    // This compatibility table has no foreign key in older deployments.
+    if (asset_table_exists($conn, 'asset_serial_numbers')) {
+        $stmt = $conn->prepare('DELETE FROM asset_serial_numbers WHERE asset_id = ?');
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $stmt->close();
+    }
 
-asset_log_action('asset_delete', 'asset', $id, [
-    'asset_id' => $id,
-    'church_id' => $churchId,
-    'asset_code' => $assetCode,
-], [
-    'item_name' => $asset['item_name'] ?? null,
-    'department_id' => $asset['department_id'] ?? null,
-    'status' => $asset['status'] ?? null,
-    'condition_status' => $asset['condition_status'] ?? null,
-]);
+    $stmt = $conn->prepare('DELETE FROM assets WHERE id = ? AND church_id = ?');
+    $stmt->bind_param('ii', $id, $churchId);
+    $stmt->execute();
+    if ($stmt->affected_rows !== 1) {
+        throw new RuntimeException('The asset could not be deleted.');
+    }
+    $stmt->close();
+
+    // Record immutable evidence after the guarded delete succeeds and before
+    // commit. asset_audit_log intentionally has no FK to the live register.
+    $auditPayload = [
+        'asset_id' => $id,
+        'church_id' => $churchId,
+        'asset_code' => $assetCode,
+        'deletion_reason' => $deletionReason,
+    ];
+    asset_log_action('asset_delete', 'asset', $id, $auditPayload, [
+        'item_name' => $asset['item_name'] ?? null,
+        'department_id' => $asset['department_id'] ?? null,
+        'status' => $asset['status'] ?? null,
+        'condition_status' => $asset['condition_status'] ?? null,
+        'asset_items' => $assetItems,
+    ]);
+    $auditJson = json_encode($auditPayload);
+    $auditCheck = $conn->prepare(
+        "SELECT 1 FROM asset_audit_log
+          WHERE asset_id = ? AND action = 'asset_delete' AND meta_json = ?
+          ORDER BY id DESC LIMIT 1"
+    );
+    $auditCheck->bind_param('is', $id, $auditJson);
+    $auditCheck->execute();
+    $auditStored = $auditCheck->get_result()->fetch_row() !== null;
+    $auditCheck->close();
+    if (!$auditStored) {
+        throw new RuntimeException('Deletion audit evidence could not be stored.');
+    }
+    $conn->commit();
+} catch (Throwable $exception) {
+    $conn->rollback();
+    error_log('Asset deletion failed: ' . $exception->getMessage());
+    $message = 'The asset could not be deleted safely. Check for linked operational history and try again.';
+    header('Location: asset_list.php?err=' . urlencode($message) . '&church_id=' . $churchId);
+    exit;
+}
 
 header('Location: asset_list.php?deleted=1' . ($churchId ? '&church_id=' . $churchId : ''));
 exit;

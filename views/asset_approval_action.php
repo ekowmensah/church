@@ -157,7 +157,7 @@ try {
                 if ($assetItemId <= 0) {
                     throw new RuntimeException('An asset is required for this status change.');
                 }
-                $stmt = $conn->prepare('SELECT item_number, status, lifecycle_status FROM asset_items WHERE id = ? AND asset_id = ? FOR UPDATE');
+                $stmt = $conn->prepare('SELECT item_number, status, lifecycle_status, condition_status, custody_status FROM asset_items WHERE id = ? AND asset_id = ? FOR UPDATE');
                 $stmt->bind_param('ii', $assetItemId, $assetId);
                 $stmt->execute();
                 $item = $stmt->get_result()->fetch_assoc();
@@ -167,22 +167,32 @@ try {
                 }
 
                 if ($newStatus === 'disposed') {
+                    if ((string) ($item['custody_status'] ?? 'available') !== 'available') {
+                        throw new RuntimeException('A reserved or issued asset cannot be disposed. Release or receive it first.');
+                    }
+                    $newLifecycle = 'disposed';
                     $reason = trim((string) ($payload['note'] ?? ''));
                     $stmt = $conn->prepare(
                         "UPDATE asset_items
-                         SET status = 'disposed', lifecycle_status = 'disposed', disposed_by_user_id = ?,
+                         SET status = 'disposed', lifecycle_status = 'disposed', condition_status = 'Disposed', disposed_by_user_id = ?,
                              disposed_at = NOW(), disposal_reason = ?
                          WHERE id = ?"
                     );
                     $stmt->bind_param('isi', $reviewedBy, $reason, $assetItemId);
                 } else {
+                    if ($newLifecycle === 'disposed') {
+                        $newLifecycle = 'in_use';
+                    }
+                    $restoredCondition = (string) ($item['condition_status'] ?? 'Good') === 'Disposed'
+                        ? 'Good'
+                        : (string) ($item['condition_status'] ?? 'Good');
                     $stmt = $conn->prepare(
                         "UPDATE asset_items
-                         SET status = 'active', lifecycle_status = ?, disposed_by_user_id = NULL,
+                         SET status = 'active', lifecycle_status = ?, condition_status = ?, disposed_by_user_id = NULL,
                              disposed_at = NULL, disposal_reason = NULL
                          WHERE id = ?"
                     );
-                    $stmt->bind_param('si', $newLifecycle, $assetItemId);
+                    $stmt->bind_param('ssi', $newLifecycle, $restoredCondition, $assetItemId);
                 }
                 $stmt->execute();
                 $stmt->close();
