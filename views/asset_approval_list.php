@@ -145,10 +145,11 @@ if ($canApproveBorrowing && asset_use_requests_available($conn) && asset_request
                             (SELECT COUNT(*) FROM asset_use_request_items line
                               WHERE line.request_id = request.id
                                 AND line.line_status <> 'cancelled') AS line_count,
-                            (SELECT GROUP_CONCAT(CONCAT(line_asset.asset_code, ' - ', line_asset.item_name)
+                            (SELECT GROUP_CONCAT(CONCAT(COALESCE(requested_item.item_number, line_asset.asset_code), ' - ', line_asset.item_name)
                                      ORDER BY line.id SEPARATOR ' | ')
                                FROM asset_use_request_items line
                                JOIN assets line_asset ON line_asset.id = line.asset_id
+                               LEFT JOIN asset_items requested_item ON requested_item.id = line.asset_item_id
                               WHERE line.request_id = request.id
                                 AND line.line_status <> 'cancelled') AS requested_items
                        FROM asset_use_requests request

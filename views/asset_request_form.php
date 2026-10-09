@@ -24,26 +24,23 @@ $purpose = trim((string) ($_POST['purpose'] ?? ''));
 $requestNote = trim((string) ($_POST['request_note'] ?? ''));
 $borrowStartDate = trim((string) ($_POST['borrow_start_date'] ?? date('Y-m-d')));
 $expectedReturnDate = trim((string) ($_POST['expected_return_date'] ?? date('Y-m-d', strtotime('+7 days'))));
-$selectedAssetIds = array_values(array_filter(array_map('intval', (array) ($_POST['asset_ids'] ?? [($_GET['asset_id'] ?? 0)]))));
-if (!$selectedAssetIds) $selectedAssetIds = [0];
+$selectedAssetItemIds = array_values(array_filter(array_map('intval', (array) ($_POST['asset_item_ids'] ?? []))));
+$requestedParentAssetId = max(0, (int) ($_GET['asset_id'] ?? 0));
 $selectedCategoryIds = array_values(array_map('intval', (array) ($_POST['asset_category_ids'] ?? [])));
 
 $assetSql = "
-    SELECT asset.id, asset.asset_code, asset.item_name, asset.church_id,
+    SELECT item.id AS asset_item_id, item.asset_id, item.item_number,
+           item.serial_number, item.condition_status, asset.item_name, asset.church_id,
            asset.asset_group_id, department.name AS department_name,
-           category.name AS asset_group_name, category.group_code AS asset_group_code,
-           COUNT(item.id) AS available_units
+           category.name AS asset_group_name, category.group_code AS asset_group_code
     FROM assets asset
     JOIN asset_items item ON item.asset_id = asset.id AND item.status = 'active'
         AND item.custody_status = 'available'
         AND item.lifecycle_status NOT IN ('under_maintenance','retired','disposed')
-    LEFT JOIN asset_departments department ON department.id = asset.department_id
+        AND item.condition_status <> 'Disposed'
+    LEFT JOIN asset_departments department ON department.id = item.department_id
     LEFT JOIN asset_groups category ON category.id = asset.asset_group_id
     WHERE asset.status = 'active'
-      AND NOT EXISTS (
-          SELECT 1 FROM asset_use_request_items used
-          WHERE used.asset_item_id = item.id AND used.line_status = 'checked_out'
-      )
 ";
 $assetTypes = '';
 $assetParams = [];
@@ -52,16 +49,23 @@ if (!$isSuper || $churchId) {
     $assetTypes = 'i';
     $assetParams[] = (int) $churchId;
 }
-$assetSql .= ' GROUP BY asset.id, asset.asset_code, asset.item_name, asset.church_id,
-                       asset.asset_group_id, department.name, category.name, category.group_code
-               HAVING COUNT(item.id) > 0 ORDER BY category.name, asset.item_name, asset.asset_code';
+$assetSql .= ' ORDER BY category.name, asset.item_name, item.item_number';
 $stmt = $conn->prepare($assetSql);
 if ($assetTypes !== '') $stmt->bind_param($assetTypes, ...$assetParams);
 $stmt->execute();
 $assets = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 $assetMap = [];
-foreach ($assets as $asset) $assetMap[(int) $asset['id']] = $asset;
+foreach ($assets as $asset) $assetMap[(int) $asset['asset_item_id']] = $asset;
+if (!$selectedAssetItemIds && $requestedParentAssetId > 0) {
+    foreach ($assets as $asset) {
+        if ((int) $asset['asset_id'] === $requestedParentAssetId) {
+            $selectedAssetItemIds[] = (int) $asset['asset_item_id'];
+            break;
+        }
+    }
+}
+if (!$selectedAssetItemIds) $selectedAssetItemIds = [0];
 $categories = [];
 foreach ($assets as $asset) {
     $categoryId = (int) ($asset['asset_group_id'] ?? 0);
@@ -71,12 +75,10 @@ foreach ($assets as $asset) {
             'id' => $categoryId,
             'name' => (string) ($asset['asset_group_name'] ?? 'Unclassified'),
             'code' => (string) ($asset['asset_group_code'] ?? ''),
-            'available_units' => 0,
-            'item_count' => 0,
+            'available_assets' => 0,
         ];
     }
-    $categories[$categoryId]['available_units'] += (int) $asset['available_units'];
-    $categories[$categoryId]['item_count']++;
+    $categories[$categoryId]['available_assets']++;
 }
 uasort($categories, static fn(array $left, array $right): int => strcasecmp($left['name'], $right['name']));
 
@@ -85,14 +87,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         http_response_code(419);
         exit('Your form expired. Refresh the page and try again.');
     }
-    $selectedAssetIds = array_values(array_filter(array_map('intval', (array) ($_POST['asset_ids'] ?? []))));
+    $selectedAssetItemIds = array_values(array_filter(array_map('intval', (array) ($_POST['asset_item_ids'] ?? []))));
     $selectedCategoryIds = array_values(array_map('intval', (array) ($_POST['asset_category_ids'] ?? [])));
-    if (count($selectedAssetIds) > 50) {
+    if (count($selectedAssetItemIds) > 50) {
         $error = 'A request can contain at most 50 selected assets.';
-    } elseif (count($selectedCategoryIds) !== count($selectedAssetIds)) {
+    } elseif (count($selectedCategoryIds) !== count($selectedAssetItemIds)) {
         $error = 'Choose a category and an asset for every request row.';
-    } elseif (!$selectedAssetIds) {
+    } elseif (!$selectedAssetItemIds) {
         $error = 'Select at least one asset.';
+    } elseif (count(array_unique($selectedAssetItemIds)) !== count($selectedAssetItemIds)) {
+        $error = 'The same asset cannot be requested more than once.';
     } elseif ($purpose === '') {
         $error = 'Purpose is required.';
     } elseif ($borrowStartDate === '' || $expectedReturnDate === '') {
@@ -101,10 +105,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Expected return date cannot be earlier than the borrowing start date.';
     }
 
-    $selectionCounts = array_count_values($selectedAssetIds);
     if ($error === '') {
-        foreach ($selectedAssetIds as $index => $assetId) {
-            $asset = $assetMap[(int) $assetId] ?? null;
+        foreach ($selectedAssetItemIds as $index => $assetItemId) {
+            $asset = $assetMap[(int) $assetItemId] ?? null;
             if (!$asset) {
                 $error = 'One of the selected assets is unavailable or outside your church.';
                 break;
@@ -115,22 +118,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
             }
         }
-        foreach ($selectionCounts as $assetId => $count) {
-            $asset = $assetMap[(int) $assetId] ?? null;
-            if ($asset && $count > (int) $asset['available_units']) {
-                $error = $asset['item_name'] . ' has only ' . (int) $asset['available_units'] . ' available asset(s).';
-                break;
-            }
-        }
     }
 
     if ($error === '') {
         $conn->begin_transaction();
         try {
-            $firstAsset = $assetMap[$selectedAssetIds[0]];
+            $firstAsset = $assetMap[$selectedAssetItemIds[0]];
             $requestChurchId = (int) $firstAsset['church_id'];
-            foreach ($selectedAssetIds as $assetId) {
-                if ((int) $assetMap[$assetId]['church_id'] !== $requestChurchId) {
+            foreach ($selectedAssetItemIds as $assetItemId) {
+                if ((int) $assetMap[$assetItemId]['church_id'] !== $requestChurchId) {
                     throw new RuntimeException('All requested assets must belong to the same church.');
                 }
             }
@@ -138,8 +134,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $requestedByMemberId = $actor['member_id'];
             $requesterName = (string) $actor['name'];
             $requesterPhone = (string) ($actor['phone'] ?? '');
-            $quantityRequested = count($selectedAssetIds);
-            $firstAssetId = $selectedAssetIds[0];
+            $quantityRequested = count($selectedAssetItemIds);
+            $firstAssetId = (int) $firstAsset['asset_id'];
             $stmt = $conn->prepare(
                 'INSERT INTO asset_use_requests
                     (request_model_version, church_id, asset_id, requested_by_user_id,
@@ -159,15 +155,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->close();
 
             $lineStmt = $conn->prepare(
-                'INSERT INTO asset_use_request_items (request_id, asset_id, line_status)
-                 VALUES (?, ?, "pending")'
+                'INSERT INTO asset_use_request_items (request_id, asset_id, asset_item_id, line_status)
+                 VALUES (?, ?, ?, "pending")'
             );
-            foreach ($selectedAssetIds as $assetId) {
-                $lineStmt->bind_param('ii', $requestId, $assetId);
+            $requestedParentIds = [];
+            foreach ($selectedAssetItemIds as $assetItemId) {
+                $assetId = (int) $assetMap[$assetItemId]['asset_id'];
+                $requestedParentIds[] = $assetId;
+                $lineStmt->bind_param('iii', $requestId, $assetId, $assetItemId);
                 $lineStmt->execute();
                 $lineId = (int) $conn->insert_id;
                 asset_request_line_audit($conn, $requestId, $lineId, 'created', null, [
-                    'asset_id' => $assetId, 'line_status' => 'pending',
+                    'asset_id' => $assetId, 'asset_item_id' => $assetItemId, 'line_status' => 'pending',
                 ], $requestedByUserId);
             }
             $lineStmt->close();
@@ -175,7 +174,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             asset_log_action('asset_use_request_create', 'asset_use_request', $requestId, [
                 'asset_id' => $firstAssetId, 'church_id' => $requestChurchId,
-                'selected_item_count' => $quantityRequested, 'asset_ids' => $selectedAssetIds,
+                'selected_asset_count' => $quantityRequested,
+                'asset_ids' => $requestedParentIds,
+                'asset_item_ids' => $selectedAssetItemIds,
             ], [], [
                 'purpose' => $purpose, 'borrow_start_date' => $borrowStartDate,
                 'expected_return_date' => $expectedReturnDate,
@@ -201,7 +202,7 @@ ob_start();
         <a href="asset_request_list.php" class="btn btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i> Back</a>
     </div>
     <?php render_asset_workspace_nav('custody', $churchId); ?>
-    <div class="alert alert-info border-0 shadow-sm"><strong>What happens next?</strong> An authorized reviewer selects and reserves the exact assets. They are not in your custody until an officer confirms Issue.</div>
+    <div class="alert alert-info border-0 shadow-sm"><strong>What happens next?</strong> An authorized reviewer confirms the exact assets you selected and reserves each approved asset. They are not in your custody until an officer confirms Issue.</div>
     <div class="card asset-panel asset-form-shell"><div class="card-header"><strong>Custody request</strong><small class="d-block text-muted">Each row represents one required asset. Category selection narrows the asset list.</small></div><div class="card-body">
         <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
         <form method="post" autocomplete="off" id="assetRequestForm">
@@ -212,8 +213,8 @@ ob_start();
             </div>
             <div class="d-flex justify-content-between align-items-center mb-2"><label class="mb-0">Requested Assets <span class="text-danger">*</span></label><span class="badge badge-primary p-2">Quantity: <span id="requestQuantity">0</span></span></div>
             <div id="requestLines">
-                <?php foreach ($selectedAssetIds as $lineIndex => $selectedAssetId):
-                    $selectedCategoryId = (int) ($selectedCategoryIds[$lineIndex] ?? ($assetMap[(int) $selectedAssetId]['asset_group_id'] ?? 0));
+                <?php foreach ($selectedAssetItemIds as $lineIndex => $selectedAssetItemId):
+                    $selectedCategoryId = (int) ($selectedCategoryIds[$lineIndex] ?? ($assetMap[(int) $selectedAssetItemId]['asset_group_id'] ?? 0));
                 ?>
                 <div class="form-row request-line align-items-end mb-2">
                     <div class="form-group col-md-4 mb-0">
@@ -221,16 +222,16 @@ ob_start();
                         <select class="form-control asset-category-selection" name="asset_category_ids[]" required>
                             <option value="">-- Select category --</option>
                             <?php foreach ($categories as $category): ?>
-                            <option value="<?= (int) $category['id'] ?>" <?= $selectedCategoryId === (int) $category['id'] ? 'selected' : '' ?>><?= htmlspecialchars($category['name'] . ($category['code'] !== '' ? ' (' . $category['code'] . ')' : '')) ?> &mdash; <?= (int) $category['available_units'] ?> available</option>
+                            <option value="<?= (int) $category['id'] ?>" <?= $selectedCategoryId === (int) $category['id'] ? 'selected' : '' ?>><?= htmlspecialchars($category['name'] . ($category['code'] !== '' ? ' (' . $category['code'] . ')' : '')) ?> &mdash; <?= (int) $category['available_assets'] ?> available</option>
                             <?php endforeach; ?>
                         </select>
                     </div>
                     <div class="form-group col-md-6 mb-0">
                         <label class="small font-weight-bold">2. Asset</label>
-                        <select class="form-control asset-selection" name="asset_ids[]" required>
+                        <select class="form-control asset-selection" name="asset_item_ids[]" required>
                             <option value="">-- Select asset --</option>
                             <?php foreach ($assets as $asset): ?>
-                            <option value="<?= (int) $asset['id'] ?>" data-category-id="<?= (int) $asset['asset_group_id'] ?>" data-available="<?= (int) $asset['available_units'] ?>" <?= (int) $selectedAssetId === (int) $asset['id'] ? 'selected' : '' ?>><?= htmlspecialchars($asset['asset_code'] . ' - ' . $asset['item_name']) ?> (<?= (int) $asset['available_units'] ?> available<?= !empty($asset['department_name']) ? ', ' . htmlspecialchars($asset['department_name']) : '' ?>)</option>
+                            <option value="<?= (int) $asset['asset_item_id'] ?>" data-category-id="<?= (int) $asset['asset_group_id'] ?>" <?= (int) $selectedAssetItemId === (int) $asset['asset_item_id'] ? 'selected' : '' ?>><?= htmlspecialchars($asset['item_number'] . ' - ' . $asset['item_name']) ?><?= !empty($asset['serial_number']) ? ' / S/N ' . htmlspecialchars($asset['serial_number']) : '' ?><?= !empty($asset['department_name']) ? ' / ' . htmlspecialchars($asset['department_name']) : '' ?> / <?= htmlspecialchars($asset['condition_status']) ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>

@@ -170,47 +170,64 @@ final class AssetCustodyService
         foreach ($this->lockLines((int) $request['id']) as $line) {
             $existing[(int) $line['id']] = $line;
         }
+        $pendingLineCount = count(array_filter($existing, static fn(array $line): bool => (string) $line['line_status'] === 'pending'));
+        if (count($lineIds) !== $pendingLineCount) {
+            throw new RuntimeException('Review every submitted request line. Lines cannot be added or removed during approval.');
+        }
         $seenLines = [];
         $seenItems = [];
         $approvedCount = 0;
-        $firstAssetId = 0;
+        $firstAssetId = (int) $request['asset_id'];
 
         foreach ($assetIds as $index => $postedAssetId) {
             $assetId = (int) $postedAssetId;
             $lineId = (int) $lineIds[$index];
             $decision = ((string) $decisions[$index] === 'approved') ? 'approved' : 'rejected';
-            if ($lineId > 0 && isset($seenLines[$lineId])) {
+            if ($lineId < 1) {
+                throw new RuntimeException('A submitted request line is invalid.');
+            }
+            if (isset($seenLines[$lineId])) {
                 throw new RuntimeException('A request line was submitted more than once.');
             }
-            $this->assertAssetInChurch($assetId, (int) $request['church_id']);
-            if ($firstAssetId === 0) $firstAssetId = $assetId;
-
-            $before = $lineId > 0 ? ($existing[$lineId] ?? null) : null;
-            if ($lineId > 0 && !$before) {
+            $before = $existing[$lineId] ?? null;
+            if (!$before || (string) $before['line_status'] !== 'pending') {
                 throw new RuntimeException('A request line does not belong to this request.');
             }
-            if ($lineId === 0) {
-                $stmt = $this->conn->prepare('INSERT INTO asset_use_request_items (request_id, asset_id, line_status, decision_note, reviewed_by_user_id, reviewed_at) VALUES (?, ?, ?, ?, ?, NOW())');
-                $requestId = (int) $request['id'];
-                $stmt->bind_param('iissi', $requestId, $assetId, $decision, $note, $actorUserId);
-                $stmt->execute();
-                $lineId = (int) $this->conn->insert_id;
-                $stmt->close();
-            } else {
-                $stmt = $this->conn->prepare('UPDATE asset_use_request_items SET asset_id = ?, asset_item_id = NULL, line_status = ?, decision_note = ?, reviewed_by_user_id = ?, reviewed_at = NOW() WHERE id = ? AND request_id = ?');
-                $requestId = (int) $request['id'];
-                $stmt->bind_param('issiii', $assetId, $decision, $note, $actorUserId, $lineId, $requestId);
-                $stmt->execute();
-                $stmt->close();
+            $requestedItemId = (int) ($itemIds[$index] ?? 0);
+            $isSubstitution = ((int) $before['asset_id'] !== $assetId)
+                || ((int) ($before['asset_item_id'] ?? 0) > 0
+                    && (int) $before['asset_item_id'] !== $requestedItemId);
+            if ($note === '' && ($decision === 'rejected' || $isSubstitution)) {
+                throw new RuntimeException('A review note is required for rejected or substituted assets.');
+            }
+            if ($decision === 'approved' && $requestedItemId < 1) {
+                throw new RuntimeException('Select the exact asset to reserve for every approved line.');
             }
 
+            $requestId = (int) $request['id'];
             if ($decision === 'approved') {
-                $requestedItemId = (int) ($itemIds[$index] ?? 0);
+                $this->assertAssetInChurch($assetId, (int) $request['church_id']);
+                $this->assertSameRequestedCategory($assetId, (int) $before['asset_id'], (int) $request['church_id']);
+                $stmt = $this->conn->prepare('UPDATE asset_use_request_items SET asset_id = ?, asset_item_id = NULL, line_status = ?, decision_note = ?, reviewed_by_user_id = ?, reviewed_at = NOW() WHERE id = ? AND request_id = ?');
+                $stmt->bind_param('issiii', $assetId, $decision, $note, $actorUserId, $lineId, $requestId);
+            } else {
+                // A rejection is a decision about the submitted asset. Preserve
+                // that exact identity instead of rewriting or clearing it.
+                $stmt = $this->conn->prepare('UPDATE asset_use_request_items SET line_status = ?, decision_note = ?, reviewed_by_user_id = ?, reviewed_at = NOW() WHERE id = ? AND request_id = ?');
+                $stmt->bind_param('ssiii', $decision, $note, $actorUserId, $lineId, $requestId);
+            }
+            $stmt->execute();
+            $stmt->close();
+
+            $reservedItemId = null;
+            if ($decision === 'approved') {
                 $item = $this->reserveItem($assetId, $requestedItemId, $lineId, $request, $actorUserId, $note);
                 if (isset($seenItems[(int) $item['id']])) {
-                    throw new RuntimeException('A physical item cannot be reserved twice in one request.');
+                    throw new RuntimeException('An asset cannot be reserved twice in one request.');
                 }
                 $seenItems[(int) $item['id']] = true;
+                $reservedItemId = (int) $item['id'];
+                if ($approvedCount === 0) $firstAssetId = $assetId;
                 $approvedCount++;
             }
 
@@ -218,18 +235,18 @@ final class AssetCustodyService
                 $this->conn,
                 (int) $request['id'],
                 $lineId,
-                $before ? $decision : 'added',
+                $decision,
                 $before,
-                ['asset_id' => $assetId, 'line_status' => $decision],
+                [
+                    'asset_id' => $decision === 'approved' ? $assetId : (int) $before['asset_id'],
+                    'asset_item_id' => $decision === 'approved'
+                        ? $reservedItemId
+                        : (int) ($before['asset_item_id'] ?? 0),
+                    'line_status' => $decision,
+                ],
                 $actorUserId
             );
             $seenLines[$lineId] = true;
-        }
-
-        foreach ($existing as $lineId => $line) {
-            if (isset($seenLines[$lineId]) || (string) $line['line_status'] !== 'pending') continue;
-            $this->updateLineStatus($lineId, 'rejected', 'Removed during administrator review', $actorUserId);
-            asset_request_line_audit($this->conn, (int) $request['id'], $lineId, 'rejected', $line, ['line_status' => 'rejected', 'reason' => 'removed'], $actorUserId);
         }
 
         $newStatus = $approvedCount > 0 ? 'approved' : 'rejected';
@@ -251,7 +268,7 @@ final class AssetCustodyService
             if ((string) $line['line_status'] !== 'approved') continue;
             $itemId = (int) ($line['asset_item_id'] ?? 0);
             if ($itemId < 1) {
-                throw new RuntimeException('An approved line has no reserved physical item. Review the request again.');
+                throw new RuntimeException('An approved line has no reserved asset. Review the request again.');
             }
             $stmt = $this->conn->prepare("SELECT * FROM asset_items WHERE id = ? AND active_request_item_id = ? AND custody_status = 'reserved' FOR UPDATE");
             $lineId = (int) $line['id'];
@@ -259,7 +276,7 @@ final class AssetCustodyService
             $stmt->execute();
             $item = $stmt->get_result()->fetch_assoc();
             $stmt->close();
-            if (!$item) throw new RuntimeException('A reserved physical item is no longer available for issue.');
+            if (!$item) throw new RuntimeException('A reserved asset is no longer available for issue.');
 
             $stmt = $this->conn->prepare("UPDATE asset_items SET custody_status = 'issued', current_custodian_member_id = ?, current_custodian_user_id = ?, custody_since_at = NOW() WHERE id = ?");
             $memberId = (int) ($request['requested_by_member_id'] ?? 0) ?: null;
@@ -332,6 +349,7 @@ final class AssetCustodyService
         $sql = "SELECT item.* FROM asset_items item
                 WHERE item.asset_id = ? AND item.church_id = ? AND item.status = 'active'
                   AND item.lifecycle_status NOT IN ('under_maintenance','retired','disposed')
+                  AND item.condition_status <> 'Disposed'
                   AND item.custody_status = 'available'";
         $types = 'ii';
         $params = [$assetId, (int) $request['church_id']];
@@ -346,7 +364,7 @@ final class AssetCustodyService
         $stmt->execute();
         $item = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$item) throw new RuntimeException('The selected physical item is no longer available for reservation.');
+        if (!$item) throw new RuntimeException('The selected asset is no longer available for reservation.');
 
         $itemId = (int) $item['id'];
         $stmt = $this->conn->prepare("UPDATE asset_items SET custody_status = 'reserved', active_request_item_id = ?, current_custodian_member_id = NULL, current_custodian_user_id = NULL, custody_since_at = NOW() WHERE id = ? AND custody_status = 'available'");
@@ -354,7 +372,7 @@ final class AssetCustodyService
         $stmt->execute();
         if ($stmt->affected_rows !== 1) {
             $stmt->close();
-            throw new RuntimeException('The selected physical item was reserved by another request.');
+            throw new RuntimeException('The selected asset was reserved by another request.');
         }
         $stmt->close();
         $stmt = $this->conn->prepare('UPDATE asset_use_request_items SET asset_item_id = ? WHERE id = ?');
@@ -391,6 +409,26 @@ final class AssetCustodyService
         $found = (bool) $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$found) throw new RuntimeException('A reviewed asset is unavailable in this church.');
+    }
+
+    private function assertSameRequestedCategory(int $assetId, int $requestedAssetId, int $churchId): void
+    {
+        $stmt = $this->conn->prepare(
+            "SELECT selected.id
+               FROM assets selected
+               JOIN assets requested ON requested.id = ?
+                AND requested.church_id = selected.church_id
+              WHERE selected.id = ? AND selected.church_id = ?
+                AND (selected.asset_group_id <=> requested.asset_group_id)
+              LIMIT 1"
+        );
+        $stmt->bind_param('iii', $requestedAssetId, $assetId, $churchId);
+        $stmt->execute();
+        $allowed = (bool) $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$allowed) {
+            throw new RuntimeException('A substitute asset must come from the originally requested category.');
+        }
     }
 
     private function event(array $item, array $request, int $lineId, string $type, ?int $actorUserId, ?string $before, ?string $after, string $notes): void

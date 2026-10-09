@@ -65,8 +65,10 @@ $summaryStmt->close();
 $sql = "SELECT aur.*, ($effectiveStatus) AS effective_status,
                a.asset_code, a.item_name, church.name AS church_name,
                (SELECT COUNT(*) FROM asset_use_request_items line WHERE line.request_id = aur.id AND line.line_status <> 'cancelled') AS line_count,
-               (SELECT GROUP_CONCAT(DISTINCT CONCAT(line_asset.asset_code, ' - ', line_asset.item_name) ORDER BY line.id SEPARATOR ' | ')
-                  FROM asset_use_request_items line JOIN assets line_asset ON line_asset.id = line.asset_id
+               (SELECT GROUP_CONCAT(DISTINCT CONCAT(COALESCE(requested_item.item_number, line_asset.asset_code), ' - ', line_asset.item_name) ORDER BY line.id SEPARATOR ' | ')
+                  FROM asset_use_request_items line
+                  JOIN assets line_asset ON line_asset.id = line.asset_id
+                  LEFT JOIN asset_items requested_item ON requested_item.id = line.asset_item_id
                  WHERE line.request_id = aur.id AND line.line_status <> 'cancelled') AS requested_items,
                (SELECT GROUP_CONCAT(item.item_number ORDER BY line.id SEPARATOR ', ')
                   FROM asset_use_request_items line JOIN asset_items item ON item.id = line.asset_item_id

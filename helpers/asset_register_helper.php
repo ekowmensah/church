@@ -459,6 +459,50 @@ if (!function_exists('asset_default_lifecycle')) {
     }
 }
 
+if (!function_exists('asset_item_is_disposed')) {
+    /**
+     * Lifecycle state takes precedence over custody state. A disposed asset
+     * may retain the legacy custody value "available", but it is never
+     * operationally available for reservation, issue or transfer.
+     */
+    function asset_item_is_disposed(array $asset): bool {
+        return strtolower((string) ($asset['status'] ?? '')) === 'disposed'
+            || strtolower((string) ($asset['lifecycle_status'] ?? '')) === 'disposed'
+            || strcasecmp((string) ($asset['condition_status'] ?? ''), 'Disposed') === 0;
+    }
+}
+
+if (!function_exists('asset_operational_state')) {
+    /** @return array{key:string,label:string,badge:string,icon:string} */
+    function asset_operational_state(array $asset): array {
+        if (asset_item_is_disposed($asset)) {
+            return [
+                'key' => 'disposed',
+                'label' => 'Disposed',
+                'badge' => 'secondary',
+                'icon' => 'fas fa-ban',
+            ];
+        }
+
+        $lifecycle = strtolower((string) ($asset['lifecycle_status'] ?? ''));
+        $condition = (string) ($asset['condition_status'] ?? '');
+        if ($lifecycle === 'retired') {
+            return ['key' => 'retired', 'label' => 'Retired', 'badge' => 'dark', 'icon' => 'fas fa-archive'];
+        }
+        if ($lifecycle === 'under_maintenance' || $condition === 'Under Maintenance') {
+            return ['key' => 'under_maintenance', 'label' => 'Under Maintenance', 'badge' => 'warning', 'icon' => 'fas fa-tools'];
+        }
+
+        $custody = strtolower((string) ($asset['custody_status'] ?? 'available'));
+        $states = [
+            'reserved' => ['key' => 'reserved', 'label' => 'Reserved', 'badge' => 'warning', 'icon' => 'fas fa-clock'],
+            'issued' => ['key' => 'issued', 'label' => 'Issued', 'badge' => 'primary', 'icon' => 'fas fa-hand-holding'],
+        ];
+        return $states[$custody]
+            ?? ['key' => 'available', 'label' => 'Available', 'badge' => 'success', 'icon' => 'fas fa-check-circle'];
+    }
+}
+
 if (!function_exists('asset_allowed_lifecycle_transitions')) {
     function asset_allowed_lifecycle_transitions(): array {
         return [
@@ -806,11 +850,15 @@ if (!function_exists('asset_fetch_request_lines')) {
             return [];
         }
         $stmt = $conn->prepare(
-            'SELECT line.*, asset.asset_code, asset.item_name, item.item_number,
+            'SELECT line.*, asset.asset_code, asset.item_name,
+                    asset.asset_group_id AS category_id, item.item_number,
+                    item.serial_number, item.condition_status, item.lifecycle_status,
+                    category.name AS category_name, category.group_code AS category_code,
                     department.name AS department_name
              FROM asset_use_request_items line
              JOIN assets asset ON asset.id = line.asset_id
              LEFT JOIN asset_items item ON item.id = line.asset_item_id
+             LEFT JOIN asset_groups category ON category.id = asset.asset_group_id
              LEFT JOIN asset_departments department ON department.id = item.department_id
              WHERE line.request_id = ? ORDER BY line.id'
         );
