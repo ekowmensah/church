@@ -87,6 +87,35 @@ if (!$isEdit && isset($_GET['asset_group_id'])) {
     $assetGroupId = max(0, (int) $_GET['asset_group_id']);
 }
 
+$copyFromId = !$isEdit ? max(0, (int) ($_GET['copy_from'] ?? 0)) : 0;
+if ($copyFromId > 0) {
+    $copySql = 'SELECT * FROM assets WHERE id = ?';
+    if (!$isSuper) {
+        $copySql .= ' AND church_id = ?';
+    }
+    $copySql .= ' LIMIT 1';
+    $copyStmt = $conn->prepare($copySql);
+    if ($isSuper) {
+        $copyStmt->bind_param('i', $copyFromId);
+    } else {
+        $copyStmt->bind_param('ii', $copyFromId, $churchId);
+    }
+    $copyStmt->execute();
+    $copyAsset = $copyStmt->get_result()->fetch_assoc();
+    $copyStmt->close();
+    if ($copyAsset) {
+        $churchId = (int) $copyAsset['church_id'];
+        $departmentId = (int) ($copyAsset['department_id'] ?? 0);
+        $assetGroupId = (int) ($copyAsset['asset_group_id'] ?? $assetGroupId);
+        $itemGroup = (string) ($copyAsset['item_group'] ?? '');
+        $itemName = (string) ($copyAsset['item_name'] ?? '');
+        $acquisitionMode = (string) ($copyAsset['acquisition_mode'] ?? 'purchase');
+        $acquisitionModeOther = (string) ($copyAsset['acquisition_mode_other'] ?? '');
+        $conditionStatus = (string) ($copyAsset['condition_status'] ?? 'Good');
+        $allocationNote = (string) ($copyAsset['allocation_note'] ?? '');
+    }
+}
+
 if ($isEdit) {
     $sql = 'SELECT * FROM assets WHERE id = ?';
     if (!$isSuper) {
@@ -209,9 +238,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ? trim((string) ($_POST['lifecycle_status'] ?? ''))
         : asset_default_lifecycle($status, $conditionStatus);
 
-    // Operational state belongs to individual units when a shared record has
-    // more than one physical asset. Preserve that state here instead of
-    // silently applying a master-form value to an arbitrary unit.
+    // Older quantity-based records may still contain more than one asset.
+    // Preserve their individual operational states instead of applying one
+    // master-form value to every migrated asset.
     if ($isEdit && $hasItemTracking) {
         $postedPhysicalItems = asset_fetch_physical_items($conn, $assetId);
         $physicalItemCount = count($postedPhysicalItems);
@@ -274,7 +303,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         && (!$isEdit || $assetGroupId !== (int) ($asset['asset_group_id'] ?? 0))) {
         $error = 'Inactive categories cannot be assigned to new asset records.';
     } elseif ($itemName === '') {
-        $error = 'Item name is required.';
+        $error = 'Asset name or model is required.';
     } elseif ($quantity <= 0) {
         $error = 'Quantity must be at least 1.';
     } elseif (!in_array($conditionStatus, $conditions, true)) {
@@ -288,7 +317,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($acquisitionMode === 'other' && $acquisitionModeOther === '') {
         $error = 'Please specify the acquisition mode when "Other" is selected.';
     } elseif ($hasItemTracking && count($serials) > 1) {
-        $error = 'Register one physical item at a time. Enter only that item\'s serial number.';
+        $error = 'Register one asset at a time. Enter only that asset\'s serial number.';
     } elseif (!$hasItemTracking && count($serials) > $quantity) {
         $error = 'Serial numbers cannot exceed the asset quantity.';
     } elseif ($isEdit && $postedOriginalUpdatedAt !== '' && $postedOriginalUpdatedAt !== $originalUpdatedAt) {
@@ -601,11 +630,11 @@ ob_start();
     <?php
     $backUrl = 'asset_list.php' . ($churchId ? '?church_id=' . (int) $churchId : '');
     render_asset_workspace_hero(
-        $isEdit ? 'Shared details for related physical units' : 'One form, one traceable unit',
-        $isEdit ? 'Edit Shared Asset Details' : 'Register Physical Asset',
+        $isEdit ? 'Maintain the selected register record' : 'One form, one accountable asset',
+        $isEdit ? 'Edit Asset' : 'Register Asset',
         $isEdit
-            ? 'Update the common category, name, acquisition and financial details. Location, custody and operational condition remain unit-specific.'
-            : 'Choose a category and register the first uniquely numbered physical unit. Additional related units can be added from the resulting asset workspace.',
+            ? 'Update this asset\'s category, name, acquisition and financial information.'
+            : 'Choose a category and department, then register one uniquely numbered asset.',
         'fa-box',
         '<a href="' . htmlspecialchars($backUrl, ENT_QUOTES, 'UTF-8') . '" class="btn btn-light"><i class="fas fa-arrow-left mr-1"></i>Back to register</a>'
     );
@@ -614,7 +643,7 @@ ob_start();
 
     <div class="card asset-panel asset-form-shell">
         <div class="card-header py-3">
-            <strong><?= $isEdit ? 'Shared Asset Details' : 'Physical Asset Registration' ?></strong>
+            <strong><?= $isEdit ? 'Asset Details' : 'Asset Registration' ?></strong>
         </div>
         <div class="card-body">
             <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
@@ -684,17 +713,17 @@ ob_start();
                         <?php if (asset_is_super_admin() || has_permission('manage_asset_groups')): ?><a class="small d-block mt-1" href="asset_group_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>">Manage asset categories</a><?php endif; ?>
                     </div>
                     <div class="form-group col-md-4">
-                        <label>Asset Type / Model <span class="text-danger">*</span></label>
+                        <label>Asset Name / Model <span class="text-danger">*</span></label>
                         <input type="text" name="item_name" class="form-control" value="<?= htmlspecialchars($itemName) ?>" required maxlength="180" placeholder="e.g. Toyota Hiace, Yamaha keyboard">
                         <small class="text-muted">The specific asset, model or recognizable register name.</small>
                     </div>
                     <?php else: ?>
                     <div class="form-group col-md-4">
-                        <label>Item Category</label>
+                        <label>Asset Category</label>
                         <input type="text" name="item_group" class="form-control" value="<?= htmlspecialchars($itemGroup) ?>" maxlength="120" placeholder="e.g. Sound Equipment">
                     </div>
                     <div class="form-group col-md-4">
-                        <label>Asset Type / Model <span class="text-danger">*</span></label>
+                        <label>Asset Name / Model <span class="text-danger">*</span></label>
                         <input type="text" name="item_name" class="form-control" value="<?= htmlspecialchars($itemName) ?>" required maxlength="180">
                     </div>
                     <?php endif; ?>
@@ -752,10 +781,10 @@ ob_start();
                     <input type="hidden" name="quantity" id="quantity" value="<?= $isEdit ? max(0, (int) $quantity) : 1 ?>" data-derived="1">
                     <div class="alert alert-info py-2">
                         <?php if ($isEdit): ?>
-                            This shared record contains <strong><?= (int) $physicalItemCount ?> physical unit<?= $physicalItemCount === 1 ? '' : 's' ?></strong>.
-                            Add related units from the Physical Units tab; use Transfer, Custody, Maintenance or Disposal for unit-level changes.
+                            This is a migrated quantity-based record containing <strong><?= (int) $physicalItemCount ?> assets</strong>.
+                            Existing identifiers and histories remain separate. New assets must be registered with the Register Asset form.
                         <?php else: ?>
-                            Saving this form creates exactly <strong>one uniquely numbered physical asset</strong>. It does not create a category or a bulk quantity.
+                            Saving this form creates exactly <strong>one uniquely numbered asset</strong> under the selected category and department.
                         <?php endif; ?>
                     </div>
                 <?php endif; ?>
@@ -769,24 +798,24 @@ ob_start();
                     <?php endif; ?>
                     <div class="form-group <?= $hasItemTracking ? 'col-md-4' : 'col-md-3' ?>">
                         <label>Receipt Number</label>
-                        <input type="text" name="receipt_number" class="form-control" value="<?= htmlspecialchars($receiptNumber) ?>" maxlength="120" placeholder="One receipt can cover multiple items">
+                        <input type="text" name="receipt_number" class="form-control" value="<?= htmlspecialchars($receiptNumber) ?>" maxlength="120" placeholder="One receipt can cover multiple assets">
                     </div>
                     <div class="form-group <?= $hasItemTracking ? 'col-md-4' : 'col-md-3' ?>">
-                        <label><?= $hasItemTracking ? 'Item Serial Number' : 'Primary Serial Number' ?></label>
-                        <input type="text" name="primary_serial_number" class="form-control" value="<?= htmlspecialchars($primarySerialNumber) ?>" maxlength="120" placeholder="Unique per item" <?= $hasItemTracking && $isEdit && $physicalItemCount > 1 ? 'readonly' : '' ?>>
-                        <?php if ($hasItemTracking && $isEdit && $physicalItemCount > 1): ?><small class="text-muted">Serials are maintained on individual physical units.</small><?php endif; ?>
+                        <label><?= $hasItemTracking ? 'Asset Serial Number' : 'Primary Serial Number' ?></label>
+                        <input type="text" name="primary_serial_number" class="form-control" value="<?= htmlspecialchars($primarySerialNumber) ?>" maxlength="120" placeholder="Unique per asset" <?= $hasItemTracking && $isEdit && $physicalItemCount > 1 ? 'readonly' : '' ?>>
+                        <?php if ($hasItemTracking && $isEdit && $physicalItemCount > 1): ?><small class="text-muted">Serials remain attached to each migrated asset.</small><?php endif; ?>
                     </div>
                     <div class="form-group <?= $hasItemTracking ? 'col-md-4' : 'col-md-3' ?>">
                         <label>Total Recorded Acquisition Value</label>
                         <input type="number" step="0.01" min="0" name="amount" class="form-control" value="<?= htmlspecialchars($amount) ?>">
-                        <small class="text-muted">Total value for this shared record; unit-level reports allocate it proportionally across its registered physical units.</small>
+                        <small class="text-muted"><?= $isEdit && $physicalItemCount > 1 ? 'Legacy total value; reports allocate it across the migrated assets.' : 'Recorded acquisition value of this asset.' ?></small>
                     </div>
                 </div>
 
                 <div class="form-group" <?= $hasItemTracking ? 'style="display:none"' : '' ?>>
                     <label>All Serial Numbers</label>
                     <textarea name="serial_numbers_text" class="form-control" rows="3" placeholder="Enter one serial per line, or separate with commas" <?= $hasItemTracking ? 'disabled' : '' ?>><?= htmlspecialchars($serialNumbersText) ?></textarea>
-                    <small class="text-muted">Useful when one asset record covers multiple individually tracked items.</small>
+                    <small class="text-muted">Legacy-only field for quantity-based records.</small>
                 </div>
 
                 <?php if (!($hasItemTracking && $isEdit && $physicalItemCount > 1)): ?>
@@ -819,8 +848,8 @@ ob_start();
                 </div>
                 <?php else: ?>
                     <div class="alert alert-light border">
-                        <strong>Operational state is managed per physical unit.</strong>
-                        Condition, availability and lifecycle are intentionally not editable here because this shared record contains multiple units.
+                        <strong>This migrated record contains multiple assets.</strong>
+                        Manage condition, availability and lifecycle from the individual asset operations so one change is not applied to every asset.
                     </div>
                 <?php endif; ?>
 
@@ -831,7 +860,7 @@ ob_start();
 
                 <div class="asset-action-bar">
                     <a href="<?= htmlspecialchars($backUrl, ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline-secondary">Cancel</a>
-                    <button type="submit" class="btn btn-primary"><i class="fas fa-save mr-1"></i> <?= $isEdit ? 'Save Shared Details' : 'Register Physical Asset' ?></button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save mr-1"></i> <?= $isEdit ? 'Save Asset' : 'Register Asset' ?></button>
                 </div>
             </form>
         </div>

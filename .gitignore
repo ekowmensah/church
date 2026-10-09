@@ -236,3 +236,10 @@ tests/organization_attendance_page_smoke.php
 tests/bible_class_attendance_schedule_smoke.php
 tests/organization_attendance_page_smoke.php
 tests/bible_class_attendance_schedule_smoke.php
+tests/actionable_asset_approval_queue_smoke.php
+tests/canonical_asset_category_workflow_smoke.php
+tests/category_first_asset_request_smoke.php
+tests/clear_asset_handover_workflow_smoke.php
+tests/clear_physical_asset_register_smoke.php
+tests/enterprise_asset_workspace_ui_smoke.php
+tests/separated_asset_workspaces_smoke.php

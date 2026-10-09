@@ -57,14 +57,14 @@ try {
         $stmt->execute();
         $item = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$item) throw new RuntimeException('Physical asset item not found in your church scope.');
+        if (!$item) throw new RuntimeException('Asset not found in your church scope.');
         if ((string) ($item['custody_status'] ?? 'available') !== 'available') throw new RuntimeException('An issued or reserved item cannot enter maintenance. Receive or release it first.');
         $stmt = $conn->prepare("SELECT id FROM asset_maintenance_work_orders WHERE asset_item_id = ? AND status IN ('open','scheduled','in_progress','on_hold') LIMIT 1 FOR UPDATE");
         $stmt->bind_param('i', $itemId);
         $stmt->execute();
         $existing = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if ($existing) throw new RuntimeException('This physical item already has an open maintenance work order.');
+        if ($existing) throw new RuntimeException('This asset already has an open maintenance work order.');
 
         $reference = 'MWO-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
         $churchId = (int) $item['church_id'];
@@ -105,7 +105,7 @@ try {
             $notes = trim((string) ($_POST['work_notes'] ?? ''));
             $actualRaw = trim((string) ($_POST['actual_cost'] ?? ''));
             $actualCost = $actualRaw === '' ? null : (float) $actualRaw;
-            if (!in_array($condition, asset_condition_options(), true) || in_array($condition, ['Under Maintenance','Disposed'], true)) throw new RuntimeException('Select the physical condition after maintenance.');
+            if (!in_array($condition, asset_condition_options(), true) || in_array($condition, ['Under Maintenance','Disposed'], true)) throw new RuntimeException('Select the asset condition after maintenance.');
             $lifecycle = in_array($condition, ['Poor','Damaged'], true) ? 'under_maintenance' : 'in_use';
             $stmt = $conn->prepare("UPDATE asset_maintenance_work_orders SET status = 'completed', completed_at = NOW(), completed_by_user_id = ?, condition_after = ?, actual_cost = ?, work_notes = CONCAT_WS(CHAR(10), NULLIF(work_notes,''), NULLIF(?,'')) WHERE id = ?");
             $stmt->bind_param('isdsi', $actorId, $condition, $actualCost, $notes, $workOrderId);

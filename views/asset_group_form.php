@@ -8,7 +8,7 @@ asset_require_permission('manage_asset_groups');
 
 if (!asset_table_exists($conn, 'asset_groups')) {
     http_response_code(404);
-    exit('Item categories table not available. Run the latest assets migration first.');
+    exit('Asset categories table not available. Run the latest assets migration first.');
 }
 
 $isEdit = isset($_GET['id']) && (int) $_GET['id'] > 0;
@@ -49,7 +49,7 @@ if ($isEdit) {
 
     if (!$row) {
         http_response_code(404);
-        exit('Item category not found.');
+        exit('Asset category not found.');
     }
 
     $churchId = (int) $row['church_id'];
@@ -84,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $name = trim((string) ($_POST['name'] ?? ''));
     $groupCode = strtoupper(trim((string) ($_POST['group_code'] ?? '')));
-    // Modern registration tracks every physical unit individually. Retain the
+    // Modern registration tracks every asset individually. Retain the
     // legacy columns only as compatibility values, not as a second workflow.
     $defaultQuantity = 1;
     $quantityRule = 'fixed';
@@ -175,7 +175,7 @@ ob_start();
 
     <?php render_asset_workspace_nav('register', $churchId); ?>
     <div class="card asset-panel asset-form-shell">
-        <div class="card-header"><strong>Category definition</strong><small class="d-block text-muted">Every asset must belong to one category. Its code becomes a stable segment in generated asset and physical-unit identities.</small></div>
+        <div class="card-header"><strong>Category definition</strong><small class="d-block text-muted">Every asset must belong to one category. Its code becomes a stable segment in generated asset numbers.</small></div>
         <div class="card-body">
             <?php if ($error): ?>
                 <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
@@ -211,7 +211,7 @@ ob_start();
                 </div>
 
                 <div class="alert alert-light border">
-                    <strong>Physical-unit model:</strong> quantities are not configured on categories. Each physical asset is registered and numbered individually beneath an asset record.
+                    <strong>One asset, one number:</strong> quantities are not configured on categories. Register every asset individually under its category and responsible department.
                 </div>
                 <div class="form-row">
                     <div class="form-group col-md-6 d-flex align-items-center">

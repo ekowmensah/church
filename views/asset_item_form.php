@@ -8,7 +8,7 @@ asset_require_permission('create_asset');
 
 if (!asset_item_tracking_available($conn)) {
     http_response_code(409);
-    exit('Physical-item tracking is not available. Run Phase 0024 first.');
+    exit('Asset tracking is not available. Run Phase 0024 first.');
 }
 
 $assetId = (int) ($_GET['asset_id'] ?? $_POST['asset_id'] ?? 0);
@@ -39,10 +39,23 @@ $stmt->close();
 
 if (!$asset) {
     http_response_code(404);
-    exit('Shared asset record not found.');
+    exit('Asset record not found.');
 }
 
 $churchId = (int) $asset['church_id'];
+
+// The current register treats every asset as its own accountable record.
+// Preserve POST handling for a form opened before deployment, but route all
+// new attempts through the canonical one-asset registration form.
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    header('Location: asset_form.php?' . http_build_query([
+        'church_id' => $churchId,
+        'asset_group_id' => (int) ($asset['asset_group_id'] ?? 0),
+        'copy_from' => $assetId,
+    ]));
+    exit;
+}
+
 $departments = asset_fetch_departments($conn, $churchId, false);
 $departmentId = (int) ($_POST['department_id'] ?? $asset['department_id'] ?? 0);
 $serialNumber = trim((string) ($_POST['serial_number'] ?? ''));
@@ -113,11 +126,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         } catch (Throwable $e) {
             $conn->rollback();
-            error_log('Physical asset item registration failed: ' . $e->getMessage());
+            error_log('Asset registration failed: ' . $e->getMessage());
             if ($e instanceof mysqli_sql_exception) {
                 $error = (int) $e->getCode() === 1062
-                    ? 'That physical item number or serial number already exists.'
-                    : 'The physical item could not be registered. Please retry.';
+                    ? 'That asset number or serial number already exists.'
+                    : 'The asset could not be registered. Please retry.';
             } else {
                 $error = $e->getMessage();
             }
@@ -131,7 +144,7 @@ ob_start();
 <div class="container-fluid mt-4 asset-workspace">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
-            <h2 class="mb-1"><i class="fas fa-plus-circle mr-2"></i>Register Another Physical Unit</h2>
+            <h2 class="mb-1"><i class="fas fa-plus-circle mr-2"></i>Register Asset</h2>
             <div class="text-muted"><?= htmlspecialchars((string) $asset['item_name']) ?> · <?= htmlspecialchars((string) $asset['asset_code']) ?> · <?= htmlspecialchars((string) $asset['church_name']) ?></div>
         </div>
         <a href="asset_view.php?id=<?= $assetId ?>&tab=items" class="btn btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i>Back</a>
@@ -141,9 +154,9 @@ ob_start();
     <?php if ($error !== ''): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 
     <div class="card asset-panel asset-form-shell">
-        <div class="card-header"><strong>Physical identity and location</strong><small class="d-block text-muted">One record represents one traceable unit. Its generated number changes only when its accountable department changes.</small></div>
+        <div class="card-header"><strong>Asset identity and department</strong><small class="d-block text-muted">One record represents one traceable asset. Its generated number changes only when its accountable department changes.</small></div>
         <div class="card-body">
-            <p class="text-muted">Use this only when another physical unit shares the same category, asset name and acquisition details. The new unit receives its own generated number, department, serial, condition and custody history.</p>
+            <p class="text-muted">The asset receives its own generated number, department, serial, condition and custody history.</p>
             <form method="post">
                 <?= csrf_input() ?>
                 <input type="hidden" name="asset_id" value="<?= $assetId ?>">
@@ -170,7 +183,7 @@ ob_start();
                         </select>
                     </div>
                 </div>
-                <div class="asset-action-bar"><a href="asset_view.php?id=<?= $assetId ?>&tab=items" class="btn btn-outline-secondary">Cancel</a><button type="submit" class="btn btn-success"><i class="fas fa-save mr-1"></i>Register physical unit</button></div>
+                <div class="asset-action-bar"><a href="asset_view.php?id=<?= $assetId ?>&tab=items" class="btn btn-outline-secondary">Cancel</a><button type="submit" class="btn btn-success"><i class="fas fa-save mr-1"></i>Register asset</button></div>
             </form>
         </div>
     </div>

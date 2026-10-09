@@ -306,9 +306,9 @@ if (!function_exists('asset_generate_code')) {
         }
         $stmt->close();
 
-        // Physical items can advance the sequence without creating another
-        // category/header row. Include them so a later category registration
-        // can never collide with an already-issued item number.
+        // Registered assets can advance the sequence without creating another
+        // legacy parent row. Include them so a later registration can never
+        // collide with an already-issued asset number.
         if (asset_table_exists($conn, 'asset_items')) {
             $stmt = $conn->prepare("SELECT item_number AS asset_code FROM asset_items WHERE church_id = ? AND item_number LIKE ?");
             $stmt->bind_param('is', $churchId, $like);
@@ -573,9 +573,9 @@ if (!function_exists('asset_replace_department_segment')) {
 
 if (!function_exists('asset_assert_item_number_available')) {
     /**
-     * Refuse a movement that would give two physical items the same identity.
-     * Movement keeps every item-number segment except the department segment,
-     * so a collision must be reviewed instead of silently renumbering the item.
+     * Refuse a movement that would give two assets the same identity.
+     * Movement keeps every number segment except the department segment, so a
+     * collision must be reviewed instead of silently renumbering the asset.
      */
     function asset_assert_item_number_available(
         mysqli $conn,
@@ -593,7 +593,7 @@ if (!function_exists('asset_assert_item_number_available')) {
         $stmt->close();
         if ($collision) {
             throw new RuntimeException(
-                'The destination would duplicate physical item number ' . $itemNumber
+                'The destination would duplicate asset number ' . $itemNumber
                 . '. Resolve the destination numbering conflict before approving this movement.'
             );
         }
@@ -631,7 +631,7 @@ if (!function_exists('asset_assert_asset_code_available')) {
 if (!function_exists('asset_move_parent_to_department')) {
     /**
      * Move a legacy/category-level asset and rewrite its department segment
-     * using the same canonical convention used for physical item movements.
+     * using the same canonical convention used for asset movements.
      * Callers are expected to own the surrounding transaction.
      *
      * @return array{old_asset_code:string,new_asset_code:string,department_id:int}
@@ -683,10 +683,10 @@ if (!function_exists('asset_move_parent_to_department')) {
 
 if (!function_exists('asset_sync_parent_from_items')) {
     /**
-     * Synchronize the category record from active physical items. When every
-     * active item is in one department, the parent code follows that
-     * department as well. A split category keeps its existing parent code and
-     * receives a NULL department because no single destination represents it.
+     * Synchronize a legacy parent record from its active assets. When every
+     * asset is in one department, the parent code follows that department as
+     * well. A split legacy record keeps its existing code and receives a NULL
+     * department because no single destination represents it.
      *
      * @return array{old_asset_code:string,new_asset_code:string,department_id:?int}
      */
@@ -731,7 +731,7 @@ if (!function_exists('asset_sync_parent_from_items')) {
             $department = $stmt->get_result()->fetch_assoc();
             $stmt->close();
             if (!$department) {
-                throw new RuntimeException('The physical item department is not valid for this church.');
+                throw new RuntimeException('The asset department is not valid for this church.');
             }
             $newAssetCode = asset_replace_department_segment(
                 $oldAssetCode,
@@ -757,7 +757,7 @@ if (!function_exists('asset_sync_parent_from_items')) {
 
 if (!function_exists('asset_generate_item_number')) {
     /**
-     * Generate the next physical-item number for an existing asset category.
+     * Generate the next asset number for an existing legacy parent record.
      * The church, department, group, year and society segments follow the
      * canonical asset format; only the sequence is newly allocated.
      */
@@ -1043,13 +1043,13 @@ if (!function_exists('asset_approval_payload_details')) {
                 $number = trim((string) ($itemNumbers[$churchId . ':' . $itemId] ?? ''));
             }
             if ($number !== '') return $number . ($itemId > 0 ? ' (#' . $itemId . ')' : '');
-            return $itemId > 0 ? 'Physical item #' . $itemId : 'Legacy category-level request';
+            return $itemId > 0 ? 'Asset #' . $itemId : 'Legacy asset request';
         };
 
         $type = (string) ($request['request_type'] ?? '');
         $details = [];
         if ($type === 'transfer') {
-            $details[] = ['label' => 'Physical item', 'value' => $itemLabel()];
+            $details[] = ['label' => 'Asset', 'value' => $itemLabel()];
             $details[] = [
                 'label' => 'Move from',
                 'value' => $departmentLabel((int) ($payload['from_department_id'] ?? 0)),
@@ -1059,10 +1059,10 @@ if (!function_exists('asset_approval_payload_details')) {
                 'value' => $departmentLabel((int) ($payload['to_department_id'] ?? 0)),
             ];
         } elseif ($type === 'dispose') {
-            $details[] = ['label' => 'Physical item', 'value' => $itemLabel()];
+            $details[] = ['label' => 'Asset', 'value' => $itemLabel()];
             $details[] = ['label' => 'Requested action', 'value' => 'Dispose item'];
         } elseif ($type === 'status_change') {
-            $details[] = ['label' => 'Physical item', 'value' => $itemLabel()];
+            $details[] = ['label' => 'Asset', 'value' => $itemLabel()];
             $details[] = [
                 'label' => 'Asset status',
                 'value' => ucfirst(str_replace('_', ' ', (string) ($payload['new_status'] ?? 'Not recorded'))),

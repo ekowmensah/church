@@ -130,7 +130,7 @@ ob_start();
 
     <?php render_asset_workspace_nav('register', $churchId); ?>
     <div class="card asset-panel asset-form-shell">
-        <div class="card-header"><strong>Accountable asset location</strong><small class="d-block text-muted">Department codes drive physical-item numbering and change through governed transfers.</small></div>
+        <div class="card-header"><strong>Accountable asset location</strong><small class="d-block text-muted">Department codes form part of asset numbers and change through governed transfers.</small></div>
         <div class="card-body">
             <?php if ($error): ?>
                 <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>

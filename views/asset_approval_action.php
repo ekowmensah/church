@@ -112,7 +112,7 @@ try {
                 $stmt = $conn->prepare('SELECT item_number, department_id FROM asset_items WHERE id = ? AND asset_id = ? FOR UPDATE');
                 $stmt->bind_param('ii', $assetItemId, $assetId); $stmt->execute();
                 $item = $stmt->get_result()->fetch_assoc(); $stmt->close();
-                if (!$item) throw new RuntimeException('Physical item no longer exists.');
+                if (!$item) throw new RuntimeException('Asset no longer exists.');
                 $fromDepartmentId = (int) ($item['department_id'] ?? 0);
                 $stmt = $conn->prepare('SELECT name, department_code FROM asset_departments WHERE id = ? AND church_id = ? LIMIT 1');
                 $requestChurchId = (int) $request['church_id'];
@@ -155,7 +155,7 @@ try {
 
             if (asset_item_tracking_available($conn)) {
                 if ($assetItemId <= 0) {
-                    throw new RuntimeException('A physical item is required for this status change.');
+                    throw new RuntimeException('An asset is required for this status change.');
                 }
                 $stmt = $conn->prepare('SELECT item_number, status, lifecycle_status FROM asset_items WHERE id = ? AND asset_id = ? FOR UPDATE');
                 $stmt->bind_param('ii', $assetItemId, $assetId);
@@ -163,7 +163,7 @@ try {
                 $item = $stmt->get_result()->fetch_assoc();
                 $stmt->close();
                 if (!$item) {
-                    throw new RuntimeException('Physical item no longer exists.');
+                    throw new RuntimeException('Asset no longer exists.');
                 }
 
                 if ($newStatus === 'disposed') {

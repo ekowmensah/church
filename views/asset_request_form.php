@@ -88,11 +88,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $selectedAssetIds = array_values(array_filter(array_map('intval', (array) ($_POST['asset_ids'] ?? []))));
     $selectedCategoryIds = array_values(array_map('intval', (array) ($_POST['asset_category_ids'] ?? [])));
     if (count($selectedAssetIds) > 50) {
-        $error = 'A request can contain at most 50 selected items.';
+        $error = 'A request can contain at most 50 selected assets.';
     } elseif (count($selectedCategoryIds) !== count($selectedAssetIds)) {
-        $error = 'Choose a category and an item for every request row.';
+        $error = 'Choose a category and an asset for every request row.';
     } elseif (!$selectedAssetIds) {
-        $error = 'Select at least one asset item.';
+        $error = 'Select at least one asset.';
     } elseif ($purpose === '') {
         $error = 'Purpose is required.';
     } elseif ($borrowStartDate === '' || $expectedReturnDate === '') {
@@ -111,14 +111,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $categoryId = (int) ($selectedCategoryIds[$index] ?? 0);
             if ($categoryId < 1 || $categoryId !== (int) ($asset['asset_group_id'] ?? 0)) {
-                $error = 'One selected item does not belong to its chosen category. Select the category again.';
+                $error = 'One selected asset does not belong to its chosen category. Select the category again.';
                 break;
             }
         }
         foreach ($selectionCounts as $assetId => $count) {
             $asset = $assetMap[(int) $assetId] ?? null;
             if ($asset && $count > (int) $asset['available_units']) {
-                $error = $asset['item_name'] . ' has only ' . (int) $asset['available_units'] . ' active physical item(s).';
+                $error = $asset['item_name'] . ' has only ' . (int) $asset['available_units'] . ' available asset(s).';
                 break;
             }
         }
@@ -197,12 +197,12 @@ ob_start();
 <link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
 <div class="container-fluid mt-4 asset-workspace">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <div><h2 class="mb-1"><i class="fas fa-hand-holding mr-2"></i>Request Asset Use</h2><small class="text-muted">Choose a category first, then select the available item you need.</small></div>
+        <div><h2 class="mb-1"><i class="fas fa-hand-holding mr-2"></i>Request Asset Use</h2><small class="text-muted">Choose a category first, then select the available asset you need.</small></div>
         <a href="asset_request_list.php" class="btn btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i> Back</a>
     </div>
     <?php render_asset_workspace_nav('custody', $churchId); ?>
-    <div class="alert alert-info border-0 shadow-sm"><strong>What happens next?</strong> An authorized reviewer selects and reserves exact physical unit numbers. Assets are not in your custody until an officer confirms Issue.</div>
-    <div class="card asset-panel asset-form-shell"><div class="card-header"><strong>Custody request</strong><small class="d-block text-muted">Each row represents one required physical unit. Category selection narrows the item list.</small></div><div class="card-body">
+    <div class="alert alert-info border-0 shadow-sm"><strong>What happens next?</strong> An authorized reviewer selects and reserves the exact assets. They are not in your custody until an officer confirms Issue.</div>
+    <div class="card asset-panel asset-form-shell"><div class="card-header"><strong>Custody request</strong><small class="d-block text-muted">Each row represents one required asset. Category selection narrows the asset list.</small></div><div class="card-body">
         <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
         <form method="post" autocomplete="off" id="assetRequestForm">
             <?= csrf_input() ?>
@@ -210,7 +210,7 @@ ob_start();
                 <div class="form-group col-md-6"><label>Requester</label><input class="form-control" value="<?= htmlspecialchars((string) $actor['name']) ?>" readonly></div>
                 <div class="form-group col-md-6"><label>Requester Phone</label><input class="form-control" value="<?= htmlspecialchars((string) ($actor['phone'] ?? '')) ?>" readonly></div>
             </div>
-            <div class="d-flex justify-content-between align-items-center mb-2"><label class="mb-0">Requested Items <span class="text-danger">*</span></label><span class="badge badge-primary p-2">Quantity: <span id="requestQuantity">0</span></span></div>
+            <div class="d-flex justify-content-between align-items-center mb-2"><label class="mb-0">Requested Assets <span class="text-danger">*</span></label><span class="badge badge-primary p-2">Quantity: <span id="requestQuantity">0</span></span></div>
             <div id="requestLines">
                 <?php foreach ($selectedAssetIds as $lineIndex => $selectedAssetId):
                     $selectedCategoryId = (int) ($selectedCategoryIds[$lineIndex] ?? ($assetMap[(int) $selectedAssetId]['asset_group_id'] ?? 0));
@@ -226,9 +226,9 @@ ob_start();
                         </select>
                     </div>
                     <div class="form-group col-md-6 mb-0">
-                        <label class="small font-weight-bold">2. Item</label>
+                        <label class="small font-weight-bold">2. Asset</label>
                         <select class="form-control asset-selection" name="asset_ids[]" required>
-                            <option value="">-- Select item --</option>
+                            <option value="">-- Select asset --</option>
                             <?php foreach ($assets as $asset): ?>
                             <option value="<?= (int) $asset['id'] ?>" data-category-id="<?= (int) $asset['asset_group_id'] ?>" data-available="<?= (int) $asset['available_units'] ?>" <?= (int) $selectedAssetId === (int) $asset['id'] ? 'selected' : '' ?>><?= htmlspecialchars($asset['asset_code'] . ' - ' . $asset['item_name']) ?> (<?= (int) $asset['available_units'] ?> available<?= !empty($asset['department_name']) ? ', ' . htmlspecialchars($asset['department_name']) : '' ?>)</option>
                             <?php endforeach; ?>
@@ -238,7 +238,7 @@ ob_start();
                 </div>
                 <?php endforeach; ?>
             </div>
-            <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="addRequestLine"><i class="fas fa-plus mr-1"></i>Add another item</button>
+            <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="addRequestLine"><i class="fas fa-plus mr-1"></i>Add another asset</button>
             <hr>
             <div class="form-group"><label>Purpose <span class="text-danger">*</span></label><input name="purpose" class="form-control" value="<?= htmlspecialchars($purpose) ?>" required maxlength="255"></div>
             <div class="form-row">

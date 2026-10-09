@@ -65,6 +65,20 @@ if (!$asset) {
 
 $churchId = (int) $asset['church_id'];
 $physicalItems = asset_fetch_physical_items($conn, $assetId, false);
+$requestedAssetItemId = max(0, (int) ($_GET['asset_item_id'] ?? $_POST['selected_asset_item_id'] ?? 0));
+$selectedAssetItem = null;
+foreach ($physicalItems as $candidateAssetItem) {
+    if ($requestedAssetItemId === 0 || (int) $candidateAssetItem['id'] === $requestedAssetItemId) {
+        $selectedAssetItem = $candidateAssetItem;
+        break;
+    }
+}
+if ($requestedAssetItemId > 0 && !$selectedAssetItem) {
+    http_response_code(404);
+    exit('Asset identity not found.');
+}
+$selectedAssetItemId = (int) ($selectedAssetItem['id'] ?? 0);
+$canEditSelectedAsset = $canEdit && count($physicalItems) <= 1;
 $error = '';
 $success = '';
 
@@ -182,7 +196,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                     if (!$selectedItem) {
-                        $error = 'Select an active physical item to dispose.';
+                        $error = 'Select an active asset to dispose.';
                     } else {
                         $payload = [
                             'asset_item_id' => $assetItemId,
@@ -205,7 +219,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                     if (!$selectedItem) {
-                        $error = 'Select a valid physical item.';
+                        $error = 'Select a valid asset.';
                     } elseif (!in_array($newStatus, ['active', 'disposed'], true)) {
                         $error = 'Invalid status selected.';
                     } elseif ($hasLifecycle && !in_array($newLifecycle, asset_lifecycle_options(), true)) {
@@ -245,7 +259,7 @@ $custodyEvents = [];
 $departments = asset_fetch_departments($conn, $churchId, false);
 
 if ($tab === 'custody' && asset_table_exists($conn, 'asset_custody_events')) {
-    $stmt = $conn->prepare("SELECT event.*, item.item_number,
+    $custodySql = "SELECT event.*, item.item_number,
                                   CONCAT_WS(' ', member.first_name, member.middle_name, member.last_name) AS member_name,
                                   custodian.name AS user_name, actor.name AS actor_name
                              FROM asset_custody_events event
@@ -253,26 +267,31 @@ if ($tab === 'custody' && asset_table_exists($conn, 'asset_custody_events')) {
                              LEFT JOIN members member ON member.id = event.custodian_member_id
                              LEFT JOIN users custodian ON custodian.id = event.custodian_user_id
                              LEFT JOIN users actor ON actor.id = event.performed_by_user_id
-                            WHERE event.asset_id = ? ORDER BY event.occurred_at DESC LIMIT 100");
-    $stmt->bind_param('i', $assetId);
+                            WHERE event.asset_id = ?";
+    if ($selectedAssetItemId > 0) $custodySql .= ' AND event.asset_item_id = ?';
+    $custodySql .= ' ORDER BY event.occurred_at DESC LIMIT 100';
+    $stmt = $conn->prepare($custodySql);
+    if ($selectedAssetItemId > 0) $stmt->bind_param('ii', $assetId, $selectedAssetItemId);
+    else $stmt->bind_param('i', $assetId);
     $stmt->execute();
     $custodyEvents = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
 }
 
 if ($tab === 'movements' || $tab === 'overview') {
-    $stmt = $conn->prepare("
+    $movementSql = "
         SELECT am.*, item.item_number, d1.name AS from_department_name, d2.name AS to_department_name, u.name AS moved_by_name
         FROM asset_movements am
         LEFT JOIN asset_items item ON item.id = am.asset_item_id
         LEFT JOIN asset_departments d1 ON d1.id = am.from_department_id
         LEFT JOIN asset_departments d2 ON d2.id = am.to_department_id
         LEFT JOIN users u ON u.id = am.moved_by
-        WHERE am.asset_id = ?
-        ORDER BY am.moved_at DESC
-        LIMIT 50
-    ");
-    $stmt->bind_param('i', $assetId);
+        WHERE am.asset_id = ?";
+    if ($selectedAssetItemId > 0) $movementSql .= ' AND am.asset_item_id = ?';
+    $movementSql .= ' ORDER BY am.moved_at DESC LIMIT 50';
+    $stmt = $conn->prepare($movementSql);
+    if ($selectedAssetItemId > 0) $stmt->bind_param('ii', $assetId, $selectedAssetItemId);
+    else $stmt->bind_param('i', $assetId);
     $stmt->execute();
     $res = $stmt->get_result();
     while ($row = $res->fetch_assoc()) {
@@ -354,7 +373,7 @@ ob_start();
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
         <div>
             <h2 class="mb-1"><i class="fas fa-cube mr-2"></i>Asset Workspace</h2>
-            <small class="text-muted">Shared details: <?= htmlspecialchars((string) $asset['asset_code']) ?> - <?= htmlspecialchars((string) $asset['item_name']) ?></small>
+            <small class="text-muted"><?= htmlspecialchars((string) ($selectedAssetItem['item_number'] ?? $asset['asset_code'])) ?> - <?= htmlspecialchars((string) $asset['item_name']) ?></small>
         </div>
         <div>
             <a href="asset_list.php<?= $churchId ? '?church_id=' . $churchId : '' ?>" class="btn btn-outline-secondary"><i class="fas fa-arrow-left mr-1"></i> Back</a>
@@ -364,14 +383,14 @@ ob_start();
             <?php if ($canViewUseRequests && asset_use_requests_available($conn)): ?>
                 <a href="asset_request_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>" class="btn btn-outline-info ml-1"><i class="fas fa-hand-holding mr-1"></i> Lending &amp; Returns</a>
             <?php endif; ?>
-            <?php if ($canEdit): ?>
+            <?php if ($canEditSelectedAsset): ?>
                 <a href="asset_form.php?id=<?= $assetId ?>" class="btn btn-warning ml-1"><i class="fas fa-edit mr-1"></i> Edit</a>
             <?php endif; ?>
-            <?php if ($canCreate && asset_item_tracking_available($conn)): ?>
-                <a href="asset_item_form.php?asset_id=<?= $assetId ?>" class="btn btn-success ml-1"><i class="fas fa-plus mr-1"></i> Register Another Unit</a>
+            <?php if ($canCreate): ?>
+                <a href="asset_form.php?church_id=<?= (int) $churchId ?>" class="btn btn-success ml-1"><i class="fas fa-plus mr-1"></i> Register Asset</a>
             <?php endif; ?>
             <?php if ($canTransfer): ?>
-                <a href="asset_transfer.php?id=<?= $assetId ?>" class="btn btn-primary ml-1"><i class="fas fa-exchange-alt mr-1"></i> Transfer</a>
+                <a href="asset_transfer.php?id=<?= $assetId ?><?= $selectedAssetItemId > 0 ? '&asset_item_id=' . $selectedAssetItemId : '' ?>" class="btn btn-primary ml-1"><i class="fas fa-exchange-alt mr-1"></i> Transfer</a>
             <?php endif; ?>
         </div>
     </div>
@@ -381,8 +400,8 @@ ob_start();
     <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
     <?php if (isset($_GET['doc_saved'])): ?><div class="alert alert-success">Document uploaded successfully.</div><?php endif; ?>
     <?php if (isset($_GET['request_saved'])): ?><div class="alert alert-success">Approval request submitted.</div><?php endif; ?>
-    <?php if (isset($_GET['created'])): ?><div class="alert alert-success">Physical asset registered successfully. Its first uniquely numbered unit is shown below.</div><?php endif; ?>
-    <?php if (isset($_GET['item_saved'])): ?><div class="alert alert-success">Another physical unit was registered successfully.</div><?php endif; ?>
+    <?php if (isset($_GET['created'])): ?><div class="alert alert-success">Asset registered successfully.</div><?php endif; ?>
+    <?php if (isset($_GET['item_saved'])): ?><div class="alert alert-success">Asset registered successfully.</div><?php endif; ?>
 
     <div class="card shadow-sm mb-3">
         <div class="card-body">
@@ -390,7 +409,7 @@ ob_start();
                 <?php
                 $tabs = [
                     'overview' => 'Overview',
-                    'items' => 'Physical Units',
+                    'items' => 'Asset Identity',
                     'custody' => 'Custody History',
                     'movements' => 'Movements',
                     'audit' => 'Audit',
@@ -401,7 +420,7 @@ ob_start();
                 foreach ($tabs as $key => $label):
                 ?>
                     <li class="nav-item mr-2 mb-2">
-                        <a class="nav-link <?= $tab === $key ? 'active' : '' ?>" href="asset_view.php?id=<?= $assetId ?>&tab=<?= urlencode($key) ?>"><?= htmlspecialchars($label) ?></a>
+                        <a class="nav-link <?= $tab === $key ? 'active' : '' ?>" href="asset_view.php?id=<?= $assetId ?>&tab=<?= urlencode($key) ?><?= $selectedAssetItemId > 0 ? '&asset_item_id=' . $selectedAssetItemId : '' ?>"><?= htmlspecialchars($label) ?></a>
                     </li>
                 <?php endforeach; ?>
             </ul>
@@ -412,21 +431,20 @@ ob_start();
         <div class="row">
             <div class="col-lg-7 mb-3">
                 <div class="card shadow-sm h-100">
-                    <div class="card-header"><strong>Shared Asset Details</strong></div>
+                    <div class="card-header"><strong>Asset Details</strong></div>
                     <div class="card-body">
                         <div class="row">
-                            <div class="col-md-6 mb-2"><strong>Code:</strong> <?= htmlspecialchars((string) $asset['asset_code']) ?></div>
+                            <div class="col-md-6 mb-2"><strong>Asset Number:</strong> <?= htmlspecialchars((string) ($selectedAssetItem['item_number'] ?? $asset['asset_code'])) ?></div>
                             <div class="col-md-6 mb-2"><strong>Asset Category:</strong> <?= htmlspecialchars((string) (($asset['asset_group_name'] ?? $asset['item_group'] ?? '') !== '' ? (($asset['asset_group_name'] ?? $asset['item_group'] ?? '') . (!empty($asset['asset_group_code']) ? ' (' . $asset['asset_group_code'] . ')' : '')) : '-')) ?></div>
-                            <div class="col-md-6 mb-2"><strong>Department:</strong> <?= htmlspecialchars((string) ($asset['department_name'] ?? '-')) ?></div>
+                            <div class="col-md-6 mb-2"><strong>Department:</strong> <?= htmlspecialchars((string) ($selectedAssetItem['department_name'] ?? $asset['department_name'] ?? '-')) ?></div>
                             <?php if (asset_column_exists($conn, 'assets', 'acquisition_mode')): ?>
                                 <div class="col-md-6 mb-2"><strong>Acquisition:</strong> <?= htmlspecialchars((string) (asset_acquisition_mode_options()[(string) ($asset['acquisition_mode'] ?? '')] ?? ucfirst(str_replace('_', ' ', (string) ($asset['acquisition_mode'] ?? ''))))) ?></div>
                             <?php endif; ?>
-                            <div class="col-md-6 mb-2"><strong>Condition:</strong> <?= htmlspecialchars((string) ($asset['condition_status'] ?? '-')) ?></div>
-                            <div class="col-md-6 mb-2"><strong>Status:</strong> <?= htmlspecialchars((string) ($asset['status'] ?? '-')) ?></div>
+                            <div class="col-md-6 mb-2"><strong>Condition:</strong> <?= htmlspecialchars((string) ($selectedAssetItem['condition_status'] ?? $asset['condition_status'] ?? '-')) ?></div>
+                            <div class="col-md-6 mb-2"><strong>Status:</strong> <?= htmlspecialchars((string) ($selectedAssetItem['status'] ?? $asset['status'] ?? '-')) ?></div>
                             <?php if ($hasLifecycle): ?>
-                                <div class="col-md-6 mb-2"><strong>Lifecycle:</strong> <?= htmlspecialchars(asset_lifecycle_label((string) ($asset['lifecycle_status'] ?? asset_default_lifecycle((string) $asset['status'], (string) $asset['condition_status'])))) ?></div>
+                                <div class="col-md-6 mb-2"><strong>Lifecycle:</strong> <?= htmlspecialchars(asset_lifecycle_label((string) ($selectedAssetItem['lifecycle_status'] ?? $asset['lifecycle_status'] ?? asset_default_lifecycle((string) $asset['status'], (string) $asset['condition_status'])))) ?></div>
                             <?php endif; ?>
-                            <div class="col-md-6 mb-2"><strong>Registered Physical Units:</strong> <?= count($physicalItems) ?></div>
                             <div class="col-md-6 mb-2"><strong>Purchase Date:</strong> <?= htmlspecialchars((string) ($asset['purchase_date'] ?? '-')) ?></div>
                             <div class="col-md-6 mb-2"><strong>Amount:</strong> <?= $asset['amount'] !== null ? number_format((float) $asset['amount'], 2) : '-' ?></div>
                             <?php if (asset_column_exists($conn, 'assets', 'receipt_number')): ?>
@@ -455,11 +473,12 @@ ob_start();
                                 <?= csrf_input() ?>
                                 <input type="hidden" name="id" value="<?= $assetId ?>">
                                 <input type="hidden" name="asset_action" value="request_dispose">
+                                <input type="hidden" name="selected_asset_item_id" value="<?= $selectedAssetItemId ?>">
                                 <div class="form-group">
-                                    <label>Physical Item <span class="text-danger">*</span></label>
+                                    <label>Asset <span class="text-danger">*</span></label>
                                     <select name="asset_item_id" class="form-control mb-2" required>
-                                        <option value="">-- Select active item --</option>
-                                        <?php foreach ($physicalItems as $physicalItem): if ((string) $physicalItem['status'] !== 'active') continue; ?>
+                                        <option value="">-- Select active asset --</option>
+                                        <?php foreach ($selectedAssetItem ? [$selectedAssetItem] : [] as $physicalItem): if ((string) $physicalItem['status'] !== 'active') continue; ?>
                                             <option value="<?= (int) $physicalItem['id'] ?>"><?= htmlspecialchars((string) $physicalItem['item_number']) ?></option>
                                         <?php endforeach; ?>
                                     </select>
@@ -473,11 +492,12 @@ ob_start();
                                 <?= csrf_input() ?>
                                 <input type="hidden" name="id" value="<?= $assetId ?>">
                                 <input type="hidden" name="asset_action" value="request_status_change">
+                                <input type="hidden" name="selected_asset_item_id" value="<?= $selectedAssetItemId ?>">
                                 <div class="form-group">
                                     <label>Request Status Change</label>
                                     <select name="asset_item_id" class="form-control mb-2" required>
-                                        <option value="">-- Select physical item --</option>
-                                        <?php foreach ($physicalItems as $physicalItem): ?>
+                                        <option value="">-- Select asset --</option>
+                                        <?php foreach ($selectedAssetItem ? [$selectedAssetItem] : [] as $physicalItem): ?>
                                             <option value="<?= (int) $physicalItem['id'] ?>"><?= htmlspecialchars((string) $physicalItem['item_number']) ?> (<?= htmlspecialchars((string) $physicalItem['status']) ?>)</option>
                                         <?php endforeach; ?>
                                     </select>
@@ -506,14 +526,13 @@ ob_start();
     <?php elseif ($tab === 'items'): ?>
         <div class="card shadow-sm">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <strong>Physical Units</strong>
-                <?php if ($canCreate): ?><a href="asset_item_form.php?asset_id=<?= $assetId ?>" class="btn btn-sm btn-success"><i class="fas fa-plus mr-1"></i>Register Another Unit</a><?php endif; ?>
+                <strong>Asset Identity</strong>
             </div>
             <div class="card-body table-responsive">
                 <table class="table table-bordered table-hover">
-                    <thead class="thead-light"><tr><th>Item Number</th><th>Department</th><th>Serial</th><th>Condition</th><th>Custody</th><th>Lifecycle</th><th>Registered</th></tr></thead>
+                    <thead class="thead-light"><tr><th>Asset Number</th><th>Department</th><th>Serial</th><th>Condition</th><th>Custody</th><th>Lifecycle</th><th>Registered</th></tr></thead>
                     <tbody>
-                    <?php foreach ($physicalItems as $physicalItem): ?>
+                    <?php foreach ($selectedAssetItem ? [$selectedAssetItem] : [] as $physicalItem): ?>
                         <tr>
                             <td><strong><?= htmlspecialchars((string) $physicalItem['item_number']) ?></strong></td>
                             <td><?= htmlspecialchars((string) ($physicalItem['department_name'] ?? '-')) ?></td>
@@ -524,15 +543,15 @@ ob_start();
                             <td><?= htmlspecialchars((string) $physicalItem['created_at']) ?></td>
                         </tr>
                     <?php endforeach; ?>
-                    <?php if (!$physicalItems): ?><tr><td colspan="7" class="text-center">No physical items are registered.</td></tr><?php endif; ?>
+                    <?php if (!$physicalItems): ?><tr><td colspan="7" class="text-center">No asset identity is registered.</td></tr><?php endif; ?>
                     </tbody>
                 </table>
             </div>
         </div>
     <?php elseif ($tab === 'custody'): ?>
         <div class="card shadow-sm asset-panel">
-            <div class="card-header"><strong>Immutable custody history</strong><small class="d-block text-muted">Reservations, physical handovers and inspected returns for this asset.</small></div>
-            <div class="card-body table-responsive"><table class="table table-hover mb-0"><thead><tr><th>When</th><th>Physical unit</th><th>Event</th><th>Custodian</th><th>Condition</th><th>Recorded by</th><th>Notes</th></tr></thead><tbody>
+            <div class="card-header"><strong>Immutable custody history</strong><small class="d-block text-muted">Reservations, handovers and inspected returns for this asset.</small></div>
+            <div class="card-body table-responsive"><table class="table table-hover mb-0"><thead><tr><th>When</th><th>Asset number</th><th>Event</th><th>Custodian</th><th>Condition</th><th>Recorded by</th><th>Notes</th></tr></thead><tbody>
                 <?php foreach ($custodyEvents as $event): ?><tr><td><?= htmlspecialchars((string) $event['occurred_at']) ?></td><td><strong><?= htmlspecialchars((string) $event['item_number']) ?></strong></td><td><span class="badge badge-info"><?= htmlspecialchars(ucwords(str_replace('_',' ',(string) $event['event_type']))) ?></span></td><td><?= htmlspecialchars((string) ($event['member_name'] ?: $event['user_name'] ?: '-')) ?></td><td><?= htmlspecialchars(trim((string) ($event['condition_before'] ?? '') . (($event['condition_before'] ?? '') && ($event['condition_after'] ?? '') ? ' → ' : '') . (string) ($event['condition_after'] ?? '')) ?: '-') ?></td><td><?= htmlspecialchars((string) ($event['actor_name'] ?? '-')) ?></td><td><?= htmlspecialchars((string) ($event['notes'] ?? '')) ?></td></tr><?php endforeach; ?>
                 <?php if (!$custodyEvents): ?><tr><td colspan="7" class="text-center text-muted py-4">No custody events have been recorded for this asset.</td></tr><?php endif; ?>
             </tbody></table></div>
@@ -542,7 +561,7 @@ ob_start();
             <div class="card-body table-responsive">
                 <table class="table table-bordered table-hover">
                     <thead class="thead-light">
-                        <tr><th>Moved At</th><th>Item Number</th><th>From</th><th>To</th><th>By</th><th>Notes</th></tr>
+                        <tr><th>Moved At</th><th>Asset Number</th><th>From</th><th>To</th><th>By</th><th>Notes</th></tr>
                     </thead>
                     <tbody>
                         <?php foreach ($movements as $m): ?>
@@ -591,7 +610,7 @@ ob_start();
                 <div class="card shadow-sm"><div class="card-body"><div class="text-muted">Estimated Book Value</div><div class="h4 mb-0"><?= number_format($bookValue, 2) ?></div></div></div>
             </div>
             <div class="col-md-4 mb-3">
-                <div class="card shadow-sm"><div class="card-body"><div class="text-muted">Registered Physical Units</div><div class="h4 mb-0"><?= count($physicalItems) ?></div></div></div>
+                <div class="card shadow-sm"><div class="card-body"><div class="text-muted">Registered asset</div><div class="h4 mb-0"><?= $selectedAssetItem ? 1 : 0 ?></div></div></div>
             </div>
         </div>
     <?php elseif ($tab === 'documents'): ?>

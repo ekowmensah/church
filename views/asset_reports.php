@@ -126,7 +126,7 @@ ob_start();
 ?>
 <link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
 <div class="container-fluid mt-4 asset-workspace">
-    <?php render_asset_workspace_hero('Portfolio intelligence', 'Asset Reports', 'Physical-unit condition, proportional recorded value by location, movement activity and maintenance exposure.', 'fa-chart-line'); ?>
+    <?php render_asset_workspace_hero('Portfolio intelligence', 'Asset Reports', 'Asset condition, recorded value by department, movement activity and maintenance exposure.', 'fa-chart-line'); ?>
     <?php render_asset_workspace_nav('reports', $churchId); ?>
 
     <div class="card asset-panel mb-3">
@@ -170,10 +170,10 @@ ob_start();
 
         <div class="col-lg-8 mb-3">
             <div class="card asset-panel h-100">
-                <div class="card-header"><strong>Department Portfolio</strong><small class="d-block text-muted">Recorded asset value is allocated proportionally where a category has units in multiple departments.</small></div>
+                <div class="card-header"><strong>Department Portfolio</strong><small class="d-block text-muted">Recorded value is allocated per asset and summarized by its accountable department.</small></div>
                 <div class="card-body table-responsive">
                     <table class="table table-bordered table-hover">
-                        <thead class="thead-light"><tr><th>Department</th><th>Physical Units</th><th>Allocated Recorded Value</th></tr></thead>
+                        <thead class="thead-light"><tr><th>Department</th><th>Assets</th><th>Recorded Value</th></tr></thead>
                         <tbody>
                             <?php foreach ($deptValueRows as $row): ?>
                                 <tr>

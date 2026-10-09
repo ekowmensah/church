@@ -78,7 +78,7 @@ $renderAssetOptions = static function (int $selected = 0) use ($assets): void {
     }
 };
 $renderItemOptions = static function (int $selectedAsset = 0) use ($availableItems): void {
-    echo '<option value="">Automatically select first available unit</option>';
+    echo '<option value="">Automatically select first available asset</option>';
     foreach ($availableItems as $item) {
         $assetId = (int) $item['asset_id'];
         $label = (string) $item['item_number'];
@@ -108,7 +108,7 @@ ob_start();
     <?php render_asset_workspace_nav('custody', $isSuper ? $requestChurchId : $churchId); ?>
 
     <div class="alert alert-info border-0 shadow-sm">
-        <strong>Reservation rule:</strong> each approved line reserves one exact physical unit immediately. It cannot be approved for another request until this reservation is issued, rejected, or cancelled.
+        <strong>Reservation rule:</strong> each approved line reserves one exact asset immediately. It cannot be approved for another request until this reservation is issued, rejected, or cancelled.
     </div>
 
     <div class="card asset-panel">
@@ -123,7 +123,7 @@ ob_start();
                 <input type="hidden" name="request_action" value="approve">
                 <?php if ($returnToApprovalQueue): ?><input type="hidden" name="return_to" value="approval_queue"><?php endif; ?>
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <div><h3 class="h6 font-weight-bold mb-0">Requested physical units</h3><small class="text-muted">Confirm the category and reserve a traceable unit number.</small></div>
+                    <div><h3 class="h6 font-weight-bold mb-0">Requested assets</h3><small class="text-muted">Confirm the category and reserve a traceable asset number.</small></div>
                     <span class="badge badge-primary p-2"><span id="reviewLineCount">0</span> line(s)</span>
                 </div>
                 <div id="reviewLines">
@@ -131,8 +131,8 @@ ob_start();
                     <div class="review-line border rounded p-3 mb-3 bg-light">
                         <input type="hidden" name="line_id[]" value="<?= (int) $line['id'] ?>">
                         <div class="form-row align-items-end">
-                            <div class="form-group col-lg-4"><label>Asset name / shared details</label><select name="line_asset_id[]" class="form-control line-asset" required><?php $renderAssetOptions($selectedAsset); ?></select></div>
-                            <div class="form-group col-lg-4"><label>Physical unit to reserve</label><select name="line_asset_item_id[]" class="form-control line-item"><?php $renderItemOptions($selectedAsset); ?></select><small class="form-text text-muted">Unit number, serial, location and condition.</small></div>
+                            <div class="form-group col-lg-4"><label>Asset name / model</label><select name="line_asset_id[]" class="form-control line-asset" required><?php $renderAssetOptions($selectedAsset); ?></select></div>
+                            <div class="form-group col-lg-4"><label>Asset to reserve</label><select name="line_asset_item_id[]" class="form-control line-item"><?php $renderItemOptions($selectedAsset); ?></select><small class="form-text text-muted">Asset number, serial, department and condition.</small></div>
                             <div class="form-group col-lg-2"><label>Decision</label><select name="line_decision[]" class="form-control line-decision"><option value="approved">Approve &amp; reserve</option><option value="rejected">Reject line</option></select></div>
                             <div class="form-group col-lg-2"><button type="button" class="btn btn-outline-danger btn-block remove-review-line">Remove</button></div>
                         </div>
@@ -147,8 +147,8 @@ ob_start();
                     <div class="form-group col-md-4"><label>Review note</label><input name="approval_note" class="form-control" maxlength="255" placeholder="Explain substitutions or rejected lines"></div>
                 </div>
                 <div class="d-flex flex-wrap justify-content-between align-items-center">
-                    <small class="text-muted">Approval reserves units; the separate Issue action confirms physical handover.</small>
-                    <button type="submit" class="btn btn-success" onclick="return confirm('Approve the accepted lines and reserve these physical units?');"><i class="fas fa-lock mr-1"></i>Approve &amp; Reserve</button>
+                    <small class="text-muted">Approval reserves assets; the separate Issue action confirms handover.</small>
+                    <button type="submit" class="btn btn-success" onclick="return confirm('Approve the accepted lines and reserve these assets?');"><i class="fas fa-lock mr-1"></i>Approve &amp; Reserve</button>
                 </div>
             </form>
         </div>
@@ -158,8 +158,8 @@ ob_start();
     <div class="review-line border rounded p-3 mb-3 bg-light">
         <input type="hidden" name="line_id[]" value="0">
         <div class="form-row align-items-end">
-            <div class="form-group col-lg-4"><label>Asset name / shared details</label><select name="line_asset_id[]" class="form-control line-asset" required><option value="">-- Select --</option><?php $renderAssetOptions(); ?></select></div>
-            <div class="form-group col-lg-4"><label>Physical unit to reserve</label><select name="line_asset_item_id[]" class="form-control line-item"><?php $renderItemOptions(-1); ?></select></div>
+            <div class="form-group col-lg-4"><label>Asset name / model</label><select name="line_asset_id[]" class="form-control line-asset" required><option value="">-- Select --</option><?php $renderAssetOptions(); ?></select></div>
+            <div class="form-group col-lg-4"><label>Asset to reserve</label><select name="line_asset_item_id[]" class="form-control line-item"><?php $renderItemOptions(-1); ?></select></div>
             <div class="form-group col-lg-2"><label>Decision</label><select name="line_decision[]" class="form-control line-decision"><option value="approved">Approve &amp; reserve</option><option value="rejected">Reject line</option></select></div>
             <div class="form-group col-lg-2"><button type="button" class="btn btn-outline-danger btn-block remove-review-line">Remove</button></div>
         </div>

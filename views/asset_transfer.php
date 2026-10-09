@@ -68,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $notes = trim((string) ($_POST['notes'] ?? ''));
 
     if (!$selectedItem) {
-        $error = 'Please select the physical item to transfer.';
+        $error = 'Please select the asset to transfer.';
     } elseif ($toDepartmentId <= 0) {
         $error = 'Please select destination department.';
     } elseif ($toDepartmentId === $currentDepartmentId) {
@@ -181,22 +181,22 @@ ob_start();
     <?php render_asset_workspace_nav('movements', $churchId); ?>
 
     <div class="card asset-panel asset-form-shell">
-        <div class="card-header"><strong>Physical-unit transfer</strong><small class="d-block text-muted">The movement keeps a complete location trail and rewrites only the department segment of the item number.</small></div>
+        <div class="card-header"><strong>Asset transfer</strong><small class="d-block text-muted">The movement keeps a complete location trail and rewrites only the department segment of the asset number.</small></div>
         <div class="card-body">
             <?php if ($error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 
             <?php if (!$physicalItems): ?>
                 <div class="asset-empty-state">
                     <i class="fas fa-lock"></i>
-                    <strong>No transferable physical units</strong>
-                    <div>Reserved, issued, maintenance, retired and disposed units must complete their current workflow before a department transfer.</div>
+                    <strong>No transferable assets</strong>
+                    <div>Reserved, issued, maintenance, retired and disposed assets must complete their current workflow before a department transfer.</div>
                 </div>
             <?php else: ?>
 
             <div class="mb-3">
                 <strong>Asset Category Code:</strong> <?= htmlspecialchars($asset['asset_code']) ?><br>
-                <strong>Item:</strong> <?= htmlspecialchars($asset['item_name']) ?><br>
-                <?php if ($selectedItem): ?><strong>Item Number:</strong> <?= htmlspecialchars((string) $selectedItem['item_number']) ?><br><strong>Current Department:</strong> <?= htmlspecialchars((string) ($selectedItem['department_name'] ?? '-')) ?><?php endif; ?>
+                <strong>Asset:</strong> <?= htmlspecialchars($asset['item_name']) ?><br>
+                <?php if ($selectedItem): ?><strong>Asset Number:</strong> <?= htmlspecialchars((string) $selectedItem['item_number']) ?><br><strong>Current Department:</strong> <?= htmlspecialchars((string) ($selectedItem['department_name'] ?? '-')) ?><?php endif; ?>
             </div>
 
             <form method="post">
@@ -204,9 +204,9 @@ ob_start();
                 <input type="hidden" name="id" value="<?= (int) $id ?>">
 
                 <div class="form-group">
-                    <label for="asset_item_id">Physical Item <span class="text-danger">*</span></label>
+                    <label for="asset_item_id">Asset <span class="text-danger">*</span></label>
                     <select class="form-control" id="asset_item_id" name="asset_item_id" required onchange="if(this.value){window.location='asset_transfer.php?id=<?= (int) $id ?>&asset_item_id='+encodeURIComponent(this.value);}">
-                        <option value="">-- Select Physical Item --</option>
+                        <option value="">-- Select Asset --</option>
                         <?php foreach ($physicalItems as $item): ?><option value="<?= (int) $item['id'] ?>" <?= $selectedItemId === (int) $item['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $item['item_number']) ?><?= !empty($item['department_name']) ? ' - ' . htmlspecialchars((string) $item['department_name']) : '' ?></option><?php endforeach; ?>
                     </select>
                 </div>

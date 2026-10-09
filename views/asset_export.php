@@ -23,7 +23,7 @@ $acquisitionModes = asset_acquisition_mode_options();
 
 if (!asset_item_tracking_available($conn)) {
     http_response_code(503);
-    exit('Physical asset tracking is not available.');
+    exit('Asset tracking is not available.');
 }
 
 $sql = "
@@ -130,7 +130,7 @@ header('Content-Disposition: attachment; filename="asset_register_' . date('Ymd_
 $out = fopen('php://output', 'w');
 
 $header = [
-    'Physical Asset Number', 'Shared Record Code'
+    'Asset Number', 'Legacy Record Code'
 ];
 if ($hasGroups) {
     $header[] = 'Asset Category';
@@ -156,9 +156,9 @@ $header[] = 'Receipt/Serial Reference';
 if (asset_column_exists($conn, 'assets', 'receipt_number')) {
     $header[] = 'Receipt Number';
 }
-$header[] = 'Unit Serial Number';
+$header[] = 'Serial Number';
 $header = array_merge($header, [
-    'Allocated Unit Value', 'Condition Status', 'Status', 'Custody Status'
+    'Recorded Asset Value', 'Condition Status', 'Status', 'Custody Status'
 ]);
 if ($hasLifecycle) {
     $header[] = 'Lifecycle Status';

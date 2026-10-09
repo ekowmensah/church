@@ -172,7 +172,7 @@ ob_start();
     <div class="asset-hero p-4 mb-3 d-flex flex-wrap justify-content-between align-items-center">
         <div>
             <h2 class="mb-1"><i class="fas fa-user-check mr-2"></i>Asset Approval Queue</h2>
-            <p class="mb-0">Review decisions that still need action. Approved borrowing moves immediately to Lending &amp; Returns for physical handover.</p>
+            <p class="mb-0">Review decisions that still need action. Approved borrowing moves immediately to Lending &amp; Returns for handover.</p>
         </div>
         <div>
             <?php if (isset($_SESSION['member_id']) || asset_user_can_view_use_requests()): ?><a href="asset_request_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>" class="btn btn-outline-light mr-2"><i class="fas fa-hand-holding mr-1"></i>Lending &amp; Returns</a><?php endif; ?>
@@ -188,7 +188,7 @@ ob_start();
     <?php if ($canApproveBorrowing): ?>
     <div class="card shadow-sm mb-3 border-left-warning">
         <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center">
-            <div><h3 class="h6 font-weight-bold mb-1"><i class="fas fa-hand-holding mr-2 text-warning"></i>Pending borrowing approvals</h3><small class="text-muted">Only requests awaiting a decision appear here. Approval reserves an exact unit and then opens its handover record.</small></div>
+            <div><h3 class="h6 font-weight-bold mb-1"><i class="fas fa-hand-holding mr-2 text-warning"></i>Pending borrowing approvals</h3><small class="text-muted">Only requests awaiting a decision appear here. Approval reserves an exact asset and then opens its handover record.</small></div>
             <span class="badge badge-warning p-2"><?= number_format($pendingBorrowingCount) ?> awaiting decision</span>
         </div>
         <div class="card-body table-responsive">
@@ -201,7 +201,7 @@ ob_start();
                         <td><strong>#<?= (int) $borrowingRequest['id'] ?></strong><small class="d-block text-muted"><?= htmlspecialchars((string) $borrowingRequest['created_at'], ENT_QUOTES, 'UTF-8') ?></small><span class="badge badge-warning mt-1">Awaiting review</span></td>
                         <?php if ($isSuper): ?><td><?= htmlspecialchars((string) ($borrowingRequest['church_name'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></td><?php endif; ?>
                         <td><strong><?= htmlspecialchars((string) ($borrowingRequest['requester_name'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></strong><small class="d-block text-muted"><?= htmlspecialchars((string) ($borrowingRequest['crn'] ?? 'No CRN'), ENT_QUOTES, 'UTF-8') ?></small></td>
-                        <td style="min-width:230px"><?= htmlspecialchars((string) ($borrowingRequest['requested_items'] ?: trim(($borrowingRequest['asset_code'] ?? '') . ' - ' . ($borrowingRequest['item_name'] ?? ''))), ENT_QUOTES, 'UTF-8') ?><small class="d-block text-muted"><?= (int) ($borrowingRequest['line_count'] ?: $borrowingRequest['quantity_requested'] ?: 1) ?> requested unit(s)</small></td>
+                        <td style="min-width:230px"><?= htmlspecialchars((string) ($borrowingRequest['requested_items'] ?: trim(($borrowingRequest['asset_code'] ?? '') . ' - ' . ($borrowingRequest['item_name'] ?? ''))), ENT_QUOTES, 'UTF-8') ?><small class="d-block text-muted"><?= (int) ($borrowingRequest['line_count'] ?: $borrowingRequest['quantity_requested'] ?: 1) ?> requested asset(s)</small></td>
                         <td><?= htmlspecialchars((string) ($borrowingRequest['purpose'] ?? ''), ENT_QUOTES, 'UTF-8') ?><small class="d-block text-muted"><?= htmlspecialchars((string) ($borrowingRequest['borrow_start_date'] ?? ''), ENT_QUOTES, 'UTF-8') ?> to <?= htmlspecialchars((string) ($borrowingRequest['expected_return_date'] ?? ''), ENT_QUOTES, 'UTF-8') ?></small></td>
                         <td class="text-nowrap"><a href="asset_request_review.php?id=<?= (int) $borrowingRequest['id'] ?>&return_to=approval_queue" class="btn btn-sm btn-success"><i class="fas fa-clipboard-check mr-1"></i>Review Request</a></td>
                     </tr>

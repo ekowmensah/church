@@ -61,7 +61,7 @@ if (asset_table_exists($conn, 'asset_items')) {
     $check->bind_param('i', $id);
     $check->execute();
     if ((int) ($check->get_result()->fetch_assoc()['total'] ?? 0) > 0) {
-        $blockingReasons[] = 'physical-item records';
+        $blockingReasons[] = 'registered asset identities';
     }
     $check->close();
 }

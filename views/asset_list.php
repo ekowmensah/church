@@ -33,7 +33,7 @@ $canViewDetail = $isSuper || has_permission('view_asset_detail') || has_permissi
 
 if (!asset_item_tracking_available($conn)) {
     http_response_code(503);
-    exit('Physical asset tracking is not available. Run the asset lifecycle migrations first.');
+    exit('Asset tracking is not available. Run the asset lifecycle migrations first.');
 }
 
 $departments = asset_fetch_departments($conn, $churchId, true);
@@ -147,13 +147,12 @@ $sql = "SELECT a.id AS asset_id, item.id AS asset_item_id,
                CASE WHEN COALESCE(unit_total.unit_count, 0) > 0
                     THEN COALESCE(a.amount, 0) / unit_total.unit_count
                     ELSE COALESCE(a.amount, 0) END AS allocated_unit_value,
-               COALESCE(unit_total.unit_count, 1) AS sibling_unit_count,
+               COALESCE(unit_total.unit_count, 1) AS grouped_asset_count,
                d.name AS department_name, c.name AS church_name"
      . ($hasGroups ? ", g.name AS asset_group_name, g.group_code AS asset_group_code" : "")
      . $fromSql . $whereSql;
 
-$summarySql = 'SELECT COUNT(*) AS physical_units,
-                      COUNT(DISTINCT a.id) AS register_entries,
+$summarySql = 'SELECT COUNT(*) AS asset_count,
                       SUM(item.status = "active") AS active_units,
                       SUM(item.status = "disposed") AS disposed_units,
                       ' . ($hasCustody
@@ -177,8 +176,7 @@ $summaryStmt->close();
 $pageData = report_paginate_query($conn, $sql . ' ORDER BY item.created_at DESC, item.id DESC', $types, $params, 25);
 $assets = $pageData['result']->fetch_all(MYSQLI_ASSOC);
 $pageData['statement']->close();
-$physicalUnits = (int) ($registerSummary['physical_units'] ?? 0);
-$registerEntries = (int) ($registerSummary['register_entries'] ?? 0);
+$assetCount = (int) ($registerSummary['asset_count'] ?? 0);
 $availableUnits = (int) ($registerSummary['available_units'] ?? 0);
 $reservedUnits = (int) ($registerSummary['reserved_units'] ?? 0);
 $issuedUnits = (int) ($registerSummary['issued_units'] ?? 0);
@@ -213,16 +211,16 @@ ob_start();
     <div class="asset-hero p-3 p-md-4 mb-3 shadow-sm">
         <div class="d-flex flex-wrap justify-content-between align-items-center">
             <div>
-                <div class="eyebrow">One row, one traceable unit</div>
-                <h2 class="mb-1"><i class="fas fa-boxes mr-2"></i>Physical Asset Register</h2>
-                <p class="mb-0">Find the exact unit, see where it is, understand its condition and take the next permitted action.</p>
+                <div class="eyebrow">One row, one accountable asset</div>
+                <h2 class="mb-1"><i class="fas fa-boxes mr-2"></i>Asset Register</h2>
+                <p class="mb-0">Every row is an asset with its own number, category, department, condition and custody state.</p>
             </div>
             <div class="asset-hero-actions mt-3 mt-md-0">
                 <?php if ($canExport): ?>
                     <a class="btn btn-outline-light" href="asset_export.php?<?= htmlspecialchars(http_build_query($_GET)) ?>"><i class="fas fa-file-csv mr-1"></i> Export current view</a>
                 <?php endif; ?>
                 <?php if ($canCreate): ?>
-                    <a class="btn btn-warning" href="asset_form.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>"><i class="fas fa-plus mr-1"></i> Register physical unit</a>
+                    <a class="btn btn-warning" href="asset_form.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>"><i class="fas fa-plus mr-1"></i> Register asset</a>
                 <?php endif; ?>
             </div>
         </div>
@@ -231,9 +229,9 @@ ob_start();
     <?php render_asset_workspace_nav('register', $churchId); ?>
 
     <div class="asset-register-guide mb-3">
-        <div class="asset-guide-step"><span class="asset-guide-number">1</span><div><strong>Category</strong><small>Classification such as Vehicles or Sound Equipment.</small></div></div>
-        <div class="asset-guide-step"><span class="asset-guide-number">2</span><div><strong>Asset type / model</strong><small>Shared description such as Toyota Hiace or Yamaha Keyboard.</small></div></div>
-        <div class="asset-guide-step"><span class="asset-guide-number">3</span><div><strong>Physical unit</strong><small>The uniquely numbered object shown as one row below.</small></div></div>
+        <div class="asset-guide-step"><span class="asset-guide-number">1</span><div><strong>Category</strong><small>What kind of asset it is, such as Vehicle or Sound Equipment.</small></div></div>
+        <div class="asset-guide-step"><span class="asset-guide-number">2</span><div><strong>Asset</strong><small>The individually numbered asset, such as a Toyota Hiace or Yamaha keyboard.</small></div></div>
+        <div class="asset-guide-step"><span class="asset-guide-number">3</span><div><strong>Department</strong><small>The department currently responsible for the asset.</small></div></div>
     </div>
 
     <?php if (isset($_GET['saved'])): ?><div class="alert alert-success">Asset saved successfully.</div><?php endif; ?>
@@ -243,23 +241,23 @@ ob_start();
     <?php if (isset($_GET['err'])): ?><div class="alert alert-danger"><?= htmlspecialchars((string) $_GET['err']) ?></div><?php endif; ?>
 
     <div class="asset-register-kpis mb-3">
-        <div class="asset-kpi-card"><div class="asset-kpi-label">Physical units</div><div class="asset-kpi-value"><?= number_format($physicalUnits) ?></div><small class="text-muted"><?= number_format($registerEntries) ?> asset type/model record(s)</small></div>
+        <div class="asset-kpi-card"><div class="asset-kpi-label">Assets</div><div class="asset-kpi-value"><?= number_format($assetCount) ?></div><small class="text-muted">Individually numbered register entries</small></div>
         <div class="asset-kpi-card"><div class="asset-kpi-label">Available</div><div class="asset-kpi-value text-success"><?= number_format($availableUnits) ?></div><small class="text-muted">Ready to reserve or issue</small></div>
         <div class="asset-kpi-card"><div class="asset-kpi-label">Reserved / issued</div><div class="asset-kpi-value"><?= number_format($reservedUnits + $issuedUnits) ?></div><small class="text-muted"><?= number_format($reservedUnits) ?> reserved &middot; <?= number_format($issuedUnits) ?> issued</small></div>
         <div class="asset-kpi-card"><div class="asset-kpi-label">Needs attention</div><div class="asset-kpi-value text-warning"><?= number_format($underMaintenanceAssets) ?></div><small class="text-muted">Under maintenance</small></div>
-        <div class="asset-kpi-card"><div class="asset-kpi-label">Recorded value</div><div class="asset-kpi-value"><?= number_format($totalAmount, 2) ?></div><small class="text-muted">Across the filtered units</small></div>
+        <div class="asset-kpi-card"><div class="asset-kpi-label">Recorded value</div><div class="asset-kpi-value"><?= number_format($totalAmount, 2) ?></div><small class="text-muted">Across the filtered assets</small></div>
     </div>
 
     <div class="card asset-panel asset-register-filter mb-3">
         <div class="card-header d-flex flex-wrap justify-content-between align-items-center">
-            <div><strong>Find a physical unit</strong><small class="d-block text-muted">Search by unit number, serial, asset type/model or category.</small></div>
+            <div><strong>Find an asset</strong><small class="d-block text-muted">Search by asset number, serial, name, model or category.</small></div>
             <div><?php if ($activeFilterCount > 0): ?><span class="asset-filter-count mr-2"><?= $activeFilterCount ?> active filter<?= $activeFilterCount === 1 ? '' : 's' ?></span><?php endif; ?><a href="asset_list.php" class="btn btn-sm btn-outline-secondary">Clear</a></div>
         </div>
         <div class="card-body">
             <form method="get">
                 <div class="form-row align-items-end">
                     <?php if ($isSuper): ?><div class="form-group col-lg-3"><label>Church</label><select class="form-control" name="church_id"><option value="">All churches</option><?php foreach ($churches as $church): ?><option value="<?= (int) $church['id'] ?>" <?= $churchId === (int) $church['id'] ? 'selected' : '' ?>><?= htmlspecialchars($church['name']) ?></option><?php endforeach; ?></select></div><?php endif; ?>
-                    <div class="form-group <?= $isSuper ? 'col-lg-2' : 'col-lg-5' ?>"><label>Search register</label><input type="text" class="form-control" name="q" value="<?= htmlspecialchars($q) ?>" placeholder="Unit number, serial, name/model or category"></div>
+                    <div class="form-group <?= $isSuper ? 'col-lg-2' : 'col-lg-5' ?>"><label>Search register</label><input type="text" class="form-control" name="q" value="<?= htmlspecialchars($q) ?>" placeholder="Asset number, serial, name/model or category"></div>
                     <?php if ($hasGroups): ?><div class="form-group col-lg-3"><label>Category</label><select class="form-control" name="asset_group_id"><option value="">All categories</option><?php foreach ($groups as $group): ?><option value="<?= (int) $group['id'] ?>" <?= $assetGroupId === (int) $group['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $group['name']) ?></option><?php endforeach; ?></select></div><?php endif; ?>
                     <div class="form-group col-lg-3"><label>Department</label><select class="form-control" name="department_id"><option value="">All departments</option><?php foreach ($departments as $department): ?><option value="<?= (int) $department['id'] ?>" <?= $departmentId === (int) $department['id'] ? 'selected' : '' ?>><?= htmlspecialchars($department['name']) ?></option><?php endforeach; ?></select></div>
                     <div class="form-group col-lg-1"><button class="btn btn-primary btn-block" type="submit" title="Apply filters"><i class="fas fa-search"></i></button></div>
@@ -280,15 +278,15 @@ ob_start();
 
     <div class="card shadow-sm asset-panel">
         <div class="card-header d-flex flex-wrap justify-content-between align-items-center">
-            <div><strong>Physical units</strong><small class="d-block text-muted">Every row is an individually numbered object. Open a unit for its full custody, maintenance and audit history.</small></div>
-            <span class="badge badge-primary p-2"><?= number_format($pageData['total_rows']) ?> matching unit<?= (int) $pageData['total_rows'] === 1 ? '' : 's' ?></span>
+            <div><strong>Registered assets</strong><small class="d-block text-muted">Open an asset for its custody, maintenance and audit history.</small></div>
+            <span class="badge badge-primary p-2"><?= number_format($pageData['total_rows']) ?> matching asset<?= (int) $pageData['total_rows'] === 1 ? '' : 's' ?></span>
         </div>
         <div class="card-body table-responsive">
             <table class="table table-hover mb-0" id="assetTable">
                 <thead class="thead-light">
                     <tr>
-                        <th>Physical unit</th>
-                        <th>Asset type / model</th>
+                        <th>Asset number</th>
+                        <th>Asset name / category</th>
                         <th>Location<?= $isSuper ? ' / Church' : '' ?></th>
                         <th>Operational state</th>
                         <th>Recorded value</th>
@@ -306,11 +304,11 @@ ob_start();
                         ?>
                         <?php $categoryLabel = (string) (($asset['asset_group_name'] ?? $asset['item_group'] ?? '') ?: 'Unclassified'); ?>
                         <tr>
-                            <td class="asset-identity"><span class="asset-unit-number"><?= htmlspecialchars((string) $asset['item_number']) ?></span><span class="asset-meta">Serial: <?= htmlspecialchars((string) ($asset['serial_number'] ?: 'Not recorded')) ?></span><span class="asset-meta">Unit status: <?= htmlspecialchars(ucfirst($assetStatus)) ?></span></td>
-                            <td style="min-width:230px"><span class="asset-model-name"><?= htmlspecialchars((string) $asset['item_name']) ?></span><span class="asset-meta">Type/model reference: <?= htmlspecialchars((string) $asset['asset_code']) ?></span><span class="asset-category-chip"><i class="fas fa-layer-group mr-1"></i><?= htmlspecialchars($categoryLabel) ?><?= !empty($asset['asset_group_code']) ? ' · ' . htmlspecialchars((string) $asset['asset_group_code']) : '' ?></span><?php if ((int) $asset['sibling_unit_count'] > 1): ?><span class="asset-meta mt-1"><?= number_format((int) $asset['sibling_unit_count']) ?> related physical units use these shared details</span><?php endif; ?><?php if ($hasAcquisitionMode): ?><span class="asset-meta mt-1">Acquired by <?= htmlspecialchars((string) ($acquisitionModes[(string) ($asset['acquisition_mode'] ?? '')] ?? ucfirst(str_replace('_', ' ', (string) ($asset['acquisition_mode'] ?? 'unknown'))))) ?></span><?php endif; ?></td>
+                            <td class="asset-identity"><span class="asset-unit-number"><?= htmlspecialchars((string) $asset['item_number']) ?></span><span class="asset-meta">Serial: <?= htmlspecialchars((string) ($asset['serial_number'] ?: 'Not recorded')) ?></span><span class="asset-meta">Register status: <?= htmlspecialchars(ucfirst($assetStatus)) ?></span></td>
+                            <td style="min-width:230px"><span class="asset-model-name"><?= htmlspecialchars((string) $asset['item_name']) ?></span><span class="asset-category-chip"><i class="fas fa-layer-group mr-1"></i><?= htmlspecialchars($categoryLabel) ?><?= !empty($asset['asset_group_code']) ? ' &middot; ' . htmlspecialchars((string) $asset['asset_group_code']) : '' ?></span><?php if ($hasAcquisitionMode): ?><span class="asset-meta mt-1">Acquired by <?= htmlspecialchars((string) ($acquisitionModes[(string) ($asset['acquisition_mode'] ?? '')] ?? ucfirst(str_replace('_', ' ', (string) ($asset['acquisition_mode'] ?? 'unknown'))))) ?></span><?php endif; ?></td>
                             <td><strong><?= htmlspecialchars((string) ($asset['department_name'] ?? 'Unassigned')) ?></strong><?php if ($isSuper): ?><span class="asset-meta"><?= htmlspecialchars((string) ($asset['church_name'] ?? '-')) ?></span><?php endif; ?></td>
                             <td><div class="asset-state-stack"><span class="badge badge-<?= $asset['custody_status'] === 'available' ? 'success' : ($asset['custody_status'] === 'issued' ? 'primary' : 'warning') ?>"><i class="fas fa-hand-holding mr-1"></i><?= htmlspecialchars(ucfirst((string) $asset['custody_status'])) ?></span><span class="badge badge-<?= asset_condition_badge_class($assetCondition) ?>"><?= htmlspecialchars($assetCondition ?: 'Condition unknown') ?></span><?php if ($hasLifecycle): ?><span class="badge badge-<?= asset_lifecycle_badge_class($effectiveLifecycle) ?>"><?= htmlspecialchars(asset_lifecycle_label($effectiveLifecycle)) ?></span><?php endif; ?></div></td>
-                            <td><strong><?= number_format((float) $asset['allocated_unit_value'], 2) ?></strong><span class="asset-meta">Allocated unit value</span></td>
+                            <td><strong><?= number_format((float) $asset['allocated_unit_value'], 2) ?></strong><span class="asset-meta">Recorded asset value</span></td>
                             <td><div class="asset-row-actions">
                                 <?php if ($canViewDetail): ?>
                                     <a href="asset_view.php?id=<?= (int) $asset['asset_id'] ?>&tab=items&asset_item_id=<?= (int) $asset['asset_item_id'] ?>" class="btn btn-sm btn-outline-dark"><i class="fas fa-eye mr-1"></i>Open</a>
@@ -318,17 +316,16 @@ ob_start();
                                 <?php if ($canTransfer): ?>
                                     <a href="asset_transfer.php?id=<?= (int) $asset['asset_id'] ?>&asset_item_id=<?= (int) $asset['asset_item_id'] ?>" class="btn btn-sm btn-primary"><i class="fas fa-exchange-alt mr-1"></i>Move</a>
                                 <?php endif; ?>
-                                <?php if ($canEdit): ?><a href="asset_form.php?id=<?= (int) $asset['asset_id'] ?>" class="btn btn-sm btn-outline-warning" title="Edit the details shared by related units"><i class="fas fa-edit mr-1"></i>Edit type/model</a><?php endif; ?>
-                                <?php if ($canCreate): ?><a href="asset_item_form.php?asset_id=<?= (int) $asset['asset_id'] ?>" class="btn btn-sm btn-outline-success" title="Register another unit with the same type/model"><i class="fas fa-plus mr-1"></i>Add related unit</a><?php endif; ?>
+                                <?php if ($canEdit && (int) $asset['grouped_asset_count'] === 1): ?><a href="asset_form.php?id=<?= (int) $asset['asset_id'] ?>" class="btn btn-sm btn-outline-warning" title="Edit this asset"><i class="fas fa-edit mr-1"></i>Edit</a><?php endif; ?>
                             </div></td>
                         </tr>
                     <?php endforeach; ?>
                     <?php if (empty($assets)): ?>
-                        <tr><td colspan="6" class="asset-empty-state"><i class="fas fa-box-open"></i><strong>No physical units match these filters.</strong><small class="d-block mt-1">Clear filters or register a new physical unit.</small></td></tr>
+                        <tr><td colspan="6" class="asset-empty-state"><i class="fas fa-box-open"></i><strong>No assets match these filters.</strong><small class="d-block mt-1">Clear filters or register a new asset.</small></td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>
-            <?php report_render_server_pagination($pageData['total_rows'], $pageData['page'], $pageData['per_page'], 'Physical asset register pages'); ?>
+            <?php report_render_server_pagination($pageData['total_rows'], $pageData['page'], $pageData['per_page'], 'Asset register pages'); ?>
         </div>
     </div>
 </div>

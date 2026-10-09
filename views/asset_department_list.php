@@ -30,7 +30,7 @@ ob_start();
 ?>
 <link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
 <div class="container-fluid mt-4 asset-workspace">
-    <?php ob_start(); ?><a href="asset_department_form.php<?= $selectedChurchId ? '?church_id=' . (int) $selectedChurchId : '' ?>" class="btn btn-warning"><i class="fas fa-plus mr-1"></i>Add department</a><?php $heroActions = ob_get_clean(); render_asset_workspace_hero('Location governance', 'Asset Departments', 'Maintain the accountable locations used in physical-item identities, transfers and reporting.', 'fa-sitemap', $heroActions); ?>
+    <?php ob_start(); ?><a href="asset_department_form.php<?= $selectedChurchId ? '?church_id=' . (int) $selectedChurchId : '' ?>" class="btn btn-warning"><i class="fas fa-plus mr-1"></i>Add department</a><?php $heroActions = ob_get_clean(); render_asset_workspace_hero('Location governance', 'Asset Departments', 'Maintain the accountable departments used in asset numbers, transfers and reporting.', 'fa-sitemap', $heroActions); ?>
     <?php render_asset_workspace_nav('register', $selectedChurchId); ?>
 
     <?php if (isset($_GET['saved'])): ?>

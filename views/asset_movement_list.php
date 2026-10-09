@@ -60,7 +60,7 @@ ob_start();
 ?>
 <link rel="stylesheet" href="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>/assets/css/asset-workspace.css">
 <div class="container-fluid mt-4 asset-workspace">
-    <section class="asset-hero p-4 mb-3"><div class="d-flex justify-content-between align-items-center"><div><div class="eyebrow">Chain of location</div><h2 class="mb-1"><i class="fas fa-exchange-alt mr-2"></i>Asset Movements</h2><p class="mb-0">Every physical-unit transfer, previous department, destination and responsible officer.</p></div></div></section>
+    <section class="asset-hero p-4 mb-3"><div class="d-flex justify-content-between align-items-center"><div><div class="eyebrow">Chain of location</div><h2 class="mb-1"><i class="fas fa-exchange-alt mr-2"></i>Asset Movements</h2><p class="mb-0">Every asset transfer, previous department, destination and responsible officer.</p></div></div></section>
     <?php render_asset_workspace_nav('movements', $churchId); ?>
 
     <div class="card shadow-sm mb-3">
@@ -79,7 +79,7 @@ ob_start();
                 <?php endif; ?>
                 <div class="form-group col-md-4">
                     <label>Search</label>
-                    <input type="text" name="q" class="form-control" value="<?= htmlspecialchars($q) ?>" placeholder="Item number, category, department...">
+                    <input type="text" name="q" class="form-control" value="<?= htmlspecialchars($q) ?>" placeholder="Asset number, category, department...">
                 </div>
                 <div class="form-group col-md-2">
                     <button class="btn btn-outline-primary btn-block" type="submit">Filter</button>
@@ -96,8 +96,8 @@ ob_start();
                         <th>Moved At</th>
                         <?php if ($isSuper): ?><th>Church</th><?php endif; ?>
                         <th>Asset Code</th>
-                        <th>Item Number</th>
-                        <th>Item</th>
+                        <th>Asset Number</th>
+                        <th>Asset</th>
                         <th>From</th>
                         <th>To</th>
                         <th>Moved By</th>
