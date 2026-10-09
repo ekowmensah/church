@@ -73,6 +73,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Please select destination department.';
     } elseif ($toDepartmentId === $currentDepartmentId) {
         $error = 'Destination department must be different from current department.';
+    } elseif ($notes === '') {
+        $error = 'A transfer reason is required.';
     } else {
         if (!$canApprove && asset_table_exists($conn, 'asset_approval_requests')) {
             $requestId = asset_create_approval_request($conn, $churchId, $id, 'transfer', [
@@ -97,39 +99,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $conn->begin_transaction();
             try {
-                $before = [
-                    'department_id' => $currentDepartmentId,
-                    'department_name' => $asset['department_name'] ?? null,
-                ];
-
-                $destination = null;
-                foreach ($departments as $department) {
-                    if ((int) $department['id'] === $toDepartmentId) $destination = $department;
-                }
-                if (!$destination) throw new RuntimeException('Destination department not found.');
-                $newItemNumber = asset_replace_department_segment(
-                    (string) $selectedItem['item_number'],
-                    (string) ($destination['department_code'] ?? $destination['name'])
-                );
-                asset_assert_item_number_available(
-                    $conn,
-                    $churchId,
-                    $newItemNumber,
-                    $selectedItemId
-                );
-                $stmt = $conn->prepare('UPDATE asset_items SET department_id = ?, item_number = ? WHERE id = ? AND asset_id = ?');
-                $stmt->bind_param('isii', $toDepartmentId, $newItemNumber, $selectedItemId, $id);
-                $stmt->execute();
-                $stmt->close();
-
-                $codeChange = asset_sync_parent_from_items($conn, $id);
-
                 $movedBy = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
-                $stmt = $conn->prepare('INSERT INTO asset_movements (asset_id, asset_item_id, from_department_id, to_department_id, moved_by, notes) VALUES (?, ?, ?, ?, ?, ?)');
-                $stmt->bind_param('iiiiis', $id, $selectedItemId, $currentDepartmentId, $toDepartmentId, $movedBy, $notes);
-                $stmt->execute();
-                $movementId = (int) $conn->insert_id;
-                $stmt->close();
+                $movement = asset_transfer_registered_item(
+                    $conn,
+                    $id,
+                    $selectedItemId,
+                    $toDepartmentId,
+                    $movedBy,
+                    $notes
+                );
 
                 $conn->commit();
 
@@ -144,27 +122,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $after = [
                     'department_id' => $toDepartmentId,
                     'department_name' => $toDepartmentName,
-                    'asset_code' => $codeChange['new_asset_code'],
+                    'asset_code' => $movement['new_asset_code'],
+                    'item_number' => $movement['new_item_number'],
                 ];
 
-                asset_log_action('asset_transfer', 'asset_movement', $movementId, [
+                asset_log_action('asset_transfer', 'asset_movement', $movement['movement_id'], [
                     'asset_id' => $id,
-                    'asset_code' => $codeChange['new_asset_code'],
-                    'old_asset_code' => $codeChange['old_asset_code'],
-                    'new_asset_code' => $codeChange['new_asset_code'],
+                    'asset_code' => $movement['new_asset_code'],
+                    'old_asset_code' => $movement['old_asset_code'],
+                    'new_asset_code' => $movement['new_asset_code'],
                     'asset_item_id' => $selectedItemId,
-                    'old_item_number' => (string) $selectedItem['item_number'],
-                    'new_item_number' => $newItemNumber,
+                    'old_item_number' => $movement['old_item_number'],
+                    'new_item_number' => $movement['new_item_number'],
                     'church_id' => $churchId,
-                    'from_department_id' => $currentDepartmentId,
+                    'from_department_id' => $movement['from_department_id'],
                     'to_department_id' => $toDepartmentId,
-                ], $before, $after);
+                ], [
+                    'department_id' => $movement['from_department_id'],
+                    'item_number' => $movement['old_item_number'],
+                ], $after);
 
                 header('Location: asset_list.php?transferred=1' . ($churchId ? '&church_id=' . $churchId : ''));
                 exit;
             } catch (Throwable $e) {
                 $conn->rollback();
-                $error = 'Transfer failed. Please retry.';
+                error_log('Asset transfer failed: ' . $e->getMessage());
+                $error = $e instanceof mysqli_sql_exception
+                    ? 'The transfer could not be recorded. Please retry.'
+                    : $e->getMessage();
             }
         }
     }
@@ -194,7 +179,6 @@ ob_start();
             <?php else: ?>
 
             <div class="mb-3">
-                <strong>Asset Category Code:</strong> <?= htmlspecialchars($asset['asset_code']) ?><br>
                 <strong>Asset:</strong> <?= htmlspecialchars($asset['item_name']) ?><br>
                 <?php if ($selectedItem): ?><strong>Asset Number:</strong> <?= htmlspecialchars((string) $selectedItem['item_number']) ?><br><strong>Current Department:</strong> <?= htmlspecialchars((string) ($selectedItem['department_name'] ?? '-')) ?><?php endif; ?>
             </div>
@@ -223,8 +207,8 @@ ob_start();
                 </div>
 
                 <div class="form-group">
-                    <label for="notes">Transfer Notes</label>
-                    <textarea class="form-control" id="notes" name="notes" rows="3" maxlength="255" placeholder="Reason or notes for this movement"></textarea>
+                    <label for="notes">Transfer Reason <span class="text-danger">*</span></label>
+                    <textarea class="form-control" id="notes" name="notes" rows="3" maxlength="255" required placeholder="Explain why this asset is moving"></textarea>
                 </div>
 
                 <?php if (!$canApprove && asset_table_exists($conn, 'asset_approval_requests')): ?>

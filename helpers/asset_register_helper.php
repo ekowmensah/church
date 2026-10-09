@@ -235,6 +235,111 @@ if (!function_exists('asset_normalize_code_part')) {
 }
 
 if (!function_exists('asset_generate_code')) {
+    /** Return the numeric sequence only when the code belongs to the category. */
+    function asset_category_sequence_from_code(string $code, string $categoryCode): int {
+        $parts = explode('/', trim($code));
+        if (count($parts) < 6
+            || asset_normalize_code_part((string) ($parts[2] ?? ''), 3, 'GEN') !== $categoryCode
+            || !ctype_digit((string) ($parts[3] ?? ''))) {
+            return 0;
+        }
+        return (int) $parts[3];
+    }
+
+    /**
+     * Allocate one permanent sequence per church/category. Department moves
+     * and acquisition years never restart or alter this counter.
+     */
+    function asset_next_category_sequence(
+        mysqli $conn,
+        int $churchId,
+        ?int $assetGroupId,
+        string $categoryCode
+    ): int {
+        if ($assetGroupId !== null && $assetGroupId > 0
+            && asset_table_exists($conn, 'asset_category_number_sequences')) {
+            $stmt = $conn->prepare(
+                'SELECT id FROM asset_groups WHERE id = ? AND church_id = ? LIMIT 1'
+            );
+            $stmt->bind_param('ii', $assetGroupId, $churchId);
+            $stmt->execute();
+            $validCategory = (bool) $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$validCategory) {
+                throw new RuntimeException('The selected asset category does not belong to this church.');
+            }
+
+            $stmt = $conn->prepare(
+                'INSERT INTO asset_category_number_sequences
+                    (church_id, asset_group_id, last_sequence)
+                 VALUES (?, ?, LAST_INSERT_ID(1))
+                 ON DUPLICATE KEY UPDATE
+                    last_sequence = LAST_INSERT_ID(last_sequence + 1),
+                    updated_at = CURRENT_TIMESTAMP'
+            );
+            $stmt->bind_param('ii', $churchId, $assetGroupId);
+            $stmt->execute();
+            $stmt->close();
+            $sequence = (int) $conn->insert_id;
+            if ($sequence < 1) {
+                $sequence = (int) $conn->query('SELECT LAST_INSERT_ID()')->fetch_row()[0];
+            }
+            if ($sequence < 1) {
+                throw new RuntimeException('Unable to allocate the next asset category number.');
+            }
+            return $sequence;
+        }
+
+        // Compatibility fallback before Phase 0104: determine the maximum by
+        // relational category across every department and acquisition year.
+        $maxSequence = 0;
+        if ($assetGroupId !== null && $assetGroupId > 0) {
+            $stmt = $conn->prepare(
+                'SELECT asset_code AS code_value FROM assets
+                  WHERE church_id = ? AND asset_group_id = ?'
+            );
+            $stmt->bind_param('ii', $churchId, $assetGroupId);
+        } else {
+            $stmt = $conn->prepare('SELECT asset_code AS code_value FROM assets WHERE church_id = ?');
+            $stmt->bind_param('i', $churchId);
+        }
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($row = $result->fetch_assoc()) {
+            $maxSequence = max(
+                $maxSequence,
+                asset_category_sequence_from_code((string) ($row['code_value'] ?? ''), $categoryCode)
+            );
+        }
+        $stmt->close();
+
+        if (asset_table_exists($conn, 'asset_items')) {
+            if ($assetGroupId !== null && $assetGroupId > 0) {
+                $stmt = $conn->prepare(
+                    'SELECT item.item_number AS code_value
+                       FROM asset_items item
+                       JOIN assets asset ON asset.id = item.asset_id
+                      WHERE item.church_id = ? AND asset.asset_group_id = ?'
+                );
+                $stmt->bind_param('ii', $churchId, $assetGroupId);
+            } else {
+                $stmt = $conn->prepare('SELECT item_number AS code_value FROM asset_items WHERE church_id = ?');
+                $stmt->bind_param('i', $churchId);
+            }
+            $stmt->execute();
+            $result = $stmt->get_result();
+            while ($row = $result->fetch_assoc()) {
+                $maxSequence = max(
+                    $maxSequence,
+                    asset_category_sequence_from_code((string) ($row['code_value'] ?? ''), $categoryCode)
+                );
+            }
+            $stmt->close();
+        }
+
+        return $maxSequence + 1;
+    }
+
     function asset_generate_code(
         mysqli $conn,
         int $churchId,
@@ -289,42 +394,16 @@ if (!function_exists('asset_generate_code')) {
 
         $yearSource = $purchaseDate ?: date('Y-m-d');
         $year = substr((string) date('y', strtotime($yearSource) ?: time()), 0, 2);
-        $prefix = sprintf('%s/%s/%s/', $churchCode, $departmentCode, $groupCode);
-        $suffix = sprintf('/%s/%s', $year, $societyCode);
-
-        $stmt = $conn->prepare("SELECT asset_code FROM assets WHERE church_id = ? AND asset_code LIKE ? ORDER BY id DESC");
-        $like = $prefix . '%' . $suffix;
-        $stmt->bind_param('is', $churchId, $like);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        $maxSeq = 0;
-        while ($row = $res->fetch_assoc()) {
-            $code = (string) ($row['asset_code'] ?? '');
-            if (preg_match('#^' . preg_quote($prefix, '#') . '([0-9]+)' . preg_quote($suffix, '#') . '(?:-LEGACY-[0-9]+)?$#', $code, $m)) {
-                $maxSeq = max($maxSeq, (int) $m[1]);
-            }
-        }
-        $stmt->close();
-
-        // Registered assets can advance the sequence without creating another
-        // legacy parent row. Include them so a later registration can never
-        // collide with an already-issued asset number.
-        if (asset_table_exists($conn, 'asset_items')) {
-            $stmt = $conn->prepare("SELECT item_number AS asset_code FROM asset_items WHERE church_id = ? AND item_number LIKE ?");
-            $stmt->bind_param('is', $churchId, $like);
-            $stmt->execute();
-            $res = $stmt->get_result();
-            while ($row = $res->fetch_assoc()) {
-                $code = (string) ($row['asset_code'] ?? '');
-                if (preg_match('#^' . preg_quote($prefix, '#') . '([0-9]+)' . preg_quote($suffix, '#') . '(?:-LEGACY-[0-9]+)?$#', $code, $m)) {
-                    $maxSeq = max($maxSeq, (int) $m[1]);
-                }
-            }
-            $stmt->close();
-        }
-
-        $nextSeq = $maxSeq + 1;
-        return sprintf('%s%s%s', $prefix, str_pad((string) $nextSeq, 3, '0', STR_PAD_LEFT), $suffix);
+        $nextSeq = asset_next_category_sequence($conn, $churchId, $assetGroupId, $groupCode);
+        return sprintf(
+            '%s/%s/%s/%s/%s/%s',
+            $churchCode,
+            $departmentCode,
+            $groupCode,
+            str_pad((string) $nextSeq, 3, '0', STR_PAD_LEFT),
+            $year,
+            $societyCode
+        );
     }
 }
 
@@ -799,6 +878,153 @@ if (!function_exists('asset_sync_parent_from_items')) {
     }
 }
 
+if (!function_exists('asset_transfer_registered_item')) {
+    /**
+     * Transfer one accountable asset while preserving its category sequence.
+     * Callers must own the surrounding transaction.
+     *
+     * @return array{movement_id:int,from_department_id:?int,to_department_id:int,old_item_number:string,new_item_number:string,old_asset_code:string,new_asset_code:string}
+     */
+    function asset_transfer_registered_item(
+        mysqli $conn,
+        int $assetId,
+        int $assetItemId,
+        int $toDepartmentId,
+        ?int $actorUserId,
+        string $notes,
+        ?int $approvalRequestId = null,
+        ?int $expectedFromDepartmentId = null
+    ): array {
+        $notes = trim($notes);
+        if ($notes === '') {
+            throw new InvalidArgumentException('A transfer reason is required.');
+        }
+
+        $stmt = $conn->prepare(
+            'SELECT item.*, asset.church_id
+               FROM asset_items item
+               JOIN assets asset ON asset.id = item.asset_id
+              WHERE item.id = ? AND item.asset_id = ?
+              FOR UPDATE'
+        );
+        $stmt->bind_param('ii', $assetItemId, $assetId);
+        $stmt->execute();
+        $item = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$item) {
+            throw new RuntimeException('The asset no longer exists.');
+        }
+        if ((string) ($item['status'] ?? '') !== 'active'
+            || (string) ($item['custody_status'] ?? 'available') !== 'available'
+            || in_array((string) ($item['lifecycle_status'] ?? ''), ['under_maintenance', 'retired', 'disposed'], true)
+            || asset_item_is_disposed($item)) {
+            throw new RuntimeException(
+                'Only an active, available asset can be transferred. Complete custody, maintenance or retirement workflows first.'
+            );
+        }
+
+        $churchId = (int) $item['church_id'];
+        $fromDepartmentId = (int) ($item['department_id'] ?? 0) ?: null;
+        if ($expectedFromDepartmentId !== null
+            && (int) $fromDepartmentId !== $expectedFromDepartmentId) {
+            throw new RuntimeException(
+                'The asset department changed after this transfer was requested. Submit a new transfer request.'
+            );
+        }
+        if ($toDepartmentId < 1 || $toDepartmentId === (int) $fromDepartmentId) {
+            throw new InvalidArgumentException('Destination department must be different from the current department.');
+        }
+
+        $stmt = $conn->prepare(
+            'SELECT name, department_code FROM asset_departments
+              WHERE id = ? AND church_id = ? LIMIT 1'
+        );
+        $stmt->bind_param('ii', $toDepartmentId, $churchId);
+        $stmt->execute();
+        $destination = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$destination) {
+            throw new RuntimeException('Destination department not found for this church.');
+        }
+
+        $oldItemNumber = (string) $item['item_number'];
+        $newItemNumber = asset_replace_department_segment(
+            $oldItemNumber,
+            (string) ($destination['department_code'] ?: $destination['name'])
+        );
+        $oldParts = explode('/', $oldItemNumber);
+        $newParts = explode('/', $newItemNumber);
+        foreach ($oldParts as $index => $part) {
+            if ($index !== 1 && (!array_key_exists($index, $newParts) || $newParts[$index] !== $part)) {
+                throw new RuntimeException('Transfer numbering attempted to change a non-department asset-code segment.');
+            }
+        }
+        asset_assert_item_number_available($conn, $churchId, $newItemNumber, $assetItemId);
+
+        $stmt = $conn->prepare(
+            'UPDATE asset_items SET department_id = ?, item_number = ?
+              WHERE id = ? AND asset_id = ?'
+        );
+        $stmt->bind_param('isii', $toDepartmentId, $newItemNumber, $assetItemId, $assetId);
+        $stmt->execute();
+        $stmt->close();
+
+        $codeChange = asset_sync_parent_from_items($conn, $assetId);
+        if (asset_column_exists($conn, 'asset_movements', 'old_item_number')
+            && asset_column_exists($conn, 'asset_movements', 'new_item_number')
+            && asset_column_exists($conn, 'asset_movements', 'approval_request_id')) {
+            $stmt = $conn->prepare(
+                'INSERT INTO asset_movements
+                    (asset_id, asset_item_id, from_department_id, to_department_id,
+                     moved_by, notes, old_item_number, new_item_number,
+                     approval_request_id)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            );
+            $stmt->bind_param(
+                'iiiiisssi',
+                $assetId,
+                $assetItemId,
+                $fromDepartmentId,
+                $toDepartmentId,
+                $actorUserId,
+                $notes,
+                $oldItemNumber,
+                $newItemNumber,
+                $approvalRequestId
+            );
+        } else {
+            $stmt = $conn->prepare(
+                'INSERT INTO asset_movements
+                    (asset_id, asset_item_id, from_department_id, to_department_id,
+                     moved_by, notes)
+                 VALUES (?, ?, ?, ?, ?, ?)'
+            );
+            $stmt->bind_param(
+                'iiiiis',
+                $assetId,
+                $assetItemId,
+                $fromDepartmentId,
+                $toDepartmentId,
+                $actorUserId,
+                $notes
+            );
+        }
+        $stmt->execute();
+        $movementId = (int) $conn->insert_id;
+        $stmt->close();
+
+        return [
+            'movement_id' => $movementId,
+            'from_department_id' => $fromDepartmentId,
+            'to_department_id' => $toDepartmentId,
+            'old_item_number' => $oldItemNumber,
+            'new_item_number' => $newItemNumber,
+            'old_asset_code' => $codeChange['old_asset_code'],
+            'new_asset_code' => $codeChange['new_asset_code'],
+        ];
+    }
+}
+
 if (!function_exists('asset_generate_item_number')) {
     /**
      * Generate the next asset number for an existing legacy parent record.
@@ -815,32 +1041,7 @@ if (!function_exists('asset_generate_item_number')) {
             (string) ($asset['purchase_date'] ?? date('Y-m-d'))
         );
 
-        $parts = explode('/', $candidate);
-        if (count($parts) < 6) {
-            throw new RuntimeException('Unable to generate a canonical physical-item number.');
-        }
-
-        $prefix = implode('/', array_slice($parts, 0, 3)) . '/';
-        $suffix = '/' . implode('/', array_slice($parts, 4, 2));
-        $like = $prefix . '%' . $suffix . '%';
-        $churchId = (int) $asset['church_id'];
-        $stmt = $conn->prepare(
-            'SELECT item_number FROM asset_items WHERE church_id = ? AND item_number LIKE ?'
-        );
-        $stmt->bind_param('is', $churchId, $like);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $maxSequence = 0;
-        while ($row = $result->fetch_assoc()) {
-            $number = (string) ($row['item_number'] ?? '');
-            if (preg_match('#^' . preg_quote($prefix, '#') . '([0-9]+)' . preg_quote($suffix, '#') . '(?:-LEGACY-[0-9]+)?$#', $number, $matches)) {
-                $maxSequence = max($maxSequence, (int) $matches[1]);
-            }
-        }
-        $stmt->close();
-
-        $sequence = max($maxSequence + 1, (int) ($parts[3] ?? 1));
-        return $prefix . str_pad((string) $sequence, 3, '0', STR_PAD_LEFT) . $suffix;
+        return $candidate;
     }
 }
 

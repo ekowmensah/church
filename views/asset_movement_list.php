@@ -42,14 +42,10 @@ if ($churchId !== null) {
     $params[] = $churchId;
 }
 if ($q !== '') {
-    $sql .= ' AND (a.asset_code LIKE ? OR item.item_number LIKE ? OR a.item_name LIKE ? OR d1.name LIKE ? OR d2.name LIKE ?)';
-    $types .= 'sssss';
+    $sql .= ' AND (a.asset_code LIKE ? OR item.item_number LIKE ? OR am.old_item_number LIKE ? OR am.new_item_number LIKE ? OR a.item_name LIKE ? OR d1.name LIKE ? OR d2.name LIKE ?)';
+    $types .= 'sssssss';
     $like = '%' . $q . '%';
-    $params[] = $like;
-    $params[] = $like;
-    $params[] = $like;
-    $params[] = $like;
-    $params[] = $like;
+    for ($index = 0; $index < 7; $index++) $params[] = $like;
 }
 
 $pageData = report_paginate_query($conn, $sql . ' ORDER BY am.moved_at DESC', $types, $params, 25);
@@ -95,13 +91,12 @@ ob_start();
                     <tr>
                         <th>Moved At</th>
                         <?php if ($isSuper): ?><th>Church</th><?php endif; ?>
-                        <th>Asset Code</th>
-                        <th>Asset Number</th>
                         <th>Asset</th>
+                        <th>Asset Number Change</th>
                         <th>From</th>
                         <th>To</th>
-                        <th>Moved By</th>
-                        <th>Notes</th>
+                        <th>Recorded By</th>
+                        <th>Source / Notes</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -109,17 +104,16 @@ ob_start();
                     <tr>
                         <td><?= htmlspecialchars((string) $row['moved_at']) ?></td>
                         <?php if ($isSuper): ?><td><?= htmlspecialchars((string) ($row['church_name'] ?? '-')) ?></td><?php endif; ?>
-                        <td><?= htmlspecialchars((string) $row['asset_code']) ?></td>
-                        <td><?= htmlspecialchars((string) ($row['item_number'] ?? '-')) ?></td>
-                        <td><?= htmlspecialchars((string) $row['item_name']) ?></td>
+                        <td><strong><?= htmlspecialchars((string) $row['item_name']) ?></strong><small class="d-block text-muted">Current: <?= htmlspecialchars((string) ($row['item_number'] ?? $row['asset_code'])) ?></small></td>
+                        <td><?php if (!empty($row['old_item_number']) || !empty($row['new_item_number'])): ?><span class="d-block text-muted"><del><?= htmlspecialchars((string) ($row['old_item_number'] ?? '-')) ?></del></span><strong><?= htmlspecialchars((string) ($row['new_item_number'] ?? '-')) ?></strong><?php else: ?><span class="text-muted">Legacy movement — number snapshot unavailable</span><?php endif; ?></td>
                         <td><?= htmlspecialchars((string) ($row['from_department_name'] ?? '-')) ?></td>
                         <td><?= htmlspecialchars((string) ($row['to_department_name'] ?? '-')) ?></td>
                         <td><?= htmlspecialchars((string) ($row['moved_by_name'] ?? '-')) ?></td>
-                        <td><?= htmlspecialchars((string) ($row['notes'] ?? '')) ?> <?php if (has_permission('view_asset_detail') || asset_is_super_admin()): ?><a href="asset_view.php?id=<?= (int) $row['asset_id'] ?>" class="btn btn-sm btn-outline-dark ml-1"><i class="fas fa-eye"></i></a><?php endif; ?></td>
+                        <td><?php if (!empty($row['approval_request_id'])): ?><span class="badge badge-info mb-1">Approved request #<?= (int) $row['approval_request_id'] ?></span><?php else: ?><span class="badge badge-light border mb-1">Direct transfer</span><?php endif; ?><span class="d-block"><?= htmlspecialchars((string) ($row['notes'] ?? '')) ?></span><?php if (has_permission('view_asset_detail') || asset_is_super_admin()): ?><a href="asset_view.php?id=<?= (int) $row['asset_id'] ?>" class="btn btn-sm btn-outline-dark mt-1"><i class="fas fa-eye mr-1"></i>View asset</a><?php endif; ?></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($rows)): ?>
-                    <tr><td colspan="<?= $isSuper ? 9 : 8 ?>" class="text-center">No movement records found.</td></tr>
+                    <tr><td colspan="<?= $isSuper ? 8 : 7 ?>" class="text-center">No movement records found.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

@@ -317,6 +317,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($error !== '') {
         // Preserve an identity/concurrency error discovered above.
+    } elseif ($isEdit && $churchId !== (int) ($asset['church_id'] ?? 0)) {
+        $error = 'An existing asset cannot be moved to another church from the edit form.';
+    } elseif ($isEdit && $departmentId !== (int) ($selectedPhysicalItem['department_id'] ?? $asset['department_id'] ?? 0)) {
+        $error = 'Use the governed Transfer Asset workflow to change the responsible department.';
+    } elseif ($isEdit && $hasGroups && $assetGroupId !== (int) ($asset['asset_group_id'] ?? 0)) {
+        $error = 'The category controls the permanent asset sequence and cannot be changed from the edit form.';
     } elseif ($churchId <= 0) {
         $error = 'Church is required.';
     } elseif ($departmentId <= 0) {
@@ -729,7 +735,8 @@ ob_start();
                 <div class="form-row">
                     <div class="form-group col-md-4">
                         <label>Department <span class="text-danger">*</span></label>
-                            <select name="department_id" id="department_id" class="form-control" required>
+                        <?php if ($isEdit): ?><input type="hidden" name="department_id" value="<?= (int) $departmentId ?>"><?php endif; ?>
+                            <select name="department_id" id="department_id" class="form-control" required <?= $isEdit ? 'disabled' : '' ?>>
                             <option value="">-- Select Department --</option>
                             <?php foreach ($departments as $department): ?>
                                 <option value="<?= (int) $department['id'] ?>" data-church-id="<?= (int) ($department['church_id'] ?? 0) ?>" <?= $departmentId === (int) $department['id'] ? 'selected' : '' ?>>
@@ -737,11 +744,13 @@ ob_start();
                                 </option>
                             <?php endforeach; ?>
                         </select>
+                        <?php if ($isEdit): ?><small class="text-muted">Use Transfer Asset to change departments and retain movement evidence.</small><?php endif; ?>
                     </div>
                     <?php if ($hasGroups): ?>
                     <div class="form-group col-md-4">
                         <label>Asset Category <span class="text-danger">*</span></label>
-                        <select name="asset_group_id" id="asset_group_id" class="form-control" required>
+                        <?php if ($isEdit): ?><input type="hidden" name="asset_group_id" value="<?= (int) $assetGroupId ?>"><?php endif; ?>
+                        <select name="asset_group_id" id="asset_group_id" class="form-control" required <?= $isEdit ? 'disabled' : '' ?>>
                             <option value="">-- Select Asset Category --</option>
                             <?php foreach ($groups as $group): ?>
                                 <option
@@ -759,7 +768,7 @@ ob_start();
                             <?php endforeach; ?>
                         </select>
                         <input type="hidden" name="item_group" id="item_group" value="<?= htmlspecialchars($itemGroup) ?>">
-                        <small class="text-muted">Controls classification, filtering and the category segment of generated asset numbers.</small>
+                        <small class="text-muted"><?= $isEdit ? 'Category is locked because it owns the permanent asset sequence.' : 'Controls classification, filtering and the category segment of generated asset numbers.' ?></small>
                         <?php if (asset_is_super_admin() || has_permission('manage_asset_groups')): ?><a class="small d-block mt-1" href="asset_group_list.php<?= $churchId ? '?church_id=' . (int) $churchId : '' ?>">Manage asset categories</a><?php endif; ?>
                     </div>
                     <div class="form-group col-md-4">

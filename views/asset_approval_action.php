@@ -83,6 +83,15 @@ if (!is_array($payload)) {
 
 $conn->begin_transaction();
 try {
+    $stmt = $conn->prepare('SELECT status FROM asset_approval_requests WHERE id = ? FOR UPDATE');
+    $stmt->bind_param('i', $requestId);
+    $stmt->execute();
+    $lockedRequest = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$lockedRequest || (string) $lockedRequest['status'] !== 'pending') {
+        throw new RuntimeException('This approval request was already finalized by another reviewer.');
+    }
+
     if ($decision === 'approve') {
         if (!$assetExists) {
             throw new RuntimeException(
@@ -109,38 +118,39 @@ try {
             }
 
             if ($assetItemId > 0 && asset_item_tracking_available($conn)) {
-                $stmt = $conn->prepare('SELECT item_number, department_id FROM asset_items WHERE id = ? AND asset_id = ? FOR UPDATE');
-                $stmt->bind_param('ii', $assetItemId, $assetId); $stmt->execute();
-                $item = $stmt->get_result()->fetch_assoc(); $stmt->close();
-                if (!$item) throw new RuntimeException('Asset no longer exists.');
-                $fromDepartmentId = (int) ($item['department_id'] ?? 0);
-                $stmt = $conn->prepare('SELECT name, department_code FROM asset_departments WHERE id = ? AND church_id = ? LIMIT 1');
-                $requestChurchId = (int) $request['church_id'];
-                $stmt->bind_param('ii', $toDepartmentId, $requestChurchId); $stmt->execute();
-                $destination = $stmt->get_result()->fetch_assoc(); $stmt->close();
-                if (!$destination) throw new RuntimeException('Destination department not found.');
-                $newItemNumber = asset_replace_department_segment((string) $item['item_number'], (string) ($destination['department_code'] ?? $destination['name']));
-                asset_assert_item_number_available(
+                $movement = asset_transfer_registered_item(
                     $conn,
-                    (int) $request['church_id'],
-                    $newItemNumber,
-                    $assetItemId
+                    $assetId,
+                    $assetItemId,
+                    $toDepartmentId,
+                    $reviewedBy,
+                    $note,
+                    $requestId,
+                    $fromDepartmentId
                 );
-                $stmt = $conn->prepare('UPDATE asset_items SET department_id = ?, item_number = ? WHERE id = ?');
-                $stmt->bind_param('isi', $toDepartmentId, $newItemNumber, $assetItemId); $stmt->execute(); $stmt->close();
-                $codeChange = asset_sync_parent_from_items($conn, $assetId);
+                $fromDepartmentId = (int) ($movement['from_department_id'] ?? 0);
+                $codeChange = [
+                    'old_asset_code' => $movement['old_asset_code'],
+                    'new_asset_code' => $movement['new_asset_code'],
+                ];
+                $payload['old_item_number'] = $movement['old_item_number'];
+                $payload['new_item_number'] = $movement['new_item_number'];
+                $payload['movement_id'] = $movement['movement_id'];
             } else {
+                if (trim($note) === '') {
+                    throw new RuntimeException('A transfer reason is required.');
+                }
                 $codeChange = asset_move_parent_to_department($conn, $assetId, $toDepartmentId);
                 $assetItemId = null;
+                $stmt = $conn->prepare('INSERT INTO asset_movements (asset_id, asset_item_id, from_department_id, to_department_id, moved_by, notes) VALUES (?, ?, ?, ?, ?, ?)');
+                $stmt->bind_param('iiiiis', $assetId, $assetItemId, $fromDepartmentId, $toDepartmentId, $reviewedBy, $note);
+                $stmt->execute();
+                $payload['movement_id'] = (int) $conn->insert_id;
+                $stmt->close();
             }
 
             $payload['old_asset_code'] = $codeChange['old_asset_code'];
             $payload['new_asset_code'] = $codeChange['new_asset_code'];
-
-            $stmt = $conn->prepare('INSERT INTO asset_movements (asset_id, asset_item_id, from_department_id, to_department_id, moved_by, notes) VALUES (?, ?, ?, ?, ?, ?)');
-            $stmt->bind_param('iiiiis', $assetId, $assetItemId, $fromDepartmentId, $toDepartmentId, $reviewedBy, $note);
-            $stmt->execute();
-            $stmt->close();
         } elseif ($requestType === 'dispose' || $requestType === 'status_change') {
             $newStatus = (string) ($payload['new_status'] ?? 'active');
             $assetItemId = (int) ($payload['asset_item_id'] ?? 0);
