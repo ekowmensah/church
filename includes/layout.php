@@ -216,6 +216,7 @@ $layoutPageTitle = trim((string) ($page_title ?? '')) ?: ($layoutDerivedTitle ?:
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-responsive/js/responsive.bootstrap4.min.js"></script>
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/chart.js/Chart.min.js"></script>
     <script src="<?php echo BASE_URL; ?>/assets/js/report-export-branding.js"></script>
+    <script src="<?php echo BASE_URL; ?>/assets/js/full-filtered-table-export.js"></script>
     <?php endif; ?>
     <!-- FullCalendar (for dashboard calendar) -->
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@latest/main.min.js"></script>

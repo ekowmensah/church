@@ -263,7 +263,13 @@ ob_start();
             </table>
         </div>
         <?php if ($totalPages > 1): ?>
-            <div class="card-footer d-flex flex-wrap align-items-center justify-content-between" style="gap:10px">
+            <div class="card-footer report-server-pagination d-flex flex-wrap align-items-center justify-content-between"
+                 data-report-pagination-meta="true"
+                 data-total-rows="<?= (int) $totalRows ?>"
+                 data-total-pages="<?= (int) $totalPages ?>"
+                 data-current-page="<?= (int) $page ?>"
+                 data-per-page="<?= (int) $perPage ?>"
+                 style="gap:10px">
                 <small class="text-muted"><?= number_format($totalRows) ?> matching records</small>
                 <nav aria-label="Audit report pages"><ul class="pagination pagination-sm">
                     <?php $previousQuery = audit_report_query($baseQuery, ['page' => max(1, $page - 1)]); $nextQuery = audit_report_query($baseQuery, ['page' => min($totalPages, $page + 1)]); ?>

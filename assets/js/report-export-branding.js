@@ -29,6 +29,12 @@
         return match ? match[0].toUpperCase() : 'A';
     }
 
+    function excelColumnCount(letters) {
+        return String(letters || 'A').toUpperCase().split('').reduce(function (count, letter) {
+            return (count * 26) + letter.charCodeAt(0) - 64;
+        }, 0);
+    }
+
     function importXml(parent, markup, beforeNode) {
         var namespace = parent.namespaceURI || 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
         var parsed = new DOMParser().parseFromString('<root xmlns="' + namespace + '">' + markup + '</root>', 'application/xml');
@@ -50,6 +56,20 @@
         var $fills = $styles.find('fills');
         var $cellXfs = $styles.find('cellXfs');
 
+        // Preserve each built-in number/date format while centering its
+        // presentation. DataTables may select different built-in XFs per
+        // column, so replacing them with one generic style would lose types.
+        $cellXfs.children('xf').each(function () {
+            var $format = $(this);
+            $format.attr('applyAlignment', '1');
+            var $alignment = $format.children('alignment');
+            if ($alignment.length) {
+                $alignment.attr({ horizontal: 'center', vertical: 'center', wrapText: '1' });
+            } else {
+                importXml(this, '<alignment horizontal="center" vertical="center" wrapText="1"/>');
+            }
+        });
+
         var titleFontId = $fonts.children().length;
         importXml($fonts[0], '<font><i/><sz val="14"/><color rgb="FF' + brand.primary_color.slice(1) + '"/><name val="Calibri"/></font>');
         var headerFontId = $fonts.children().length;
@@ -65,9 +85,9 @@
         var titleStyleId = $cellXfs.children().length;
         importXml($cellXfs[0], '<xf numFmtId="0" fontId="' + titleFontId + '" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="right"/></xf>');
         var headerStyleId = $cellXfs.children().length;
-        importXml($cellXfs[0], '<xf numFmtId="0" fontId="' + headerFontId + '" fillId="' + primaryFillId + '" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>');
+        importXml($cellXfs[0], '<xf numFmtId="0" fontId="' + headerFontId + '" fillId="' + primaryFillId + '" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>');
         var stripeStyleId = $cellXfs.children().length;
-        importXml($cellXfs[0], '<xf numFmtId="0" fontId="0" fillId="' + accentFillId + '" borderId="1" xfId="0" applyFill="1" applyBorder="1"></xf>');
+        importXml($cellXfs[0], '<xf numFmtId="0" fontId="0" fillId="' + accentFillId + '" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>');
         var footerStyleId = $cellXfs.children().length;
         importXml($cellXfs[0], '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center"/></xf>');
         $cellXfs.attr('count', $cellXfs.children().length);
@@ -93,7 +113,9 @@
         var $lastRow = $sheet.find('sheetData row').last();
         var lastRowNumber = parseInt($lastRow.attr('r') || '1', 10);
         var lastCellReference = $lastRow.find('c').last().attr('r') || 'A' + lastRowNumber;
-        var lastColumn = columnLetters(lastCellReference);
+        var dimensionReference = String($sheet.find('dimension').attr('ref') || '');
+        var dimensionLastCell = dimensionReference ? dimensionReference.split(':').pop() : '';
+        var lastColumn = columnLetters(dimensionLastCell || lastCellReference);
         var footerRowOne = lastRowNumber + 2;
         var footerRowTwo = lastRowNumber + 3;
         var footerXml = '<row r="' + footerRowOne + '"><c r="A' + footerRowOne + '" s="' + footerStyleId + '" t="inlineStr"><is><t>'
@@ -112,6 +134,45 @@
         importXml($mergeCells[0], '<mergeCell ref="A' + footerRowTwo + ':' + lastColumn + footerRowTwo + '"/>');
         $mergeCells.attr('count', $mergeCells.children().length);
         $sheet.find('dimension').attr('ref', 'A1:' + lastColumn + footerRowTwo);
+
+        // Excel files have no fixed screen orientation, but their worksheet
+        // print settings do. Apply the same rule as PDF/print and fit all
+        // exported columns to one page wide when the workbook is printed.
+        var exportedColumnCount = excelColumnCount(lastColumn);
+        var excelOrientation = exportedColumnCount >= 7 ? 'landscape' : 'portrait';
+        var worksheet = $sheet.find('worksheet')[0];
+        var $sheetPr = $sheet.find('sheetPr');
+        if (!$sheetPr.length) {
+            importXml(worksheet, '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>', worksheet.firstChild);
+        } else if (!$sheetPr.find('pageSetUpPr').length) {
+            importXml($sheetPr[0], '<pageSetUpPr fitToPage="1"/>');
+        } else {
+            $sheetPr.find('pageSetUpPr').attr('fitToPage', '1');
+        }
+
+        var $pageMargins = $sheet.find('pageMargins');
+        if (!$pageMargins.length) {
+            var pageMarginsBefore = $sheet.find('pageSetup, headerFooter, rowBreaks, colBreaks, drawing, legacyDrawing, tableParts').first()[0] || null;
+            importXml(worksheet, '<pageMargins left="0.25" right="0.25" top="0.45" bottom="0.45" header="0.15" footer="0.15"/>', pageMarginsBefore);
+            $pageMargins = $sheet.find('pageMargins');
+        } else {
+            $pageMargins.attr({ left: '0.25', right: '0.25', top: '0.45', bottom: '0.45', header: '0.15', footer: '0.15' });
+        }
+
+        var $pageSetup = $sheet.find('pageSetup');
+        if (!$pageSetup.length) {
+            var pageSetupBefore = $sheet.find('headerFooter, rowBreaks, colBreaks, drawing, legacyDrawing, tableParts').first()[0] || null;
+            importXml(worksheet, '<pageSetup paperSize="9" orientation="' + excelOrientation + '" fitToWidth="1" fitToHeight="0" horizontalDpi="300" verticalDpi="300"/>', pageSetupBefore);
+        } else {
+            $pageSetup.attr({
+                paperSize: '9',
+                orientation: excelOrientation,
+                fitToWidth: '1',
+                fitToHeight: '0',
+                horizontalDpi: '300',
+                verticalDpi: '300'
+            });
+        }
     }
 
     function findPdfTable(doc) {
@@ -134,6 +195,16 @@
         var table = findPdfTable(doc);
         if (table) {
             var headerRows = (table.table.headerRows || 1);
+            var columnCount = table.table.body.length && table.table.body[0]
+                ? table.table.body[0].length
+                : 0;
+            doc.pageOrientation = columnCount >= 7 ? 'landscape' : 'portrait';
+            doc.defaultStyle = Object.assign({}, doc.defaultStyle || {}, {
+                fontSize: columnCount >= 12 ? 6 : (columnCount >= 9 ? 7 : (columnCount >= 7 ? 8 : 9))
+            });
+            if (columnCount > 0 && !table.table.widths) {
+                table.table.widths = new Array(columnCount).fill('*');
+            }
             table.table.body.forEach(function (row, rowIndex) {
                 row.forEach(function (cell) {
                     if (rowIndex < headerRows) {
@@ -143,6 +214,7 @@
                     } else if ((rowIndex - headerRows) % 2 === 1) {
                         cell.fillColor = '#F3F7F9';
                     }
+                    cell.alignment = 'center';
                 });
             });
         }
@@ -177,7 +249,8 @@
         doc.head.appendChild(style);
         var header = doc.createElement('div');
         header.className = 'mf-export-brand-header';
-        header.innerHTML = (brand.logo_url ? '<img src="' + brand.logo_url + '" alt="Church logo">' : '')
+        var printLogo = brand.logo_data_uri || '';
+        header.innerHTML = (printLogo ? '<img src="' + printLogo + '" alt="Church logo">' : '')
             + '<strong>' + $('<div>').text(brand.church_name).html() + '</strong>';
         doc.body.insertBefore(header, doc.body.firstChild);
         var footer = doc.createElement('div');

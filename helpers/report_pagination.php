@@ -35,7 +35,13 @@ if (!function_exists('report_render_server_pagination')) {
         $pages = array_values(array_unique($pages));
         sort($pages);
 
-        echo '<div class="report-server-pagination d-flex flex-wrap align-items-center justify-content-between mt-3" style="gap:10px">';
+        echo '<div class="report-server-pagination d-flex flex-wrap align-items-center justify-content-between mt-3"'
+            . ' data-report-pagination-meta="true"'
+            . ' data-total-rows="' . $totalRows . '"'
+            . ' data-total-pages="' . $totalPages . '"'
+            . ' data-current-page="' . $page . '"'
+            . ' data-per-page="' . $perPage . '"'
+            . ' style="gap:10px">';
         echo '<div class="d-flex flex-wrap align-items-center" style="gap:12px"><small class="text-muted">Showing '
             . number_format($start) . '&ndash;' . number_format($end) . ' of ' . number_format($totalRows) . ' rows</small>';
         echo '<form method="get" class="form-inline report-page-size-form">';

@@ -390,7 +390,13 @@ sort($pagination_pages);
         </table>
       </div>
       <?php if ($total_pages > 1): ?>
-      <nav class="mt-3" aria-label="Payment report pages">
+      <nav class="report-server-pagination mt-3"
+           data-report-pagination-meta="true"
+           data-total-rows="<?= (int) $total_rows ?>"
+           data-total-pages="<?= (int) $total_pages ?>"
+           data-current-page="<?= (int) $page ?>"
+           data-per-page="<?= (int) $per_page ?>"
+           aria-label="Payment report pages">
         <ul class="pagination justify-content-center flex-wrap mb-0">
           <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
             <a class="page-link" href="<?= $page <= 1 ? '#' : htmlspecialchars($page_url($page - 1)) ?>" aria-label="Previous">&laquo;</a>
