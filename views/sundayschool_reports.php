@@ -689,11 +689,11 @@ $(document).ready(function() {
                         order: 'applied'
                     }
                 },
-                customize: function(doc) {
+                customize: function(doc, config, dataTableApi) {
                     doc.defaultStyle.fontSize = 8;
                     doc.styles.tableHeader.fontSize = 9;
                     doc.styles.title.fontSize = 14;
-                    MyFreemanExportBranding.brandPdf(doc);
+                    MyFreemanExportBranding.brandPdf(doc, config, dataTableApi);
                 }
             },
             {

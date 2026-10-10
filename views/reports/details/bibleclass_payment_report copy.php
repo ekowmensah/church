@@ -235,7 +235,7 @@ $(document).ready(function() {
                 className: 'btn btn-danger btn-sm mr-2',
                 title: 'Bible Class Payment Report',
                 footer: true,
-                customize: function(doc) {
+                customize: function(doc, config, dataTableApi) {
                     // Style the footer/totals row (last row)
                     var body = doc.content[1].table.body;
                     var lastRow = body[body.length - 1];
@@ -243,7 +243,7 @@ $(document).ready(function() {
                         lastRow[j].bold = true;
                         lastRow[j].fillColor = '#f0f0f0';
                     }
-                    MyFreemanExportBranding.brandPdf(doc);
+                    MyFreemanExportBranding.brandPdf(doc, config, dataTableApi);
                 }
             },
             {

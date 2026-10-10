@@ -104,10 +104,79 @@
         if (progressNotice) progressNotice.style.display = 'none';
     }
 
-    function fetchPage(url, table, tableIndex) {
+    function renderPrintPreparation(targetWindow, reportTitle, onCancel) {
+        if (!targetWindow || targetWindow.closed) return;
+        var brand = window.MyFreemanReportBrand || {};
+        var primary = brand.primary_color || '#173F5F';
+        var accent = brand.accent_color || '#236B45';
+        var churchName = brand.church_name || 'MyFreeman Church Portal';
+        var logo = brand.logo_data_uri || '';
+        var logoMarkup = logo
+            ? '<img class="prep-logo" src="' + escapeHtml(logo) + '" alt="Church logo">'
+            : '<div class="prep-logo-fallback" aria-hidden="true">MF</div>';
+        var html = '<!doctype html><html><head><meta charset="utf-8"><title>Preparing ' + escapeHtml(reportTitle) + '</title><style>'
+            + ':root{color-scheme:light}*{box-sizing:border-box}html,body{min-height:100%;margin:0}body{display:grid;place-items:center;padding:28px;background:radial-gradient(circle at 16% 12%,rgba(35,107,69,.16),transparent 30%),linear-gradient(145deg,#eef4f7 0%,#f9fbfc 48%,#edf3f1 100%);color:#243746;font-family:Arial,Helvetica,sans-serif}'
+            + '.prep-shell{width:min(94vw,560px)}.prep-card{position:relative;overflow:hidden;border:1px solid rgba(23,63,95,.14);border-radius:22px;background:rgba(255,255,255,.96);box-shadow:0 24px 70px rgba(23,63,95,.18);padding:30px}.prep-card:before{content:"";position:absolute;inset:0 0 auto;height:5px;background:linear-gradient(90deg,' + primary + ',' + accent + ')}'
+            + '.prep-brand{display:flex;align-items:center;gap:12px;margin-bottom:28px}.prep-logo{display:block;width:48px;height:48px;object-fit:contain}.prep-logo-fallback{display:grid;place-items:center;width:48px;height:48px;border-radius:14px;background:' + primary + ';color:#fff;font-size:15px;font-weight:800}.prep-brand-copy{min-width:0}.prep-church{overflow:hidden;color:' + primary + ';font-size:15px;font-weight:800;text-overflow:ellipsis;white-space:nowrap}.prep-label{margin-top:3px;color:#73838e;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}'
+            + '.prep-main{display:flex;align-items:flex-start;gap:19px}.prep-spinner{position:relative;flex:0 0 58px;width:58px;height:58px;border:6px solid #dce7ec;border-top-color:' + accent + ';border-radius:50%;animation:prep-spin .85s linear infinite}.prep-spinner:after{content:"";position:absolute;inset:10px;border-radius:50%;background:#f3f8f5}.prep-content{min-width:0;flex:1}.prep-content h1{margin:1px 0 7px;color:' + primary + ';font-size:22px;line-height:1.18}.prep-report{margin:0 0 16px;color:#657783;font-size:13px;line-height:1.45}.prep-report strong{color:#334c5c}'
+            + '.prep-track{position:relative;overflow:hidden;height:8px;border-radius:999px;background:#e6edf1}.prep-bar{width:34%;height:100%;border-radius:inherit;background:linear-gradient(90deg,' + primary + ',' + accent + ');animation:prep-slide 1.35s ease-in-out infinite}.prep-track.is-determinate .prep-bar{animation:none;transition:width .25s ease}.prep-status{margin:13px 0 0;color:#334c5c;font-size:13px;font-weight:700}.prep-detail{min-height:18px;margin:4px 0 0;color:#7a8993;font-size:12px}'
+            + '.prep-actions{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-top:26px;padding-top:20px;border-top:1px solid #e7edf0}.prep-note{margin:0;color:#7b8992;font-size:11px;line-height:1.4}.prep-cancel{appearance:none;border:1px solid #cbd6dc;border-radius:10px;background:#fff;color:#334c5c;padding:9px 16px;font:700 12px Arial,sans-serif;cursor:pointer}.prep-cancel:hover{border-color:' + primary + ';color:' + primary + ';background:#f6f9fa}.prep-cancel:focus-visible{outline:3px solid rgba(35,107,69,.2);outline-offset:2px}'
+            + 'body.is-error .prep-spinner{display:grid;place-items:center;border:0;background:#fbe8e9;color:#a52a32;animation:none}body.is-error .prep-spinner:before{content:"!";font-size:26px;font-weight:800}body.is-error .prep-spinner:after{display:none}body.is-error .prep-bar{width:100%!important;background:#b83b44;animation:none}'
+            + '@keyframes prep-spin{to{transform:rotate(360deg)}}@keyframes prep-slide{0%{transform:translateX(-120%)}50%{transform:translateX(195%)}100%{transform:translateX(-120%)}}@media(max-width:520px){.prep-card{padding:24px 20px}.prep-main{gap:14px}.prep-spinner{flex-basis:48px;width:48px;height:48px}.prep-content h1{font-size:19px}.prep-actions{align-items:flex-start;flex-direction:column}.prep-cancel{width:100%}}@media(prefers-reduced-motion:reduce){.prep-spinner,.prep-bar{animation-duration:2.4s}.prep-track.is-determinate .prep-bar{transition:none}}'
+            + '</style></head><body><main class="prep-shell"><section class="prep-card">'
+            + '<div class="prep-brand">' + logoMarkup + '<div class="prep-brand-copy"><div class="prep-church">' + escapeHtml(churchName) + '</div><div class="prep-label">Report print service</div></div></div>'
+            + '<div class="prep-main" role="status" aria-live="polite" aria-atomic="true"><div class="prep-spinner" aria-hidden="true"></div><div class="prep-content"><h1 id="mfPrintPrepHeading">Preparing your report</h1><p class="prep-report">Collecting every record for <strong>' + escapeHtml(reportTitle) + '</strong>.</p>'
+            + '<div class="prep-track" id="mfPrintPrepTrack" role="progressbar" aria-label="Report preparation progress"><div class="prep-bar" id="mfPrintPrepBar"></div></div><p class="prep-status" id="mfPrintPrepStatus">Checking the active filters</p><p class="prep-detail" id="mfPrintPrepDetail">This window will open the browser print preview automatically.</p></div></div>'
+            + '<div class="prep-actions"><p class="prep-note">You can continue working after the print preview opens.</p><button class="prep-cancel" id="mfPrintPrepCancel" type="button">Cancel</button></div>'
+            + '</section></main></body></html>';
+
+        targetWindow.document.open();
+        targetWindow.document.write(html);
+        targetWindow.document.close();
+        var cancelButton = targetWindow.document.getElementById('mfPrintPrepCancel');
+        if (cancelButton) {
+            cancelButton.addEventListener('click', function () {
+                if (typeof onCancel === 'function') onCancel();
+                targetWindow.close();
+            });
+        }
+    }
+
+    function updatePrintPreparation(targetWindow, status, detail, completed, total) {
+        if (!targetWindow || targetWindow.closed) return;
+        var doc = targetWindow.document;
+        var statusNode = doc.getElementById('mfPrintPrepStatus');
+        var detailNode = doc.getElementById('mfPrintPrepDetail');
+        var track = doc.getElementById('mfPrintPrepTrack');
+        var bar = doc.getElementById('mfPrintPrepBar');
+        if (statusNode) statusNode.textContent = status || 'Preparing the report';
+        if (detailNode) detailNode.textContent = detail || '';
+        if (track && bar && Number.isFinite(completed) && Number.isFinite(total) && total > 0) {
+            var percent = Math.max(0, Math.min(100, Math.round((completed / total) * 100)));
+            track.classList.add('is-determinate');
+            track.setAttribute('aria-valuemin', '0');
+            track.setAttribute('aria-valuemax', '100');
+            track.setAttribute('aria-valuenow', String(percent));
+            bar.style.width = percent + '%';
+        }
+    }
+
+    function showPrintPreparationError(targetWindow, message) {
+        if (!targetWindow || targetWindow.closed) return;
+        var doc = targetWindow.document;
+        if (doc.body) doc.body.classList.add('is-error');
+        var heading = doc.getElementById('mfPrintPrepHeading');
+        var cancelButton = doc.getElementById('mfPrintPrepCancel');
+        if (heading) heading.textContent = 'Unable to prepare this report';
+        if (cancelButton) cancelButton.textContent = 'Close';
+        updatePrintPreparation(targetWindow, message, 'Review the message, close this window, and try again.', 1, 1);
+    }
+
+    function fetchPage(url, table, tableIndex, signal) {
         return window.fetch(url.toString(), {
             credentials: 'same-origin',
-            headers: { 'X-Requested-With': 'Full-Filtered-Report-Export' }
+            headers: { 'X-Requested-With': 'Full-Filtered-Report-Export' },
+            signal: signal
         }).then(function (response) {
             if (!response.ok) {
                 throw new Error('The report server returned HTTP ' + response.status + '.');
@@ -128,10 +197,12 @@
         });
     }
 
-    function fetchAllRows(table, dataTableApi) {
+    function fetchAllRows(table, dataTableApi, onProgress, signal) {
         var meta = paginationMetaFor(table);
         if (!meta || meta.totalRows <= tableDataRows(table).length) {
-            return Promise.resolve(tableDataRows(table).map(function (row) { return row.cloneNode(true); }));
+            var localRows = tableDataRows(table).map(function (row) { return row.cloneNode(true); });
+            if (typeof onProgress === 'function') onProgress(1, 1, localRows.length);
+            return Promise.resolve(localRows);
         }
 
         var totalPages = Math.max(1, Math.ceil(meta.totalRows / EXPORT_PAGE_SIZE));
@@ -151,15 +222,23 @@
             url.searchParams.set('page', String(pageNumber));
             url.searchParams.set('per_page', String(EXPORT_PAGE_SIZE));
 
-            return fetchPage(url, table, tableIndex).then(function (rows) {
+            return fetchPage(url, table, tableIndex, signal).then(function (rows) {
                 pageRows[pageNumber - 1] = rows;
                 completed += 1;
-                showProgress('Preparing complete filtered export: page ' + completed + ' of ' + totalPages + '...');
+                if (typeof onProgress === 'function') {
+                    onProgress(completed, totalPages, meta.totalRows);
+                } else {
+                    showProgress('Preparing complete filtered export: page ' + completed + ' of ' + totalPages + '...');
+                }
                 return worker();
             });
         }
 
-        showProgress('Preparing complete filtered export: page 0 of ' + totalPages + '...');
+        if (typeof onProgress === 'function') {
+            onProgress(0, totalPages, meta.totalRows);
+        } else {
+            showProgress('Preparing complete filtered export: page 0 of ' + totalPages + '...');
+        }
         var workers = [];
         for (var workerIndex = 0; workerIndex < Math.min(FETCH_CONCURRENCY, totalPages); workerIndex += 1) {
             workers.push(worker());
@@ -205,12 +284,27 @@
         }, 5000);
     }
 
-    function titleFrom(config) {
+    function titleFrom(config, dataTableApi) {
         var configured = config && config.title;
         if (typeof configured === 'function') configured = configured();
-        if (configured && configured !== '*') return normalizeText(configured);
-        var heading = document.querySelector('.report-page-header h1, .content-header h1, main h1, h2');
-        return normalizeText(heading ? heading.textContent : document.title) || 'Filtered report';
+        var selectors = ['.report-page-header h1', '.content-header h1', 'main h1', '.card-title', 'h2'];
+        var heading = null;
+        selectors.some(function (selector) {
+            heading = document.querySelector(selector);
+            return Boolean(heading);
+        });
+        var baseTitle = configured && configured !== '*'
+            ? normalizeText(configured)
+            : (normalizeText(heading ? heading.textContent : document.title) || 'Filtered report');
+        var branding = window.MyFreemanExportBranding;
+        return branding && typeof branding.descriptiveTitle === 'function'
+            ? branding.descriptiveTitle(
+                baseTitle,
+                typeof branding.activeFilterDetails === 'function'
+                    ? branding.activeFilterDetails(dataTableApi)
+                    : undefined
+            )
+            : baseTitle;
     }
 
     function excludedColumnIndexes(table) {
@@ -311,7 +405,16 @@
         return node.innerHTML;
     }
 
-    function activeFilterSummary() {
+    function activeFilterSummary(dataTableApi) {
+        var branding = window.MyFreemanExportBranding;
+        if (branding && typeof branding.activeFilterDetails === 'function') {
+            var details = branding.activeFilterDetails(dataTableApi);
+            if (details.length) {
+                return details.map(function (filter) {
+                    return filter.label + ': ' + filter.value;
+                }).join('  |  ');
+            }
+        }
         var ignored = ['page', 'per_page', 'export', 'format'];
         var filters = [];
         new URL(window.location.href).searchParams.forEach(function (value, key) {
@@ -345,7 +448,7 @@
         });
     }
 
-    function printRows(sourceTable, rows, title, printWindow) {
+    function printRows(sourceTable, rows, title, printWindow, dataTableApi) {
         var targetWindow = printWindow || window.open('', '_blank');
         if (!targetWindow) throw new Error('The print window was blocked by the browser.');
         var printable = printableTable(sourceTable, rows);
@@ -375,7 +478,7 @@
             + '</style></head><body>'
             + '<header class="report-header"><div class="report-brand">' + logoMarkup + '<div><div class="report-church">' + escapeHtml(churchName) + '</div><div class="report-generated">Generated ' + escapeHtml(generatedAt) + '</div></div></div>'
             + '<div class="report-heading"><h1>' + escapeHtml(title) + '</h1><p>' + escapeHtml(metaLine) + '</p></div></header>'
-            + '<div class="filter-summary"><strong>Active filters:</strong> ' + escapeHtml(activeFilterSummary()) + '</div>'
+            + '<div class="filter-summary"><strong>Active filters:</strong> ' + escapeHtml(activeFilterSummary(dataTableApi)) + '</div>'
             + printable.table.outerHTML
             + '<footer class="report-footer"><strong>' + escapeHtml(brand.footer_line_one || '') + '</strong>' + escapeHtml(brand.footer_line_two || '') + '</footer>'
             + '</body></html>';
@@ -410,12 +513,24 @@
 
     function reportExportError(error, printWindow) {
         hideProgress();
+        if (error && error.name === 'AbortError') return;
         var message = error && error.message ? error.message : 'The complete filtered export could not be prepared.';
         if (printWindow && !printWindow.closed) {
-            printWindow.document.body.innerHTML = '<p style="font-family:Arial;padding:24px;color:#842029"></p>';
-            printWindow.document.body.firstChild.textContent = message;
+            showPrintPreparationError(printWindow, message);
         }
         window.alert(message);
+    }
+
+    function printProgressUpdater(printWindow) {
+        return function (completed, totalPages, totalRows) {
+            var recordLabel = Number(totalRows || 0).toLocaleString() + ' filtered record'
+                + (Number(totalRows || 0) === 1 ? '' : 's');
+            var status = totalPages > 1 ? 'Collecting filtered report pages' : 'Collecting filtered records';
+            var detail = totalPages > 1
+                ? 'Loaded page ' + completed + ' of ' + totalPages + '  ·  ' + recordLabel
+                : recordLabel + ' ready for layout';
+            updatePrintPreparation(printWindow, status, detail, completed, totalPages);
+        };
     }
 
     function installCompleteDataTableAction(buttonName, mode) {
@@ -434,15 +549,33 @@
 
             var actionContext = this;
             var printWindow = mode === 'print' ? window.open('', '_blank') : null;
-            if (printWindow) printWindow.document.write('<p style="font-family:Arial;padding:24px">Preparing complete filtered report...</p>');
+            var printAbortController = mode === 'print' && typeof window.AbortController === 'function'
+                ? new window.AbortController()
+                : null;
+            var reportTitle = titleFrom(config, dataTableApi);
+            if (printWindow) {
+                renderPrintPreparation(printWindow, reportTitle, function () {
+                    if (printAbortController) printAbortController.abort();
+                });
+            }
             setButtonBusy(node, true);
 
+            var onPrintProgress = mode === 'print' ? printProgressUpdater(printWindow) : null;
             var rowsPromise = needsCompleteServerRows
-                ? fetchAllRows(sourceTable, dataTableApi)
-                : rowsForPrint(sourceTable, dataTableApi);
+                ? fetchAllRows(sourceTable, dataTableApi, onPrintProgress, printAbortController ? printAbortController.signal : undefined)
+                : rowsForPrint(sourceTable, dataTableApi, onPrintProgress, printAbortController ? printAbortController.signal : undefined);
             rowsPromise.then(function (rows) {
                 if (mode === 'print') {
-                    return printRows(sourceTable, rows, titleFrom(config), printWindow);
+                    if (!printWindow) throw new Error('The print window was blocked by the browser. Allow pop-ups for this portal and try again.');
+                    if (printWindow.closed) return;
+                    updatePrintPreparation(
+                        printWindow,
+                        'Building the print layout',
+                        'Applying branding and choosing the best page orientation…',
+                        1,
+                        1
+                    );
+                    return printRows(sourceTable, rows, reportTitle, printWindow, dataTableApi);
                 }
                 var temporary = temporaryDataTable(sourceTable, rows);
                 originalAction.call(actionContext, event, temporary.api, node, config);
@@ -480,16 +613,20 @@
         return best;
     }
 
-    function rowsForPrint(table, api) {
+    function rowsForPrint(table, api, onProgress, signal) {
         if (table.getAttribute('data-report-pagination') === 'server' && shouldLoadAllRows(table)) {
-            return fetchAllRows(table, api);
+            return fetchAllRows(table, api, onProgress, signal);
         }
         if (api) {
-            return Promise.resolve(api.rows({ search: 'applied', order: 'applied' }).nodes().toArray().map(function (row) {
+            var filteredRows = api.rows({ search: 'applied', order: 'applied' }).nodes().toArray().map(function (row) {
                 return row.cloneNode(true);
-            }));
+            });
+            if (typeof onProgress === 'function') onProgress(1, 1, filteredRows.length);
+            return Promise.resolve(filteredRows);
         }
-        return Promise.resolve(tableDataRows(table).map(function (row) { return row.cloneNode(true); }));
+        var rows = tableDataRows(table).map(function (row) { return row.cloneNode(true); });
+        if (typeof onProgress === 'function') onProgress(1, 1, rows.length);
+        return Promise.resolve(rows);
     }
 
     function interceptWindowPrintButtons() {
@@ -504,11 +641,33 @@
             event.stopImmediatePropagation();
 
             var printWindow = window.open('', '_blank');
-            if (printWindow) printWindow.document.write('<p style="font-family:Arial;padding:24px">Preparing complete filtered report...</p>');
+            var printAbortController = typeof window.AbortController === 'function'
+                ? new window.AbortController()
+                : null;
             var api = $.fn.DataTable.isDataTable(table) ? $(table).DataTable() : null;
+            var reportTitle = titleFrom({}, api);
+            if (printWindow) {
+                renderPrintPreparation(printWindow, reportTitle, function () {
+                    if (printAbortController) printAbortController.abort();
+                });
+            }
             setButtonBusy(trigger, true);
-            rowsForPrint(table, api).then(function (rows) {
-                return printRows(table, rows, titleFrom({}), printWindow);
+            rowsForPrint(
+                table,
+                api,
+                printProgressUpdater(printWindow),
+                printAbortController ? printAbortController.signal : undefined
+            ).then(function (rows) {
+                if (!printWindow) throw new Error('The print window was blocked by the browser. Allow pop-ups for this portal and try again.');
+                if (printWindow.closed) return;
+                updatePrintPreparation(
+                    printWindow,
+                    'Building the print layout',
+                    'Applying branding and choosing the best page orientation…',
+                    1,
+                    1
+                );
+                return printRows(table, rows, reportTitle, printWindow, api);
             }).catch(function (error) {
                 reportExportError(error, printWindow);
             }).finally(function () {
