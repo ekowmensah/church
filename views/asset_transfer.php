@@ -92,6 +92,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ], [], [
                 'from_department_id' => $currentDepartmentId,
                 'to_department_id' => $toDepartmentId,
+                'asset_item_id' => $selectedItemId,
+                'item_number' => (string) $selectedItem['item_number'],
                 'note' => $notes,
             ]);
             header('Location: asset_list.php?requested=1' . ($churchId ? '&church_id=' . $churchId : ''));

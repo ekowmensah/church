@@ -117,6 +117,12 @@ try {
                 throw new RuntimeException('Invalid transfer payload.');
             }
 
+            if (asset_item_tracking_available($conn) && $assetItemId <= 0) {
+                throw new RuntimeException(
+                    'This legacy transfer request does not identify an exact asset. Reject it and submit a new transfer request from the asset record.'
+                );
+            }
+
             if ($assetItemId > 0 && asset_item_tracking_available($conn)) {
                 $movement = asset_transfer_registered_item(
                     $conn,
@@ -137,6 +143,9 @@ try {
                 $payload['new_item_number'] = $movement['new_item_number'];
                 $payload['movement_id'] = $movement['movement_id'];
             } else {
+                // Compatibility for installations that have not introduced
+                // item-level asset tracking. Current installations never use
+                // this parent-only branch because it cannot identify custody.
                 if (trim($note) === '') {
                     throw new RuntimeException('A transfer reason is required.');
                 }

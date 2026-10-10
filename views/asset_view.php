@@ -177,11 +177,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($requestType === 'transfer') {
                     $toDepartmentId = (int) ($_POST['to_department_id'] ?? 0);
                     $note = trim((string) ($_POST['request_note'] ?? ''));
-                    if ($toDepartmentId <= 0 || $toDepartmentId === (int) ($asset['department_id'] ?? 0)) {
+                    $assetItemId = (int) ($_POST['asset_item_id'] ?? 0);
+                    $selectedItem = null;
+                    foreach ($physicalItems as $physicalItem) {
+                        if ((int) $physicalItem['id'] === $assetItemId) {
+                            $selectedItem = $physicalItem;
+                            break;
+                        }
+                    }
+                    $fromDepartmentId = (int) ($selectedItem['department_id'] ?? 0);
+                    $lifecycleStatus = (string) ($selectedItem['lifecycle_status'] ?? 'in_use');
+                    if (!$selectedItem) {
+                        $error = 'Select a valid asset to transfer.';
+                    } elseif ((string) ($selectedItem['status'] ?? '') !== 'active'
+                        || (string) ($selectedItem['custody_status'] ?? 'available') !== 'available'
+                        || in_array($lifecycleStatus, ['under_maintenance', 'retired', 'disposed'], true)
+                        || asset_item_is_disposed($selectedItem)) {
+                        $error = 'Only an active, available asset can be submitted for transfer.';
+                    } elseif ($note === '') {
+                        $error = 'A transfer reason is required.';
+                    } elseif ($toDepartmentId <= 0 || $toDepartmentId === $fromDepartmentId) {
                         $error = 'Select a valid destination department.';
                     } else {
                         $payload = [
-                            'from_department_id' => (int) ($asset['department_id'] ?? 0),
+                            'asset_item_id' => $assetItemId,
+                            'item_number' => (string) $selectedItem['item_number'],
+                            'from_department_id' => $fromDepartmentId,
                             'to_department_id' => $toDepartmentId,
                             'note' => $note,
                         ];
@@ -578,17 +599,33 @@ ob_start();
             <div class="card-body table-responsive">
                 <table class="table table-bordered table-hover">
                     <thead class="thead-light">
-                        <tr><th>Moved At</th><th>Asset Number</th><th>From</th><th>To</th><th>By</th><th>Notes</th></tr>
+                        <tr><th>Moved At</th><th>Asset Number Change</th><th>From</th><th>To</th><th>By</th><th>Source / Notes</th></tr>
                     </thead>
                     <tbody>
                         <?php foreach ($movements as $m): ?>
                             <tr>
                                 <td><?= htmlspecialchars((string) $m['moved_at']) ?></td>
-                                <td><?= htmlspecialchars((string) ($m['item_number'] ?? '-')) ?></td>
+                                <td>
+                                    <?php if (!empty($m['old_item_number']) || !empty($m['new_item_number'])): ?>
+                                        <small class="text-muted"><del><?= htmlspecialchars((string) ($m['old_item_number'] ?? '-')) ?></del></small>
+                                        <i class="fas fa-long-arrow-alt-right mx-1 text-muted"></i>
+                                        <strong><?= htmlspecialchars((string) ($m['new_item_number'] ?? $m['item_number'] ?? '-')) ?></strong>
+                                    <?php else: ?>
+                                        <strong><?= htmlspecialchars((string) ($m['item_number'] ?? '-')) ?></strong>
+                                        <small class="d-block text-muted">Legacy movement; number snapshot unavailable</small>
+                                    <?php endif; ?>
+                                </td>
                                 <td><?= htmlspecialchars((string) ($m['from_department_name'] ?? '-')) ?></td>
                                 <td><?= htmlspecialchars((string) ($m['to_department_name'] ?? '-')) ?></td>
                                 <td><?= htmlspecialchars((string) ($m['moved_by_name'] ?? '-')) ?></td>
-                                <td><?= htmlspecialchars((string) ($m['notes'] ?? '')) ?></td>
+                                <td>
+                                    <?php if (!empty($m['approval_request_id'])): ?>
+                                        <span class="badge badge-info mb-1">Approved request #<?= (int) $m['approval_request_id'] ?></span>
+                                    <?php else: ?>
+                                        <span class="badge badge-light mb-1">Direct transfer</span>
+                                    <?php endif; ?>
+                                    <div><?= htmlspecialchars((string) ($m['notes'] ?? '')) ?></div>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                         <?php if (empty($movements)): ?><tr><td colspan="6" class="text-center">No movement records.</td></tr><?php endif; ?>
@@ -701,26 +738,38 @@ ob_start();
                     <div class="card-header"><strong>New Transfer Request</strong></div>
                     <div class="card-body">
                         <?php if ($canRequestApproval): ?>
+                            <?php $selectedTransferState = $selectedAssetItem ? asset_operational_state($selectedAssetItem) : null; ?>
+                            <?php if ($selectedAssetItem && !$selectedAssetDisposed && ($selectedTransferState['key'] ?? '') === 'available'): ?>
                             <form method="post">
                                 <?= csrf_input() ?>
                                 <input type="hidden" name="id" value="<?= $assetId ?>">
                                 <input type="hidden" name="asset_action" value="request_transfer">
+                                <input type="hidden" name="selected_asset_item_id" value="<?= $selectedAssetItemId ?>">
+                                <input type="hidden" name="asset_item_id" value="<?= $selectedAssetItemId ?>">
+                                <div class="alert alert-light border py-2">
+                                    <small class="text-muted d-block">Asset to move</small>
+                                    <strong><?= htmlspecialchars((string) $selectedAssetItem['item_number']) ?></strong>
+                                    <span class="d-block text-muted"><?= htmlspecialchars((string) ($selectedAssetItem['department_name'] ?? 'No department')) ?></span>
+                                </div>
                                 <div class="form-group">
-                                    <label>To Department</label>
+                                    <label>To Department <span class="text-danger">*</span></label>
                                     <select name="to_department_id" class="form-control" required>
                                         <option value="">-- Select Department --</option>
                                         <?php foreach ($departments as $dept): ?>
-                                            <?php if ((int) $dept['id'] === (int) ($asset['department_id'] ?? 0)) continue; ?>
+                                            <?php if ((int) $dept['id'] === (int) ($selectedAssetItem['department_id'] ?? 0)) continue; ?>
                                             <option value="<?= (int) $dept['id'] ?>"><?= htmlspecialchars((string) $dept['name']) ?></option>
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label>Note</label>
-                                    <input type="text" name="request_note" class="form-control" maxlength="255" placeholder="Reason for transfer">
+                                    <label>Transfer Reason <span class="text-danger">*</span></label>
+                                    <input type="text" name="request_note" class="form-control" maxlength="255" placeholder="Explain why this asset is moving" required>
                                 </div>
                                 <button type="submit" class="btn btn-outline-primary btn-sm">Submit Request</button>
                             </form>
+                            <?php else: ?>
+                                <div class="alert alert-secondary mb-0">Only an active, available asset can be submitted for transfer. Complete any lending, maintenance or retirement workflow first.</div>
+                            <?php endif; ?>
                         <?php else: ?>
                             <div class="text-muted">No permission to submit requests.</div>
                         <?php endif; ?>
