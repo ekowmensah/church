@@ -17,7 +17,7 @@ if (!is_logged_in()) {
 }
 
 // Permission check
-if (!has_permission('manage_members')) {
+if (!has_permission('create_member')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Forbidden']);
     exit;
