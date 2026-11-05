@@ -68,6 +68,10 @@ try {
     schedule_smoke_assert(!empty($first['created']), 'The first schedule generation did not create a session.');
     schedule_smoke_assert(empty($second['created']), 'The second schedule generation was not idempotent.');
     schedule_smoke_assert($createdSessionId === (int) $second['session_id'], 'Idempotent generation returned a different session.');
+    schedule_smoke_assert(
+        !$service->isSessionAttendanceComplete($createdSessionId),
+        'A newly generated attendance session was incorrectly considered complete.'
+    );
 
     $session = $service->getClassSession($classId, $createdSessionId);
     schedule_smoke_assert($session['attendance_scope'] === 'bible_class', 'Generated session has the wrong scope.');
@@ -98,8 +102,12 @@ try {
     schedule_smoke_assert($savedCount > 0, 'Attendance submission did not save the class roster.');
     $approved = $service->getClassSession($classId, $createdSessionId);
     schedule_smoke_assert($approved['approval_status'] === 'approved', 'Bible class attendance was not finalized.');
+    schedule_smoke_assert(
+        $service->isSessionAttendanceComplete($createdSessionId),
+        'A submitted member-portal attendance session remains eligible for dashboard prompting.'
+    );
 
-    echo "PASS: Bible class scheduling is idempotent, class-scoped, leader-restricted, and class-book aware.\n";
+    echo "PASS: Bible class scheduling is idempotent, class-scoped, leader-restricted, class-book aware, and completion is shared across portals.\n";
 } finally {
     if ($testDate !== '') {
         $deleteLedger = $conn->prepare('DELETE FROM bible_class_attendance_schedule WHERE class_id = ? AND attendance_date = ?');

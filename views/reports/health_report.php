@@ -3,219 +3,39 @@ require_once __DIR__.'/../../config/config.php';
 require_once __DIR__.'/../../helpers/auth.php';
 require_once __DIR__.'/../../helpers/permissions_v2.php';
 require_once __DIR__.'/../../helpers/report_pagination.php';
-
-// Only allow logged-in users
-if (!is_logged_in()) {
-    header('Location: ' . BASE_URL . '/login.php');
-    exit;
-}
-
-// Robust super admin bypass and permission check
-$is_super_admin = is_super_admin();
-
-if (!$is_super_admin && !has_permission('view_health_report')) {
-    http_response_code(403);
-    if (file_exists(__DIR__.'/../../views/errors/403.php')) {
-        include __DIR__.'/../../views/errors/403.php';
-    } else if (file_exists(__DIR__.'/../errors/403.php')) {
-        include __DIR__.'/../errors/403.php';
-    } else {
-        echo '<div class="alert alert-danger"><h4>403 Forbidden</h4><p>You do not have permission to access this report.</p></div>';
-    }
-    exit;
-}
-
-// Set permission flags for UI elements
-$can_view = true; // Already validated above
-$can_export = $is_super_admin || has_permission('export_health_report');
-
-$page_title = 'Health Report';
-// Fetch filter options
-$actorChurchId = (int) ($_SESSION['church_id'] ?? 0);
-$churches = $is_super_admin
-    ? $conn->query("SELECT id, name FROM churches ORDER BY name")
-    : $conn->query("SELECT id, name FROM churches WHERE id = {$actorChurchId} ORDER BY name");
-$where = "WHERE 1=1";
-$params = [];
-$bind_types = '';
-$selectedChurchId = $is_super_admin ? max(0, (int) ($_GET['church_id'] ?? 0)) : $actorChurchId;
-if ($selectedChurchId > 0) {
-    $where .= " AND COALESCE(m.church_id, ss.church_id) = ?";
-    $params[] = $selectedChurchId;
-    $bind_types .= 'i';
-} elseif (!$is_super_admin) {
-    $where .= ' AND 1=0';
-}
-$fromDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($_GET['from_date'] ?? '')) ? (string) $_GET['from_date'] : '';
-$toDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($_GET['to_date'] ?? '')) ? (string) $_GET['to_date'] : '';
-if ($fromDate !== '') {
-    $where .= " AND h.recorded_at >= ?";
-    $params[] = $fromDate . ' 00:00:00';
-    $bind_types .= 's';
-}
-if ($toDate !== '') {
-    $where .= " AND h.recorded_at < ?";
-    $params[] = (new DateTimeImmutable($toDate))->modify('+1 day')->format('Y-m-d') . ' 00:00:00';
-    $bind_types .= 's';
-}
-$sql = "SELECT h.*, 
-    m.first_name, m.last_name, m.middle_name, ch.name AS church_name, 
-    ss.srn, ss.first_name AS ss_first_name, ss.last_name AS ss_last_name, ss.middle_name AS ss_middle_name, ssch.name AS ss_church_name, 
-    u.name AS recorded_by_name
-FROM health_records h 
-    LEFT JOIN members m ON h.member_id = m.id 
-    LEFT JOIN churches ch ON m.church_id = ch.id 
-    LEFT JOIN sunday_school ss ON h.sundayschool_id = ss.id 
-    LEFT JOIN churches ssch ON ss.church_id = ssch.id 
-    LEFT JOIN users u ON h.recorded_by = u.id 
-$where ORDER BY h.recorded_at DESC, h.id DESC";
-$pagination = report_paginate_query($conn, $sql, $bind_types, $params);
-$healths = $pagination['result'];
-// Trend chart data
-$trend_sql = "SELECT DATE_FORMAT(h.recorded_at, '%Y-%m') AS ym, COUNT(*) AS count
-              FROM health_records h
-              LEFT JOIN members m ON h.member_id = m.id
-              LEFT JOIN sunday_school ss ON h.sundayschool_id = ss.id
-              $where GROUP BY ym ORDER BY ym";
-$trend_stmt = $conn->prepare($trend_sql);
-if ($params) {
-    $trend_stmt->bind_param($bind_types, ...$params);
-}
-$trend_stmt->execute();
-$trend_res = $trend_stmt->get_result();
-$trend_labels = [];
-$trend_counts = [];
-while ($row = $trend_res->fetch_assoc()) {
-    $trend_labels[] = $row['ym'];
-    $trend_counts[] = $row['count'];
-}
-ob_start();
+require_once __DIR__.'/../../services/HealthEncounterService.php';
+require_login();
+$actorUserId=(int)($_SESSION['user_id']??0);$actorChurchId=(int)($_SESSION['church_id']??0);$superAdmin=is_super_admin();
+if($actorChurchId<=0&&$actorUserId>0){$s=$conn->prepare('SELECT church_id FROM users WHERE id=?');$s->bind_param('i',$actorUserId);$s->execute();$actorChurchId=(int)($s->get_result()->fetch_assoc()['church_id']??0);$s->close();}
+$service=new HealthEncounterService($conn,$actorUserId,$actorChurchId,$superAdmin);$churchId=$superAdmin?max(0,(int)($_GET['church_id']??$actorChurchId)):$actorChurchId;
+if($churchId<=0||!$service->authorize('view_health_report',$churchId)){http_response_code(403);require __DIR__.'/../errors/403.php';exit;}
+$canExport=$service->authorize('export_health_report',$churchId);
+$from=preg_match('/^\d{4}-\d{2}-\d{2}$/',(string)($_GET['from_date']??''))?$_GET['from_date']:'';$to=preg_match('/^\d{4}-\d{2}-\d{2}$/',(string)($_GET['to_date']??''))?$_GET['to_date']:'';$indicator=in_array(($_GET['indicator']??''),['attention','positive_screening','follow_up'],true)?$_GET['indicator']:'';$search=trim((string)($_GET['person']??''));
+$where=['record.church_id=?','record.status<>"voided"'];$types='i';$params=[$churchId];if($from){$where[]='record.recorded_at>=?';$types.='s';$params[]=$from.' 00:00:00';}if($to){$where[]='record.recorded_at<?';$types.='s';$params[]=(new DateTimeImmutable($to))->modify('+1 day')->format('Y-m-d').' 00:00:00';}if($search){$where[]="(member.crn LIKE CONCAT('%',?,'%') OR child.srn LIKE CONCAT('%',?,'%') OR CONCAT_WS(' ',member.first_name,member.middle_name,member.last_name) LIKE CONCAT('%',?,'%') OR CONCAT_WS(' ',child.first_name,child.middle_name,child.last_name) LIKE CONCAT('%',?,'%'))";$types.='ssss';array_push($params,$search,$search,$search,$search);}if($indicator==='attention')$where[]="EXISTS(SELECT 1 FROM health_observations flag WHERE flag.health_record_id=record.id AND flag.interpretation IN('attention','critical'))";if($indicator==='positive_screening')$where[]="EXISTS(SELECT 1 FROM health_screening_results flag WHERE flag.health_record_id=record.id AND flag.result_code IN('positive','indeterminate'))";if($indicator==='follow_up')$where[]="record.follow_up_status IN('recommended','scheduled')";$whereSql=implode(' AND ',$where);
+$sql="SELECT record.id,record.recorded_at,record.encounter_type,record.follow_up_status,record.follow_up_date,
+ COALESCE(member.crn,child.srn) identifier,COALESCE(TRIM(CONCAT_WS(' ',member.first_name,member.middle_name,member.last_name)),TRIM(CONCAT_WS(' ',child.first_name,child.middle_name,child.last_name))) person_name,CASE WHEN record.member_id IS NOT NULL THEN 'Member' ELSE 'Sunday School' END person_type,recorder.name recorder_name,
+ (SELECT value_numeric FROM health_observations WHERE health_record_id=record.id AND observation_code='weight' LIMIT 1) weight,
+ (SELECT value_numeric FROM health_observations WHERE health_record_id=record.id AND observation_code='temperature' LIMIT 1) temperature,
+ (SELECT value_numeric FROM health_observations WHERE health_record_id=record.id AND observation_code='blood_pressure_systolic' LIMIT 1) systolic,
+ (SELECT value_numeric FROM health_observations WHERE health_record_id=record.id AND observation_code='blood_pressure_diastolic' LIMIT 1) diastolic,
+ (SELECT value_numeric FROM health_observations WHERE health_record_id=record.id AND observation_code='blood_glucose' LIMIT 1) glucose,
+ (SELECT measurement_context FROM health_observations WHERE health_record_id=record.id AND observation_code='blood_glucose' LIMIT 1) glucose_context,
+ (SELECT GROUP_CONCAT(CONCAT(screening_code,': ',result_code) ORDER BY screening_code SEPARATOR ' / ') FROM health_screening_results WHERE health_record_id=record.id) screenings
+ FROM health_records record LEFT JOIN members member ON member.id=record.member_id LEFT JOIN sunday_school child ON child.id=record.sundayschool_id LEFT JOIN users recorder ON recorder.id=record.recorded_by WHERE {$whereSql} ORDER BY record.recorded_at DESC,record.id DESC";
+$pagination=report_paginate_query($conn,$sql,$types,$params);$records=$pagination['result'];
+$summarySql="SELECT COUNT(*) encounters,COUNT(DISTINCT CONCAT(IF(member_id IS NULL,'s','m'),COALESCE(member_id,sundayschool_id))) people,SUM(follow_up_status IN('recommended','scheduled')) follow_up FROM health_records record WHERE record.church_id=? AND record.status<>'voided'";$summary=$conn->prepare($summarySql);$summary->bind_param('i',$churchId);$summary->execute();$kpis=$summary->get_result()->fetch_assoc();$summary->close();
+$flag=$conn->prepare("SELECT COUNT(DISTINCT record.id) count FROM health_records record WHERE record.church_id=? AND record.status<>'voided' AND (EXISTS(SELECT 1 FROM health_observations o WHERE o.health_record_id=record.id AND o.interpretation IN('attention','critical')) OR EXISTS(SELECT 1 FROM health_screening_results s WHERE s.health_record_id=record.id AND s.result_code IN('positive','indeterminate'))) ");$flag->bind_param('i',$churchId);$flag->execute();$flagCount=(int)$flag->get_result()->fetch_assoc()['count'];$flag->close();
+$trend=$conn->prepare("SELECT DATE_FORMAT(recorded_at,'%Y-%m') month,COUNT(*) count FROM health_records WHERE church_id=? AND status<>'voided' AND recorded_at>=DATE_SUB(CURDATE(),INTERVAL 11 MONTH) GROUP BY month ORDER BY month");$trend->bind_param('i',$churchId);$trend->execute();$trendResult=$trend->get_result();$trendLabels=[];$trendValues=[];while($r=$trendResult->fetch_assoc()){$trendLabels[]=$r['month'];$trendValues[]=(int)$r['count'];}$trend->close();
+$churches=$superAdmin?$conn->query('SELECT id,name FROM churches ORDER BY name'):null;$page_title='Health Operations Report';ob_start();
 ?>
-<div class="container-fluid mt-4">
-  <h2 class="mb-4">Health Report</h2>
-  <form class="form-row mb-3" method="get">
-    <div class="form-group col-md-3">
-      <label>Church</label>
-      <select name="church_id" class="form-control">
-        <option value="">All</option>
-        <?php if ($churches) while($ch = $churches->fetch_assoc()): ?>
-          <option value="<?= $ch['id'] ?>"<?= $selectedChurchId === (int) $ch['id'] ? ' selected' : '' ?>><?= htmlspecialchars($ch['name']) ?></option>
-        <?php endwhile; ?>
-      </select>
-    </div>
-    <div class="form-group col-md-3">
-      <label>From Date</label>
-      <input type="date" name="from_date" class="form-control" value="<?= htmlspecialchars($fromDate) ?>">
-    </div>
-    <div class="form-group col-md-3">
-      <label>To Date</label>
-      <input type="date" name="to_date" class="form-control" value="<?= htmlspecialchars($toDate) ?>">
-    </div>
-    <div class="form-group col-md-3 align-self-end">
-      <button type="submit" class="btn btn-primary btn-block">Filter</button>
-    </div>
-  </form>
-  <div class="card mb-4">
-    <div class="card-header bg-light">
-      <strong>Health Records Trend (Per Month)</strong>
-    </div>
-    <div class="card-body">
-      <canvas id="trendChart" height="60"></canvas>
-    </div>
-  </div>
-  <div class="card shadow mb-4">
-    <div class="card-header py-3">
-      <h6 class="m-0 font-weight-bold text-primary">Health Records</h6>
-    </div>
-    <div class="card-body">
-      <div class="table-responsive">
-        <table class="table table-bordered" id="healthTable" data-report-pagination="server" width="100%" cellspacing="0">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Member</th>
-              <th>Church</th>
-              <th>Recorded By</th>
-              <th>Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            <?php while($row = $healths->fetch_assoc()): ?>
-            <tr>
-              <td><?=htmlspecialchars($row['recorded_at'])?></td>
-              <td>
-                <?php if (!empty($row['member_id'])): ?>
-                  <?=htmlspecialchars(trim($row['last_name'].' '.$row['first_name'].' '.$row['middle_name']))?>
-                <?php elseif (!empty($row['sundayschool_id'])): ?>
-                  <?=htmlspecialchars(trim(($row['ss_last_name'] ?? '').' '.($row['ss_first_name'] ?? '').' '.($row['ss_middle_name'] ?? '')))?></br>
-                  <span class="badge badge-info">SRN: <?=htmlspecialchars($row['srn'] ?? '-')?></span>
-                <?php else: ?>
-                  -
-                <?php endif; ?>
-              </td>
-              <td>
-                <?php if (!empty($row['member_id'])): ?>
-                  <?=htmlspecialchars($row['church_name'] ?? '-')?>
-                <?php elseif (!empty($row['sundayschool_id'])): ?>
-                  <?=htmlspecialchars($row['ss_church_name'] ?? '-')?>
-                <?php else: ?>
-                  -
-                <?php endif; ?>
-              </td>
-              <td><?=htmlspecialchars($row['recorded_by_name'] ?? '-')?></td>
-              <td><?=htmlspecialchars(mb_strimwidth($row['notes'] ?? '-', 0, 50, '...'))?></td>
-            </tr>
-            <?php endwhile; ?>
-          </tbody>
-        </table>
-      </div>
-      <?php report_render_server_pagination($pagination['total_rows'], $pagination['page'], $pagination['per_page'], 'Health report pages'); ?>
-    </div>
-  </div>
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/health-workspace.css">
+<div class="health-workspace">
+ <form class="report-filter-panel health-filter mb-4" method="get"><div class="form-row"><?php if($superAdmin):?><div class="form-group col-lg-2"><label>Church</label><select class="form-control" name="church_id"><?php while($church=$churches->fetch_assoc()):?><option value="<?= $church['id'] ?>" <?= $churchId===(int)$church['id']?'selected':'' ?>><?= htmlspecialchars($church['name']) ?></option><?php endwhile;?></select></div><?php endif;?><div class="form-group col-lg-2"><label>From</label><input type="date" class="form-control" name="from_date" value="<?= htmlspecialchars($from) ?>"></div><div class="form-group col-lg-2"><label>To</label><input type="date" class="form-control" name="to_date" value="<?= htmlspecialchars($to) ?>"></div><div class="form-group col-lg-2"><label>Indicator</label><select class="form-control" name="indicator"><option value="">All encounters</option><option value="attention" <?= $indicator==='attention'?'selected':'' ?>>Measurement flag</option><option value="positive_screening" <?= $indicator==='positive_screening'?'selected':'' ?>>Screening review</option><option value="follow_up" <?= $indicator==='follow_up'?'selected':'' ?>>Open follow-up</option></select></div><div class="form-group col-lg-3"><label>Person</label><input class="form-control" name="person" value="<?= htmlspecialchars($search) ?>" placeholder="Name, CRN or SRN"></div><div class="form-group col-lg-1 d-flex align-items-end"><button class="btn btn-primary btn-block"><i class="fas fa-filter"></i></button></div></div></form>
+ <div class="health-kpis mb-4"><div class="health-kpi"><div class="health-kpi-value"><?= number_format((int)$kpis['encounters']) ?></div><div class="health-kpi-label">Total encounters</div></div><div class="health-kpi"><div class="health-kpi-value"><?= number_format((int)$kpis['people']) ?></div><div class="health-kpi-label">People screened</div></div><div class="health-kpi"><div class="health-kpi-value text-warning"><?= number_format((int)$kpis['follow_up']) ?></div><div class="health-kpi-label">Open follow-up</div></div><div class="health-kpi"><div class="health-kpi-value text-danger"><?= number_format($flagCount) ?></div><div class="health-kpi-label">Review flags</div></div></div>
+ <div class="health-panel mb-4"><div class="health-panel-header"><div><h2 class="health-section-title">Screening activity</h2><p class="health-section-copy">Rolling twelve-month encounter volume.</p></div></div><div class="health-panel-body"><canvas id="healthActivity" height="55"></canvas></div></div>
+ <div class="health-panel"><div class="health-panel-header"><div><h2 class="health-section-title">Filtered encounter evidence</h2><p class="health-section-copy"><?= number_format($pagination['total_rows']) ?> matching encounters. Export retrieves all filtered pages.</p></div></div><div class="table-responsive"><table class="table health-table mb-0" id="healthReportTable" data-report-pagination="server"><thead><tr><th>Date</th><th>Person</th><th>Type</th><th>Weight kg</th><th>Temp °C</th><th>BP mmHg</th><th>Glucose mmol/L</th><th>Screenings</th><th>Follow-up</th><th>Recorded by</th></tr></thead><tbody><?php while($row=$records->fetch_assoc()):?><tr><td><?= date('d M Y H:i',strtotime($row['recorded_at'])) ?></td><td><strong><?= htmlspecialchars($row['person_name']) ?></strong><br><small><?= htmlspecialchars($row['identifier'].' · '.$row['person_type']) ?></small></td><td><?= htmlspecialchars(ucfirst(str_replace('_',' ',$row['encounter_type']))) ?></td><td><?= $row['weight']!==null?number_format((float)$row['weight'],1):'—' ?></td><td><?= $row['temperature']!==null?number_format((float)$row['temperature'],1):'—' ?></td><td><?= $row['systolic']!==null?(int)$row['systolic'].'/'.(int)$row['diastolic']:'—' ?></td><td><?= $row['glucose']!==null?number_format((float)$row['glucose'],1).($row['glucose_context']?' ('.str_replace('_',' ',$row['glucose_context']).')':''):'—' ?></td><td><?= htmlspecialchars($row['screenings']?:'—') ?></td><td><?= htmlspecialchars(ucfirst($row['follow_up_status'])) ?><?= $row['follow_up_date']?'<br><small>'.date('d M Y',strtotime($row['follow_up_date'])).'</small>':'' ?></td><td><?= htmlspecialchars($row['recorder_name']?:'Unknown') ?></td></tr><?php endwhile;?></tbody></table></div><div class="health-panel-body"><?php report_render_server_pagination($pagination['total_rows'],$pagination['page'],$pagination['per_page'],'Health encounter report pages');?></div></div>
 </div>
-<!-- DataTables and Chart.js scripts -->
-<script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
 <script>
-$(document).ready(function() {
-    $('#healthTable').DataTable({
-        paging: false,
-        searching: false,
-        info: false,
-        dom: 'Bfrtip',
-        buttons: <?= $can_export ? "[\n            'copy', 'csv', 'excel', 'pdf', 'print'\n        ]" : '[]' ?>
-    });
-    var ctx = document.getElementById('trendChart').getContext('2d');
-    var trendChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: <?= json_encode($trend_labels) ?>,
-            datasets: [{
-                label: 'Records',
-                data: <?= json_encode($trend_counts) ?>,
-                backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                borderColor: 'rgba(54, 162, 235, 1)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.3
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: { display: false },
-                title: { display: false }
-            },
-            scales: {
-                y: { beginAtZero: true }
-            }
-        }
-    });
-});
+$(function(){new Chart(document.getElementById('healthActivity').getContext('2d'),{type:'bar',data:{labels:<?= json_encode($trendLabels) ?>,datasets:[{label:'Encounters',data:<?= json_encode($trendValues) ?>,backgroundColor:'rgba(8,127,140,.65)',borderColor:'#087f8c',borderWidth:1}]},options:{responsive:true,legend:{display:false},scales:{yAxes:[{ticks:{beginAtZero:true,precision:0}}]}}});$('#healthReportTable').DataTable({paging:false,searching:false,ordering:true,info:false,dom:'Bfrtip',buttons:<?= $canExport?"['copy','csv','excel','pdf','print']":'[]' ?>});});
 </script>
-<style>
-.btn-xs { padding: 0.14rem 0.34rem !important; font-size: 0.89rem !important; line-height: 1.15 !important; border-radius: 0.22rem !important; }
-#healthTable th, #healthTable td { vertical-align: middle !important; }
-</style>
-<?php
-$page_content = ob_get_clean();
-include_once __DIR__ . '/../../includes/layout.php';
+<?php $page_content=ob_get_clean();require_once __DIR__.'/../../includes/layout.php';

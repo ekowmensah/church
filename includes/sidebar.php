@@ -19,10 +19,45 @@ $stmt->close();
 
 // Get user permissions
 $user_permissions = $is_super_admin ? null : array_values(array_filter(array_column(get_user_permissions(), 'name')));
-$can_view_menu_item = static function (array $item) use ($is_super_admin, $user_permissions): bool {
+$hasCashReviewMenuItem = false;
+foreach ($menu as $items) {
+  foreach ($items as $item) {
+    if (($item['url'] ?? '') === 'views/payments_statistics.php?cash_review=1') {
+      $hasCashReviewMenuItem = true;
+      break 2;
+    }
+  }
+}
+$canViewCashReviewByServingRole = false;
+if (!$is_super_admin && $hasCashReviewMenuItem
+  && !in_array('view_cash_analysis_review', $user_permissions, true)
+  && !empty($_SESSION['user_id'])) {
+  $cashReviewStmt = $conn->prepare(
+    "SELECT EXISTS (
+      SELECT 1
+        FROM users user_account
+        JOIN member_roles_of_serving member_role ON member_role.member_id = user_account.member_id
+        JOIN roles_of_serving serving_role ON serving_role.id = member_role.role_id
+       WHERE user_account.id = ? AND user_account.status = 'active'
+         AND UPPER(TRIM(serving_role.name)) IN ('CASH CHECKER', 'CASH CHECKERS')
+    )"
+  );
+  $currentUserId = (int) $_SESSION['user_id'];
+  $cashReviewStmt->bind_param('i', $currentUserId);
+  $cashReviewStmt->execute();
+  $cashReviewStmt->bind_result($canViewCashReviewByServingRole);
+  $cashReviewStmt->fetch();
+  $cashReviewStmt->close();
+  $canViewCashReviewByServingRole = (bool) $canViewCashReviewByServingRole;
+}
+$can_view_menu_item = static function (array $item) use ($is_super_admin, $user_permissions, $canViewCashReviewByServingRole): bool {
     if ($is_super_admin) return true;
     if (!is_array($user_permissions)) return false;
     if (in_array((string) ($item['permission_name'] ?? ''), $user_permissions, true)) return true;
+
+  if (($item['url'] ?? '') === 'views/payments_statistics.php?cash_review=1') {
+    return $canViewCashReviewByServingRole;
+  }
 
     // The Asset Approval Queue combines two independently governed decision
     // types. The destination still enforces the appropriate permission for

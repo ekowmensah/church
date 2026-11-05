@@ -1,4 +1,4 @@
-<FilesMatch "\.(log|bak)$">
+<FilesMatch "(?i)(\.log$|error_log$|\.bak|copy|backk|^test_|^ajax_test_)">
     Require all denied
 </FilesMatch>
 

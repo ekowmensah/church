@@ -1,649 +1,400 @@
-// payment_bulk_member_multi.js: Modern, modular bulk payment UI logic
-console.log('DEBUG: payment_bulk_member_multi.js loaded');
-$(function() {
-  // --- Persistent data model for all member/payment data ---
-  window.bulkMembers = {};
+(function ($) {
+  'use strict';
 
-  // --- Select2 setup for Church ---
-  $('#church_id').select2({
-    placeholder: 'Select a church',
-    ajax: {
-      url: 'ajax_get_churches.php',
-      dataType: 'json',
-      delay: 200,
-      processResults: function(data) {
-        if (!data || !Array.isArray(data.results)) {
-          showToast('Failed to load churches.', 'danger');
-          console.error('Church Select2: Unexpected response:', data);
-          return { results: [] };
+  var $workspace = $('#bulkPaymentWorkspace');
+  if (!$workspace.length) return;
+
+  var config = {
+    canSubmit: $workspace.data('can-submit') === 1 || $workspace.data('can-submit') === '1',
+    membersUrl: String($workspace.data('members-url') || ''),
+    paymentTypesUrl: String($workspace.data('payment-types-url') || ''),
+    submitUrl: String($workspace.data('submit-url') || '')
+  };
+  var entries = [];
+  var selectedChurch = String($('#church_id').val() || '');
+  var moneyFormatter = new Intl.NumberFormat('en-GH', {
+    style: 'currency', currency: 'GHS', minimumFractionDigits: 2
+  });
+
+  function escapeHtml(value) {
+    return $('<div>').text(value == null ? '' : String(value)).html();
+  }
+
+  function entryKey(type, id) {
+    return String(type) + ':' + String(id);
+  }
+
+  function findEntry(key) {
+    return entries.find(function (entry) { return entry.key === String(key); });
+  }
+
+  function formatMoney(amount) {
+    return moneyFormatter.format(Number(amount || 0)).replace('GHS', 'GH₵');
+  }
+
+  function monthValue(dateValue) {
+    var date = dateValue ? new Date(dateValue + 'T12:00:00') : new Date();
+    if (isNaN(date.getTime())) date = new Date();
+    return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-01';
+  }
+
+  function monthLabel(value) {
+    var date = new Date(String(value).slice(0, 7) + '-01T12:00:00');
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  }
+
+  function periodOptions(selected) {
+    var base = new Date(String(selected || monthValue('')).slice(0, 7) + '-01T12:00:00');
+    if (isNaN(base.getTime())) base = new Date();
+    var options = [];
+    for (var offset = 12; offset >= -35; offset--) {
+      var date = new Date(base.getFullYear(), base.getMonth() + offset, 1, 12, 0, 0);
+      var value = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-01';
+      options.push('<option value="' + value + '"' + (value === selected ? ' selected' : '') + '>'
+        + escapeHtml(monthLabel(value)) + '</option>');
+    }
+    return options.join('');
+  }
+
+  function defaultDescription(typeText, period) {
+    return String(typeText || 'Payment') + ' for ' + monthLabel(period);
+  }
+
+  function totals() {
+    var lineCount = 0;
+    var amount = 0;
+    entries.forEach(function (entry) {
+      entry.payments.forEach(function (line) {
+        lineCount++;
+        amount += Number(line.amount || 0);
+      });
+    });
+    return { lineCount: lineCount, amount: amount };
+  }
+
+  function batchIsReady() {
+    return entries.length > 0 && entries.every(function (entry) {
+      return entry.payments.length > 0 && entry.payments.every(function (line) {
+        return Number(line.amount) > 0 && Number(line.typeId) > 0 && line.period;
+      });
+    });
+  }
+
+  function paymentLinesHtml(entry) {
+    var lines = entry.payments.map(function (line, lineIndex) {
+      return '<div class="payment-line" data-line-index="' + lineIndex + '">'
+        + '<div class="payment-line-heading"><strong>' + escapeHtml(line.typeText) + '</strong>'
+        + '<span>' + escapeHtml(formatMoney(line.amount)) + '</span></div>'
+        + '<div class="payment-line-fields">'
+        + '<div><label>Reporting period</label><select class="form-control form-control-sm payment-period-select" data-line-index="' + lineIndex + '">'
+        + periodOptions(line.period) + '</select></div>'
+        + '<div><label>Description</label><input class="form-control form-control-sm payment-desc-input" data-line-index="' + lineIndex + '" maxlength="255" value="' + escapeHtml(line.description) + '"></div>'
+        + '<button type="button" class="btn btn-sm btn-outline-danger remove-payment-line" data-line-index="' + lineIndex + '" title="Remove payment line" aria-label="Remove payment line"><i class="fas fa-times"></i></button>'
+        + '</div></div>';
+    }).join('');
+
+    return '<div class="payment-types-group" data-entry-key="' + escapeHtml(entry.key) + '">'
+      + '<div class="payment-line-composer">'
+      + '<div class="payment-type-field"><label>Payment type</label><select class="form-control payment-type-select" style="width:100%"></select></div>'
+      + '<div class="payment-amount-field"><label>Amount</label><div class="input-group input-group-sm"><div class="input-group-prepend"><span class="input-group-text">GH₵</span></div><input type="number" class="form-control payment-amount-input" min="0.01" step="0.01" placeholder="0.00"></div></div>'
+      + '<button type="button" class="btn btn-sm btn-primary add-payment-line"><i class="fas fa-plus mr-1"></i>Add line</button>'
+      + '</div><div class="payment-line-list">' + (lines || '<span class="no-lines-message">No payment line added yet.</span>') + '</div></div>';
+  }
+
+  function rowHtml(entry, index) {
+    var subtotal = entry.payments.reduce(function (sum, line) { return sum + Number(line.amount || 0); }, 0);
+    var identity = entry.type === 'sundayschool' ? 'Sunday School / SRN' : 'Member / CRN';
+    return '<tr data-entry-key="' + escapeHtml(entry.key) + '">'
+      + '<td data-label="Sequence" class="sequence-cell"><span>' + (index + 1) + '</span><small>of ' + entries.length + '</small></td>'
+      + '<td data-label="Beneficiary"><div class="beneficiary-name">' + escapeHtml(entry.name) + '</div><span class="beneficiary-type">' + identity + '</span></td>'
+      + '<td data-label="Payment lines">' + paymentLinesHtml(entry) + '</td>'
+      + '<td data-label="Subtotal" class="subtotal-cell">' + escapeHtml(formatMoney(subtotal)) + '</td>'
+      + '<td data-label="Actions"><div class="sequence-actions">'
+      + '<button type="button" class="btn btn-sm btn-outline-secondary move-entry-up"' + (index === 0 ? ' disabled' : '') + ' title="Move up" aria-label="Move beneficiary up"><i class="fas fa-arrow-up"></i></button>'
+      + '<button type="button" class="btn btn-sm btn-outline-secondary move-entry-down"' + (index === entries.length - 1 ? ' disabled' : '') + ' title="Move down" aria-label="Move beneficiary down"><i class="fas fa-arrow-down"></i></button>'
+      + '<button type="button" class="btn btn-sm btn-outline-danger remove-entry" title="Remove beneficiary" aria-label="Remove beneficiary"><i class="fas fa-trash-alt"></i></button>'
+      + '</div></td></tr>';
+  }
+
+  function initializePaymentTypePickers() {
+    $('#bulkTable .payment-type-select').each(function () {
+      var $select = $(this);
+      $select.select2({
+        width: '100%',
+        placeholder: 'Search payment type',
+        allowClear: true,
+        minimumInputLength: 0,
+        ajax: {
+          url: config.paymentTypesUrl,
+          dataType: 'json',
+          delay: 250,
+          data: function (params) { return { q: params.term || '' }; },
+          processResults: function (data) { return { results: Array.isArray(data.results) ? data.results : [] }; }
         }
-        return { results: data.results };
-      },
-      error: function(xhr, status, error) {
-        showToast('Error loading churches: ' + error, 'danger');
-        console.error('Church Select2 AJAX error:', status, error, xhr);
-      },
-      cache: true
-    },
-    width: '100%'
-  });
+      });
+    });
+  }
 
-  // --- Member Select2 setup ---
-  $('#member_search').prop('disabled', true);
-  $('#church_id').on('change', function() {
-    if ($(this).val()) {
-      $('#member_search').prop('disabled', false);
+  function render() {
+    var $tbody = $('#bulkTable tbody');
+    if (!entries.length) {
+      $tbody.html('<tr class="bulk-empty-row"><td colspan="5"><div class="bulk-empty-state"><i class="fas fa-users"></i><strong>No beneficiaries added</strong><span>Select a church, then search and add people in the required order.</span></div></td></tr>');
     } else {
-      $('#member_search').val(null).trigger('change');
-      $('#member_search').prop('disabled', true);
+      $tbody.html(entries.map(rowHtml).join(''));
+      initializePaymentTypePickers();
     }
-  });
 
-  $('#member_search').select2({
-    placeholder: 'Search member by name/CRN',
-    minimumInputLength: 2,
-    ajax: {
-      url: 'ajax_members_by_church.php',
-      dataType: 'json',
-      delay: 200,
-      data: function(params) {
-        var churchId = $('#church_id').val();
-        if (!churchId) {
-          showToast('Please select a church first.', 'warning');
-          return false;
-        }
-        return {
-          q: params.term,
-          church_id: churchId
-        };
-      },
-      processResults: function(data) {
-        return {
-          results: (data.results || []).map(m => ({
-            id: m.id,
-            text: m.text,
-            crn: m.crn,
-            class: m.class,
-            last_name: m.last_name,
-            first_name: m.first_name,
-            middle_name: m.middle_name,
-            type: m.type
-          }))
-        };
-      },
-      cache: true
-    },
-    width: '100%'
-  });
+    var summary = totals();
+    $('#beneficiaryCount').text(entries.length);
+    $('#paymentLineCount').text(summary.lineCount);
+    $('#bulkTotals').text(formatMoney(summary.amount));
+    var ready = batchIsReady();
+    $('#submitBulkBtn').prop('disabled', !config.canSubmit || !ready);
+    $('#bulkReadiness').text(ready
+      ? entries.length + ' beneficiaries ready in the displayed sequence.'
+      : (entries.length ? 'Every beneficiary needs at least one valid payment line.' : 'Add a beneficiary and at least one payment line.'));
+  }
 
-  // --- Add member to model ---
-  function addMemberToBulk(data) {
-    var memberId = data.id;
-    var type = data.type || 'member';
-    // Only one type allowed at a time
-    if (type === 'sundayschool') {
-      for (const id in bulkMembers) {
-        if (bulkMembers[id].type !== 'sundayschool') delete bulkMembers[id];
-      }
-    } else {
-      for (const id in bulkMembers) {
-        if (bulkMembers[id].type === 'sundayschool') delete bulkMembers[id];
-      }
-    }
-    if (bulkMembers[memberId]) {
-      showToast('Member already added.', 'warning');
-      return;
-    }
-    var memberName = data.text || [data.last_name, data.first_name, data.middle_name].filter(Boolean).join(' ');
-    if (!memberName) memberName = 'Unknown';
-    bulkMembers[memberId] = {
-      id: memberId,
-      name: memberName,
-      type: type,
-      payments: []
-    };
-    renderBulkTable();
-    $('#submitBulkBtn').removeClass('d-none');
+  function showToast(message, type) {
+    var $toast = $('#bulkToast');
+    var $header = $toast.find('.toast-header');
+    $header.removeClass('bg-info bg-success bg-danger bg-warning')
+      .addClass(type === 'success' ? 'bg-success' : type === 'danger' ? 'bg-danger' : type === 'warning' ? 'bg-warning' : 'bg-info');
+    $toast.find('.toast-body').text(message);
+    $toast.toast('show');
+  }
+
+  function resetSearch() {
     $('#member_search').val(null).trigger('change');
   }
 
-  // --- DataTable setup for bulk table ---
-  var bulkTable = $('#bulkTable').DataTable({
-    columns: [
-      { data: null, render: function(data, type, row, meta) { return meta.row + 1; } }, // Row number
-      { data: 'name' },
-      { data: 'payments', orderable: false },
-      { data: 'actions', orderable: false }
-    ],
-    ordering: false,
-    paging: false,
-    searching: false,
-    info: false,
-    autoWidth: false,
-    destroy: true
-  });
-
-  // --- Render payment types cell for a member ---
-  function renderPaymentTypesCell(member) {
-    var html = '<div class="payment-types-group" data-member-id="' + member.id + '">';
-    html += '<select class="form-control form-control-sm payment-type-select" style="width:40%; display:inline-block;"></select>';
-    html += '<input type="number" min="0.01" step="0.01" class="form-control form-control-sm payment-amount-input" placeholder="₵0.00" style="width:40%; display:inline-block; margin-left:4px;">';
-    html += '<button type="button" class="btn btn-sm btn-secondary add-type-btn ml-2">Add</button>';
-    html += '<div class="member-payment-types mt-2">';
-    member.payments.forEach(function(pt, i) {
-      // Generate payment period options
-      var periodOptions = '';
-      for (var j = 0; j < 12; j++) {
-        var date = new Date();
-        date.setDate(1); // Always set to first of month
-        date.setMonth(date.getMonth() - j);
-        var periodValue = date.toISOString().slice(0, 7) + '-01';
-        var periodText = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-        // If pt.period is not set, default to current periodValue
-        if (!pt.period) pt.period = periodValue;
-        var selected = (pt.period === periodValue) ? 'selected' : '';
-        periodOptions += '<option value="' + periodValue + '" ' + selected + '>' + periodText + '</option>';
-      }
-      
-      html += '<div class="d-flex align-items-center mb-2">'
-        + '<span class="badge badge-info mr-2">' + pt.typeText + ': ₵' + parseFloat(pt.amount).toFixed(2) + '</span>'
-        + '<select class="form-control form-control-sm payment-period-select ml-2" style="max-width:150px;" data-pt-idx="' + i + '">' + periodOptions + '</select>'
-        + '<input type="text" class="form-control form-control-sm payment-desc-input ml-2" placeholder="Description (optional)" style="max-width:200px;" data-pt-idx="' + i + '" value="' + (pt.description ? pt.description.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : '') + '">' 
-        + '<span class="remove-type ml-2" style="cursor:pointer;" data-pt-idx="' + i + '">&times;</span>'
-        + '</div>';
-    });
-    html += '</div>';
-    html += '<div class="member-subtotal mt-1 small text-right"><span class="badge badge-secondary">Subtotal: ₵' + member.payments.reduce(function(sum, pt) { return sum + parseFloat(pt.amount || 0) }, 0).toFixed(2) + '</span></div>';
-    html += '</div>';
-    return html;
-  }
-
-  // --- Render the table from the model ---
-  function renderBulkTable() {
-    bulkTable.clear();
-    Object.values(bulkMembers).forEach(function(member) {
-      bulkTable.row.add({
-        id: member.id,
-        name: member.name,
-        payments: renderPaymentTypesCell(member),
-        actions: '<button class="btn btn-sm btn-danger remove-member-btn" data-member-id="' + member.id + '">Remove</button>'
-      });
-    });
-    bulkTable.draw(false);
-    // Re-initialize Select2 for payment-type-select in table
-    $('#bulkTable tbody .payment-type-select').each(function() {
-      if (!$(this).data('select2')) {
-        $(this).select2({
-          placeholder: 'Select payment type',
-          ajax: {
-            url: 'ajax_payment_types.php',
-            dataType: 'json',
-            delay: 150,
-            data: function(params) {
-              return {
-                q: params.term || '', // Send search term
-                page: params.page || 1
-              };
-            },
-            processResults: function(data) {
-              if (!data || !data.results) {
-                console.error('No payment types loaded:', data);
-                return { results: [] };
-              }
-              return { results: data.results };
-            },
-            cache: true,
-            error: function(xhr, status, error) {
-              console.error('Payment type load failed:', status, error);
-            }
-          },
-          width: 'resolve',
-          dropdownParent: $(this).closest('tr')
-        });
-      }
-    });
-    attachDynamicEvents();
-    renumberRows();
-    updateBulkTotals();
-  }
-
-  // --- Attach dynamic events for payment type actions ---
-  function attachDynamicEvents() {
-    // Add payment type
-    $('#bulkTable tbody .add-type-btn').off('click').on('click', function() {
-      var $group = $(this).closest('.payment-types-group');
-      var memberId = $group.data('member-id');
-      var typeData = $group.find('.payment-type-select').select2('data')[0];
-      var amount = $group.find('.payment-amount-input').val();
-      if (!typeData || !amount || parseFloat(amount) <= 0) {
-        showToast('Select a payment type and enter a valid amount.', 'warning');
-        return;
-      }
-      // Prevent duplicate payment types for a member
-      if (bulkMembers[memberId].payments.some(pt => pt.typeId == typeData.id)) {
-        showToast('This payment type is already added for this member.', 'warning');
-        return;
-      }
-      // Auto-populate description with default period (current month)
-      var defaultPeriod = new Date().toISOString().slice(0, 7) + '-01'; // YYYY-MM-01 format
-      var defaultPeriodText = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-      var autoDesc = getDefaultDescription(typeData.text, defaultPeriodText);
-      bulkMembers[memberId].payments.push({
-        typeId: typeData.id,
-        typeText: typeData.text,
-        amount: parseFloat(amount),
-        description: autoDesc,
-        period: defaultPeriod,
-        periodText: defaultPeriodText,
-        manualDesc: false
-      });
-      renderBulkTable();
-    });
-    // Remove payment type
-    $('#bulkTable tbody .remove-type').off('click').on('click', function() {
-      var $group = $(this).closest('.payment-types-group');
-      var memberId = $group.data('member-id');
-      var idx = $(this).data('pt-idx');
-      bulkMembers[memberId].payments.splice(idx, 1);
-      renderBulkTable();
-    });
-    // Description input per payment type
-    $('#bulkTable tbody .payment-desc-input').off('input').on('input', function() {
-      var $group = $(this).closest('.payment-types-group');
-      var memberId = $group.data('member-id');
-      var idx = $(this).data('pt-idx');
-      var val = $(this).val();
-      if (bulkMembers[memberId] && bulkMembers[memberId].payments[idx]) {
-        bulkMembers[memberId].payments[idx].description = val;
-        bulkMembers[memberId].payments[idx].manualDesc = true;
-      }
-    });
-    // Payment period change per payment type
-    $('#bulkTable tbody .payment-period-select').off('change').on('change', function() {
-      var $group = $(this).closest('.payment-types-group');
-      var memberId = $group.data('member-id');
-      var idx = $(this).data('pt-idx');
-      var periodValue = $(this).val();
-      var periodText = $(this).find('option:selected').text();
-      if (bulkMembers[memberId] && bulkMembers[memberId].payments[idx]) {
-        bulkMembers[memberId].payments[idx].period = periodValue;
-        bulkMembers[memberId].payments[idx].periodText = periodText;
-        // Auto-update description if not manually edited
-        if (!bulkMembers[memberId].payments[idx].manualDesc) {
-          var typeText = bulkMembers[memberId].payments[idx].typeText;
-          bulkMembers[memberId].payments[idx].description = getDefaultDescription(typeText, periodText);
-          renderBulkTable();
-        }
-      }
-    });
-    // Remove member
-    $('#bulkTable tbody .remove-member-btn').off('click').on('click', function() {
-      var memberId = $(this).data('member-id');
-      delete bulkMembers[memberId];
-      renderBulkTable();
-      if (Object.keys(bulkMembers).length === 0) {
-        $('#submitBulkBtn').addClass('d-none');
-      }
-    });
-  }
-
-  function renumberRows() {
-    $('#bulkTable tbody tr').each(function(idx) {
-      $(this).find('td').eq(0).text(idx + 1);
-    });
-  }
-  function updateBulkTotals() {
-    var total = 0;
-    Object.values(bulkMembers).forEach(function(member) {
-      if (member.payments && Array.isArray(member.payments)) {
-        member.payments.forEach(function(pt) {
-          total += parseFloat(pt.amount) || 0;
-        });
-      }
-    });
-    $('#bulkTotals').text('Total: ₵' + total.toFixed(2));
-  }
-
-  // --- Auto-populate description for payment type ---
-  function getDefaultDescription(typeText, periodText) {
-    if (!typeText) return '';
-    if (periodText && periodText !== '') {
-      return typeText + ' for ' + periodText;
-    }
-    // Fallback to current month if no period provided
-    var currentMonth = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    return typeText + ' for ' + currentMonth;
-  }
-
-  // --- Patch add-type-btn to auto-populate description unless user has typed ---
-  $('#bulkTable tbody').on('click', '.add-type-btn', function() {
-    var $group = $(this).closest('.payment-types-group');
-    var memberId = $group.data('member-id');
-    var typeData = $group.find('.payment-type-select').select2('data')[0];
-    var amount = $group.find('.payment-amount-input').val();
-    if (!typeData || !amount || parseFloat(amount) <= 0) {
-      showToast('Select a payment type and enter a valid amount.', 'warning');
-      return;
-    }
-    // Prevent duplicate payment types for a member
-    if (bulkMembers[memberId].payments.some(pt => pt.typeId == typeData.id)) {
-      showToast('This payment type is already added for this member.', 'warning');
-      return;
-    }
-    // Auto-populate description
-    var paymentDate = $('#payment_date').val();
-    var autoDesc = getDefaultDescription(typeData.text, paymentDate);
-    bulkMembers[memberId].payments.push({
-      typeId: typeData.id,
-      typeText: typeData.text,
-      amount: parseFloat(amount),
-      description: autoDesc,
-      manualDesc: false
-    });
-    renderBulkTable();
-  });
-
-  // --- Track manual edits to description ---
-  $('#bulkTable tbody').on('input', '.payment-desc-input', function() {
-    var $group = $(this).closest('.payment-types-group');
-    var memberId = $group.data('member-id');
-    var idx = $(this).data('pt-idx');
-    var val = $(this).val();
-    if (bulkMembers[memberId] && bulkMembers[memberId].payments[idx]) {
-      bulkMembers[memberId].payments[idx].description = val;
-      bulkMembers[memberId].payments[idx].manualDesc = true;
-    }
-  });
-  
-  // --- Track changes to payment period ---
-  $('#bulkTable tbody').on('change', '.payment-period-select', function() {
-    var $group = $(this).closest('.payment-types-group');
-    var memberId = $group.data('member-id');
-    var idx = $(this).data('pt-idx');
-    var periodValue = $(this).val();
-    var periodText = $(this).find('option:selected').text();
-    
-    if (bulkMembers[memberId] && bulkMembers[memberId].payments[idx]) {
-      bulkMembers[memberId].payments[idx].period = periodValue;
-      bulkMembers[memberId].payments[idx].periodText = periodText;
-      console.log('Updated period for member ' + memberId + ', payment ' + idx + ' to: ' + periodValue + ' (' + periodText + ')');
-      
-      // Update description if not manually edited
-      if (!bulkMembers[memberId].payments[idx].manualDesc) {
-        var typeText = bulkMembers[memberId].payments[idx].typeText;
-        bulkMembers[memberId].payments[idx].description = getDefaultDescription(typeText, periodText);
-        // Update the description input field
-        $group.find(".payment-desc-input[data-pt-idx='" + idx + "']").val(bulkMembers[memberId].payments[idx].description);
-      }
-    }
-  });
-
-  // --- Auto-update description if payment type, date, or period changes and not manually edited ---
-  $('#payment_date, #payment_period').on('change', function() {
-    Object.values(bulkMembers).forEach(function(member) {
-      member.payments.forEach(function(pt, i) {
-        if (!pt.manualDesc) {
-          pt.description = getDefaultDescription(pt.typeText, $('#payment_date').val());
-        }
-      });
-    });
-    renderBulkTable();
-  });
-
-  // --- Add member via Select2 ---
-  $('#member_search').on('select2:select', function(e) {
-    var data = e.params.data;
-    if (!data.type) {
-      showToast('WARNING: Selected member is missing type property!','danger');
-      console.warn('Selected member is missing type property:', data);
-    }
-    addMemberToBulk(data);
-  });
-
-  // --- Handler for direct ID search (manual CRN/SRN entry) ---
-  $('#direct_id_search_btn').on('click', function() {
-    var idVal = $('#direct_id_search').val().trim();
-    var churchId = $('#church_id').val();
-    if (!idVal) {
-      showToast('Please enter a CRN or SRN.','warning');
-      return;
-    }
+  function addBeneficiary(data) {
+    var churchId = String($('#church_id').val() || '');
     if (!churchId) {
-      showToast('Please select a church first.','warning');
+      showToast('Select a church before adding beneficiaries.', 'warning');
+      resetSearch();
       return;
     }
-    // Fetch person by ID (could be CRN or SRN)
-    $.get('ajax_get_person_by_id.php', {id: idVal}, function(resp) {
-      if (resp.success && resp.data && resp.data.id) {
-        if (!resp.type) {
-          showToast('WARNING: Direct ID search result is missing type property!','danger');
-          console.warn('Direct ID search result is missing type property:', resp);
-        }
-        var type = resp.type || 'member';
-        var memberId = resp.data.id;
-        // If adding a Sunday School child, clear all regular members
-        if (type === 'sundayschool') {
-          for (const id in bulkMembers) {
-            if (bulkMembers[id].type !== 'sundayschool') {
-              delete bulkMembers[id];
-            }
-          }
-        }
-        // If adding a regular member, clear all Sunday School children
-        if (type === 'member') {
-          for (const id in bulkMembers) {
-            if (bulkMembers[id].type === 'sundayschool') {
-              delete bulkMembers[id];
-            }
-          }
-        }
-        if (bulkMembers[memberId]) {
-          showToast('Member already added.','warning');
-          return;
-        }
-        // Build member object in model
-        var memberName = '';
-        if (resp.data.last_name) {
-          memberName = (resp.data.last_name || '') + ' ' + (resp.data.first_name || '') + ' ' + (resp.data.middle_name || '');
-          if (type === 'member' && resp.data.crn) memberName += ' (' + resp.data.crn + ')';
-          if (type === 'sundayschool' && resp.data.srn) memberName += ' (' + resp.data.srn + ')';
-        }
-        if (!memberName) memberName = 'Unknown';
-        bulkMembers[memberId] = {
-          id: memberId,
-          name: memberName,
-          type: type, // 'member' or 'sundayschool'
-          payments: []
-        };
-        renderBulkTable();
-        $('#submitBulkBtn').removeClass('d-none');
-        $('#direct_id_search').val('');
-      } else {
-        showToast(resp.msg || 'ID not found.','danger');
-      }
-    }, 'json').fail(function(xhr) {
-      showToast('Error searching for ID.','danger');
-    });
-  });
+    var type = data.type === 'sundayschool' ? 'sundayschool' : 'member';
+    var key = entryKey(type, data.id);
+    if (findEntry(key)) {
+      showToast('This beneficiary is already in the batch.', 'warning');
+      resetSearch();
+      return;
+    }
+    if (entries.length && entries[0].type !== type) {
+      showToast('Members and Sunday School beneficiaries must be submitted in separate batches.', 'warning');
+      resetSearch();
+      return;
+    }
+    entries.push({ key: key, id: Number(data.id), type: type, name: String(data.text || 'Unknown beneficiary'), payments: [] });
+    render();
+    resetSearch();
+  }
 
-  // --- Submit bulk payment ---
-  $('#submitBulkBtn').click(function() {
-    // --- Enhanced: Before building payload, ensure all payment period/description fields are synchronized from DOM ---
-    Object.values(bulkMembers).forEach(function(m) {
-      var $group = $(".payment-types-group[data-member-id='" + m.id + "']");
-      (m.payments || []).forEach(function(pt, idx) {
-        var $periodSel = $group.find(".payment-period-select[data-pt-idx='" + idx + "']");
-        var $descInput = $group.find(".payment-desc-input[data-pt-idx='" + idx + "']");
-        
-        // Always update period from DOM to ensure latest selection is captured
-        if ($periodSel.length) {
-          var newPeriod = $periodSel.val();
-          var newPeriodText = $periodSel.find('option:selected').text();
-          
-          // Log if there's a mismatch between model and DOM
-          if (pt.period !== newPeriod) {
-            console.log('Fixing period mismatch for member ' + m.id + ', payment ' + idx + ': ' + 
-                      (pt.period || 'undefined') + ' -> ' + newPeriod);
-          }
-          
-          pt.period = newPeriod;
-          pt.periodText = newPeriodText;
-        }
-        
-        // Always update description from DOM
-        if ($descInput.length) {
-          pt.description = $descInput.val();
-        }
-      });
-    });
-    
-    // Debug log to verify periods are correctly set
-    console.log('Bulk payment data before submission:', JSON.parse(JSON.stringify(bulkMembers)));
-
-    var churchId = $('#church_id').val();
-    var paymentDate = $('#payment_date').val();
+  function buildPayload() {
     var memberIds = [];
-    var sundayschoolIds = [];
+    var sundaySchoolIds = [];
     var amounts = {};
     var descriptions = {};
+    var modes = {};
     var periods = {};
-    var period_descriptions = {};
-    var valid = true;
-    var hasSRN = false, hasCRN = false;
-    Object.values(bulkMembers).forEach(function(m) {
-      if (!m.type) {
-        showToast('ERROR: bulkMembers entry missing type property! Payment cannot proceed.','danger');
-        valid = false;
+    var periodDescriptions = {};
+    var sequence = [];
+
+    entries.forEach(function (entry, index) {
+      var mapKey = entry.type === 'sundayschool' ? 'ss_' + entry.id : String(entry.id);
+      if (entry.type === 'sundayschool') sundaySchoolIds.push(entry.id);
+      else memberIds.push(entry.id);
+      sequence.push({ position: index + 1, type: entry.type, id: entry.id });
+      amounts[mapKey] = {};
+      descriptions[mapKey] = {};
+      modes[mapKey] = {};
+      periods[mapKey] = {};
+      periodDescriptions[mapKey] = {};
+      entry.payments.forEach(function (line) {
+        amounts[mapKey][line.typeId] = Number(line.amount);
+        descriptions[mapKey][line.typeId] = line.description || '';
+        modes[mapKey][line.typeId] = 'Cash';
+        periods[mapKey][line.typeId] = line.period;
+        periodDescriptions[mapKey][line.typeId] = monthLabel(line.period);
+      });
+    });
+
+    return {
+      csrf_token: $('#bulkPaymentForm input[name="csrf_token"]').val(),
+      church_id: Number($('#church_id').val()),
+      payment_date: $('#payment_date').val(),
+      member_ids: memberIds,
+      sundayschool_ids: sundaySchoolIds,
+      beneficiary_sequence: sequence,
+      amounts: amounts,
+      descriptions: descriptions,
+      modes: modes,
+      periods: periods,
+      period_descriptions: periodDescriptions
+    };
+  }
+
+  function confirmationHtml() {
+    var total = totals().amount;
+    var rows = entries.map(function (entry, index) {
+      var lines = entry.payments.map(function (line) {
+        return '<div class="confirm-line"><span><strong>' + escapeHtml(line.typeText) + '</strong><small>'
+          + escapeHtml(monthLabel(line.period)) + ' · ' + escapeHtml(line.description) + '</small></span><strong>'
+          + escapeHtml(formatMoney(line.amount)) + '</strong></div>';
+      }).join('');
+      return '<div class="confirm-beneficiary"><div class="confirm-sequence">' + (index + 1) + '</div><div class="confirm-beneficiary-body"><div class="confirm-beneficiary-name">'
+        + escapeHtml(entry.name) + '</div>' + lines + '</div></div>';
+    }).join('');
+
+    return '<div class="confirm-batch-meta"><div><span>Church</span><strong>' + escapeHtml($('#church_id option:selected').text())
+      + '</strong></div><div><span>Receipt date</span><strong>' + escapeHtml($('#payment_date').val())
+      + '</strong></div><div><span>Beneficiaries</span><strong>' + entries.length + '</strong></div><div><span>Batch total</span><strong>'
+      + escapeHtml(formatMoney(total)) + '</strong></div></div><div class="confirm-order-note"><i class="fas fa-sort-numeric-down mr-2"></i>This is the exact posting order.</div>' + rows;
+  }
+
+  $('#member_search').select2({
+    width: '100%',
+    placeholder: 'Search by name, CRN or SRN',
+    allowClear: true,
+    minimumInputLength: 1,
+    ajax: {
+      url: config.membersUrl,
+      dataType: 'json',
+      delay: 300,
+      data: function (params) { return { q: params.term || '', church_id: $('#church_id').val() || 0 }; },
+      processResults: function (data) { return { results: Array.isArray(data.results) ? data.results : [] }; }
+    },
+    templateResult: function (item) {
+      if (item.loading) return item.text;
+      var badge = item.type === 'sundayschool' ? 'SRN' : 'CRN';
+      return $('<div class="beneficiary-search-result"><strong></strong><span></span></div>')
+        .find('strong').text(item.text || '').end().find('span').text(badge + (item.class ? ' · ' + item.class : '')).end();
+    }
+  }).on('select2:select', function (event) {
+    addBeneficiary(event.params.data || {});
+  });
+
+  $('#church_id').on('change', function () {
+    var nextChurch = String($(this).val() || '');
+    if (entries.length && nextChurch !== selectedChurch) {
+      if (!window.confirm('Changing the church will clear the current bulk-payment batch. Continue?')) {
+        $(this).val(selectedChurch);
         return;
       }
-      if (m.type === 'sundayschool') {
-        hasSRN = true;
-        if (!sundayschoolIds.includes(m.id)) sundayschoolIds.push(m.id);
-      } else if (m.type === 'member') {
-        hasCRN = true;
-        if (!memberIds.includes(m.id)) memberIds.push(m.id);
-      }
-      var key = (m.type === 'sundayschool') ? ('ss_' + m.id) : String(m.id);
-      amounts[key] = {};
-      descriptions[key] = {};
-      periods[key] = {};
-      period_descriptions[key] = {};
-      (m.payments || []).forEach(function(pt) {
-        amounts[key][pt.typeId] = pt.amount;
-        descriptions[key][pt.typeId] = pt.description || '';
-        periods[key][pt.typeId] = pt.period || '';
-        period_descriptions[key][pt.typeId] = pt.periodText || '';
-      });
+      entries = [];
+      render();
+    }
+    selectedChurch = nextChurch;
+    resetSearch();
+  });
+
+  $('#bulkTable tbody').on('click', '.add-payment-line', function () {
+    var $group = $(this).closest('.payment-types-group');
+    var entry = findEntry($group.attr('data-entry-key'));
+    var selectedType = $group.find('.payment-type-select').select2('data')[0];
+    var amount = Number($group.find('.payment-amount-input').val());
+    if (!entry || !selectedType || !selectedType.id || !amount || amount <= 0) {
+      showToast('Select a payment type and enter an amount greater than zero.', 'warning');
+      return;
+    }
+    if (entry.payments.some(function (line) { return String(line.typeId) === String(selectedType.id); })) {
+      showToast('That payment type is already assigned to this beneficiary.', 'warning');
+      return;
+    }
+    var period = monthValue($('#payment_date').val());
+    entry.payments.push({
+      typeId: Number(selectedType.id),
+      typeText: String(selectedType.text || 'Payment'),
+      amount: amount,
+      period: period,
+      description: defaultDescription(selectedType.text, period),
+      manualDescription: false
     });
-    if (!valid) {
-      showToast('Bulk payment payload invalid. Please check your entries.','danger');
+    render();
+  });
+
+  $('#bulkTable tbody').on('change', '.payment-period-select', function () {
+    var $row = $(this).closest('tr');
+    var entry = findEntry($row.attr('data-entry-key'));
+    var index = Number($(this).data('line-index'));
+    if (!entry || !entry.payments[index]) return;
+    entry.payments[index].period = String($(this).val() || '');
+    if (!entry.payments[index].manualDescription) {
+      entry.payments[index].description = defaultDescription(entry.payments[index].typeText, entry.payments[index].period);
+      $row.find('.payment-desc-input[data-line-index="' + index + '"]').val(entry.payments[index].description);
+    }
+  });
+
+  $('#bulkTable tbody').on('input', '.payment-desc-input', function () {
+    var entry = findEntry($(this).closest('tr').attr('data-entry-key'));
+    var index = Number($(this).data('line-index'));
+    if (!entry || !entry.payments[index]) return;
+    entry.payments[index].description = String($(this).val() || '');
+    entry.payments[index].manualDescription = true;
+  });
+
+  $('#bulkTable tbody').on('click', '.remove-payment-line', function () {
+    var entry = findEntry($(this).closest('tr').attr('data-entry-key'));
+    var index = Number($(this).data('line-index'));
+    if (!entry || !entry.payments[index]) return;
+    entry.payments.splice(index, 1);
+    render();
+  });
+
+  $('#bulkTable tbody').on('click', '.remove-entry', function () {
+    var key = String($(this).closest('tr').attr('data-entry-key'));
+    entries = entries.filter(function (entry) { return entry.key !== key; });
+    render();
+  });
+
+  $('#bulkTable tbody').on('click', '.move-entry-up, .move-entry-down', function () {
+    var key = String($(this).closest('tr').attr('data-entry-key'));
+    var index = entries.findIndex(function (entry) { return entry.key === key; });
+    var target = $(this).hasClass('move-entry-up') ? index - 1 : index + 1;
+    if (index < 0 || target < 0 || target >= entries.length) return;
+    var moved = entries.splice(index, 1)[0];
+    entries.splice(target, 0, moved);
+    render();
+  });
+
+  $('#submitBulkBtn').on('click', function () {
+    if (!batchIsReady()) {
+      showToast('Every beneficiary needs at least one valid payment line.', 'warning');
       return;
     }
-    if (hasSRN && hasCRN) {
-      showToast('Cannot mix Members (CRN) and Sunday School (SRN) in one bulk payment.','danger');
-      return;
-    }
-    if (hasSRN && sundayschoolIds.length === 0) {
-      showToast('No Sunday School child selected for bulk payment.','danger');
-      return;
-    }
-    if (hasCRN && memberIds.length === 0) {
-      showToast('No Member selected for bulk payment.','danger');
-      return;
-    }
-    // Render confirmation summary
-    var summaryHtml = '<div class="mb-2"><strong>Church:</strong> ' + $('#church_id option:selected').text() + '</div>';
-    summaryHtml += '<div class="mb-2"><strong>Payment Date:</strong> ' + paymentDate + '</div>';
-    summaryHtml += '<div class="mb-2"><strong>Members and Payments:</strong></div>';
-    summaryHtml += '<ul class="list-group">';
-    Object.keys(amounts).forEach(function(key) {
-      var memberId = key.startsWith('ss_') ? key.slice(3) : key;
-      var memberName = (bulkMembers[memberId] && bulkMembers[memberId].name) ? bulkMembers[memberId].name : 'Unknown';
-      summaryHtml += '<li class="list-group-item"><strong>' + memberName + '</strong><ul class="mb-0">';
-      var memberAmounts = amounts[key];
-      var subtotal = 0;
-      Object.keys(memberAmounts).forEach(function(typeId) {
-        var amt = memberAmounts[typeId];
-        if (typeof amt !== 'number' || isNaN(amt)) amt = 0;
-        subtotal += amt;
-        var desc = (descriptions[key] && descriptions[key][typeId]) ? descriptions[key][typeId] : '';
-        summaryHtml += '<li>' + typeId + ': ₵' + amt.toFixed(2) + (desc ? ' <span class="text-muted small">[' + $('<div>').text(desc).html() + ']</span>' : '') + '</li>';
-      });
-      summaryHtml += '<li><em>Subtotal: ₵' + subtotal.toFixed(2) + '</em></li>';
-      summaryHtml += '</ul></li>';
-    });
-    summaryHtml += '</ul>';
-    var total = 0;
-    Object.values(amounts).forEach(function(memberAmounts) {
-      Object.values(memberAmounts).forEach(function(amt) {
-        total += amt;
-      });
-    });
-    summaryHtml += '<div class="mt-3 font-weight-bold text-right">Total: ₵' + total.toFixed(2) + '</div>';
-    $('#confirmSummary').html(summaryHtml);
+    $('#confirmSummary').html(confirmationHtml());
     $('#confirmModal').modal('show');
-    // On confirm
-    $('#confirmSubmitBtn').off('click').on('click', function() {
-      $(this).prop('disabled', true).text('Processing...');
-      // Debug: log the payload before sending
-      var payloadData = {
-        csrf_token: $('#bulkPaymentForm input[name="csrf_token"]').val(),
-        church_id: churchId,
-        payment_date: paymentDate,
-        member_ids: memberIds,
-        sundayschool_ids: sundayschoolIds,
-        amounts: amounts,
-        descriptions: descriptions,
-        periods: periods,
-        period_descriptions: period_descriptions
-      };
-      
-      $.ajax({
-        url: 'ajax_bulk_payment.php',
-        type: 'POST',
-        contentType: 'application/json',
-        data: JSON.stringify(payloadData),
-        dataType: 'json',
-        success: function(resp) {
-          $('#confirmSubmitBtn').prop('disabled', false).text('Confirm & Submit');
-          if (resp.success) {
-            $('#confirmModal').modal('hide');
-            showToast('Bulk payment successful!', 'success');
-            setTimeout(function() { location.reload(); }, 1500);
-          } else {
-            showToast(resp.msg || 'Error processing payment.', 'danger');
-            if (resp.msg) console.error('[AJAX ERROR] Server message:', resp.msg);
-          }
-        },
-        error: function(xhr, status, err) {
-          $('#confirmSubmitBtn').prop('disabled', false).text('Confirm & Submit');
-          let msg = 'Network/server error.';
-          if (xhr && xhr.responseText) {
-            try {
-              let resp = JSON.parse(xhr.responseText);
-              msg = resp.msg || msg;
-              console.error('[AJAX ERROR] Parsed response:', resp);
-            } catch (e) {
-              console.error('[AJAX ERROR] Could not parse responseText:', xhr.responseText);
-            }
-          } else {
-            console.error('[AJAX ERROR] status:', status, 'err:', err, 'xhr:', xhr);
-          }
-          showToast(msg, 'danger');
-        }
-      });
+  });
+
+  $(document).on('click', '#confirmSubmitBtn', function () {
+    var $button = $(this);
+    if ($button.prop('disabled')) return;
+    $button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm mr-2" role="status" aria-hidden="true"></span>Posting in sequence…');
+    $.ajax({
+      url: config.submitUrl,
+      method: 'POST',
+      contentType: 'application/json',
+      dataType: 'json',
+      data: JSON.stringify(buildPayload())
+    }).done(function (response) {
+      if (!response || !response.success) {
+        showToast((response && (response.msg || response.error)) || 'The batch could not be completed.', 'danger');
+        return;
+      }
+      $('#confirmModal').modal('hide');
+      entries = [];
+      render();
+      showToast(response.msg || 'Bulk payment completed successfully.', 'success');
+    }).fail(function (xhr) {
+      var response = xhr.responseJSON || {};
+      showToast(response.msg || response.error || 'The server could not process the batch.', 'danger');
+    }).always(function () {
+      $button.prop('disabled', false).html('<i class="fas fa-check-circle mr-2"></i>Confirm and submit');
     });
   });
 
-  // --- Toast helper ---
-  function showToast(msg, type) {
-    var $toast = $('#bulkToast');
-    $toast.removeClass('bg-info bg-success bg-danger bg-warning');
-    if (type === 'success') $toast.find('.toast-header').addClass('bg-success').removeClass('bg-info bg-danger bg-warning');
-    else if (type === 'danger') $toast.find('.toast-header').addClass('bg-danger').removeClass('bg-info bg-success bg-warning');
-    else if (type === 'warning') $toast.find('.toast-header').addClass('bg-warning').removeClass('bg-info bg-success bg-danger');
-    else $toast.find('.toast-header').addClass('bg-info').removeClass('bg-success bg-danger bg-warning');
-    $toast.find('.toast-body').text(msg);
-    $toast.toast('show');
-  }
-});
+  render();
+})(jQuery);

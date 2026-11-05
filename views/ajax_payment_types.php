@@ -15,7 +15,9 @@ if (!is_logged_in()) {
 
 // Canonical permission check with robust super admin bypass
 $is_super_admin = is_super_admin();
-if (!$is_super_admin && !has_permission('access_ajax_payment_types')) {
+if (!$is_super_admin
+    && !has_permission('access_ajax_payment_types')
+    && !has_permission('view_payment_bulk')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Permission denied']);
     exit;

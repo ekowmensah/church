@@ -5,6 +5,7 @@
 require_once __DIR__.'/../../config/config.php';
 require_once __DIR__.'/../../helpers/auth.php';
 require_once __DIR__.'/../../helpers/permissions_v2.php';
+require_once __DIR__.'/../../helpers/payment_report_context.php';
 require_once __DIR__.'/../../includes/report_ui_helpers.php';
 
 // Only allow logged-in users
@@ -32,8 +33,17 @@ if (!$is_super_admin && !has_permission('view_payment_total_today')) {
 $can_view = true; // Already validated above
 $can_export = $is_super_admin || has_permission('export_payment_report');
 
-// Get date from GET or default to today
-$date = isset($_GET['date']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date']) ? $_GET['date'] : date('Y-m-d');
+// Accept the old single-date parameter for existing bookmarks.
+$legacyDate = payment_report_valid_date((string) ($_GET['date'] ?? ''));
+$defaultDate = $legacyDate !== '' ? $legacyDate : date('Y-m-d');
+$start_date = payment_report_valid_date((string) ($_GET['start_date'] ?? '')) ?: $defaultDate;
+$end_date = payment_report_valid_date((string) ($_GET['end_date'] ?? '')) ?: $defaultDate;
+if ($start_date > $end_date) {
+    [$start_date, $end_date] = [$end_date, $start_date];
+}
+$date_range_label = $start_date === $end_date
+    ? date('l, F j, Y', strtotime($start_date))
+    : date('M j, Y', strtotime($start_date)) . ' - ' . date('M j, Y', strtotime($end_date));
 
 // Get cashier filter if provided
 $filter_cashier = isset($_GET['cashier']) && is_numeric($_GET['cashier']) ? intval($_GET['cashier']) : null;
@@ -58,10 +68,10 @@ try {
     if ($is_super_admin) {
         $sql = "SELECT DISTINCT u.id, u.name FROM users u 
                 INNER JOIN v_posted_payments p ON u.id = p.recorded_by
-                WHERE DATE(p.payment_date) = ? 
+                WHERE p.payment_date >= ? AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY)
                 ORDER BY u.name";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('s', $date);
+        $stmt->bind_param('ss', $start_date, $end_date);
         $stmt->execute();
         $result = $stmt->get_result();
         while ($row = $result->fetch_assoc()) {
@@ -72,17 +82,17 @@ try {
     
     // 1. Get overall totals
     if ($filter_by_user) {
-        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM v_posted_payments WHERE DATE(payment_date) = ? AND recorded_by = ?";
+        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM v_posted_payments WHERE payment_date >= ? AND payment_date < DATE_ADD(?, INTERVAL 1 DAY) AND recorded_by = ?";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('si', $date, $current_user_id);
+        $stmt->bind_param('ssi', $start_date, $end_date, $current_user_id);
     } elseif ($filter_cashier) {
-        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM v_posted_payments WHERE DATE(payment_date) = ? AND recorded_by = ?";
+        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM v_posted_payments WHERE payment_date >= ? AND payment_date < DATE_ADD(?, INTERVAL 1 DAY) AND recorded_by = ?";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('si', $date, $filter_cashier);
+        $stmt->bind_param('ssi', $start_date, $end_date, $filter_cashier);
     } else {
-        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM v_posted_payments WHERE DATE(payment_date) = ?";
+        $sql = "SELECT SUM(amount) AS total_amount, COUNT(id) AS total_count FROM v_posted_payments WHERE payment_date >= ? AND payment_date < DATE_ADD(?, INTERVAL 1 DAY)";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('s', $date);
+        $stmt->bind_param('ss', $start_date, $end_date);
     }
     
     if (!$stmt) {
@@ -112,12 +122,12 @@ try {
                 CASE WHEN p.recorded_by IS NULL THEN 1 ELSE 0 END AS is_self_service
             FROM v_posted_payments p
             LEFT JOIN users u ON p.recorded_by = u.id
-            WHERE DATE(p.payment_date) = ?
+            WHERE p.payment_date >= ? AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY)
             GROUP BY COALESCE(u.id, 0), COALESCE(u.name, 'By Member'), COALESCE(u.email, 'Self-Service Payment'), is_self_service
             ORDER BY total_amount DESC
         ";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('s', $date);
+        $stmt->bind_param('ss', $start_date, $end_date);
         $stmt->execute();
         $result = $stmt->get_result();
         while ($row = $result->fetch_assoc()) {
@@ -139,12 +149,12 @@ try {
                 MAX(p.amount) AS max_amount
             FROM v_posted_payments p
             JOIN payment_types pt ON p.payment_type_id = pt.id
-            WHERE DATE(p.payment_date) = ? AND p.recorded_by = ?
+            WHERE p.payment_date >= ? AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY) AND p.recorded_by = ?
             GROUP BY pt.id, pt.name
             ORDER BY total_amount DESC
         ";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('si', $date, $current_user_id);
+        $stmt->bind_param('ssi', $start_date, $end_date, $current_user_id);
     } elseif ($filter_cashier) {
         $sql = "
             SELECT 
@@ -157,12 +167,12 @@ try {
                 MAX(p.amount) AS max_amount
             FROM v_posted_payments p
             JOIN payment_types pt ON p.payment_type_id = pt.id
-            WHERE DATE(p.payment_date) = ? AND p.recorded_by = ?
+            WHERE p.payment_date >= ? AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY) AND p.recorded_by = ?
             GROUP BY pt.id, pt.name
             ORDER BY total_amount DESC
         ";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('si', $date, $filter_cashier);
+        $stmt->bind_param('ssi', $start_date, $end_date, $filter_cashier);
     } else {
         $sql = "
             SELECT 
@@ -175,12 +185,12 @@ try {
                 MAX(p.amount) AS max_amount
             FROM v_posted_payments p
             JOIN payment_types pt ON p.payment_type_id = pt.id
-            WHERE DATE(p.payment_date) = ?
+            WHERE p.payment_date >= ? AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY)
             GROUP BY pt.id, pt.name
             ORDER BY total_amount DESC
         ";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('s', $date);
+        $stmt->bind_param('ss', $start_date, $end_date);
     }
     $stmt->execute();
     $result = $stmt->get_result();
@@ -198,12 +208,12 @@ try {
                 SUM(p.amount) AS total_amount,
                 AVG(p.amount) AS avg_amount
             FROM v_posted_payments p
-            WHERE DATE(p.payment_date) = ? AND p.recorded_by = ?
+            WHERE p.payment_date >= ? AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY) AND p.recorded_by = ?
             GROUP BY p.mode
             ORDER BY total_amount DESC
         ";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('si', $date, $current_user_id);
+        $stmt->bind_param('ssi', $start_date, $end_date, $current_user_id);
     } elseif ($filter_cashier) {
         $sql = "
             SELECT 
@@ -212,12 +222,12 @@ try {
                 SUM(p.amount) AS total_amount,
                 AVG(p.amount) AS avg_amount
             FROM v_posted_payments p
-            WHERE DATE(p.payment_date) = ? AND p.recorded_by = ?
+            WHERE p.payment_date >= ? AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY) AND p.recorded_by = ?
             GROUP BY p.mode
             ORDER BY total_amount DESC
         ";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('si', $date, $filter_cashier);
+        $stmt->bind_param('ssi', $start_date, $end_date, $filter_cashier);
     } else {
         $sql = "
             SELECT 
@@ -226,12 +236,12 @@ try {
                 SUM(p.amount) AS total_amount,
                 AVG(p.amount) AS avg_amount
             FROM v_posted_payments p
-            WHERE DATE(p.payment_date) = ?
+            WHERE p.payment_date >= ? AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY)
             GROUP BY p.mode
             ORDER BY total_amount DESC
         ";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('s', $date);
+        $stmt->bind_param('ss', $start_date, $end_date);
     }
     $stmt->execute();
     $result = $stmt->get_result();
@@ -252,12 +262,12 @@ try {
             FROM v_posted_payments p
             LEFT JOIN users u ON p.recorded_by = u.id
             JOIN payment_types pt ON p.payment_type_id = pt.id
-            WHERE DATE(p.payment_date) = ?
+            WHERE p.payment_date >= ? AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY)
             GROUP BY COALESCE(u.id, 0), COALESCE(u.name, 'By Member'), pt.name
             ORDER BY COALESCE(u.name, 'By Member'), total_amount DESC
         ";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('s', $date);
+        $stmt->bind_param('ss', $start_date, $end_date);
         $stmt->execute();
         $result = $stmt->get_result();
         while ($row = $result->fetch_assoc()) {
@@ -277,12 +287,12 @@ try {
                 SUM(p.amount) AS total_amount
             FROM v_posted_payments p
             LEFT JOIN users u ON p.recorded_by = u.id
-            WHERE DATE(p.payment_date) = ?
+            WHERE p.payment_date >= ? AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY)
             GROUP BY COALESCE(u.id, 0), COALESCE(u.name, 'By Member'), p.mode
             ORDER BY COALESCE(u.name, 'By Member'), total_amount DESC
         ";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('s', $date);
+        $stmt->bind_param('ss', $start_date, $end_date);
         $stmt->execute();
         $result = $stmt->get_result();
         while ($row = $result->fetch_assoc()) {
@@ -311,12 +321,12 @@ try {
             LEFT JOIN members m ON p.member_id = m.id
             LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
             LEFT JOIN users u ON p.recorded_by = u.id
-            WHERE DATE(p.payment_date) = ? AND p.recorded_by = ?
+            WHERE p.payment_date >= ? AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY) AND p.recorded_by = ?
             ORDER BY p.payment_date DESC, p.id DESC
             LIMIT ?
         ";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('sii', $date, $current_user_id, $limit);
+        $stmt->bind_param('ssii', $start_date, $end_date, $current_user_id, $limit);
     } elseif ($filter_cashier) {
         $sql = "
             SELECT 
@@ -335,12 +345,12 @@ try {
             LEFT JOIN members m ON p.member_id = m.id
             LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
             LEFT JOIN users u ON p.recorded_by = u.id
-            WHERE DATE(p.payment_date) = ? AND p.recorded_by = ?
+            WHERE p.payment_date >= ? AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY) AND p.recorded_by = ?
             ORDER BY p.payment_date DESC, p.id DESC
             LIMIT ?
         ";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('sii', $date, $filter_cashier, $limit);
+        $stmt->bind_param('ssii', $start_date, $end_date, $filter_cashier, $limit);
     } else {
         $sql = "
             SELECT 
@@ -359,12 +369,12 @@ try {
             LEFT JOIN members m ON p.member_id = m.id
             LEFT JOIN sunday_school ss ON p.sundayschool_id = ss.id
             LEFT JOIN users u ON p.recorded_by = u.id
-            WHERE DATE(p.payment_date) = ?
+            WHERE p.payment_date >= ? AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY)
             ORDER BY p.payment_date DESC, p.id DESC
             LIMIT ?
         ";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('si', $date, $limit);
+        $stmt->bind_param('ssi', $start_date, $end_date, $limit);
     }
     $stmt->execute();
     $result = $stmt->get_result();
@@ -445,11 +455,11 @@ ob_start();
         <div class="row align-items-center">
             <div class="col-md-8">
                 <h2 class="mb-2"><i class="fas fa-calculator mr-2"></i>Account Reconciliation Report</h2>
-                <p class="mb-0 opacity-75">Daily Payment Analysis & Cashier Performance</p>
+                <p class="mb-0 opacity-75">Payment Analysis over the selected date range & Cashier Performance</p>
             </div>
             <div class="col-md-4 text-right">
-                <h3 class="mb-0"><?= date('l, F j, Y', strtotime($date)) ?></h3>
-                <a href="<?= BASE_URL ?>/views/reports/details/payment_mode_vs_payment_type_report.php?start_date=<?= urlencode($date) ?>&end_date=<?= urlencode($date) ?>" class="btn btn-warning btn-sm mt-2">
+                <h3 class="mb-0"><?= htmlspecialchars($date_range_label) ?></h3>
+                <a href="<?= BASE_URL ?>/views/reports/details/payment_mode_vs_payment_type_report.php?start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>" class="btn btn-warning btn-sm mt-2">
                     <i class="fas fa-table mr-1"></i> Mode vs Type Analysis
                 </a>
                 <?php if ($can_export): ?>
@@ -468,8 +478,12 @@ ob_start();
                 <div class="card-body">
                     <form method="get" class="form-inline">
                         <div class="form-group mr-3">
-                            <label class="mr-2"><i class="fas fa-calendar mr-1"></i> Date:</label>
-                            <input type="date" name="date" class="form-control" value="<?= htmlspecialchars($date) ?>" required>
+                            <label class="mr-2" for="start_date"><i class="fas fa-calendar mr-1"></i> From:</label>
+                            <input type="date" id="start_date" name="start_date" class="form-control" value="<?= htmlspecialchars($start_date) ?>" required>
+                        </div>
+                        <div class="form-group mr-3">
+                            <label class="mr-2" for="end_date">To:</label>
+                            <input type="date" id="end_date" name="end_date" class="form-control" value="<?= htmlspecialchars($end_date) ?>" required>
                         </div>
                         <?php if ($is_super_admin && count($cashier_list) > 0): ?>
                         <div class="form-group mr-3">
@@ -488,7 +502,7 @@ ob_start();
                             <i class="fas fa-filter mr-1"></i> Apply Filter
                         </button>
                         <?php if ($filter_cashier): ?>
-                        <a href="?date=<?= $date ?>" class="btn btn-secondary ml-2">
+                        <a href="?start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>" class="btn btn-secondary ml-2">
                             <i class="fas fa-times mr-1"></i> Clear Filter
                         </a>
                         <?php endif; ?>
@@ -581,7 +595,7 @@ ob_start();
                             </td>
                             <td class="text-center">
                                 <?php if ($row['id'] > 0): ?>
-                                    <a href="?date=<?= $date ?>&cashier=<?= $row['id'] ?>" class="btn btn-sm btn-outline-primary">
+                                    <a href="?start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>&cashier=<?= (int) $row['id'] ?>" class="btn btn-sm btn-outline-primary">
                                         <i class="fas fa-eye"></i> View
                                     </a>
                                 <?php else: ?>

@@ -1,137 +1,177 @@
 <?php
-//if (session_status() === PHP_SESSION_NONE) session_start();
-require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../helpers/auth.php';
+require_once __DIR__ . '/../helpers/permissions_v2.php';
+require_once __DIR__ . '/../helpers/church_helper.php';
 
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
 
-// Only allow logged-in users
 if (!is_logged_in()) {
     http_response_code(401);
-    echo json_encode(['success' => false, 'error' => 'Authentication required']);
+    echo json_encode(['results' => [], 'error' => 'Authentication required']);
     exit;
 }
 
-// Canonical permission check with robust super admin bypass
-$is_super_admin = is_super_admin();
-if (!$is_super_admin && !has_permission('access_ajax_members_by_church')) {
+$isSuperAdmin = is_super_admin();
+if (!$isSuperAdmin
+    && !has_permission('access_ajax_members_by_church')
+    && !has_permission('view_payment_bulk')) {
     http_response_code(403);
-    echo json_encode(['success' => false, 'error' => 'Permission denied']);
+    echo json_encode(['results' => [], 'error' => 'Permission denied']);
     exit;
 }
 
-$q = isset($_GET['q']) ? trim($_GET['q']) : '';
-$church_id = isset($_GET['church_id']) ? intval($_GET['church_id']) : 0;
-$organization_id = isset($_GET['organization_id']) ? intval($_GET['organization_id']) : 0;
-$bible_class_id = isset($_GET['bible_class_id']) ? intval($_GET['bible_class_id']) : 0;
+$query = trim((string) ($_GET['q'] ?? ''));
+$churchId = max(0, (int) ($_GET['church_id'] ?? 0));
+$organizationId = max(0, (int) ($_GET['organization_id'] ?? 0));
+$bibleClassId = max(0, (int) ($_GET['bible_class_id'] ?? 0));
+$gender = strtolower(trim((string) ($_GET['gender'] ?? '')));
 
-$is_class_leader = has_role('Class Leader') || has_role('Assistant Bible Class Leader');
-$linked_member_id = isset($_SESSION['member_id']) ? intval($_SESSION['member_id']) : 0;
-$class_leader_class_id = 0;
-if ($is_class_leader && $linked_member_id) {
-    // Get the class_id of the linked member
-    $stmt = $conn->prepare('SELECT class_id FROM members WHERE id = ?');
-    $stmt->bind_param('i', $linked_member_id);
-    $stmt->execute();
-    $stmt->bind_result($class_leader_class_id);
-    $stmt->fetch();
-    $stmt->close();
-}
-$params = [];
-$types = '';
-$sql = "SELECT m.id, m.first_name, m.last_name, m.middle_name, CONCAT(m.last_name, ' ', m.first_name, ' ', m.middle_name, ' (', m.crn, ')') as text, m.crn, c.name as class_name
-        FROM members m
-        LEFT JOIN bible_classes c ON m.class_id = c.id";
-
-// Add organization join if filtering by organization
-if ($organization_id) {
-    $sql .= " INNER JOIN member_organizations mo ON m.id = mo.member_id";
+if (!$isSuperAdmin) {
+    $actorChurchId = (int) get_user_church_id($conn);
+    if ($actorChurchId < 1 || ($churchId > 0 && $churchId !== $actorChurchId)) {
+        http_response_code(403);
+        echo json_encode(['results' => [], 'error' => 'The selected church is outside your authorized scope.']);
+        exit;
+    }
+    $churchId = $actorChurchId;
 }
 
-$sql .= " WHERE m.status = 'active'";
-// Restrict to class for class leaders (CRN)
-if ($is_class_leader && $class_leader_class_id) {
-    $sql .= " AND m.class_id = ?";
-    $params[] = $class_leader_class_id;
-    $types .= 'i';
+if ($churchId < 1) {
+    echo json_encode(['results' => []]);
+    exit;
 }
 
-$gender = isset($_GET['gender']) ? strtolower(trim($_GET['gender'])) : '';
-if ($church_id) {
-    $sql .= " AND m.church_id = ?";
-    $params[] = $church_id;
-    $types .= 'i';
+$isClassLeader = has_role('Class Leader') || has_role('Assistant Bible Class Leader');
+$classLeaderClassId = 0;
+if ($isClassLeader) {
+    $linkedMemberId = (int) ($_SESSION['member_id'] ?? 0);
+    if ($linkedMemberId < 1 && !empty($_SESSION['user_id'])) {
+        $linkStmt = $conn->prepare('SELECT member_id FROM users WHERE id = ? LIMIT 1');
+        $userId = (int) $_SESSION['user_id'];
+        $linkStmt->bind_param('i', $userId);
+        $linkStmt->execute();
+        $linkedMemberId = (int) ($linkStmt->get_result()->fetch_assoc()['member_id'] ?? 0);
+        $linkStmt->close();
+    }
+    if ($linkedMemberId > 0) {
+        $classStmt = $conn->prepare('SELECT class_id FROM members WHERE id = ? AND church_id = ? LIMIT 1');
+        $classStmt->bind_param('ii', $linkedMemberId, $churchId);
+        $classStmt->execute();
+        $classLeaderClassId = (int) ($classStmt->get_result()->fetch_assoc()['class_id'] ?? 0);
+        $classStmt->close();
+    }
 }
 
-// Add organization filter
-if ($organization_id) {
-    $sql .= " AND mo.organization_id = ?";
-    $params[] = $organization_id;
-    $types .= 'i';
+$memberWhere = ["m.status = 'active'", 'm.is_archived = 0', 'm.church_id = ?'];
+$memberTypes = 'i';
+$memberParams = [$churchId];
+$memberJoin = '';
+if ($organizationId > 0) {
+    $memberJoin = ' INNER JOIN member_organizations mo ON mo.member_id = m.id';
+    $memberWhere[] = 'mo.organization_id = ?';
+    $memberTypes .= 'i';
+    $memberParams[] = $organizationId;
+}
+$effectiveClassId = $classLeaderClassId > 0 ? $classLeaderClassId : $bibleClassId;
+if ($effectiveClassId > 0) {
+    $memberWhere[] = 'm.class_id = ?';
+    $memberTypes .= 'i';
+    $memberParams[] = $effectiveClassId;
+}
+if (in_array($gender, ['male', 'female'], true)) {
+    $memberWhere[] = 'LOWER(m.gender) = ?';
+    $memberTypes .= 's';
+    $memberParams[] = $gender;
+}
+if ($query !== '') {
+    $memberWhere[] = "(m.last_name LIKE CONCAT('%', ?, '%')
+        OR m.first_name LIKE CONCAT('%', ?, '%')
+        OR m.middle_name LIKE CONCAT('%', ?, '%')
+        OR m.crn LIKE CONCAT('%', ?, '%'))";
+    $memberTypes .= 'ssss';
+    array_push($memberParams, $query, $query, $query, $query);
 }
 
-// Add bible class filter
-if ($bible_class_id) {
-    $sql .= " AND m.class_id = ?";
-    $params[] = $bible_class_id;
-    $types .= 'i';
-}
-if (in_array($gender, ['male','female'])) {
-    $sql .= " AND LOWER(m.gender) = ?";
-    $params[] = strtolower($gender);
-    $types .= 's';
-}
-if ($q !== '') {
-    $sql .= " AND (m.last_name LIKE ? OR m.first_name LIKE ? OR m.middle_name LIKE ? OR m.crn LIKE ?)";
-    $like = "%$q%";
-    array_push($params, $like, $like, $like, $like);
-    $types .= 'ssss';
-}
-$sql .= " ORDER BY m.last_name, m.first_name, m.middle_name LIMIT 20";
-$stmt = $conn->prepare($sql);
-if (!empty($params)) {
-    $stmt->bind_param($types, ...$params);
-}
-$stmt->execute();
-$res = $stmt->get_result();
+$memberSql = "SELECT m.id, m.first_name, m.middle_name, m.last_name, m.crn,
+        class.name AS class_name
+    FROM members m
+    LEFT JOIN bible_classes class ON class.id = m.class_id
+    $memberJoin
+    WHERE " . implode(' AND ', $memberWhere) . "
+    ORDER BY m.last_name, m.first_name, m.middle_name, m.id
+    LIMIT 20";
+$memberStmt = $conn->prepare($memberSql);
+$memberStmt->bind_param($memberTypes, ...$memberParams);
+$memberStmt->execute();
+$memberResult = $memberStmt->get_result();
 $results = [];
-while ($row = $res->fetch_assoc()) {
+while ($row = $memberResult->fetch_assoc()) {
+    $name = trim(implode(' ', array_filter([$row['last_name'], $row['first_name'], $row['middle_name']])));
     $results[] = [
-        'id' => $row['id'],
-        'text' => $row['text'],
+        'id' => (int) $row['id'],
+        'text' => $name . ($row['crn'] ? ' (' . $row['crn'] . ')' : ''),
         'crn' => $row['crn'],
-        'class' => $row['class_name'],
-        'first_name' => isset($row['first_name']) ? $row['first_name'] : (isset($row['first']) ? $row['first'] : ''),
-        'last_name' => isset($row['last_name']) ? $row['last_name'] : (isset($row['last']) ? $row['last'] : ''),
-        'middle_name' => isset($row['middle_name']) ? $row['middle_name'] : (isset($row['middle']) ? $row['middle'] : ''),
-        'type' => 'member' // Mark as regular member
+        'class' => $row['class_name'] ?? '',
+        'first_name' => $row['first_name'],
+        'last_name' => $row['last_name'],
+        'middle_name' => $row['middle_name'],
+        'type' => 'member',
     ];
 }
+$memberStmt->close();
 
-// Add Sunday School children
-if ($church_id) {
-    $ss_sql = "SELECT id, srn, first_name, last_name, middle_name, dob, class_id, gender FROM sunday_school WHERE church_id = ? AND is_duplicate_archived = 0";
-    if ($is_class_leader && $class_leader_class_id) {
-        $ss_sql .= " AND class_id = " . intval($class_leader_class_id);
+// Organization membership applies only to adult/member records. For an
+// unfiltered bulk-payment search, include active Sunday School identities too.
+if ($organizationId < 1) {
+    $childWhere = ['child.church_id = ?', 'child.is_duplicate_archived = 0', 'child.transferred_to_member_id IS NULL'];
+    $childTypes = 'i';
+    $childParams = [$churchId];
+    if ($effectiveClassId > 0) {
+        $childWhere[] = 'child.class_id = ?';
+        $childTypes .= 'i';
+        $childParams[] = $effectiveClassId;
     }
-    $stmt_ss = $conn->prepare($ss_sql);
-    $stmt_ss->bind_param('i', $church_id);
-    $stmt_ss->execute();
-    $res_ss = $stmt_ss->get_result();
-    while ($row = $res_ss->fetch_assoc()) {
+    if (in_array($gender, ['male', 'female'], true)) {
+        $childWhere[] = 'LOWER(child.gender) = ?';
+        $childTypes .= 's';
+        $childParams[] = $gender;
+    }
+    if ($query !== '') {
+        $childWhere[] = "(child.last_name LIKE CONCAT('%', ?, '%')
+            OR child.first_name LIKE CONCAT('%', ?, '%')
+            OR child.middle_name LIKE CONCAT('%', ?, '%')
+            OR child.srn LIKE CONCAT('%', ?, '%'))";
+        $childTypes .= 'ssss';
+        array_push($childParams, $query, $query, $query, $query);
+    }
+
+    $childSql = "SELECT child.id, child.first_name, child.middle_name,
+            child.last_name, child.srn, child.gender, class.name AS class_name
+        FROM sunday_school child
+        LEFT JOIN bible_classes class ON class.id = child.class_id
+        WHERE " . implode(' AND ', $childWhere) . "
+        ORDER BY child.last_name, child.first_name, child.middle_name, child.id
+        LIMIT 20";
+    $childStmt = $conn->prepare($childSql);
+    $childStmt->bind_param($childTypes, ...$childParams);
+    $childStmt->execute();
+    $childResult = $childStmt->get_result();
+    while ($row = $childResult->fetch_assoc()) {
+        $name = trim(implode(' ', array_filter([$row['last_name'], $row['first_name'], $row['middle_name']])));
         $results[] = [
-            'id' => $row['id'],
-            'text' => trim(($row['last_name'] ?? '') . ' ' . ($row['first_name'] ?? '') . ' ' . ($row['middle_name'] ?? '') . ' (SRN: ' . $row['srn'] . ')'),
+            'id' => (int) $row['id'],
+            'text' => $name . ($row['srn'] ? ' (' . $row['srn'] . ')' : ''),
             'srn' => $row['srn'],
-            'class' => $row['class_id'],
+            'class' => $row['class_name'] ?? '',
             'first_name' => $row['first_name'],
             'last_name' => $row['last_name'],
             'middle_name' => $row['middle_name'],
             'gender' => $row['gender'],
-            'type' => 'sundayschool' // Mark as Sunday School child
+            'type' => 'sundayschool',
         ];
     }
-    $stmt_ss->close();
+    $childStmt->close();
 }
-echo json_encode(['results' => $results]);
+
+echo json_encode(['results' => $results], JSON_UNESCAPED_UNICODE);

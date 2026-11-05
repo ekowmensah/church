@@ -20,6 +20,7 @@ if (!$is_super_admin && !has_permission('view_bibleclass_list')) {
 $can_add = $is_super_admin || has_permission('create_bibleclass');
 $can_edit = $is_super_admin || has_permission('edit_bibleclass');
 $can_delete = $is_super_admin || has_permission('delete_bibleclass');
+$can_export = $is_super_admin || has_permission('export_bibleclass');
 $capacity_rules_available = bible_class_rules_table_exists($conn);
 $h = static fn($value): string => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 
@@ -40,14 +41,66 @@ if (!$is_super_admin) {
     $filterChurchId = $actorChurchId;
 }
 
-$where = '';
+$search = trim((string) ($_GET['q'] ?? ''));
+$page = max(1, (int) ($_GET['page'] ?? 1));
+$requestedPerPage = (int) ($_GET['per_page'] ?? 25);
+$perPage = in_array($requestedPerPage, [10, 25, 50, 100], true) ? $requestedPerPage : 25;
+$whereParts = [];
 $queryTypes = '';
 $queryParams = [];
 if ($filterChurchId > 0) {
-    $where = ' WHERE bc.church_id = ?';
+    $whereParts[] = 'bc.church_id = ?';
     $queryTypes = 'i';
     $queryParams[] = $filterChurchId;
 }
+if ($search !== '') {
+    $whereParts[] = "(bc.name LIKE CONCAT('%', ?, '%')
+        OR bc.code LIKE CONCAT('%', ?, '%')
+        OR church.name LIKE CONCAT('%', ?, '%'))";
+    $queryTypes .= 'sss';
+    array_push($queryParams, $search, $search, $search);
+}
+$where = $whereParts ? ' WHERE ' . implode(' AND ', $whereParts) : '';
+
+$metricsSql = "SELECT COUNT(*) AS total_classes,
+        COALESCE(SUM(COALESCE(member_count.active_member_count, 0)), 0) AS total_members,
+        COALESCE(SUM(CASE WHEN "
+            . ($capacity_rules_available
+                ? 'COALESCE(rule.enforce_limit, 1) = 1 AND COALESCE(member_count.active_member_count, 0) >= COALESCE(rule.max_members, 25)'
+                : 'COALESCE(member_count.active_member_count, 0) >= 25')
+            . " THEN 1 ELSE 0 END), 0) AS full_classes,
+        COALESCE(SUM(CASE WHEN bc.leader_id IS NULL AND NOT EXISTS (
+            SELECT 1 FROM bible_class_leaders leader_assignment
+             WHERE leader_assignment.class_id = bc.id
+               AND leader_assignment.status = 'active'
+               AND leader_assignment.leader_role = 'primary'
+        ) THEN 1 ELSE 0 END), 0) AS without_leaders
+    FROM bible_classes bc
+    LEFT JOIN churches church ON church.id = bc.church_id
+    " . ($capacity_rules_available ? 'LEFT JOIN bible_class_rules rule ON rule.class_id = bc.id' : '') . "
+    LEFT JOIN (
+        SELECT class_id, COUNT(*) AS active_member_count
+          FROM members
+         WHERE class_id IS NOT NULL AND status = 'active' AND is_archived = 0
+         GROUP BY class_id
+    ) member_count ON member_count.class_id = bc.id
+    $where";
+$metricsStmt = $conn->prepare($metricsSql);
+if ($queryParams) $metricsStmt->bind_param($queryTypes, ...$queryParams);
+$metricsStmt->execute();
+$metrics = $metricsStmt->get_result()->fetch_assoc() ?: [];
+$metricsStmt->close();
+$totalClasses = (int) ($metrics['total_classes'] ?? 0);
+$totalMembers = (int) ($metrics['total_members'] ?? 0);
+$fullClasses = (int) ($metrics['full_classes'] ?? 0);
+$withoutLeaders = (int) ($metrics['without_leaders'] ?? 0);
+$totalPages = max(1, (int) ceil($totalClasses / $perPage));
+$page = min($page, $totalPages);
+$offset = ($page - 1) * $perPage;
+$exportQuery = http_build_query(array_filter([
+    'church_id' => $filterChurchId ?: null,
+    'q' => $search !== '' ? $search : null,
+], static fn($value) => $value !== null && $value !== ''));
 
 $bibleclassSql = "
     SELECT bc.*,
@@ -91,9 +144,12 @@ $bibleclassSql = "
            GROUP BY class_id
       ) member_count ON member_count.class_id = bc.id
       $where
-     ORDER BY church.name, bc.name";
+     ORDER BY church.name, bc.name, bc.id
+     LIMIT ? OFFSET ?";
 $stmt = $conn->prepare($bibleclassSql);
-if ($queryParams) $stmt->bind_param($queryTypes, ...$queryParams);
+$listTypes = $queryTypes . 'ii';
+$listParams = array_merge($queryParams, [$perPage, $offset]);
+$stmt->bind_param($listTypes, ...$listParams);
 $stmt->execute();
 $bibleclasses = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
@@ -105,23 +161,9 @@ $churchSql = $is_super_admin
 $result = $conn->query($churchSql);
 while ($result && ($row = $result->fetch_assoc())) $churches[] = $row;
 
-$totalMembers = 0;
-$fullClasses = 0;
-$withoutLeaders = 0;
-foreach ($bibleclasses as $classRow) {
-    $members = (int) $classRow['active_member_count'];
-    $limit = (int) $classRow['max_members'];
-    $totalMembers += $members;
-    if ((int) $classRow['enforce_limit'] === 1 && $members >= $limit) $fullClasses++;
-    if (empty($classRow['leader_user_id']) && empty($classRow['leader_member_id'])) $withoutLeaders++;
-}
-
 ob_start();
 ?>
 <link rel="stylesheet" href="<?= $h(BASE_URL) ?>/assets/css/directory-workspace.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap4.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css">
 <div class="container-fluid directory-workspace py-3">
     <?php if (isset($_GET['added'])): ?><div class="alert alert-success">Bible Class created successfully.</div><?php elseif (isset($_GET['updated'])): ?><div class="alert alert-success">Bible Class updated successfully.</div><?php elseif (isset($_GET['deleted'])): ?><div class="alert alert-success">Bible Class deleted successfully.</div><?php endif; ?>
 
@@ -130,24 +172,29 @@ ob_start();
             <div class="col-lg-8"><span class="directory-eyebrow">Membership formation</span><h1><i class="fas fa-book-open mr-2"></i>Bible Class Directory</h1><p>Manage class capacity, leadership, church ownership, and member distribution from a single responsive workspace.</p></div>
             <div class="col-lg-4 directory-actions justify-content-lg-end">
                 <?php if ($can_add): ?><a href="bibleclass_form.php" class="btn btn-light"><i class="fas fa-plus mr-2"></i>Add class</a><a href="bibleclass_upload.php" class="btn btn-outline-light"><i class="fas fa-file-upload mr-2"></i>Bulk upload</a><?php endif; ?>
+                <?php if ($can_export): ?><div class="dropdown"><button class="btn btn-outline-light dropdown-toggle" type="button" id="classExportMenu" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><i class="fas fa-download mr-2"></i>Export</button><div class="dropdown-menu dropdown-menu-right" aria-labelledby="classExportMenu"><a class="dropdown-item" href="bibleclass_export.php?<?= $h($exportQuery) ?>&amp;format=csv"><i class="fas fa-file-csv mr-2 text-success"></i>CSV</a><a class="dropdown-item" href="bibleclass_export.php?<?= $h($exportQuery) ?>&amp;format=excel"><i class="fas fa-file-excel mr-2 text-success"></i>Excel</a><a class="dropdown-item" href="bibleclass_export.php?<?= $h($exportQuery) ?>&amp;format=pdf"><i class="fas fa-file-pdf mr-2 text-danger"></i>PDF</a><a class="dropdown-item" target="_blank" rel="noopener" href="bibleclass_export.php?<?= $h($exportQuery) ?>&amp;format=print"><i class="fas fa-print mr-2 text-primary"></i>Print</a></div></div><?php endif; ?>
             </div>
         </div>
     </section>
 
     <div class="row mb-4">
-        <div class="col-6 col-xl-3 mb-3"><div class="metric-card"><span class="metric-label">Bible Classes</span><span class="metric-value"><?= number_format(count($bibleclasses)) ?></span><span class="metric-note">Within the selected church scope</span></div></div>
+        <div class="col-6 col-xl-3 mb-3"><div class="metric-card"><span class="metric-label">Bible Classes</span><span class="metric-value"><?= number_format($totalClasses) ?></span><span class="metric-note">Matching the current scope</span></div></div>
         <div class="col-6 col-xl-3 mb-3"><div class="metric-card"><span class="metric-label">Active members</span><span class="metric-value text-primary"><?= number_format($totalMembers) ?></span><span class="metric-note">Assigned across listed classes</span></div></div>
         <div class="col-6 col-xl-3 mb-3"><div class="metric-card"><span class="metric-label">At capacity</span><span class="metric-value <?= $fullClasses ? 'text-danger' : 'text-success' ?>"><?= number_format($fullClasses) ?></span><span class="metric-note">Enforced classes with no slots</span></div></div>
         <div class="col-6 col-xl-3 mb-3"><div class="metric-card"><span class="metric-label">Leader gaps</span><span class="metric-value <?= $withoutLeaders ? 'text-warning' : 'text-success' ?>"><?= number_format($withoutLeaders) ?></span><span class="metric-note">Classes needing a primary leader</span></div></div>
     </div>
 
-    <?php if ($is_super_admin): ?>
-    <form method="get" class="filter-card mb-4"><div class="form-row align-items-end"><div class="form-group col-md-5 mb-2"><label for="church_id">Church scope</label><select class="form-control" id="church_id" name="church_id"><option value="">All churches</option><?php foreach ($churches as $church): ?><option value="<?= (int) $church['id'] ?>" <?= $filterChurchId === (int) $church['id'] ? 'selected' : '' ?>><?= $h($church['name']) ?></option><?php endforeach; ?></select></div><div class="form-group col-md-3 mb-2"><button type="submit" class="btn btn-primary mr-2"><i class="fas fa-filter mr-1"></i>Apply scope</button><a href="bibleclass_list.php" class="btn btn-outline-secondary"><i class="fas fa-undo"></i></a></div></div></form>
-    <?php endif; ?>
+    <form method="get" class="filter-card mb-4"><div class="form-row align-items-end">
+        <?php if ($is_super_admin): ?><div class="form-group col-lg-3 col-md-5 mb-2"><label for="church_id">Church scope</label><select class="form-control" id="church_id" name="church_id"><option value="">All churches</option><?php foreach ($churches as $church): ?><option value="<?= (int) $church['id'] ?>" <?= $filterChurchId === (int) $church['id'] ? 'selected' : '' ?>><?= $h($church['name']) ?></option><?php endforeach; ?></select></div><?php endif; ?>
+        <div class="form-group col-lg-4 col-md-5 mb-2"><label for="class-search">Search directory</label><input class="form-control" id="class-search" name="q" value="<?= $h($search) ?>" placeholder="Class name, code or church"></div>
+        <div class="form-group col-lg-2 col-md-2 mb-2"><label for="per-page">Rows</label><select class="form-control" id="per-page" name="per_page"><?php foreach ([10,25,50,100] as $size): ?><option value="<?= $size ?>" <?= $perPage === $size ? 'selected' : '' ?>><?= $size ?></option><?php endforeach; ?></select></div>
+        <div class="form-group col-lg-3 mb-2"><button type="submit" class="btn btn-primary mr-2"><i class="fas fa-filter mr-1"></i>Apply</button><a href="bibleclass_list.php" class="btn btn-outline-secondary"><i class="fas fa-undo mr-1"></i>Reset</a></div>
+    </div></form>
 
     <section class="directory-card mb-4">
-        <header class="directory-card-header"><div><h2 class="directory-card-title">Class register</h2><small class="text-muted">Search, page, and export the authorized directory below.</small></div><span class="chip chip-muted"><i class="fas fa-shield-alt mr-1"></i>Church scoped</span></header>
-        <div class="table-responsive p-3"><table class="table directory-table" id="bibleclassTable"><thead><tr><th>Class</th><th>Members &amp; capacity</th><th>Leadership</th><th>Church</th><?php if ($can_edit || $can_delete): ?><th data-orderable="false">Actions</th><?php endif; ?></tr></thead><tbody>
+        <header class="directory-card-header"><div><h2 class="directory-card-title">Class register</h2><small class="text-muted">Search and navigate the authorized directory without loading every class at once.</small></div><span class="chip chip-muted"><i class="fas fa-shield-alt mr-1"></i>Church scoped</span></header>
+        <div class="table-responsive"><table class="table directory-table" id="bibleclassTable"><thead><tr><th>Class</th><th>Members &amp; capacity</th><th>Leadership</th><th>Church</th><?php if ($can_edit || $can_delete): ?><th>Actions</th><?php endif; ?></tr></thead><tbody>
+        <?php if (!$bibleclasses): ?><tr><td colspan="<?= ($can_edit || $can_delete) ? 5 : 4 ?>"><div class="empty-state"><i class="fas fa-book-open fa-2x mb-2"></i><div>No Bible Classes match the current filters.</div></div></td></tr><?php endif; ?>
         <?php foreach ($bibleclasses as $row):
             $activeMembers = (int) $row['active_member_count'];
             $maxMembers = max(1, (int) $row['max_members']);
@@ -168,6 +215,16 @@ ob_start();
             <?php if ($can_edit || $can_delete): ?><td data-label="Actions"><div class="row-actions"><?php if ($can_edit): ?><a href="bibleclass_form.php?id=<?= (int) $row['id'] ?>" class="btn btn-sm btn-outline-primary" title="Edit class"><i class="fas fa-edit"></i></a><?php endif; ?><?php if ($can_delete): ?><form method="post" action="bibleclass_delete.php" onsubmit="return confirm('Delete this Bible Class?');"><?= csrf_input() ?><input type="hidden" name="id" value="<?= (int) $row['id'] ?>"><button type="submit" class="btn btn-sm btn-outline-danger" title="Delete class"><i class="fas fa-trash"></i></button></form><?php endif; ?></div></td><?php endif; ?>
         </tr><?php endforeach; ?>
         </tbody></table></div>
+        <footer class="directory-footer d-flex flex-column flex-md-row justify-content-between align-items-md-center">
+            <small class="text-muted mb-2 mb-md-0"><?php if ($totalClasses): ?>Showing <?= number_format($offset + 1) ?>–<?= number_format(min($offset + $perPage, $totalClasses)) ?> of <?= number_format($totalClasses) ?> classes<?php else: ?>No classes found<?php endif; ?></small>
+            <?php if ($totalPages > 1): ?><nav aria-label="Bible Class directory pages"><ul class="pagination pagination-sm mb-0">
+                <?php $previousQuery = array_merge($_GET, ['page' => max(1, $page - 1), 'per_page' => $perPage]); ?><li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>"><a class="page-link" href="?<?= $h(http_build_query($previousQuery)) ?>" aria-label="Previous page"><i class="fas fa-chevron-left"></i></a></li>
+                <?php if ($page > 3): ?><li class="page-item"><a class="page-link" href="?<?= $h(http_build_query(array_merge($_GET, ['page'=>1,'per_page'=>$perPage]))) ?>">1</a></li><?php if ($page > 4): ?><li class="page-item disabled"><span class="page-link">…</span></li><?php endif; ?><?php endif; ?>
+                <?php for ($p = max(1, $page - 2); $p <= min($totalPages, $page + 2); $p++): ?><li class="page-item <?= $p === $page ? 'active' : '' ?>"><a class="page-link" href="?<?= $h(http_build_query(array_merge($_GET, ['page'=>$p,'per_page'=>$perPage]))) ?>"><?= $p ?></a></li><?php endfor; ?>
+                <?php if ($page < $totalPages - 2): ?><?php if ($page < $totalPages - 3): ?><li class="page-item disabled"><span class="page-link">…</span></li><?php endif; ?><li class="page-item"><a class="page-link" href="?<?= $h(http_build_query(array_merge($_GET, ['page'=>$totalPages,'per_page'=>$perPage]))) ?>"><?= $totalPages ?></a></li><?php endif; ?>
+                <?php $nextQuery = array_merge($_GET, ['page' => min($totalPages, $page + 1), 'per_page' => $perPage]); ?><li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>"><a class="page-link" href="?<?= $h(http_build_query($nextQuery)) ?>" aria-label="Next page"><i class="fas fa-chevron-right"></i></a></li>
+            </ul></nav><?php endif; ?>
+        </footer>
     </section>
 </div>
 
@@ -179,21 +236,8 @@ ob_start();
 </div>
 <?php $modal_html = ob_get_clean(); ?>
 
-<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.bootstrap4.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/vfs_fonts.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.print.min.js"></script>
-<script src="<?= $h(BASE_URL) ?>/assets/js/report-export-branding.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.full.min.js"></script>
 <script>
 $(function(){
-    $('#bibleclassTable').DataTable({dom:'<"d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-3"<"mb-2 mb-lg-0"B><"ml-lg-auto"f>>rt<"d-flex flex-column flex-md-row justify-content-between align-items-md-center mt-3"ip>',pageLength:25,lengthMenu:[10,25,50,100],buttons:[{extend:'copy',className:'btn-sm'},{extend:'csv',className:'btn-sm'},{extend:'excel',className:'btn-sm'},{extend:'pdf',className:'btn-sm'},{extend:'print',className:'btn-sm'}],order:[[0,'asc']],language:{search:'',searchPlaceholder:'Search classes, leaders or churches'}});
-
     $('.remove-leader-btn').on('click',function(){
         var classId=$(this).data('class-id'),leaderRole=$(this).data('leader-role')||'primary';
         if(!confirm('Remove the '+leaderRole+' leader from this class?'))return;

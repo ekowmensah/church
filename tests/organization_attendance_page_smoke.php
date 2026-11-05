@@ -37,13 +37,15 @@ $html = ob_get_clean();
 
 if ($mode === 'group') {
     $checks = [
-        'group leader page is scoped' => strpos($html, 'Assigned group access only') !== false,
-        'group leader cannot see session creation' => strpos($html, 'Create an organization or group session') === false,
+        'group leader page is scoped' => strpos($html, 'Assigned group access') !== false,
+        'group leader cannot see session creation' => strpos($html, 'Create attendance session') === false,
+        'group leader receives the modern roster workspace' => strpos($html, 'oa-roster-grid') !== false,
     ];
 } else {
     $checks = [
         'organization leader has review access' => strpos($html, 'Organization-wide review access') !== false,
-        'organization leader can see session creation' => strpos($html, 'Create an organization or group session') !== false,
+        'organization leader can see session creation' => strpos($html, 'Create attendance session') !== false,
+        'organization leader receives session summary cards' => strpos($html, 'oa-stats') !== false,
     ];
 }
 

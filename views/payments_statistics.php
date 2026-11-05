@@ -6,7 +6,7 @@ require_once '../config/config.php';
 require_once '../helpers/auth.php';
 require_once '../helpers/permissions_v2.php';
 require_once '../helpers/csrf.php';
-require_once '../includes/report_ui_helpers.php';
+require_once '../helpers/payment_report_context.php';
 
 // Only allow logged-in users
 if (!is_logged_in()) {
@@ -16,8 +16,36 @@ if (!is_logged_in()) {
 
 // Robust super admin bypass and permission check
 $is_super_admin = is_super_admin();
+$current_user_id = (int) ($_SESSION['user_id'] ?? 0);
+$cashCheckerChurchId = 0;
+$is_cash_checker = false;
+if (!$is_super_admin && $current_user_id > 0) {
+    $checkerStmt = $conn->prepare(
+        "SELECT user_account.church_id,
+                EXISTS (
+                    SELECT 1
+                      FROM member_roles_of_serving member_role
+                      JOIN roles_of_serving serving_role ON serving_role.id = member_role.role_id
+                     WHERE member_role.member_id = user_account.member_id
+                       AND UPPER(TRIM(serving_role.name)) IN ('CASH CHECKER', 'CASH CHECKERS')
+                ) AS is_cash_checker
+           FROM users user_account
+          WHERE user_account.id = ? AND user_account.status = 'active'
+          LIMIT 1"
+    );
+    $checkerStmt->bind_param('i', $current_user_id);
+    $checkerStmt->execute();
+    $checkerAccount = $checkerStmt->get_result()->fetch_assoc() ?: [];
+    $checkerStmt->close();
+    $cashCheckerChurchId = (int) ($checkerAccount['church_id'] ?? 0);
+    $is_cash_checker = !empty($checkerAccount['is_cash_checker']) && $cashCheckerChurchId > 0;
+}
+$can_review_cash_analyses = $is_super_admin
+    || $is_cash_checker
+    || has_permission('view_cash_analysis_review');
+$can_manage_analysis = $is_super_admin || has_permission('payment_statistics');
 
-if (!$is_super_admin && !has_permission('payment_statistics')) {
+if (!$is_super_admin && !has_permission('payment_statistics') && !$can_review_cash_analyses) {
     http_response_code(403);
     if (file_exists(__DIR__.'/errors/403.php')) {
         include __DIR__.'/errors/403.php';
@@ -29,19 +57,19 @@ if (!$is_super_admin && !has_permission('payment_statistics')) {
     exit;
 }
 
-// Detect user role and filtering
-$current_user_id = $_SESSION['user_id'] ?? 0;
-$current_role_id = $_SESSION['role_id'] ?? 0;
-
 // Super admin sees all data, others see only their own
 $filter_by_user = !$is_super_admin;
 
-// User-friendly label
-$view_label = $filter_by_user ? 'My Payments' : 'All Payments';
-
 // --- CONFIG ---
-$date = isset($_GET['date']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date']) ? $_GET['date'] : date('Y-m-d');
-$currency = '₵';
+$legacyDate = payment_report_valid_date((string) ($_GET['date'] ?? ''));
+$defaultDate = $legacyDate !== '' ? $legacyDate : date('Y-m-d');
+$start_date = payment_report_valid_date((string) ($_GET['start_date'] ?? '')) ?: $defaultDate;
+$end_date = payment_report_valid_date((string) ($_GET['end_date'] ?? '')) ?: $defaultDate;
+if ($start_date > $end_date) {
+    [$start_date, $end_date] = [$end_date, $start_date];
+}
+$date = $end_date;
+$date_range_label = payment_report_period_label($start_date, $end_date);
 $payment_modes = ['cash', 'cheque'];
 $payment_method_summary = [];
 
@@ -82,24 +110,6 @@ function payment_mode_label(string $mode): string
     return $map[$mode] ?? ucwords(str_replace('_', ' ', $mode));
 }
 
-function payment_mode_color(string $mode): string
-{
-    $map = [
-        'cash' => 'primary',
-        'cheque' => 'success',
-        'mobile_money' => 'warning',
-        'transfer' => 'info',
-        'pos' => 'secondary',
-        'online' => 'dark',
-        'offline' => 'secondary',
-        'paystack' => 'dark',
-        'card' => 'info',
-        'other' => 'secondary',
-        'unknown' => 'secondary',
-    ];
-    return $map[$mode] ?? 'secondary';
-}
-
 function payment_mode_icon(string $mode): string
 {
     $map = [
@@ -136,13 +146,14 @@ $denominations = [
 $total_cash = 0.00;
 $total_cheque = 0.00;
 $total_all_methods = 0.00;
+$analysis_cash_total = 0.00;
 
 try {
     if ($filter_by_user) {
         // Non-admin: Show only payments recorded by this user
         // Fetch cash total
-        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE DATE(payment_date)=? AND LOWER(TRIM(mode))='cash' AND recorded_by=?");
-        $stmt->bind_param('si', $date, $current_user_id);
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE payment_date >= ? AND payment_date < DATE_ADD(?, INTERVAL 1 DAY) AND LOWER(TRIM(mode))='cash' AND recorded_by=?");
+        $stmt->bind_param('ssi', $start_date, $end_date, $current_user_id);
         $stmt->execute();
         $stmt->bind_result($total_cash);
         $stmt->fetch();
@@ -150,8 +161,8 @@ try {
         $total_cash = floatval($total_cash);
         
         // Fetch cheque total
-        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE DATE(payment_date)=? AND LOWER(TRIM(mode)) IN ('cheque','check') AND recorded_by=?");
-        $stmt->bind_param('si', $date, $current_user_id);
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE payment_date >= ? AND payment_date < DATE_ADD(?, INTERVAL 1 DAY) AND LOWER(TRIM(mode)) IN ('cheque','check') AND recorded_by=?");
+        $stmt->bind_param('ssi', $start_date, $end_date, $current_user_id);
         $stmt->execute();
         $stmt->bind_result($total_cheque);
         $stmt->fetch();
@@ -159,8 +170,8 @@ try {
         $total_cheque = floatval($total_cheque);
 
         // Total received for all payment modes (cashier scope)
-        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE DATE(payment_date)=? AND recorded_by=?");
-        $stmt->bind_param('si', $date, $current_user_id);
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE payment_date >= ? AND payment_date < DATE_ADD(?, INTERVAL 1 DAY) AND recorded_by=?");
+        $stmt->bind_param('ssi', $start_date, $end_date, $current_user_id);
         $stmt->execute();
         $stmt->bind_result($total_all_methods);
         $stmt->fetch();
@@ -169,8 +180,8 @@ try {
     } else {
         // Super admin: Show all payments
         // Fetch cash total
-        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE DATE(payment_date)=? AND LOWER(TRIM(mode))='cash'");
-        $stmt->bind_param('s', $date);
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE payment_date >= ? AND payment_date < DATE_ADD(?, INTERVAL 1 DAY) AND LOWER(TRIM(mode))='cash'");
+        $stmt->bind_param('ss', $start_date, $end_date);
         $stmt->execute();
         $stmt->bind_result($total_cash);
         $stmt->fetch();
@@ -178,8 +189,8 @@ try {
         $total_cash = floatval($total_cash);
         
         // Fetch cheque total
-        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE DATE(payment_date)=? AND LOWER(TRIM(mode)) IN ('cheque','check')");
-        $stmt->bind_param('s', $date);
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE payment_date >= ? AND payment_date < DATE_ADD(?, INTERVAL 1 DAY) AND LOWER(TRIM(mode)) IN ('cheque','check')");
+        $stmt->bind_param('ss', $start_date, $end_date);
         $stmt->execute();
         $stmt->bind_result($total_cheque);
         $stmt->fetch();
@@ -187,8 +198,8 @@ try {
         $total_cheque = floatval($total_cheque);
 
         // Total received for all payment modes (admin scope)
-        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE DATE(payment_date)=?");
-        $stmt->bind_param('s', $date);
+        $stmt = $conn->prepare("SELECT SUM(amount) as total FROM v_posted_payments WHERE payment_date >= ? AND payment_date < DATE_ADD(?, INTERVAL 1 DAY)");
+        $stmt->bind_param('ss', $start_date, $end_date);
         $stmt->execute();
         $stmt->bind_result($total_all_methods);
         $stmt->fetch();
@@ -198,11 +209,11 @@ try {
 
     // Dynamic payment mode summary (cashier scope for non-admin, all scope for admin)
     if ($filter_by_user) {
-        $stmt = $conn->prepare("SELECT COALESCE(mode,'') AS mode, COUNT(id) AS cnt, COALESCE(SUM(amount),0) AS total FROM v_posted_payments WHERE DATE(payment_date)=? AND recorded_by=? GROUP BY mode ORDER BY total DESC");
-        $stmt->bind_param('si', $date, $current_user_id);
+        $stmt = $conn->prepare("SELECT COALESCE(mode,'') AS mode, COUNT(id) AS cnt, COALESCE(SUM(amount),0) AS total FROM v_posted_payments WHERE payment_date >= ? AND payment_date < DATE_ADD(?, INTERVAL 1 DAY) AND recorded_by=? GROUP BY mode ORDER BY total DESC");
+        $stmt->bind_param('ssi', $start_date, $end_date, $current_user_id);
     } else {
-        $stmt = $conn->prepare("SELECT COALESCE(mode,'') AS mode, COUNT(id) AS cnt, COALESCE(SUM(amount),0) AS total FROM v_posted_payments WHERE DATE(payment_date)=? GROUP BY mode ORDER BY total DESC");
-        $stmt->bind_param('s', $date);
+        $stmt = $conn->prepare("SELECT COALESCE(mode,'') AS mode, COUNT(id) AS cnt, COALESCE(SUM(amount),0) AS total FROM v_posted_payments WHERE payment_date >= ? AND payment_date < DATE_ADD(?, INTERVAL 1 DAY) GROUP BY mode ORDER BY total DESC");
+        $stmt->bind_param('ss', $start_date, $end_date);
     }
     $stmt->execute();
     $mode_result = $stmt->get_result();
@@ -214,6 +225,19 @@ try {
         $payment_method_summary[$mode_key]['count'] += (int) $mode_row['cnt'];
         $payment_method_summary[$mode_key]['total'] += (float) $mode_row['total'];
     }
+    $stmt->close();
+
+    // The denomination editor is for one day, so compare it with the end date only.
+    if ($filter_by_user) {
+        $stmt = $conn->prepare("SELECT COALESCE(SUM(amount), 0) FROM v_posted_payments WHERE payment_date >= ? AND payment_date < DATE_ADD(?, INTERVAL 1 DAY) AND LOWER(TRIM(mode))='cash' AND recorded_by=?");
+        $stmt->bind_param('ssi', $date, $date, $current_user_id);
+    } else {
+        $stmt = $conn->prepare("SELECT COALESCE(SUM(amount), 0) FROM v_posted_payments WHERE payment_date >= ? AND payment_date < DATE_ADD(?, INTERVAL 1 DAY) AND LOWER(TRIM(mode))='cash'");
+        $stmt->bind_param('ss', $date, $date);
+    }
+    $stmt->execute();
+    $stmt->bind_result($analysis_cash_total);
+    $stmt->fetch();
     $stmt->close();
 } catch (Throwable $e) {
     $total_cash = 0.00;
@@ -228,6 +252,8 @@ $entry_notes_total = 0;
 $entry_coins_total = 0;
 $cheque_entry = ['count' => 0, 'total' => 0.00, 'details' => ''];
 $analysis_history = [];
+$analysis_cashiers = [];
+$analysis_cashier_filter = $can_review_cash_analyses ? max(0, (int) ($_GET['cashier_id'] ?? 0)) : 0;
 
 try {
     // The edit modal must load only the signed-in cashier's own record. An
@@ -260,19 +286,62 @@ try {
     
     $stmt->close();
 
-    if ($filter_by_user) {
-        $stmt = $conn->prepare(
-            'SELECT * FROM v_cashier_denomination_history'
-            . ' WHERE analysis_date = ? AND cashier_id = ?'
-            . ' ORDER BY cashier_name, payment_mode'
+    if ($can_review_cash_analyses && !$is_super_admin) {
+        $cashierStmt = $conn->prepare(
+            'SELECT DISTINCT cashier_id, cashier_name FROM v_cashier_denomination_history'
+            . " WHERE analysis_date BETWEEN ? AND ? AND church_id = ? AND payment_mode = 'cash'"
+            . ' ORDER BY cashier_name'
         );
-        $stmt->bind_param('si', $date, $current_user_id);
+        $cashierStmt->bind_param('ssi', $start_date, $end_date, $cashCheckerChurchId);
+        $cashierStmt->execute();
+        $analysis_cashiers = $cashierStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $cashierStmt->close();
+    } elseif ($is_super_admin) {
+        $cashierStmt = $conn->prepare(
+            'SELECT DISTINCT cashier_id, cashier_name FROM v_cashier_denomination_history'
+            . ' WHERE analysis_date BETWEEN ? AND ? ORDER BY cashier_name'
+        );
+        $cashierStmt->bind_param('ss', $start_date, $end_date);
+        $cashierStmt->execute();
+        $analysis_cashiers = $cashierStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $cashierStmt->close();
+    }
+
+    $historySql = "SELECT history.*,
+                          COALESCE((
+                              SELECT SUM(payment.amount)
+                                FROM v_posted_payments payment
+                               WHERE payment.church_id = history.church_id
+                                 AND payment.recorded_by = history.cashier_id
+                                 AND payment.payment_date >= history.analysis_date
+                                 AND payment.payment_date < DATE_ADD(history.analysis_date, INTERVAL 1 DAY)
+                                 AND LOWER(TRIM(payment.mode)) = 'cash'
+                          ), 0) AS posted_cash_total
+                     FROM v_cashier_denomination_history history
+                    WHERE history.analysis_date BETWEEN ? AND ?";
+    if ($can_review_cash_analyses) {
+        if (!$is_super_admin) $historySql .= ' AND history.church_id = ?';
+        if (!$is_super_admin) $historySql .= " AND history.payment_mode = 'cash'";
+        if ($analysis_cashier_filter > 0) $historySql .= ' AND history.cashier_id = ?';
+        $historySql .= ' ORDER BY history.analysis_date DESC, history.cashier_name, history.payment_mode';
+        $stmt = $conn->prepare($historySql);
+        if (!$is_super_admin && $analysis_cashier_filter > 0) {
+            $stmt->bind_param('ssii', $start_date, $end_date, $cashCheckerChurchId, $analysis_cashier_filter);
+        } elseif (!$is_super_admin) {
+            $stmt->bind_param('ssi', $start_date, $end_date, $cashCheckerChurchId);
+        } elseif ($analysis_cashier_filter > 0) {
+            $stmt->bind_param('ssi', $start_date, $end_date, $analysis_cashier_filter);
+        } else {
+            $stmt->bind_param('ss', $start_date, $end_date);
+        }
+    } elseif ($filter_by_user) {
+        $historySql .= ' AND history.cashier_id = ? ORDER BY history.analysis_date DESC, history.payment_mode';
+        $stmt = $conn->prepare($historySql);
+        $stmt->bind_param('ssi', $start_date, $end_date, $current_user_id);
     } else {
-        $stmt = $conn->prepare(
-            'SELECT * FROM v_cashier_denomination_history'
-            . ' WHERE analysis_date = ? ORDER BY cashier_name, payment_mode'
-        );
-        $stmt->bind_param('s', $date);
+        $historySql .= ' ORDER BY history.analysis_date DESC, history.cashier_name, history.payment_mode';
+        $stmt = $conn->prepare($historySql);
+        $stmt->bind_param('ss', $start_date, $end_date);
     }
     $stmt->execute();
     $analysis_history = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -283,215 +352,406 @@ try {
 
 // Calculate grand total from database (all payment methods)
 $grand_total = $total_all_methods;
+$cashAnalysisSummary = ['submissions' => 0, 'matched' => 0, 'short' => 0, 'over' => 0, 'variance' => 0.0];
+foreach ($analysis_history as $analysisRow) {
+    if ($analysisRow['payment_mode'] !== 'cash') continue;
+    $declaredTotal = (float) $analysisRow['denomination_total'];
+    $postedTotal = (float) ($analysisRow['posted_cash_total'] ?? 0);
+    $variance = $declaredTotal - $postedTotal;
+    $cashAnalysisSummary['submissions']++;
+    $cashAnalysisSummary['variance'] += $variance;
+    if (abs($variance) < 0.01) $cashAnalysisSummary['matched']++;
+    elseif ($variance < 0) $cashAnalysisSummary['short']++;
+    else $cashAnalysisSummary['over']++;
+}
+
+$cashDenominationMatrix = [
+    'cashiers' => [],
+    'rows' => [],
+    'total_quantity' => 0,
+    'total_amount' => 0.0,
+];
+foreach ($denominations as $denomination) {
+    $cashDenominationMatrix['rows'][$denomination['label']] = [
+        'value' => (float) $denomination['value'],
+        'total_quantity' => 0,
+        'amount' => 0.0,
+    ];
+}
+foreach ($analysis_history as $analysisRow) {
+    if ($analysisRow['payment_mode'] !== 'cash') continue;
+    $cashierId = (int) $analysisRow['cashier_id'];
+    if (!isset($cashDenominationMatrix['cashiers'][$cashierId])) {
+        $cashDenominationMatrix['cashiers'][$cashierId] = [
+            'name' => (string) $analysisRow['cashier_name'],
+            'counts' => array_fill_keys(array_keys($cashDenominationMatrix['rows']), 0),
+            'quantity' => 0,
+            'amount' => 0.0,
+        ];
+    }
+    $counts = json_decode((string) ($analysisRow['denomination_data'] ?? ''), true);
+    $counts = is_array($counts) ? $counts : [];
+    foreach ($denominations as $denomination) {
+        $label = $denomination['label'];
+        $quantity = max(0, (int) ($counts[$label] ?? 0));
+        $cashDenominationMatrix['cashiers'][$cashierId]['counts'][$label] += $quantity;
+        $cashDenominationMatrix['cashiers'][$cashierId]['quantity'] += $quantity;
+        $cashDenominationMatrix['cashiers'][$cashierId]['amount'] += $quantity * (float) $denomination['value'];
+        $cashDenominationMatrix['rows'][$label]['total_quantity'] += $quantity;
+    }
+}
+uasort($cashDenominationMatrix['cashiers'], static function ($first, $second) {
+    return strcasecmp($first['name'], $second['name']);
+});
+foreach ($cashDenominationMatrix['rows'] as &$matrixRow) {
+    $matrixRow['amount'] = $matrixRow['total_quantity'] * $matrixRow['value'];
+    $cashDenominationMatrix['total_quantity'] += $matrixRow['total_quantity'];
+    $cashDenominationMatrix['total_amount'] += $matrixRow['amount'];
+}
+unset($matrixRow);
 
 // Start output buffering for page content
 ob_start();
 ?>
-<main class="container py-4 animate__animated animate__fadeIn">
-    <div class="row mb-3 justify-content-center">
-        <div class="col-12 col-md-10 col-lg-8">
-            <?php render_report_filter_bar($date, 'btn-warning'); ?>
+<style>
+.payment-statistics-page {
+    --stats-ink: #1d2b37;
+    --stats-muted: #687987;
+    --stats-line: #dce4e8;
+    --stats-soft: #f3f6f7;
+    --stats-green: #176b50;
+    --stats-green-soft: #e7f2ed;
+    --stats-amber: #a45b0a;
+    --stats-red: #b33a3a;
+    color: var(--stats-ink);
+    margin: 0 auto;
+    max-width: 1540px;
+    padding-left: 24px;
+    padding-right: 24px;
+}
+.stats-header { align-items: flex-end; border-bottom: 1px solid var(--stats-line); display: flex; gap: 24px; justify-content: space-between; margin-bottom: 22px; padding: 8px 0 20px; }
+.stats-eyebrow { color: var(--stats-green); font-size: .75rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.stats-header h1 { font-size: 1.8rem; font-weight: 750; margin: 4px 0 5px; }
+.stats-header p { color: var(--stats-muted); font-size: .95rem; margin: 0; }
+.stats-header-actions { align-items: flex-end; display: flex; flex-direction: column; gap: 10px; }
+.stats-period { color: var(--stats-muted); font-size: .82rem; text-align: right; }
+.stats-period strong { color: var(--stats-ink); display: block; font-size: 1rem; }
+.stats-toolbar { align-items: flex-end; background: #fff; border: 1px solid var(--stats-line); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; padding: 13px 15px; }
+.stats-toolbar .form-group { margin: 0; }
+.stats-toolbar label { color: #485a66; display: block; font-size: .76rem; font-weight: 700; margin-bottom: 4px; }
+.stats-toolbar .form-control { min-height: 38px; }
+.stats-personal-note { background: #edf5f2; border-left: 3px solid var(--stats-green); color: #365b4b; font-size: .88rem; margin-bottom: 18px; padding: 10px 13px; }
+.stats-metrics { border-bottom: 1px solid var(--stats-line); border-top: 1px solid var(--stats-line); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 24px; }
+.stats-metric { min-width: 0; padding: 16px 20px; }
+.stats-metric + .stats-metric { border-left: 1px solid var(--stats-line); }
+.stats-metric-label { color: var(--stats-muted); display: block; font-size: .76rem; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+.stats-metric-value { color: var(--stats-ink); display: block; font-size: 1.65rem; font-weight: 800; line-height: 1.25; margin-top: 4px; }
+.stats-metric--cash .stats-metric-value { color: var(--stats-green); }
+.stats-metric--cheque .stats-metric-value { color: #315d83; }
+.stats-metric-sub { color: var(--stats-muted); display: block; font-size: .78rem; margin-top: 3px; }
+.stats-breakdown-grid { display: grid; gap: 26px; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); margin-bottom: 32px; }
+.stats-section { min-width: 0; }
+.stats-section-heading { align-items: flex-end; border-bottom: 1px solid var(--stats-line); display: flex; justify-content: space-between; margin-bottom: 8px; padding-bottom: 10px; }
+.stats-section-heading h2 { font-size: 1.08rem; font-weight: 750; margin: 0; }
+.stats-section-heading p { color: var(--stats-muted); font-size: .8rem; margin: 3px 0 0; }
+.stats-method-list { list-style: none; margin: 0; padding: 0; }
+.stats-method-row { align-items: center; border-bottom: 1px solid #e8edef; display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr) auto; padding: 12px 4px; }
+.stats-method-name { align-items: center; display: flex; gap: 10px; min-width: 0; }
+.stats-method-icon { align-items: center; background: var(--stats-soft); border-radius: 7px; color: var(--stats-green); display: inline-flex; flex: 0 0 34px; height: 34px; justify-content: center; }
+.stats-method-name strong { display: block; font-size: .92rem; }
+.stats-method-name small { color: var(--stats-muted); display: block; font-size: .76rem; margin-top: 2px; }
+.stats-method-amount { font-size: 1rem; font-weight: 750; text-align: right; white-space: nowrap; }
+.stats-method-state { color: var(--stats-muted); display: block; font-size: .72rem; font-weight: 500; margin-top: 2px; }
+.stats-table-wrap { overflow-x: auto; }
+.stats-table { margin-bottom: 0; min-width: 480px; }
+.stats-table thead th { background: var(--stats-soft); border-bottom: 1px solid var(--stats-line); border-top: 0; color: #52636f; font-size: .73rem; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+.stats-table td, .stats-table th { padding: 10px 12px; vertical-align: middle; }
+.stats-table td { border-color: #e8edef; font-size: .88rem; }
+.stats-table tfoot td { background: #f8faf9; font-weight: 750; }
+.stats-empty { color: var(--stats-muted); font-size: .9rem; padding: 22px 12px; text-align: center; }
+.stats-review { border-top: 3px solid var(--stats-green); margin-top: 12px; padding-top: 18px; }
+.stats-review-title { align-items: flex-start; display: flex; gap: 18px; justify-content: space-between; margin-bottom: 14px; }
+.stats-review-title h2 { font-size: 1.25rem; font-weight: 800; margin: 0; }
+.stats-review-title p { color: var(--stats-muted); font-size: .86rem; margin: 4px 0 0; max-width: 760px; }
+.stats-review-tools { align-items: flex-end; display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.stats-review-tools label { color: #485a66; display: block; font-size: .75rem; font-weight: 700; margin-bottom: 4px; }
+.stats-review-kpis { border-bottom: 1px solid var(--stats-line); border-top: 1px solid var(--stats-line); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 14px; }
+.stats-review-kpi { padding: 10px 14px; }
+.stats-review-kpi + .stats-review-kpi { border-left: 1px solid var(--stats-line); }
+.stats-review-kpi span { color: var(--stats-muted); display: block; font-size: .74rem; }
+.stats-review-kpi strong { display: block; font-size: 1.16rem; margin-top: 2px; }
+.stats-review-table { min-width: 1100px; }
+.stats-review-table thead th { white-space: nowrap; }
+.stats-denomination-matrix { margin-bottom: 20px; }
+.stats-denomination-matrix .stats-table { min-width: 680px; }
+.stats-denomination-matrix .denomination-value { color: #485a66; font-weight: 700; }
+.stats-denomination-matrix .cashier-count { font-variant-numeric: tabular-nums; text-align: right; }
+.stats-denomination-matrix tfoot th { background: #eaf2ee; border-top: 2px solid #c9d9d1; white-space: nowrap; }
+.stats-denomination-matrix .matrix-total { color: var(--stats-green); font-weight: 800; }
+.stats-amount { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stats-variance--short { color: var(--stats-red); font-weight: 750; }
+.stats-variance--over { color: var(--stats-amber); font-weight: 750; }
+.stats-count-button { font-size: .78rem; white-space: nowrap; }
+.stats-count-modal .modal-content { border: 0; border-radius: 10px; overflow: hidden; }
+.stats-count-modal .modal-header { background: #183c36; color: #fff; }
+.stats-count-modal .close { color: #fff; opacity: .8; text-shadow: none; }
+.stats-count-modal .modal-header small { display: block; margin-top: 3px; }
+.stats-count-summary { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 16px; }
+.stats-count-summary > div { background: #f3f6f7; border-radius: 6px; padding: 10px 12px; }
+.stats-count-summary span { color: var(--stats-muted); display: block; font-size: .74rem; }
+.stats-count-summary strong { display: block; font-size: 1.08rem; margin-top: 3px; }
+.stats-count-table { min-width: 420px; }
+.stats-count-table .amount-cell { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stats-count-table tfoot th { background: #eaf2ee; color: var(--stats-green); font-weight: 800; }
+.stats-modal .modal-content { border: 0; border-radius: 10px; overflow: hidden; }
+.stats-modal .modal-header { background: #183c36; color: #fff; }
+.stats-modal .close { color: #fff; opacity: .8; text-shadow: none; }
+.stats-modal .denom-qty { max-width: 68px; }
+.stats-modal #totalRow { background: var(--stats-soft); border-radius: 7px; margin: 8px 0 0; padding: 12px 4px; }
+@media (max-width: 900px) {
+    .stats-breakdown-grid { grid-template-columns: 1fr; }
+    .stats-header { align-items: flex-start; flex-direction: column; }
+    .stats-header-actions { align-items: flex-start; flex-direction: row; flex-wrap: wrap; justify-content: space-between; width: 100%; }
+    .stats-period { text-align: left; }
+}
+@media (max-width: 600px) {
+    .payment-statistics-page { padding-left: 14px; padding-right: 14px; }
+    .stats-header h1 { font-size: 1.5rem; }
+    .stats-toolbar { align-items: stretch; }
+    .stats-toolbar .form-group, .stats-toolbar .form-control, .stats-toolbar .btn { width: 100%; }
+    .stats-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stats-metric { padding: 13px 10px; }
+    .stats-metric:nth-child(3) { border-left: 0; border-top: 1px solid var(--stats-line); }
+    .stats-metric:nth-child(4) { border-top: 1px solid var(--stats-line); }
+    .stats-metric-value { font-size: 1.35rem; }
+    .stats-review-title { flex-direction: column; }
+    .stats-review-tools > div, .stats-review-tools .form-control, .stats-review-tools .btn { width: 100%; }
+    .stats-review-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stats-review-kpi:nth-child(3) { border-left: 0; border-top: 1px solid var(--stats-line); }
+    .stats-review-kpi:nth-child(4) { border-top: 1px solid var(--stats-line); }
+}
+</style>
+<main class="payment-statistics-page py-4">
+    <header class="stats-header">
+        <div>
+            <div class="stats-eyebrow">Payments / Reporting</div>
+            <h1><?= $can_review_cash_analyses ? 'Payment & Cash Review' : 'Payment Statistics' ?></h1>
+            <p><?= $filter_by_user ? 'Your recorded payments and daily cashier analysis.' : 'Collections, payment methods, and cashier submissions.' ?></p>
         </div>
-    </div>
-    <div class="row justify-content-center">
-        <div class="col-12 col-md-10 col-lg-8">
-            <?php if ($filter_by_user): ?>
-            <div class="alert alert-info mb-3">
-                <i class="fas fa-info-circle mr-2"></i><strong>Personal View:</strong> Showing only payments recorded by you.
-            </div>
+        <div class="stats-header-actions">
+            <div class="stats-period">Selected period<strong><?= htmlspecialchars($date_range_label) ?></strong></div>
+            <?php if ($can_manage_analysis): ?>
+            <button type="button" class="btn btn-success" data-toggle="modal" data-target="#denomModal"><i class="fas fa-plus mr-1"></i>Add daily analysis</button>
             <?php endif; ?>
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-light d-flex align-items-center justify-content-between">
-                    <div><i class="fas fa-chart-bar text-primary mr-2"></i>Payment Statistics<?php if ($filter_by_user) echo ' <span class="badge badge-info">' . $view_label . '</span>'; ?></div>
-                    <button class="btn btn-success btn-sm" data-toggle="modal" data-target="#denomModal"><i class="fas fa-plus-circle mr-1"></i>Add Payment Analysis</button>
-                </div>
-                <div class="card-body">
-                    <div class="mb-3">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <span class="h5">Cash Received: <span class="text-success font-weight-bold">₵<?= number_format($total_cash,2) ?></span></span>
-                            </div>
-                            <div class="col-md-6 text-right">
-                                <span class="h5">Grand Total: <span class="text-primary font-weight-bold">₵<?= number_format($grand_total,2) ?></span></span>
-                                <br><small class="text-muted">All payment methods combined</small>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- Payment Method Summary -->
-                    <div class="mb-4">
-                        <h6 class="font-weight-bold mb-3">Payment Method Summary</h6>
-                        <div class="row">
-                            <?php if (!empty($payment_method_summary)): ?>
-                                <?php
-                                uasort($payment_method_summary, static function ($a, $b) {
-                                    return $b['total'] <=> $a['total'];
-                                });
-                                ?>
-                                <?php foreach ($payment_method_summary as $mode_key => $mode_data): ?>
-                                <?php
-                                $mode_color = payment_mode_color($mode_key);
-                                $mode_icon = payment_mode_icon($mode_key);
-                                ?>
-                                <div class="col-md-4 mb-3">
-                                    <div class="card border-left-<?= htmlspecialchars($mode_color) ?> shadow h-100 py-2">
-                                        <div class="card-body">
-                                            <div class="row no-gutters align-items-center">
-                                                <div class="col mr-2">
-                                                    <div class="text-xs font-weight-bold text-<?= htmlspecialchars($mode_color) ?> text-uppercase mb-1"><?= htmlspecialchars(payment_mode_label($mode_key)) ?></div>
-                                                    <div class="h5 mb-0 font-weight-bold text-gray-800">₵<?= number_format((float) $mode_data['total'], 2) ?></div>
-                                                    <div class="text-xs text-muted mt-1"><?= number_format((int) $mode_data['count']) ?> transaction(s)</div>
-                                                    <?php if ($mode_key === 'cash'): ?>
-                                                        <div class="text-xs text-muted mt-1">Analysis: <?= !empty($entry) ? 'Completed' : 'Pending' ?></div>
-                                                    <?php elseif ($mode_key === 'cheque'): ?>
-                                                        <div class="text-xs text-muted mt-1">Analysis: <?= !empty($cheque_entry['total']) ? 'Completed' : 'Pending' ?></div>
-                                                    <?php else: ?>
-                                                        <div class="text-xs text-muted mt-1">Analysis: N/A</div>
-                                                    <?php endif; ?>
-                                                </div>
-                                                <div class="col-auto">
-                                                    <i class="fas fa-<?= htmlspecialchars($mode_icon) ?> fa-2x text-<?= htmlspecialchars($mode_color) ?>"></i>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <?php endforeach; ?>
-                            <?php else: ?>
-                                <div class="col-12">
-                                    <div class="alert alert-light border text-muted mb-0">No payment modes found for this date.</div>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-
-                        <!-- Grand Total Calculation Display -->
-                        <div class="mt-3 p-3 bg-light rounded">
-                            <div class="row align-items-center">
-                                <div class="col-md-8">
-                                    <small class="text-muted">
-                                        <strong>Grand Total Calculation:</strong><br>
-                                        Total received from all payment methods for <?= htmlspecialchars($date) ?>.
-                                    </small>
-                                </div>
-                                <div class="col-md-4 text-right">
-                                    <span class="h4 text-primary font-weight-bold">₵<?= number_format($grand_total, 2) ?></span>
-                                    <?php
-                                    $analysis_complete = !empty($entry) && !empty($cheque_entry['total']);
-                                    if ($analysis_complete): ?>
-                                        <br><small class="text-success"><i class="fas fa-check-circle"></i> All methods analyzed</small>
-                                    <?php else: ?>
-                                        <br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> Analysis incomplete</small>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="table-responsive mb-2">
-                        <table class="table table-bordered table-hover mb-0" style="background:#fcfcfc;">
-                            <thead class="thead-light">
-                                <tr>
-                                    <th>Payment Type</th>
-                                    <th>Count</th>
-                                    <th>Total Amount (₵)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php
-                                // Fetch payment type breakdown
-                                $types = [];
-                                try {
-                                    if ($filter_by_user) {
-                                        // Non-admin/cashier: show only payment types with transactions, scoped to own records
-                                        $sql = "SELECT pt.name AS payment_type, COALESCE(SUM(p.amount),0) AS total_amount, COALESCE(COUNT(p.id),0) AS count
-                                                FROM payment_types pt
-                                                LEFT JOIN v_posted_payments p
-                                                  ON p.payment_type_id = pt.id
-                                                 AND DATE(p.payment_date) = ?
-                                                 AND p.recorded_by = ?
-                                                GROUP BY pt.id, pt.name
-                                                HAVING COUNT(p.id) > 0
-                                                ORDER BY total_amount DESC, pt.name ASC";
-                                        $stmt = $conn->prepare($sql);
-                                        $stmt->bind_param('si', $date, $current_user_id);
-                                    } else {
-                                        // Admin: show only payment types with transactions
-                                        $sql = "SELECT pt.name AS payment_type, COALESCE(SUM(p.amount),0) AS total_amount, COALESCE(COUNT(p.id),0) AS count
-                                                FROM payment_types pt
-                                                LEFT JOIN v_posted_payments p
-                                                  ON p.payment_type_id = pt.id
-                                                 AND DATE(p.payment_date) = ?
-                                                GROUP BY pt.id, pt.name
-                                                HAVING COUNT(p.id) > 0
-                                                ORDER BY total_amount DESC, pt.name ASC";
-                                        $stmt = $conn->prepare($sql);
-                                        $stmt->bind_param('s', $date);
-                                    }
-                                    $stmt->execute();
-                                    $result = $stmt->get_result();
-                                    while ($row = $result->fetch_assoc()) {
-                                        $types[] = $row;
-                                    }
-                                    $stmt->close();
-                                } catch (Throwable $e) {}
-                                ?>
-                                <?php if ($types): foreach ($types as $t): ?>
-                                    <tr>
-                                        <td><?= htmlspecialchars($t['payment_type']) ?></td>
-                                        <td><?= intval($t['count']) ?></td>
-                                        <td>₵<?= number_format($t['total_amount'],2) ?></td>
-                                    </tr>
-                                <?php endforeach; else: ?>
-                                    <tr><td colspan="3" class="text-center text-muted">No payments recorded for this date.</td></tr>
-                                <?php endif; ?>
-                            </tbody>
-                            <tfoot>
-                                <tr class="font-weight-bold bg-light">
-                                    <td class="text-right">Grand Total (All Payment Methods)</td>
-                                    <td><?= array_sum(array_column($types,'count')) ?></td>
-                                    <td>₵<?= number_format($grand_total,2) ?></td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
-            </div>
         </div>
-    </div>
-    <div class="row justify-content-center">
-        <div class="col-12 col-md-10 col-lg-8">
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-light"><i class="fas fa-history text-primary mr-2"></i>Cashier Analysis History for <?= htmlspecialchars(date('j M Y', strtotime($date))) ?></div>
-                <div class="card-body p-0"><div class="table-responsive">
-                    <table class="table table-sm table-bordered mb-0">
-                        <thead class="thead-light"><tr><th>Cashier</th><th>Mode</th><th class="text-right">Notes</th><th class="text-right">Coins</th><th class="text-right">Total</th><th>Status</th><th>Last Updated</th></tr></thead>
-                        <tbody>
-                        <?php if (!$analysis_history): ?>
-                            <tr><td colspan="7" class="text-center text-muted py-3">No saved cashier analysis for this date.</td></tr>
-                        <?php else: foreach ($analysis_history as $history): ?>
-                            <?php $historyTotal = $history['payment_mode'] === 'cash' ? (float) $history['denomination_total'] : (float) $history['cheque_total']; ?>
-                            <tr>
-                                <td><?= htmlspecialchars($history['cashier_name']) ?></td>
-                                <td><?= htmlspecialchars(ucfirst($history['payment_mode'])) ?></td>
-                                <td class="text-right"><?= $history['payment_mode'] === 'cash' ? '&#8373;' . number_format((float) $history['notes_total'], 2) : '-' ?></td>
-                                <td class="text-right"><?= $history['payment_mode'] === 'cash' ? '&#8373;' . number_format((float) $history['coins_total'], 2) : '-' ?></td>
-                                <td class="text-right font-weight-bold">&#8373;<?= number_format($historyTotal, 2) ?></td>
-                                <td><span class="badge badge-secondary"><?= htmlspecialchars(ucfirst($history['status'])) ?></span></td>
-                                <td><?= htmlspecialchars(date('j M Y H:i', strtotime($history['updated_at']))) ?></td>
-                            </tr>
-                        <?php endforeach; endif; ?>
-                        </tbody>
-                    </table>
-                </div></div>
-            </div>
+    </header>
+
+    <form method="get" class="stats-toolbar" aria-label="Filter payment statistics by date range">
+        <?php if ($can_review_cash_analyses && $analysis_cashier_filter > 0): ?>
+        <input type="hidden" name="cashier_id" value="<?= $analysis_cashier_filter ?>">
+        <?php endif; ?>
+        <div class="form-group">
+            <label for="start_date">From</label>
+            <input type="date" class="form-control" id="start_date" name="start_date" value="<?= htmlspecialchars($start_date) ?>" required>
         </div>
+        <div class="form-group">
+            <label for="end_date">To</label>
+            <input type="date" class="form-control" id="end_date" name="end_date" value="<?= htmlspecialchars($end_date) ?>" required>
+        </div>
+        <button type="submit" class="btn btn-dark"><i class="fas fa-filter mr-1"></i>Apply range</button>
+        <span class="small text-muted">Daily analysis entry uses <?= htmlspecialchars(date('j M Y', strtotime($date))) ?>.</span>
+    </form>
+
+    <?php if ($filter_by_user): ?>
+    <div class="stats-personal-note"><i class="fas fa-user-lock mr-2"></i><strong>Personal view.</strong> Payment totals are limited to payments recorded by you.</div>
+    <?php endif; ?>
+
+    <section class="stats-metrics" aria-label="Payment totals for selected range">
+        <div class="stats-metric stats-metric--cash"><span class="stats-metric-label">Cash received</span><strong class="stats-metric-value">₵<?= number_format($total_cash, 2) ?></strong><span class="stats-metric-sub">Selected date range</span></div>
+        <div class="stats-metric stats-metric--cheque"><span class="stats-metric-label">Cheque received</span><strong class="stats-metric-value">₵<?= number_format($total_cheque, 2) ?></strong><span class="stats-metric-sub">Selected date range</span></div>
+        <div class="stats-metric"><span class="stats-metric-label">All payment methods</span><strong class="stats-metric-value">₵<?= number_format($grand_total, 2) ?></strong><span class="stats-metric-sub">Combined total</span></div>
+        <div class="stats-metric"><span class="stats-metric-label">Transactions</span><strong class="stats-metric-value"><?= number_format(array_sum(array_column($payment_method_summary, 'count'))) ?></strong><span class="stats-metric-sub">Across all shown methods</span></div>
+    </section>
+
+    <div class="stats-breakdown-grid">
+        <section class="stats-section" aria-labelledby="paymentMethodsHeading">
+            <div class="stats-section-heading"><div><h2 id="paymentMethodsHeading">Payment methods</h2><p>Method totals and transaction counts</p></div></div>
+            <?php if ($payment_method_summary): ?>
+            <ul class="stats-method-list">
+                <?php
+                uasort($payment_method_summary, static function ($a, $b) {
+                    return $b['total'] <=> $a['total'];
+                });
+                foreach ($payment_method_summary as $mode_key => $mode_data):
+                    $mode_icon = payment_mode_icon($mode_key);
+                ?>
+                <li class="stats-method-row">
+                    <div class="stats-method-name"><span class="stats-method-icon"><i class="fas fa-<?= htmlspecialchars($mode_icon) ?>"></i></span><span><strong><?= htmlspecialchars(payment_mode_label($mode_key)) ?></strong><small><?= number_format((int) $mode_data['count']) ?> transaction(s)<?= in_array($mode_key, ['cash', 'cheque'], true) ? ' · ' . (!empty($mode_key === 'cash' ? $entry : $cheque_entry['total']) ? 'Analysis entered for end date' : 'No end-date analysis') : '' ?></small></span></div>
+                    <div class="stats-method-amount">₵<?= number_format((float) $mode_data['total'], 2) ?></div>
+                </li>
+                <?php endforeach; ?>
+            </ul>
+            <?php else: ?>
+            <div class="stats-empty">No payment activity for this range.</div>
+            <?php endif; ?>
+        </section>
+
+        <section class="stats-section" aria-labelledby="paymentTypesHeading">
+            <div class="stats-section-heading"><div><h2 id="paymentTypesHeading">Payment type breakdown</h2><p>Posted payments grouped by type</p></div></div>
+            <div class="stats-table-wrap">
+                <table class="table table-sm stats-table">
+                    <thead><tr><th>Payment type</th><th class="text-right">Transactions</th><th class="text-right">Amount</th></tr></thead>
+                    <tbody>
+                    <?php
+                    $types = [];
+                    try {
+                        if ($filter_by_user) {
+                            $sql = "SELECT pt.name AS payment_type, COALESCE(SUM(p.amount),0) AS total_amount, COALESCE(COUNT(p.id),0) AS count
+                                    FROM payment_types pt
+                                    LEFT JOIN v_posted_payments p ON p.payment_type_id = pt.id
+                                      AND p.payment_date >= ? AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY)
+                                      AND p.recorded_by = ?
+                                    GROUP BY pt.id, pt.name HAVING COUNT(p.id) > 0
+                                    ORDER BY total_amount DESC, pt.name ASC";
+                            $stmt = $conn->prepare($sql);
+                            $stmt->bind_param('ssi', $start_date, $end_date, $current_user_id);
+                        } else {
+                            $sql = "SELECT pt.name AS payment_type, COALESCE(SUM(p.amount),0) AS total_amount, COALESCE(COUNT(p.id),0) AS count
+                                    FROM payment_types pt
+                                    LEFT JOIN v_posted_payments p ON p.payment_type_id = pt.id
+                                      AND p.payment_date >= ? AND p.payment_date < DATE_ADD(?, INTERVAL 1 DAY)
+                                    GROUP BY pt.id, pt.name HAVING COUNT(p.id) > 0
+                                    ORDER BY total_amount DESC, pt.name ASC";
+                            $stmt = $conn->prepare($sql);
+                            $stmt->bind_param('ss', $start_date, $end_date);
+                        }
+                        $stmt->execute();
+                        $result = $stmt->get_result();
+                        while ($row = $result->fetch_assoc()) $types[] = $row;
+                        $stmt->close();
+                    } catch (Throwable $e) {}
+                    ?>
+                    <?php if ($types): foreach ($types as $typeRow): ?>
+                    <tr><td><?= htmlspecialchars($typeRow['payment_type']) ?></td><td class="text-right"><?= number_format((int) $typeRow['count']) ?></td><td class="text-right font-weight-bold">₵<?= number_format((float) $typeRow['total_amount'], 2) ?></td></tr>
+                    <?php endforeach; else: ?>
+                    <tr><td colspan="3" class="stats-empty">No payment types found for this range.</td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                    <tfoot><tr><td colspan="2" class="text-right">All methods</td><td class="text-right">₵<?= number_format($grand_total, 2) ?></td></tr></tfoot>
+                </table>
+            </div>
+        </section>
     </div>
+
+    <section class="stats-section stats-review" aria-labelledby="cashAnalysisHeading">
+        <div class="stats-review-title">
+            <div><div class="stats-eyebrow"><?= $can_review_cash_analyses ? 'Cash accountability' : 'Your submissions' ?></div><h2 id="cashAnalysisHeading"><?= $can_review_cash_analyses ? 'Cash analysis review' : 'Cashier analysis history' ?></h2><p><?= $can_review_cash_analyses ? 'Compare submitted notes and coins with cash posted by each cashier for the same church and day.' : 'Your saved daily cash and cheque analysis submissions.' ?></p></div>
+        </div>
+        <?php if ($can_review_cash_analyses): ?>
+        <form method="get" class="stats-review-tools">
+            <input type="hidden" name="start_date" value="<?= htmlspecialchars($start_date) ?>">
+            <input type="hidden" name="end_date" value="<?= htmlspecialchars($end_date) ?>">
+            <div><label for="analysis_cashier_id">Cashier</label><select name="cashier_id" id="analysis_cashier_id" class="form-control"><option value="0">All cashiers</option><?php foreach ($analysis_cashiers as $analysisCashier): ?><option value="<?= (int) $analysisCashier['cashier_id'] ?>" <?= $analysis_cashier_filter === (int) $analysisCashier['cashier_id'] ? 'selected' : '' ?>><?= htmlspecialchars($analysisCashier['cashier_name']) ?></option><?php endforeach; ?></select></div>
+            <button type="submit" class="btn btn-outline-dark"><i class="fas fa-filter mr-1"></i>Filter cashier</button>
+            <?php if ($analysis_cashier_filter > 0): ?><a href="?<?= http_build_query(['start_date' => $start_date, 'end_date' => $end_date]) ?>" class="btn btn-link">Clear</a><?php endif; ?>
+        </form>
+        <div class="stats-review-kpis" aria-label="Cash reconciliation summary">
+            <div class="stats-review-kpi"><span>Cash submissions</span><strong><?= $cashAnalysisSummary['submissions'] ?></strong></div>
+            <div class="stats-review-kpi"><span>Matched</span><strong class="text-success"><?= $cashAnalysisSummary['matched'] ?></strong></div>
+            <div class="stats-review-kpi"><span>Short</span><strong class="text-danger"><?= $cashAnalysisSummary['short'] ?></strong></div>
+            <div class="stats-review-kpi"><span>Over</span><strong class="text-warning"><?= $cashAnalysisSummary['over'] ?></strong></div>
+        </div>
+        <section class="stats-denomination-matrix" aria-labelledby="cashDenominationMatrixHeading">
+            <div class="stats-section-heading">
+                <div><h2 id="cashDenominationMatrixHeading">Denomination totals by cashier</h2><p>Quantities are combined across each cashier's cash submissions for <?= htmlspecialchars($date_range_label) ?>.</p></div>
+            </div>
+            <div class="stats-table-wrap">
+                <table class="table table-sm stats-table">
+                    <thead><tr><th>Denomination</th><?php foreach ($cashDenominationMatrix['cashiers'] as $cashier): ?><th class="text-right"><?= htmlspecialchars($cashier['name']) ?></th><?php endforeach; ?><th class="text-right">Total</th><th class="text-right">Amount</th></tr></thead>
+                    <tbody>
+                    <?php if (!$cashDenominationMatrix['cashiers']): ?>
+                    <tr><td colspan="<?= count($cashDenominationMatrix['cashiers']) + 3 ?>" class="stats-empty">No cash denomination submissions for this date range.</td></tr>
+                    <?php else: foreach ($cashDenominationMatrix['rows'] as $label => $matrixRow): ?>
+                    <tr>
+                        <td class="denomination-value">₵<?= number_format($matrixRow['value'], 2) ?></td>
+                        <?php foreach ($cashDenominationMatrix['cashiers'] as $cashier): ?><td class="cashier-count"><?= number_format($cashier['counts'][$label]) ?></td><?php endforeach; ?>
+                        <td class="cashier-count font-weight-bold"><?= number_format($matrixRow['total_quantity']) ?></td>
+                        <td class="cashier-count matrix-total">₵<?= number_format($matrixRow['amount'], 2) ?></td>
+                    </tr>
+                    <?php endforeach; endif; ?>
+                    </tbody>
+                    <?php if ($cashDenominationMatrix['cashiers']): ?>
+                    <tfoot><tr><th>Total counted</th><?php foreach ($cashDenominationMatrix['cashiers'] as $cashier): ?><th class="text-right"><?= number_format($cashier['quantity']) ?> pcs<br><span class="matrix-total">₵<?= number_format($cashier['amount'], 2) ?></span></th><?php endforeach; ?><th class="text-right"><?= number_format($cashDenominationMatrix['total_quantity']) ?> pcs</th><th class="text-right matrix-total">₵<?= number_format($cashDenominationMatrix['total_amount'], 2) ?></th></tr></tfoot>
+                    <?php endif; ?>
+                </table>
+            </div>
+        </section>
+        <?php endif; ?>
+        <div class="stats-table-wrap">
+            <table class="table table-sm stats-table stats-review-table">
+                <thead><tr><th>Date</th><th>Cashier</th><th>Mode</th><th class="text-right">Notes</th><th class="text-right">Coins</th><th class="text-right">Counted total</th><th class="text-right">Posted cash</th><th class="text-right">Difference</th><th>Reconciliation</th><th>Updated</th><th>Denominations</th></tr></thead>
+                <tbody>
+                <?php if (!$analysis_history): ?>
+                <tr><td colspan="11" class="stats-empty">No cashier analysis submissions in this date range.</td></tr>
+                <?php else: foreach ($analysis_history as $history):
+                    $isCashAnalysis = $history['payment_mode'] === 'cash';
+                    $historyTotal = $isCashAnalysis ? (float) $history['denomination_total'] : (float) $history['cheque_total'];
+                    $postedCashTotal = (float) ($history['posted_cash_total'] ?? 0);
+                    $cashDifference = $historyTotal - $postedCashTotal;
+                    $reconciliationLabel = !$isCashAnalysis ? 'N/A' : (abs($cashDifference) < 0.01 ? 'Matched' : ($cashDifference < 0 ? 'Short' : 'Over'));
+                    $reconciliationClass = $reconciliationLabel === 'Matched' ? 'success' : ($reconciliationLabel === 'Short' ? 'danger' : ($reconciliationLabel === 'Over' ? 'warning' : 'secondary'));
+                    $denominationCounts = $isCashAnalysis ? (json_decode((string) ($history['denomination_data'] ?? ''), true) ?: []) : [];
+                ?>
+                <tr>
+                    <td class="text-nowrap"><?= htmlspecialchars(date('j M Y', strtotime($history['analysis_date']))) ?></td>
+                    <td class="font-weight-bold"><?= htmlspecialchars($history['cashier_name']) ?></td>
+                    <td><?= htmlspecialchars(ucfirst($history['payment_mode'])) ?><small class="stats-method-state"><?= htmlspecialchars(ucfirst($history['status'])) ?></small></td>
+                    <td class="text-right stats-amount"><?= $isCashAnalysis ? '₵' . number_format((float) $history['notes_total'], 2) : '-' ?></td>
+                    <td class="text-right stats-amount"><?= $isCashAnalysis ? '₵' . number_format((float) $history['coins_total'], 2) : '-' ?></td>
+                    <td class="text-right font-weight-bold stats-amount">₵<?= number_format($historyTotal, 2) ?></td>
+                    <td class="text-right stats-amount"><?= $isCashAnalysis ? '₵' . number_format($postedCashTotal, 2) : '-' ?></td>
+                    <td class="text-right stats-amount <?= $isCashAnalysis && abs($cashDifference) >= 0.01 ? ($cashDifference < 0 ? 'stats-variance--short' : 'stats-variance--over') : '' ?>"><?= $isCashAnalysis ? ($cashDifference > 0 ? '+' : '') . '₵' . number_format($cashDifference, 2) : '-' ?></td>
+                    <td><span class="badge badge-<?= $reconciliationClass ?>"><?= $reconciliationLabel ?></span></td>
+                    <td class="text-nowrap"><?= htmlspecialchars(date('j M Y H:i', strtotime($history['updated_at']))) ?></td>
+                    <td><?php if ($isCashAnalysis && $denominationCounts): ?><button type="button" class="btn btn-sm btn-outline-primary stats-count-button" data-toggle="modal" data-target="#cashDenominationModal" data-cashier="<?= htmlspecialchars($history['cashier_name'], ENT_QUOTES, 'UTF-8') ?>" data-date="<?= htmlspecialchars(date('j M Y', strtotime($history['analysis_date'])), ENT_QUOTES, 'UTF-8') ?>" data-notes-total="<?= htmlspecialchars((string) $history['notes_total'], ENT_QUOTES, 'UTF-8') ?>" data-coins-total="<?= htmlspecialchars((string) $history['coins_total'], ENT_QUOTES, 'UTF-8') ?>" data-cash-total="<?= htmlspecialchars((string) $history['denomination_total'], ENT_QUOTES, 'UTF-8') ?>" data-denominations="<?= htmlspecialchars(json_encode($denominationCounts), ENT_QUOTES, 'UTF-8') ?>"><i class="fas fa-list-ul mr-1"></i>View counts</button><?php else: ?>-<?php endif; ?></td>
+                </tr>
+                <?php endforeach; endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </section>
 </main>
-<?php 
+<div class="modal fade stats-count-modal" id="cashDenominationModal" tabindex="-1" role="dialog" aria-labelledby="cashDenominationModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div><h5 class="modal-title" id="cashDenominationModalTitle">Cash denomination counts</h5><small id="cashDenominationMeta" class="text-white-50"></small></div>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <div class="stats-count-summary">
+                    <div><span>Notes total</span><strong id="cashCountNotesTotal">₵0.00</strong></div>
+                    <div><span>Coins total</span><strong id="cashCountCoinsTotal">₵0.00</strong></div>
+                    <div><span>Cash total</span><strong id="cashCountGrandTotal">₵0.00</strong></div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm stats-table stats-count-table">
+                        <thead><tr><th>Denomination</th><th class="text-right">Quantity</th><th class="text-right">Amount</th></tr></thead>
+                        <tbody id="cashDenominationRows"></tbody>
+                        <tfoot><tr><th colspan="2">Total counted</th><th class="text-right amount-cell" id="cashDenominationTableTotal">₵0.00</th></tr></tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<?php
 $page_content = ob_get_clean();
-ob_start(); 
+ob_start();
 ?>
+<?php if ($can_manage_analysis): ?>
                <!-- Denomination Modal -->
-               <div class="modal fade" id="denomModal" tabindex="-1" role="dialog" aria-labelledby="denomModalLabel" aria-hidden="true">
+               <div class="modal fade stats-modal" id="denomModal" tabindex="-1" role="dialog" aria-labelledby="denomModalLabel" aria-hidden="true">
                  <div class="modal-dialog modal-lg" role="document">
                    <div class="modal-content">
                      <div class="modal-header py-2">
@@ -680,6 +940,7 @@ ob_start();
                    </div>
                  </div>
                </div>
+<?php endif; ?>
 <script>
 // Live denomination calculation (only inside modal)
 const denomData = <?= json_encode($denominations) ?>;
@@ -707,7 +968,7 @@ function updateDenomTotals() {
         let expected = 0;
         <?php
         // Set expected to cash-mode total
-        echo "expected = " . floatval($total_cash) . ";";
+        echo "expected = " . floatval($analysis_cash_total) . ";";
         ?>
         totalCell.parentElement.classList.remove('bg-danger','bg-warning','bg-success','text-white','text-dark');
         if (Math.abs(total-expected) < 0.01) {
@@ -857,6 +1118,49 @@ document.addEventListener('DOMContentLoaded', function() {
                 btn.prop('disabled', false).html(originalHtml);
             }
         });
+    });
+
+    $('#cashDenominationModal').on('show.bs.modal', function(event) {
+        const trigger = event.relatedTarget;
+        if (!trigger) return;
+
+        let counts = {};
+        try {
+            counts = JSON.parse(trigger.getAttribute('data-denominations') || '{}');
+        } catch (error) {
+            counts = {};
+        }
+
+        const formatCurrency = function(value) {
+            return '₵' + Number(value || 0).toLocaleString('en-GH', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        };
+        const $rows = $('#cashDenominationRows').empty();
+        let calculatedTotal = 0;
+
+        $('#cashDenominationMeta').text(
+            (trigger.getAttribute('data-cashier') || 'Cashier') + ' · ' +
+            (trigger.getAttribute('data-date') || '')
+        );
+
+        denomData.forEach(function(denomination) {
+            const quantity = Math.max(0, parseInt(counts[denomination.label], 10) || 0);
+            const amount = quantity * Number(denomination.value);
+            calculatedTotal += amount;
+
+            const $row = $('<tr>');
+            $row.append($('<td>').text(denomination.label));
+            $row.append($('<td class="text-right">').text(quantity.toLocaleString('en-GH')));
+            $row.append($('<td class="text-right amount-cell">').text(formatCurrency(amount)));
+            $rows.append($row);
+        });
+
+        $('#cashCountNotesTotal').text(formatCurrency(trigger.getAttribute('data-notes-total')));
+        $('#cashCountCoinsTotal').text(formatCurrency(trigger.getAttribute('data-coins-total')));
+        $('#cashCountGrandTotal').text(formatCurrency(trigger.getAttribute('data-cash-total')));
+        $('#cashDenominationTableTotal').text(formatCurrency(calculatedTotal));
     });
 });
 </script>

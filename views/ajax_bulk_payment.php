@@ -17,8 +17,10 @@ if (!is_logged_in()) {
 // Canonical permission check for Bulk Payment (AJAX)
 require_once __DIR__.'/../helpers/permissions_v2.php';
 $is_super_admin = is_super_admin();
-if (!$is_super_admin && !has_permission('create_payment')) {
-    echo json_encode(['error' => 'Permission denied - requires payment management access']);
+if (!$is_super_admin
+    && !has_permission('submit_bulk_payment')
+    && !has_permission('create_payment')) {
+    echo json_encode(['error' => 'Permission denied - bulk-payment submission access is required']);
     http_response_code(403);
     exit;
 }
@@ -49,14 +51,57 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_is_valid($data['csrf_token'] 
 }
 $member_ids = $data['member_ids'] ?? [];
 $sundayschool_ids = $data['sundayschool_ids'] ?? [];
+$beneficiary_sequence = $data['beneficiary_sequence'] ?? [];
 $amounts = isset($data['amounts_json']) ? json_decode($data['amounts_json'], true) : ($data['amounts'] ?? []);
 $descriptions = $data['descriptions'] ?? [];
 $modes = $data['modes'] ?? [];
 $periods = $data['periods'] ?? [];
 $period_descriptions = $data['period_descriptions'] ?? [];
 
+if (!is_array($member_ids) || !is_array($sundayschool_ids)) {
+    respond(['success' => false, 'msg' => 'The beneficiary list is invalid.'], 400);
+}
+$member_ids = array_values(array_unique(array_filter(array_map('intval', $member_ids), static fn($id) => $id > 0)));
+$sundayschool_ids = array_values(array_unique(array_filter(array_map(
+    static fn($id) => is_numeric($id) ? (int) $id : (int) preg_replace('/^ss_/', '', (string) $id),
+    $sundayschool_ids
+), static fn($id) => $id > 0)));
+if ($member_ids && $sundayschool_ids) {
+    respond(['success' => false, 'msg' => 'Members and Sunday School beneficiaries must be submitted in separate batches.'], 400);
+}
 
-
+// Preserve the exact user-reviewed order. The typed sequence also prevents
+// numeric member and Sunday School IDs from being confused with each other.
+if (is_array($beneficiary_sequence) && $beneficiary_sequence) {
+    $orderedMemberIds = [];
+    $orderedSundaySchoolIds = [];
+    foreach ($beneficiary_sequence as $position => $beneficiary) {
+        if (!is_array($beneficiary)) {
+            respond(['success' => false, 'msg' => 'The beneficiary sequence is invalid.'], 400);
+        }
+        $type = (string) ($beneficiary['type'] ?? '');
+        $id = (int) ($beneficiary['id'] ?? 0);
+        $declaredPosition = (int) ($beneficiary['position'] ?? ($position + 1));
+        if ($id < 1 || $declaredPosition !== $position + 1) {
+            respond(['success' => false, 'msg' => 'The beneficiary sequence is incomplete. Review the batch and try again.'], 400);
+        }
+        if ($type === 'member' && in_array($id, $member_ids, true)) {
+            $orderedMemberIds[] = $id;
+        } elseif ($type === 'sundayschool' && in_array($id, $sundayschool_ids, true)) {
+            $orderedSundaySchoolIds[] = $id;
+        } else {
+            respond(['success' => false, 'msg' => 'The beneficiary sequence does not match the submitted batch.'], 400);
+        }
+    }
+    if (count($orderedMemberIds) !== count($member_ids)
+        || count($orderedSundaySchoolIds) !== count($sundayschool_ids)
+        || count(array_unique($orderedMemberIds)) !== count($member_ids)
+        || count(array_unique($orderedSundaySchoolIds)) !== count($sundayschool_ids)) {
+        respond(['success' => false, 'msg' => 'The beneficiary sequence does not contain every selected person exactly once.'], 400);
+    }
+    $member_ids = $orderedMemberIds;
+    $sundayschool_ids = $orderedSundaySchoolIds;
+}
 
 $church_id = intval($data['church_id'] ?? 0);
 if (!$is_super_admin) {
@@ -77,6 +122,14 @@ $recorded_by = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : null
 // --- Restrict Class Leaders to their own class ---
 $is_class_leader = has_role('Class Leader') || has_role('Assistant Bible Class Leader');
 $linked_member_id = isset($_SESSION['member_id']) ? intval($_SESSION['member_id']) : 0;
+if ($linked_member_id < 1 && !empty($_SESSION['user_id'])) {
+    $linkedUserId = (int) $_SESSION['user_id'];
+    $linkedStmt = $conn->prepare('SELECT member_id FROM users WHERE id = ? LIMIT 1');
+    $linkedStmt->bind_param('i', $linkedUserId);
+    $linkedStmt->execute();
+    $linked_member_id = (int) ($linkedStmt->get_result()->fetch_assoc()['member_id'] ?? 0);
+    $linkedStmt->close();
+}
 $class_leader_class_id = 0;
 if ($is_class_leader && $linked_member_id) {
     // Get the class_id of the linked member
@@ -373,17 +426,12 @@ class BulkPaymentProcessor {
     }
 }
 
-// Strict SRN/CRN separation: If sundayschool_ids is non-empty, ignore member_ids and only process SRN
-if (!empty($sundayschool_ids)) {
-    $member_ids = [];
-}
-
 try {
     $processor = new BulkPaymentProcessor($conn, $recorded_by);
     $result = $processor->process($member_ids, $sundayschool_ids, $amounts, $descriptions, $modes, $periods, $period_descriptions, $church_id, $payment_date);
     respond([
         'success' => $processor->error_count === 0,
-        'msg' => $processor->error_count === 0 ? ("Bulk payment successful for {$processor->success_count} members.") : ("{$processor->success_count} succeeded, {$processor->error_count} failed."),
+        'msg' => $processor->error_count === 0 ? ("{$processor->success_count} payment lines were posted in the reviewed order.") : ("{$processor->success_count} succeeded, {$processor->error_count} failed."),
         'summary' => $processor->summary,
         'errors' => $processor->errors
     ]);

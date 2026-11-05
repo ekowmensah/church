@@ -70,6 +70,9 @@ expect_phase_0027($mismatchCount === 0, 'Notes and coins do not reconcile to den
 
 $analysisEndpoint = file_get_contents(__DIR__ . '/../views/ajax_payment_analysis.php');
 $statisticsPage = file_get_contents(__DIR__ . '/../views/payments_statistics.php');
+$sidebar = file_get_contents(__DIR__ . '/../includes/sidebar.php');
+$cashReviewMigration = file_get_contents(__DIR__ . '/../migrations/2026_upgrade/2026_11_05_0108_cash_analysis_review.sql');
+$migrationManifest = file_get_contents(__DIR__ . '/../migrations/2026_upgrade/migration_manifest.php');
 expect_phase_0027(
     strpos($analysisEndpoint, "csrf_is_valid(\$_POST['csrf_token'] ?? null)") !== false,
     'Denomination mutations are missing CSRF validation.'
@@ -77,6 +80,38 @@ expect_phase_0027(
 expect_phase_0027(
     strpos($statisticsPage, "formData.append('csrf_token'") !== false,
     'Denomination saves do not send the CSRF token.'
+);
+expect_phase_0027(
+    strpos($statisticsPage, "IN ('CASH CHECKER', 'CASH CHECKERS')") !== false
+        && strpos($statisticsPage, 'history.church_id = ?') !== false,
+    'Cash-checker reviews are not recognized or church-scoped.'
+);
+expect_phase_0027(
+    strpos($statisticsPage, 'posted_cash_total') !== false
+        && strpos($statisticsPage, "'Short'") !== false
+        && strpos($statisticsPage, "'Over'") !== false
+        && strpos($statisticsPage, 'View counts') !== false,
+    'Cash-analysis reconciliation details are missing.'
+);
+expect_phase_0027(
+    strpos($statisticsPage, 'Denomination totals by cashier') !== false
+        && strpos($statisticsPage, '$cashDenominationMatrix[\'rows\']') !== false
+        && strpos($statisticsPage, '$cashDenominationMatrix[\'cashiers\']') !== false
+        && strpos($statisticsPage, '$cashDenominationMatrix[\'total_amount\']') !== false,
+    'Cashier denomination matrix or its totals are missing.'
+);
+expect_phase_0027(
+    strpos($cashReviewMigration, 'view_cash_analysis_review') !== false
+        && strpos($cashReviewMigration, "'church', 'church_id'") !== false
+        && strpos($migrationManifest, '2026_11_05_0108_cash_analysis_review.sql') !== false
+        && strpos($analysisEndpoint, "has_permission('payment_statistics')") !== false
+        && strpos($analysisEndpoint, 'view_cash_analysis_review') === false,
+    'Read-only cash-review access is not separated from analysis mutation access.'
+);
+expect_phase_0027(
+    strpos($sidebar, "'views/payments_statistics.php?cash_review=1'") !== false
+        && strpos($sidebar, "IN ('CASH CHECKER', 'CASH CHECKERS')") !== false,
+    'Serving-role cash checkers cannot discover the cash-review page from navigation.'
 );
 
 echo "PASS: Phase 0027 denomination history and contextual payment reports are operational.\n";
