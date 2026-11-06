@@ -919,6 +919,19 @@ ob_start();
     gap: 12px;
 }
 
+.dashboard-payment-type-list {
+    max-height: 820px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 1px 4px 1px 1px;
+    scrollbar-gutter: stable;
+}
+
+.dashboard-payment-type-list::-webkit-scrollbar { width: 8px; }
+.dashboard-payment-type-list::-webkit-scrollbar-track { background: #f1f5f4; border-radius: 8px; }
+.dashboard-payment-type-list::-webkit-scrollbar-thumb { background: #b7c8c3; border: 2px solid #f1f5f4; border-radius: 8px; }
+.dashboard-payment-type-list::-webkit-scrollbar-thumb:hover { background: #8da49d; }
+
 .dashboard-list-item {
     display: flex;
     align-items: center;
@@ -1253,9 +1266,9 @@ ob_start();
             <?php endif; ?>
             <?php if ($can_view_payment_dashboard): ?>
             <article class="dashboard-stat-card success">
-                <div class="dashboard-stat-label">Total Giving</div>
-                <div class="dashboard-stat-value"><?= htmlspecialchars(dashboard_currency($payment_total)) ?></div>
-                <div class="dashboard-stat-meta"><?= number_format($payment_count) ?> successful payment records</div>
+                <div class="dashboard-stat-label">Giving Today</div>
+                <div class="dashboard-stat-value"><?= htmlspecialchars(dashboard_currency($payments_today)) ?></div>
+                <div class="dashboard-stat-meta">Successful payments posted today</div>
             </article>
             <?php endif; ?>
             <?php if ($can_view_attendance_dashboard): ?>
@@ -1594,7 +1607,7 @@ ob_start();
                     </div>
                     <div class="dashboard-panel-body">
                         <?php if (!empty($top_payment_types)): ?>
-                            <div class="dashboard-list">
+                            <div class="dashboard-list dashboard-payment-type-list">
                                 <?php foreach ($top_payment_types as $type): ?>
                                     <div class="dashboard-list-item">
                                         <div>
