@@ -1,1008 +1,396 @@
 <?php
-require_once __DIR__.'/../config/config.php';
-require_once __DIR__.'/../helpers/auth.php';
-require_once __DIR__.'/../helpers/permissions_v2.php';
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../helpers/auth.php';
+require_once __DIR__ . '/../helpers/permissions_v2.php';
+require_once __DIR__ . '/../helpers/church_helper.php';
+require_once __DIR__ . '/../helpers/role_of_serving_registration.php';
 
-// Authentication check
 if (!is_logged_in()) {
     header('Location: ' . BASE_URL . '/login.php');
     exit;
 }
 
-// Permission check
-$is_super_admin = is_super_admin();
-
-if (!$is_super_admin && !has_permission('view_member_profile')) {
+$isSuperAdmin = is_super_admin();
+if (!$isSuperAdmin && !has_permission('view_member_profile')) {
     http_response_code(403);
-    echo '<div class="alert alert-danger m-4"><h4>403 Forbidden</h4><p>You do not have permission to view member profiles.</p></div>';
+    include __DIR__ . '/errors/403.php';
     exit;
 }
 
-// Get member ID and validate
-$id = intval($_GET['id'] ?? 0);
-if ($id <= 0) {
-    echo '<div class="alert alert-danger m-4">Invalid member ID.</div>';
-    exit;
+$memberId = max(0, (int) ($_GET['id'] ?? 0));
+if ($memberId < 1) {
+    http_response_code(400);
+    exit('Invalid member ID.');
 }
 
-// Fetch member data with all related information
-$stmt = $conn->prepare("
-    SELECT m.*, 
-           c.name AS class_name, 
-           ch.name AS church_name,
-           COUNT(DISTINCT p.id) as total_payments,
-           COALESCE(SUM(CASE WHEN p.reversal_approved_at IS NULL THEN p.amount ELSE 0 END), 0) as total_amount_paid
-    FROM members m 
-    LEFT JOIN bible_classes c ON m.class_id = c.id 
-    LEFT JOIN churches ch ON m.church_id = ch.id
-    LEFT JOIN payments p ON m.id = p.member_id
-    WHERE m.id = ?
-    GROUP BY m.id
-");
-$stmt->bind_param('i', $id);
-$stmt->execute();
-$result = $stmt->get_result();
-$member = $result->fetch_assoc();
-
+$actorChurchId = $isSuperAdmin ? 0 : (int) get_user_church_id($conn);
+$memberSql = "SELECT member.*, class.name AS class_name, church.name AS church_name,
+        COUNT(DISTINCT CASE WHEN payment.reversal_approved_at IS NULL THEN payment.id END) AS total_payments,
+        COALESCE(SUM(CASE WHEN payment.reversal_approved_at IS NULL THEN payment.amount ELSE 0 END), 0) AS total_amount_paid
+    FROM members member
+    LEFT JOIN bible_classes class ON class.id = member.class_id
+    LEFT JOIN churches church ON church.id = member.church_id
+    LEFT JOIN payments payment ON payment.member_id = member.id
+    WHERE member.id = ?" . ($isSuperAdmin ? '' : ' AND member.church_id = ?') . "
+    GROUP BY member.id, class.name, church.name
+    LIMIT 1";
+$memberStmt = $conn->prepare($memberSql);
+if ($isSuperAdmin) {
+    $memberStmt->bind_param('i', $memberId);
+} else {
+    $memberStmt->bind_param('ii', $memberId, $actorChurchId);
+}
+$memberStmt->execute();
+$member = $memberStmt->get_result()->fetch_assoc();
+$memberStmt->close();
 if (!$member) {
-    echo '<div class="alert alert-danger m-4">Member not found.</div>';
-    exit;
+    http_response_code(404);
+    exit('Member not found within your authorized church.');
 }
 
-$full_name = trim(implode(' ', array_filter([
-    (string) ($member['first_name'] ?? ''),
-    (string) ($member['middle_name'] ?? ''),
-    (string) ($member['last_name'] ?? ''),
+$h = static fn($value): string => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+$display = static function ($value): string {
+    $value = trim((string) $value);
+    return $value === '' ? 'N/A' : $value;
+};
+$formatDate = static function ($value, string $format = 'M j, Y'): string {
+    $value = trim((string) $value);
+    if ($value === '' || $value === '0000-00-00' || $value === '0000-00-00 00:00:00') return 'N/A';
+    $timestamp = strtotime($value);
+    return $timestamp === false ? 'N/A' : date($format, $timestamp);
+};
+$formatAge = static function ($value): string {
+    $value = trim((string) $value);
+    if ($value === '' || $value === '0000-00-00') return 'N/A';
+    $birth = DateTimeImmutable::createFromFormat('Y-m-d', $value);
+    $today = new DateTimeImmutable('today');
+    if (!$birth || $birth->format('Y-m-d') !== $value || $birth > $today) return 'N/A';
+    $age = $birth->diff($today);
+    return $age->y . ' year' . ($age->y === 1 ? '' : 's');
+};
+$photoUrl = static function ($filename): ?string {
+    $filename = basename(trim((string) $filename));
+    if ($filename === '') return null;
+    $path = __DIR__ . '/../uploads/members/' . $filename;
+    if (!is_file($path)) return null;
+    return BASE_URL . '/uploads/members/' . rawurlencode($filename) . '?v=' . filemtime($path);
+};
+
+$fullName = trim(implode(' ', array_filter([
+    $member['first_name'] ?? '', $member['middle_name'] ?? '', $member['last_name'] ?? '',
 ])));
+$fullName = $fullName !== '' ? $fullName : 'Unnamed member';
+$memberPhotoUrl = $photoUrl($member['photo'] ?? null);
+$age = $formatAge($member['dob'] ?? null);
+$canEdit = $isSuperAdmin || has_permission('edit_member');
+$healthDecision = $isSuperAdmin
+    ? ['allowed' => true]
+    : authorize_permission('view_health_records', ['church_id' => (int) $member['church_id']]);
+$canViewHealth = !empty($healthDecision['allowed']);
+$canViewStatement = $isSuperAdmin || has_permission('view_individual_payment_report');
 
-$format_member_date = static function (?string $dateValue, string $format = 'M d, Y'): string {
-    $dateValue = trim((string) $dateValue);
-    if ($dateValue === '' || $dateValue === '0000-00-00') {
-        return 'N/A';
-    }
-
-    $timestamp = strtotime($dateValue);
-    if ($timestamp === false) {
-        return 'N/A';
-    }
-
-    return date($format, $timestamp);
-};
-
-$format_member_age = static function (?string $dobValue): string {
-    $dobValue = trim((string) $dobValue);
-    if ($dobValue === '' || $dobValue === '0000-00-00') {
-        return 'N/A';
-    }
-
-    $birthDate = DateTime::createFromFormat('Y-m-d', $dobValue);
-    if (!($birthDate instanceof DateTime) || $birthDate->format('Y-m-d') !== $dobValue) {
-        return 'N/A';
-    }
-
-    $today = new DateTime('today');
-    if ($birthDate > $today) {
-        return 'N/A';
-    }
-
-    $age = $birthDate->diff($today);
-    return sprintf(
-        '%d year%s, %d month%s, %d day%s',
-        $age->y,
-        $age->y === 1 ? '' : 's',
-        $age->m,
-        $age->m === 1 ? '' : 's',
-        $age->d,
-        $age->d === 1 ? '' : 's'
-    );
-};
-
-$dob_age_text = $format_member_age($member['dob'] ?? null);
-
-$spouse_display_name = trim((string) ($member['spouse_name'] ?? ''));
-$spouse_crn = trim((string) ($member['spouse_crn'] ?? ''));
-$spouse_member_id = 0;
-$spouse_photo_url = BASE_URL . '/assets/img/undraw_profile.svg';
-if ($spouse_display_name === '' && $spouse_crn !== '') {
-    $spouse_stmt = $conn->prepare('SELECT id, first_name, middle_name, last_name, photo FROM members WHERE crn = ? LIMIT 1');
-    if ($spouse_stmt) {
-        $spouse_stmt->bind_param('s', $spouse_crn);
-        $spouse_stmt->execute();
-        $spouse_result = $spouse_stmt->get_result();
-        $spouse_member = $spouse_result ? $spouse_result->fetch_assoc() : null;
-        $spouse_stmt->close();
-
-        if ($spouse_member) {
-            $spouse_member_id = (int) ($spouse_member['id'] ?? 0);
-            $spouse_display_name = trim(implode(' ', array_filter([
-                (string) ($spouse_member['first_name'] ?? ''),
-                (string) ($spouse_member['middle_name'] ?? ''),
-                (string) ($spouse_member['last_name'] ?? ''),
+// Resolve the spouse once, within the member's church. A typed spouse name is
+// retained even when the linked CRN no longer resolves.
+$spouseName = trim((string) ($member['spouse_name'] ?? ''));
+$spouseCrn = trim((string) ($member['spouse_crn'] ?? ''));
+$spouseMemberId = 0;
+$spousePhotoUrl = null;
+if ($spouseCrn !== '') {
+    $spouseStmt = $conn->prepare("SELECT id, first_name, middle_name, last_name, photo
+        FROM members WHERE crn = ? AND church_id = ? LIMIT 1");
+    $memberChurchId = (int) $member['church_id'];
+    $spouseStmt->bind_param('si', $spouseCrn, $memberChurchId);
+    $spouseStmt->execute();
+    $spouse = $spouseStmt->get_result()->fetch_assoc();
+    $spouseStmt->close();
+    if ($spouse) {
+        $spouseMemberId = (int) $spouse['id'];
+        if ($spouseName === '') {
+            $spouseName = trim(implode(' ', array_filter([
+                $spouse['first_name'] ?? '', $spouse['middle_name'] ?? '', $spouse['last_name'] ?? '',
             ])));
-            $spouse_photo = trim((string) ($spouse_member['photo'] ?? ''));
-            if ($spouse_photo !== '' && file_exists(__DIR__.'/../uploads/members/' . $spouse_photo)) {
-                $spouse_photo_url = BASE_URL . '/uploads/members/' . rawurlencode($spouse_photo) . '?v=' . time();
-            }
         }
+        $spousePhotoUrl = $photoUrl($spouse['photo'] ?? null);
     }
 }
+$hasSpouse = $spouseName !== '' || $spouseCrn !== '';
 
-if ($spouse_member_id <= 0 && $spouse_crn !== '') {
-    $spouse_id_stmt = $conn->prepare('SELECT id, photo FROM members WHERE crn = ? LIMIT 1');
-    if ($spouse_id_stmt) {
-        $spouse_id_stmt->bind_param('s', $spouse_crn);
-        $spouse_id_stmt->execute();
-        $spouse_id_result = $spouse_id_stmt->get_result();
-        $spouse_id_row = $spouse_id_result ? $spouse_id_result->fetch_assoc() : null;
-        $spouse_member_id = (int) ($spouse_id_row['id'] ?? 0);
-        $spouse_photo = trim((string) ($spouse_id_row['photo'] ?? ''));
-        if ($spouse_photo !== '' && file_exists(__DIR__.'/../uploads/members/' . $spouse_photo)) {
-            $spouse_photo_url = BASE_URL . '/uploads/members/' . rawurlencode($spouse_photo) . '?v=' . time();
-        }
-        $spouse_id_stmt->close();
-    }
-}
+$contactsStmt = $conn->prepare("SELECT contact.id, contact.name, contact.mobile,
+        COALESCE(relationship.name, NULLIF(contact.relationship_other, ''), contact.relationship, 'Not specified') AS relationship_name,
+        COALESCE(linked.id, linked_crn.id, linked_phone.id) AS linked_member_id,
+        COALESCE(linked.crn, linked_crn.crn, linked_phone.crn) AS linked_member_crn,
+        COALESCE(
+            CONCAT_WS(' ', linked.first_name, linked.middle_name, linked.last_name),
+            CONCAT_WS(' ', linked_crn.first_name, linked_crn.middle_name, linked_crn.last_name),
+            CONCAT_WS(' ', linked_phone.first_name, linked_phone.middle_name, linked_phone.last_name)
+        ) AS linked_member_name
+    FROM member_emergency_contacts contact
+    LEFT JOIN relationship_types relationship ON relationship.id = contact.relationship_type_id
+    LEFT JOIN members linked ON linked.id = contact.contact_member_id
+        AND linked.church_id = ? AND linked.id <> ?
+    LEFT JOIN members linked_crn ON contact.contact_member_id IS NULL
+        AND NULLIF(TRIM(contact.contact_crn), '') IS NOT NULL
+        AND linked_crn.crn = contact.contact_crn
+        AND linked_crn.church_id = ? AND linked_crn.id <> ?
+    LEFT JOIN members linked_phone ON contact.contact_member_id IS NULL
+        AND linked_crn.id IS NULL
+        AND LENGTH(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(contact.mobile, ' ', ''), '-', ''), '(', ''), ')', ''), '+', '')) >= 9
+        AND linked_phone.church_id = ? AND linked_phone.id <> ?
+        AND RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(linked_phone.phone, ' ', ''), '-', ''), '(', ''), ')', ''), '+', ''), 9)
+          = RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(contact.mobile, ' ', ''), '-', ''), '(', ''), ')', ''), '+', ''), 9)
+        AND linked_phone.id = (
+            SELECT MIN(candidate.id) FROM members candidate
+            WHERE candidate.church_id = ? AND candidate.id <> ?
+              AND RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(candidate.phone, ' ', ''), '-', ''), '(', ''), ')', ''), '+', ''), 9)
+                = RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(contact.mobile, ' ', ''), '-', ''), '(', ''), ')', ''), '+', ''), 9)
+            HAVING COUNT(*) = 1
+        )
+    WHERE contact.member_id = ?
+    ORDER BY contact.id");
+$memberChurchId = (int) $member['church_id'];
+$contactsStmt->bind_param(
+    'iiiiiiiii',
+    $memberChurchId, $memberId,
+    $memberChurchId, $memberId,
+    $memberChurchId, $memberId,
+    $memberChurchId, $memberId,
+    $memberId
+);
+$contactsStmt->execute();
+$contacts = $contactsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$contactsStmt->close();
 
-$has_spouse_reference = ($spouse_display_name !== '' || $spouse_crn !== '');
+$organizationsStmt = $conn->prepare("SELECT organization.id, organization.name
+    FROM member_organizations assignment
+    JOIN organizations organization ON organization.id = assignment.organization_id
+    WHERE assignment.member_id = ? AND organization.church_id = ?
+    ORDER BY organization.name, organization.id");
+$organizationsStmt->bind_param('ii', $memberId, $memberChurchId);
+$organizationsStmt->execute();
+$organizations = $organizationsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$organizationsStmt->close();
 
-$has_transfer_details = ((int) ($member['transfer_from_other_chapel'] ?? 0) === 1)
+$servingRoles = role_of_serving_member_assignments($conn, $memberId);
+
+$smsStmt = $conn->prepare("SELECT type, message, status, sent_at
+    FROM sms_logs WHERE member_id = ? ORDER BY sent_at DESC, id DESC LIMIT 10");
+$smsStmt->bind_param('i', $memberId);
+$smsStmt->execute();
+$smsLogs = $smsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$smsStmt->close();
+
+$profileChecks = [
+    $member['photo'] ?? '', $member['phone'] ?? '', $member['email'] ?? '',
+    $member['address'] ?? '', $member['gps_address'] ?? '', $member['dob'] ?? '',
+    $member['class_id'] ?? '', $member['membership_status'] ?? '',
+];
+$completedChecks = count(array_filter($profileChecks, static fn($value) => trim((string) $value) !== ''));
+$profileCompleteness = (int) round(($completedChecks / max(1, count($profileChecks))) * 100);
+$hasTransferDetails = (int) ($member['transfer_from_other_chapel'] ?? 0) === 1
     || trim((string) ($member['transfer_diocese'] ?? '')) !== ''
     || trim((string) ($member['transfer_circuit'] ?? '')) !== ''
     || trim((string) ($member['transfer_society'] ?? '')) !== ''
     || trim((string) ($member['superintendent_name'] ?? '')) !== '';
 
-// Fetch emergency contacts (+ linked member if mobile belongs to a known member)
-$contacts_stmt = $conn->prepare("
-    SELECT mec.*,
-           m.id AS linked_member_id,
-           m.crn AS linked_member_crn,
-           CONCAT_WS(' ', m.first_name, m.middle_name, m.last_name) AS linked_member_name
-    FROM member_emergency_contacts mec
-    LEFT JOIN members m ON m.phone = mec.mobile AND m.id <> ?
-    WHERE mec.member_id = ?
-    ORDER BY mec.id
-");
-$contacts_stmt->bind_param('ii', $id, $id);
-$contacts_stmt->execute();
-$contacts = $contacts_stmt->get_result();
+$membershipLabel = $display($member['membership_status'] ?? null);
+$status = strtolower(trim((string) ($member['status'] ?? 'unknown')));
+$statusClass = $status === 'active' ? 'success' : ($status === 'pending' ? 'warning' : 'muted');
+$page_title = 'Member Profile - ' . $fullName;
+$statementSearch = trim((string) ($member['crn'] ?? '')) ?: $fullName;
+$statementUrl = BASE_URL . '/views/reports/details/individual_payment_report.php?'
+    . http_build_query(['search' => $statementSearch, 'period' => 'overall']);
 
-// Fetch organizations
-$org_stmt = $conn->prepare("
-    SELECT o.name 
-    FROM member_organizations mo 
-    JOIN organizations o ON mo.organization_id = o.id 
-    WHERE mo.member_id = ?
-");
-$org_stmt->bind_param('i', $id);
-$org_stmt->execute();
-$organizations = $org_stmt->get_result();
-
-// Fetch SMS logs
-$sms_stmt = $conn->prepare("
-    SELECT * FROM sms_logs 
-    WHERE member_id = ? 
-    ORDER BY sent_at DESC 
-    LIMIT 10
-");
-$sms_stmt->bind_param('i', $id);
-$sms_stmt->execute();
-$sms_logs = $sms_stmt->get_result();
-
-$page_title = 'Member Profile - ' . htmlspecialchars($full_name !== '' ? $full_name : 'Member');
 ob_start();
 ?>
-<!-- Custom Styles -->
-<style>
-.member-profile-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border-radius: 15px;
-    padding: 2rem;
-    margin-bottom: 2rem;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-}
-
-.member-avatar {
-    width: 120px;
-    height: 120px;
-    border-radius: 50%;
-    border: 4px solid rgba(255,255,255,0.3);
-    object-fit: cover;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-}
-
-.spouse-avatar-thumb {
-    width: 56px;
-    height: 56px;
-    object-fit: cover;
-    border-radius: 50%;
-    border: 2px solid #dee2e6;
-}
-
-.member-avatar-placeholder {
-    width: 120px;
-    height: 120px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 3rem;
-    color: rgba(255,255,255,0.8);
-    border: 4px solid rgba(255,255,255,0.3);
-}
-
-.info-card {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.08);
-    border: none;
-    margin-bottom: 1.5rem;
-    overflow: hidden;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.info-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(0,0,0,0.12);
-}
-
-.info-card-header {
-    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-    border-bottom: 2px solid #dee2e6;
-    padding: 1rem 1.5rem;
-    font-weight: 600;
-    color: #495057;
-}
-
-.info-card-body {
-    padding: 1.5rem;
-}
-
-.info-item {
-    display: flex;
-    align-items: center;
-    margin-bottom: 1rem;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid #f8f9fa;
-}
-
-.info-item:last-child {
-    border-bottom: none;
-    margin-bottom: 0;
-}
-
-.info-label {
-    font-weight: 600;
-    color: #6c757d;
-    min-width: 140px;
-    margin-right: 1rem;
-}
-
-.info-value {
-    color: #495057;
-    flex: 1;
-}
-
-.stats-card {
-    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-    color: white;
-    border-radius: 12px;
-    padding: 1.5rem;
-    text-align: center;
-    box-shadow: 0 5px 15px rgba(40, 167, 69, 0.3);
-}
-
-.stats-number {
-    font-size: 2.5rem;
-    font-weight: 700;
-    margin-bottom: 0.5rem;
-}
-
-.stats-label {
-    font-size: 0.9rem;
-    opacity: 0.9;
-}
-
-.action-buttons {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-}
-
-.action-btn {
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    border: none;
-    font-weight: 500;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    transition: all 0.2s ease;
-}
-
-.btn-primary-custom {
-    background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
-    color: white;
-}
-
-.btn-success-custom {
-    background: linear-gradient(135deg, #28a745 0%, #1e7e34 100%);
-    color: white;
-}
-
-.btn-secondary-custom {
-    background: linear-gradient(135deg, #6c757d 0%, #545b62 100%);
-    color: white;
-}
-
-.action-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-    color: white;
-    text-decoration: none;
-}
-
-.membership-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    border-radius: 25px;
-    font-weight: 600;
-    font-size: 0.9rem;
-}
-
-.status-full {
-    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-    color: white;
-}
-
-.status-catechumen {
-    background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
-    color: white;
-}
-
-.status-none {
-    background: linear-gradient(135deg, #6c757d 0%, #545b62 100%);
-    color: white;
-}
-
-.action-buttons-card {
-    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-    border: 1px solid #dee2e6;
-    border-radius: 15px;
-    padding: 1.5rem;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-
-.member-stats {
-    background: rgba(255, 255, 255, 0.8);
-    border-radius: 10px;
-    padding: 1rem;
-}
-
-.stat-item {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.stat-label {
-    font-size: 0.9rem;
-    color: #6c757d;
-}
-
-.stat-value {
-    font-weight: 600;
-    color: #495057;
-}
-
-.badge-lg {
-    font-size: 0.9rem;
-    padding: 0.5rem 0.75rem;
-}
-
-.gap-2 {
-    gap: 0.5rem !important;
-}
-
-.gap-3 {
-    gap: 1rem !important;
-}
-
-@media (max-width: 768px) {
-    .member-profile-header {
-        text-align: center;
-        padding: 1.5rem;
-    }
-    
-    .action-buttons {
-        justify-content: center;
-        margin-top: 1rem;
-    }
-    
-    .action-buttons-card .d-flex {
-        flex-direction: column;
-        align-items: stretch !important;
-    }
-
-    .member-stats {
-        margin-top: 1rem;
-    }
-
-    .stat-item {
-        justify-content: center;
-        text-align: center;
-    }
-}
-</style>
-
-<div class="container-fluid px-4 py-3">
-    <!-- Profile Header -->
-    <div class="member-profile-header">
-        <div class="row align-items-center">
-            <div class="col-md-2 text-center mb-3 mb-md-0">
-                <?php if (!empty($member['photo']) && file_exists(__DIR__.'/../uploads/members/' . $member['photo'])): ?>
-                    <img src="<?= BASE_URL ?>/uploads/members/<?= rawurlencode($member['photo']) ?>?v=<?= time() ?>" 
-                         class="member-avatar" alt="Member Photo">
-                <?php else: ?>
-                    <div class="member-avatar-placeholder">
-                        <i class="fas fa-user"></i>
-                    </div>
-                <?php endif; ?>
-            </div>
-            <div class="col-md-7">
-                <h1 class="mb-3 font-weight-bold">
-                    <?= htmlspecialchars($full_name !== '' ? $full_name : 'N/A') ?>
-                </h1>
-                <div class="row">
-                    <div class="col-md-6">
-                        <p class="mb-2"><i class="fas fa-id-card mr-2"></i><strong>CRN:</strong> <?= htmlspecialchars($member['crn']) ?></p>
-                        <p class="mb-2"><i class="fas fa-church mr-2"></i><strong>Church:</strong> <?= htmlspecialchars($member['church_name'] ?? 'N/A') ?></p>
-                        <p class="mb-2"><i class="fas fa-users mr-2"></i><strong>Class:</strong> <?= htmlspecialchars($member['class_name'] ?? 'N/A') ?></p>
-                    </div>
-                    <div class="col-md-6">
-                        <p class="mb-2">
-                            <i class="fas fa-user-check mr-2"></i><strong>Status:</strong> 
-                            <span class="badge badge-<?= ($member['status'] === 'active' ? 'success' : ($member['status'] === 'pending' ? 'warning' : 'secondary')) ?> ml-1">
-                                <?= htmlspecialchars(ucfirst($member['status'])) ?>
-                            </span>
-                        </p>
-                        <p class="mb-2">
-                            <i class="fas fa-certificate mr-2"></i><strong>Membership:</strong>
-                            <?php
-                            $membership_label = trim((string) ($member['membership_status'] ?? '')) ?: 'Unclassified';
-                            $membership_class = $membership_label === 'Full Member'
-                                ? 'status-full'
-                                : ($membership_label === 'Catechumen' ? 'status-catechumen' : 'status-none');
-                            echo '<span class="membership-status ' . $membership_class . '"><i class="fas fa-id-badge"></i> '
-                                . htmlspecialchars($membership_label) . '</span>';
-                            ?>
-                        </p>
-                        <p class="mb-2"><i class="fas fa-calendar mr-2"></i><strong>Joined:</strong> <?= htmlspecialchars($format_member_date($member['created_at'] ?? null)) ?></p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="stats-card mb-3">
-                    <div class="stats-number">GHS <?= number_format($member['total_amount_paid'], 2) ?></div>
-                    <div class="stats-label">Total Paid</div>
-                    <small class="d-block mt-1"><?= $member['total_payments'] ?> payments</small>
-                </div>
-                <div class="action-buttons">
-                    <a href="<?= BASE_URL ?>/views/member_list.php" class="action-btn btn-secondary-custom">
-                        <i class="fas fa-arrow-left"></i> Back to List
-                    </a>
-                    <button class="action-btn btn-success-custom" id="viewHealthBtn">
-                        <i class="fas fa-notes-medical"></i> Health Records
-                    </button>
-                    <a href="<?= BASE_URL ?>/views/admin_member_edit.php?id=<?= $member['id'] ?>" class="action-btn btn-primary-custom">
-                        <i class="fas fa-edit"></i> Edit
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
-    <!-- Information Cards -->
-    <div class="row">
-        <!-- Personal Information -->
-        <div class="col-lg-6 mb-4">
-            <div class="info-card">
-                <div class="info-card-header">
-                    <i class="fas fa-user mr-2"></i>Personal Information
-                </div>
-                <div class="info-card-body">
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-id-card mr-2"></i>CRN:</div>
-                        <div class="info-value"><?= htmlspecialchars($member['crn'] ?? 'N/A') ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-user mr-2"></i>Full Name:</div>
-                        <div class="info-value"><?= htmlspecialchars($full_name !== '' ? $full_name : 'N/A') ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-venus-mars mr-2"></i>Gender:</div>
-                        <div class="info-value">
-                            <span class="badge badge-<?= strtolower($member['gender']) === 'male' ? 'primary' : 'pink' ?>">
-                                <?= htmlspecialchars($member['gender'] ?? 'N/A') ?>
-                            </span>
-                        </div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-birthday-cake mr-2"></i>Date of Birth:</div>
-                        <div class="info-value">
-                            <?= htmlspecialchars($format_member_date($member['dob'] ?? null)) ?>
-                            <?php if ($dob_age_text !== 'N/A'): ?>
-                                <small class="text-muted ml-1">(Age: <?= htmlspecialchars($dob_age_text) ?>)</small>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-calendar-day mr-2"></i>Day Born:</div>
-                        <div class="info-value"><?= htmlspecialchars($member['day_born'] ?? 'N/A') ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-map-marker-alt mr-2"></i>Place of Birth:</div>
-                        <div class="info-value"><?= htmlspecialchars($member['place_of_birth'] ?? 'N/A') ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-heart mr-2"></i>Marital Status:</div>
-                        <div class="info-value">
-                            <span class="badge badge-info">
-                                <?= htmlspecialchars($member['marital_status'] ?? 'N/A') ?>
-                            </span>
-                        </div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-ring mr-2"></i>Nature of Marriage:</div>
-                        <div class="info-value"><?= htmlspecialchars((string) ($member['marriage_type'] ?? '') !== '' ? (string) $member['marriage_type'] : 'N/A') ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-user-friends mr-2"></i>Spouse:</div>
-                        <div class="info-value">
-                            <div class="d-flex align-items-center">
-                                <?php if ($has_spouse_reference): ?>
-                                    <button type="button" class="btn p-0 border-0 bg-transparent mr-3" data-toggle="modal" data-target="#spousePhotoModal" title="Expand spouse photo">
-                                        <img src="<?= htmlspecialchars($spouse_photo_url) ?>" alt="Spouse photo" class="spouse-avatar-thumb">
-                                    </button>
-                                <?php endif; ?>
-                                <div>
-                                    <?= htmlspecialchars($spouse_display_name !== '' ? $spouse_display_name : 'N/A') ?>
-                                    <?php if ($spouse_crn !== ''): ?>
-                                        <small class="text-muted d-block">CRN: <?= htmlspecialchars($spouse_crn) ?></small>
-                                    <?php endif; ?>
-                                    <?php if ($has_spouse_reference): ?>
-                                        <button type="button" class="btn btn-link btn-sm p-0 mt-1" data-toggle="modal" data-target="#spousePhotoModal">
-                                            <i class="fas fa-search-plus mr-1"></i>Expand Photo
-                                        </button>
-                                    <?php endif; ?>
-                                    <?php if ($spouse_member_id > 0): ?>
-                                        <a href="<?= BASE_URL ?>/views/member_view.php?id=<?= (int) $spouse_member_id ?>" class="d-inline-block mt-1">
-                                            <i class="fas fa-external-link-alt mr-1"></i>View Member
-                                        </a>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Contact Information -->
-        <div class="col-lg-6 mb-4">
-            <div class="info-card">
-                <div class="info-card-header">
-                    <i class="fas fa-address-book mr-2"></i>Contact Information
-                </div>
-                <div class="info-card-body">
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-phone mr-2"></i>Phone:</div>
-                        <div class="info-value">
-                            <?php if (!empty($member['phone'])): ?>
-                                <a href="tel:<?= htmlspecialchars($member['phone']) ?>" class="text-primary">
-                                    <?= htmlspecialchars($member['phone']) ?>
-                                </a>
-                            <?php else: ?>
-                                N/A
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-home mr-2"></i>Address:</div>
-                        <div class="info-value"><?= htmlspecialchars($member['address'] ?? 'N/A') ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-map-pin mr-2"></i>GPS Address:</div>
-                        <div class="info-value"><?= htmlspecialchars($member['gps_address'] ?? 'N/A') ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-city mr-2"></i>Home Town:</div>
-                        <div class="info-value"><?= htmlspecialchars($member['home_town'] ?? 'N/A') ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-map mr-2"></i>Region:</div>
-                        <div class="info-value"><?= htmlspecialchars($member['region'] ?? 'N/A') ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-phone-alt mr-2"></i>Telephone:</div>
-                        <div class="info-value">
-                            <?php if (!empty($member['telephone'])): ?>
-                                <a href="tel:<?= htmlspecialchars($member['telephone']) ?>" class="text-primary">
-                                    <?= htmlspecialchars($member['telephone']) ?>
-                                </a>
-                            <?php else: ?>
-                                N/A
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-envelope mr-2"></i>Email:</div>
-                        <div class="info-value">
-                            <?php if (!empty($member['email'])): ?>
-                                <a href="mailto:<?= htmlspecialchars($member['email']) ?>" class="text-primary">
-                                    <?= htmlspecialchars($member['email']) ?>
-                                </a>
-                            <?php else: ?>
-                                N/A
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Spiritual & Professional Information -->
-        <div class="col-lg-6 mb-4">
-            <div class="info-card">
-                <div class="info-card-header">
-                    <i class="fas fa-cross mr-2"></i>Spiritual & Professional Information
-                </div>
-                <div class="info-card-body">
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-calendar-plus mr-2"></i>Date of Enrollment:</div>
-                        <div class="info-value"><?= htmlspecialchars($format_member_date($member['date_of_enrollment'] ?? null)) ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-check-circle mr-2"></i>Confirmed:</div>
-                        <div class="info-value">
-                            <span class="badge badge-<?= strtolower($member['confirmed'] ?? '') === 'yes' ? 'success' : 'secondary' ?>">
-                                <?= htmlspecialchars($member['confirmed'] ?? 'No') ?>
-                            </span>
-                        </div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-water mr-2"></i>Baptized:</div>
-                        <div class="info-value">
-                            <span class="badge badge-<?= strtolower($member['baptized'] ?? '') === 'yes' ? 'success' : 'secondary' ?>">
-                                <?= htmlspecialchars($member['baptized'] ?? 'No') ?>
-                            </span>
-                        </div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-water mr-2"></i>Date of Baptism:</div>
-                        <div class="info-value"><?= htmlspecialchars($format_member_date($member['date_of_baptism'] ?? null)) ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-calendar-check mr-2"></i>Date of Confirmation:</div>
-                        <div class="info-value"><?= htmlspecialchars($format_member_date($member['date_of_confirmation'] ?? null)) ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-award mr-2"></i>Membership Status:</div>
-                        <div class="info-value"><?= htmlspecialchars((string) ($member['membership_status'] ?? '') !== '' ? (string) $member['membership_status'] : 'N/A') ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-briefcase mr-2"></i>Employment Status:</div>
-                        <div class="info-value"><?= htmlspecialchars((string) ($member['employment_status'] ?? '') !== '' ? (string) $member['employment_status'] : 'N/A') ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-user-tie mr-2"></i>Profession:</div>
-                        <div class="info-value"><?= htmlspecialchars((string) ($member['profession'] ?? '') !== '' ? (string) $member['profession'] : 'N/A') ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-briefcase mr-2"></i>Occupation:</div>
-                        <div class="info-value"><?= htmlspecialchars($member['occupation'] ?? 'N/A') ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-building mr-2"></i>Employer:</div>
-                        <div class="info-value"><?= htmlspecialchars($member['employer'] ?? 'N/A') ?></div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label"><i class="fas fa-exchange-alt mr-2"></i>Transferred In:</div>
-                        <div class="info-value">
-                            <span class="badge badge-<?= ((int) ($member['transfer_from_other_chapel'] ?? 0) === 1) ? 'warning' : 'secondary' ?>">
-                                <?= ((int) ($member['transfer_from_other_chapel'] ?? 0) === 1) ? 'Yes' : 'No' ?>
-                            </span>
-                        </div>
-                    </div>
-                    <?php if ($has_transfer_details): ?>
-                        <div class="info-item">
-                            <div class="info-label"><i class="fas fa-globe-africa mr-2"></i>Transfer Diocese:</div>
-                            <div class="info-value"><?= htmlspecialchars((string) ($member['transfer_diocese'] ?? '') !== '' ? (string) $member['transfer_diocese'] : 'N/A') ?></div>
-                        </div>
-                        <div class="info-item">
-                            <div class="info-label"><i class="fas fa-route mr-2"></i>Transfer Circuit:</div>
-                            <div class="info-value"><?= htmlspecialchars((string) ($member['transfer_circuit'] ?? '') !== '' ? (string) $member['transfer_circuit'] : 'N/A') ?></div>
-                        </div>
-                        <div class="info-item">
-                            <div class="info-label"><i class="fas fa-church mr-2"></i>Transfer Society:</div>
-                            <div class="info-value"><?= htmlspecialchars((string) ($member['transfer_society'] ?? '') !== '' ? (string) $member['transfer_society'] : 'N/A') ?></div>
-                        </div>
-                        <div class="info-item">
-                            <div class="info-label"><i class="fas fa-file-signature mr-2"></i>Removal Note:</div>
-                            <div class="info-value">
-                                <span class="badge badge-<?= ((int) ($member['removal_note_provided'] ?? 0) === 1) ? 'success' : 'secondary' ?>">
-                                    <?= ((int) ($member['removal_note_provided'] ?? 0) === 1) ? 'Provided' : 'Not Provided' ?>
-                                </span>
-                            </div>
-                        </div>
-                        <div class="info-item">
-                            <div class="info-label"><i class="fas fa-user-shield mr-2"></i>Superintendent:</div>
-                            <div class="info-value"><?= htmlspecialchars((string) ($member['superintendent_name'] ?? '') !== '' ? (string) $member['superintendent_name'] : 'N/A') ?></div>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-
-        <!-- Emergency Contacts -->
-        <div class="col-lg-6 mb-4">
-            <div class="info-card">
-                <div class="info-card-header">
-                    <i class="fas fa-phone-square-alt mr-2"></i>Emergency Contacts
-                </div>
-                <div class="info-card-body">
-                    <?php if ($contacts->num_rows > 0): ?>
-                        <?php $contact_num = 1; while ($contact = $contacts->fetch_assoc()): ?>
-                            <div class="info-item">
-                                <div class="info-label"><i class="fas fa-user-friends mr-2"></i>Contact <?= $contact_num ?>:</div>
-                                <div class="info-value">
-                                    <strong><?= htmlspecialchars($contact['name']) ?></strong><br>
-                                    <small class="text-muted">
-                                        <i class="fas fa-phone mr-1"></i><?= htmlspecialchars($contact['mobile']) ?><br>
-                                        <i class="fas fa-heart mr-1"></i><?= htmlspecialchars($contact['relationship']) ?>
-                                    </small>
-                                    <?php if (!empty($contact['linked_member_id'])): ?>
-                                        <div class="mt-1">
-                                            <a href="<?= BASE_URL ?>/views/member_view.php?id=<?= (int) $contact['linked_member_id'] ?>">
-                                                <i class="fas fa-external-link-alt mr-1"></i>View Member
-                                                <?php if (!empty($contact['linked_member_crn'])): ?>
-                                                    (<?= htmlspecialchars($contact['linked_member_crn']) ?>)
-                                                <?php endif; ?>
-                                            </a>
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                            <?php $contact_num++; ?>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <div class="text-center text-muted py-3">
-                            <i class="fas fa-user-slash fa-2x mb-2"></i>
-                            <p>No emergency contacts recorded.</p>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Organizations -->
-    <div class="row">
-        <div class="col-lg-6 mb-4">
-            <div class="info-card">
-                <div class="info-card-header">
-                    <i class="fas fa-sitemap mr-2"></i>Organizations
-                </div>
-                <div class="info-card-body">
-                    <?php if ($organizations->num_rows > 0): ?>
-                        <div class="d-flex flex-wrap gap-2">
-                            <?php while ($org = $organizations->fetch_assoc()): ?>
-                                <span class="badge badge-primary badge-lg">
-                                    <i class="fas fa-users mr-1"></i><?= htmlspecialchars($org['name']) ?>
-                                </span>
-                            <?php endwhile; ?>
-                        </div>
-                    <?php else: ?>
-                        <div class="text-center text-muted py-3">
-                            <i class="fas fa-users-slash fa-2x mb-2"></i>
-                            <p>No organizations assigned.</p>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-
-        <!-- Recent SMS Notifications -->
-        <div class="col-lg-6 mb-4">
-            <div class="info-card">
-                <div class="info-card-header">
-                    <i class="fas fa-sms mr-2"></i>Recent SMS Notifications
-                </div>
-                <div class="info-card-body">
-                    <?php if ($sms_logs->num_rows > 0): ?>
-                        <div class="sms-logs-container" style="max-height: 300px; overflow-y: auto;">
-                            <?php while ($sms = $sms_logs->fetch_assoc()): ?>
-                                <div class="info-item">
-                                    <div class="d-flex justify-content-between align-items-start">
-                                        <div class="flex-grow-1">
-                                            <div class="d-flex align-items-center mb-1">
-                                                <span class="badge badge-<?= strtolower($sms['type']) === 'registration' ? 'success' : 'info' ?> mr-2">
-                                                    <?= htmlspecialchars(ucfirst($sms['type'])) ?>
-                                                </span>
-                                                <small class="text-muted">
-                                                    <?= date('M d, Y H:i', strtotime($sms['sent_at'])) ?>
-                                                </small>
-                                            </div>
-                                            <p class="mb-1 small"><?= htmlspecialchars(substr($sms['message'], 0, 100)) ?><?= strlen($sms['message']) > 100 ? '...' : '' ?></p>
-                                        </div>
-                                        <div class="ml-2">
-                                            <?php
-                                            $status = $sms['status'] ?? '';
-                                            if (stripos($status, 'fail') !== false) {
-                                                echo '<span class="badge badge-danger">Failed</span>';
-                                            } elseif (stripos($status, 'sent') !== false || stripos($status, 'success') !== false) {
-                                                echo '<span class="badge badge-success">Sent</span>';
-                                            } else {
-                                                echo '<span class="badge badge-secondary">' . htmlspecialchars($status) . '</span>';
-                                            }
-                                            ?>
-                                        </div>
-                                    </div>
-                                </div>
-                            <?php endwhile; ?>
-                        </div>
-                    <?php else: ?>
-                        <div class="text-center text-muted py-3">
-                            <i class="fas fa-sms fa-2x mb-2"></i>
-                            <p>No SMS notifications sent.</p>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Action Buttons -->
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="action-buttons-card">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
-                    <div class="d-flex flex-wrap gap-2">
-                        <a href="<?= BASE_URL ?>/views/member_list.php" class="btn btn-secondary">
-                            <i class="fas fa-arrow-left mr-2"></i>Back to Members
-                        </a>
-                        <?php if (has_permission('edit_member')): ?>
-                            <a href="<?= BASE_URL ?>/views/admin_member_edit.php?id=<?= $member['id'] ?>" class="btn btn-primary">
-                                <i class="fas fa-edit mr-2"></i>Edit Member
-                            </a>
-                        <?php endif; ?>
-                        <?php if (has_permission('view_health_records')): ?>
-                            <button type="button" class="btn btn-info" id="viewHealthBtn">
-                                <i class="fas fa-heartbeat mr-2"></i>Health Records
-                            </button>
-                        <?php endif; ?>
-                    </div>
-                    <div class="member-stats">
-                        <div class="d-flex align-items-center gap-3">
-                            <div class="stat-item">
-                                <i class="fas fa-credit-card text-success mr-1"></i>
-                                <span class="stat-label">Total Payments:</span>
-                                <span class="stat-value total-payments" data-member-id="<?= $member['id'] ?>">GHS 0.00</span>
-                            </div>
-                            <div class="stat-item">
-                                <i class="fas fa-calendar-check text-info mr-1"></i>
-                                <span class="stat-label">Member Since:</span>
-                                <span class="stat-value"><?= date('M Y', strtotime($member['created_at'])) ?></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-</div>
-</div>
-
-<?php if ($has_spouse_reference): ?>
-<div class="modal fade" id="spousePhotoModal" tabindex="-1" role="dialog" aria-labelledby="spousePhotoModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="spousePhotoModalLabel">
-          <?= htmlspecialchars($spouse_display_name !== '' ? $spouse_display_name : 'Spouse') ?>
-          <?php if ($spouse_crn !== ''): ?>
-            <small class="text-muted">(<?= htmlspecialchars($spouse_crn) ?>)</small>
-          <?php endif; ?>
-        </h5>
-        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-          <span aria-hidden="true">&times;</span>
-        </button>
+<link rel="stylesheet" href="<?= $h(BASE_URL) ?>/assets/css/member-profile-workspace.css">
+<main class="container-fluid member-profile-workspace py-3" id="member-profile-overview">
+  <section class="profile-hero mb-4">
+    <div class="profile-identity">
+      <div class="profile-avatar-wrap">
+        <?php if ($memberPhotoUrl): ?><img src="<?= $h($memberPhotoUrl) ?>" alt="<?= $h($fullName) ?>" class="profile-avatar">
+        <?php else: ?><div class="profile-avatar profile-avatar-placeholder" aria-hidden="true"><i class="fas fa-user"></i></div><?php endif; ?>
+        <span class="profile-status-dot is-<?= $h($statusClass) ?>" title="<?= $h(ucfirst($status)) ?>"></span>
       </div>
-      <div class="modal-body text-center">
-        <img src="<?= htmlspecialchars($spouse_photo_url) ?>" alt="Spouse image" class="img-fluid rounded shadow-sm" style="max-height:70vh;object-fit:contain;">
+      <div class="profile-identity-copy">
+        <span class="profile-eyebrow">Membership record</span>
+        <h1><?= $h($fullName) ?></h1>
+        <div class="profile-identity-line">
+          <span><i class="fas fa-id-card"></i><?= $h($display($member['crn'] ?? null)) ?></span>
+          <span><i class="fas fa-church"></i><?= $h($display($member['church_name'] ?? null)) ?></span>
+          <span><i class="fas fa-users"></i><?= $h($display($member['class_name'] ?? null)) ?></span>
+        </div>
+        <div class="profile-badges">
+          <span class="profile-badge is-<?= $h($statusClass) ?>"><i class="fas fa-circle"></i><?= $h(ucfirst($status)) ?></span>
+          <span class="profile-badge is-membership"><i class="fas fa-certificate"></i><?= $h($membershipLabel) ?></span>
+          <?php if ((int) ($member['is_archived'] ?? 0) === 1): ?><span class="profile-badge is-danger"><i class="fas fa-archive"></i>Archived</span><?php endif; ?>
+        </div>
       </div>
     </div>
+    <div class="profile-hero-actions">
+      <a href="<?= $h(BASE_URL) ?>/views/member_list.php" class="btn btn-outline-light"><i class="fas fa-arrow-left mr-2"></i>Member directory</a>
+      <?php if ($canViewHealth): ?><button type="button" class="btn btn-outline-light" id="viewHealthBtn"><i class="fas fa-notes-medical mr-2"></i>Health records</button><?php endif; ?>
+      <?php if ($canViewStatement): ?><a href="<?= $h($statementUrl) ?>" class="btn btn-outline-light"><i class="fas fa-file-invoice-dollar mr-2"></i>Payment statement</a><?php endif; ?>
+      <?php if ($canEdit): ?><a href="<?= $h(BASE_URL) ?>/views/admin_member_edit.php?id=<?= $memberId ?>" class="btn btn-light"><i class="fas fa-edit mr-2"></i>Edit profile</a><?php endif; ?>
+    </div>
+  </section>
+
+  <section class="profile-metrics mb-4" aria-label="Member profile summary">
+    <div class="profile-metric"><span class="metric-icon is-green"><i class="fas fa-coins"></i></span><div><small>Total paid</small><strong>GH₵<?= number_format((float) $member['total_amount_paid'], 2) ?></strong><span><?= number_format((int) $member['total_payments']) ?> completed payment<?= (int) $member['total_payments'] === 1 ? '' : 's' ?></span></div></div>
+    <div class="profile-metric"><span class="metric-icon is-blue"><i class="fas fa-calendar-alt"></i></span><div><small>Member since</small><strong><?= $h($formatDate($member['created_at'] ?? null, 'M Y')) ?></strong><span>Record #<?= $memberId ?></span></div></div>
+    <div class="profile-metric"><span class="metric-icon is-purple"><i class="fas fa-birthday-cake"></i></span><div><small>Age</small><strong><?= $h($age) ?></strong><span>Born <?= $h($formatDate($member['dob'] ?? null)) ?></span></div></div>
+    <div class="profile-metric"><span class="metric-icon is-amber"><i class="fas fa-clipboard-check"></i></span><div class="metric-progress-copy"><small>Profile completeness</small><strong><?= $profileCompleteness ?>%</strong><div class="profile-progress"><span style="width:<?= $profileCompleteness ?>%"></span></div></div></div>
+  </section>
+
+  <nav class="profile-section-nav mb-4" aria-label="Member profile sections">
+    <a href="#member-profile-overview" class="active"><i class="fas fa-user-circle"></i>Overview</a>
+    <a href="#profile-personal"><i class="fas fa-address-card"></i>Personal</a>
+    <a href="#profile-contact"><i class="fas fa-phone-alt"></i>Contact</a>
+    <a href="#profile-faith"><i class="fas fa-cross"></i>Faith &amp; work</a>
+    <a href="#profile-emergency"><i class="fas fa-user-shield"></i>Emergency</a>
+    <a href="#profile-organizations"><i class="fas fa-sitemap"></i>Groups</a>
+    <a href="#profile-messages"><i class="fas fa-sms"></i>Messages</a>
+  </nav>
+
+  <div class="profile-layout">
+    <div class="profile-main-column">
+      <section class="profile-card" id="profile-personal">
+        <header><div><span>Identity</span><h2>Personal information</h2></div><i class="fas fa-address-card"></i></header>
+        <div class="profile-detail-grid">
+          <div class="profile-detail"><small>Gender</small><strong><?= $h($display($member['gender'] ?? null)) ?></strong></div>
+          <div class="profile-detail"><small>Date of birth</small><strong><?= $h($formatDate($member['dob'] ?? null)) ?></strong><span><?= $h($age) ?></span></div>
+          <div class="profile-detail"><small>Day born</small><strong><?= $h($display($member['day_born'] ?? null)) ?></strong></div>
+          <div class="profile-detail"><small>Place of birth</small><strong><?= $h($display($member['place_of_birth'] ?? null)) ?></strong></div>
+          <div class="profile-detail"><small>Marital status</small><strong><?= $h($display($member['marital_status'] ?? null)) ?></strong></div>
+          <div class="profile-detail"><small>Nature of marriage</small><strong><?= $h($display($member['marriage_type'] ?? null)) ?></strong></div>
+          <div class="profile-detail profile-detail-wide"><small>Spouse</small>
+            <?php if ($hasSpouse): ?><div class="spouse-summary">
+              <button type="button" class="spouse-photo-button" data-toggle="modal" data-target="#spousePhotoModal" aria-label="Open spouse photo"><span class="spouse-thumb"><?php if ($spousePhotoUrl): ?><img src="<?= $h($spousePhotoUrl) ?>" alt="<?= $h($spouseName ?: 'Spouse') ?>"><?php else: ?><i class="fas fa-user"></i><?php endif; ?></span></button>
+              <div><strong><?= $h($display($spouseName)) ?></strong><?php if ($spouseCrn !== ''): ?><span>CRN <?= $h($spouseCrn) ?></span><?php endif; ?><div class="spouse-links"><button type="button" data-toggle="modal" data-target="#spousePhotoModal">View photo</button><?php if ($spouseMemberId > 0): ?><a href="<?= $h(BASE_URL) ?>/views/member_view.php?id=<?= $spouseMemberId ?>">Open profile <i class="fas fa-arrow-right"></i></a><?php endif; ?></div></div>
+            </div><?php else: ?><strong>N/A</strong><?php endif; ?>
+          </div>
+        </div>
+      </section>
+
+      <section class="profile-card" id="profile-contact">
+        <header><div><span>Reachability</span><h2>Contact and residence</h2></div><i class="fas fa-map-marked-alt"></i></header>
+        <div class="profile-detail-grid">
+          <div class="profile-detail"><small>Mobile phone</small><strong><?php if (!empty($member['phone'])): ?><a href="tel:<?= $h($member['phone']) ?>"><?= $h($member['phone']) ?></a><?php else: ?>N/A<?php endif; ?></strong></div>
+          <div class="profile-detail"><small>Telephone</small><strong><?php if (!empty($member['telephone'])): ?><a href="tel:<?= $h($member['telephone']) ?>"><?= $h($member['telephone']) ?></a><?php else: ?>N/A<?php endif; ?></strong></div>
+          <div class="profile-detail"><small>Email address</small><strong><?php if (!empty($member['email'])): ?><a href="mailto:<?= $h($member['email']) ?>"><?= $h($member['email']) ?></a><?php else: ?>N/A<?php endif; ?></strong></div>
+          <div class="profile-detail"><small>GPS address</small><strong><?= $h($display($member['gps_address'] ?? null)) ?></strong></div>
+          <div class="profile-detail profile-detail-wide"><small>Residential address</small><strong><?= $h($display($member['address'] ?? null)) ?></strong></div>
+          <div class="profile-detail"><small>Home town</small><strong><?= $h($display($member['home_town'] ?? null)) ?></strong></div>
+          <div class="profile-detail"><small>Region</small><strong><?= $h($display($member['region'] ?? null)) ?></strong></div>
+        </div>
+      </section>
+
+      <section class="profile-card" id="profile-faith">
+        <header><div><span>Formation and livelihood</span><h2>Faith and professional profile</h2></div><i class="fas fa-cross"></i></header>
+        <div class="profile-detail-grid">
+          <div class="profile-detail"><small>Date of enrolment</small><strong><?= $h($formatDate($member['date_of_enrollment'] ?? null)) ?></strong></div>
+          <div class="profile-detail"><small>Membership status</small><strong><?= $h($membershipLabel) ?></strong></div>
+          <div class="profile-detail"><small>Baptized</small><strong><?= $h(ucfirst($display($member['baptized'] ?? 'No'))) ?></strong><span><?= $h($formatDate($member['date_of_baptism'] ?? null)) ?></span></div>
+          <div class="profile-detail"><small>Confirmed</small><strong><?= $h(ucfirst($display($member['confirmed'] ?? 'No'))) ?></strong><span><?= $h($formatDate($member['date_of_confirmation'] ?? null)) ?></span></div>
+          <div class="profile-detail"><small>Employment status</small><strong><?= $h($display($member['employment_status'] ?? null)) ?></strong></div>
+          <div class="profile-detail"><small>Profession</small><strong><?= $h($display($member['profession'] ?? null)) ?></strong></div>
+          <div class="profile-detail"><small>Occupation</small><strong><?= $h($display($member['occupation'] ?? null)) ?></strong></div>
+          <div class="profile-detail"><small>Employer</small><strong><?= $h($display($member['employer'] ?? null)) ?></strong></div>
+        </div>
+      </section>
+
+      <?php if ($hasTransferDetails): ?><section class="profile-card" id="profile-transfer">
+        <header><div><span>Membership movement</span><h2>Transfer-in details</h2></div><i class="fas fa-exchange-alt"></i></header>
+        <div class="profile-detail-grid">
+          <div class="profile-detail"><small>Transferred from another chapel</small><strong><?= (int) ($member['transfer_from_other_chapel'] ?? 0) === 1 ? 'Yes' : 'No' ?></strong></div>
+          <div class="profile-detail"><small>Removal note</small><strong><?= (int) ($member['removal_note_provided'] ?? 0) === 1 ? 'Provided' : 'Not provided' ?></strong></div>
+          <div class="profile-detail"><small>Diocese</small><strong><?= $h($display($member['transfer_diocese'] ?? null)) ?></strong></div>
+          <div class="profile-detail"><small>Circuit</small><strong><?= $h($display($member['transfer_circuit'] ?? null)) ?></strong></div>
+          <div class="profile-detail"><small>Society</small><strong><?= $h($display($member['transfer_society'] ?? null)) ?></strong></div>
+          <div class="profile-detail"><small>Superintendent</small><strong><?= $h($display($member['superintendent_name'] ?? null)) ?></strong></div>
+        </div>
+      </section><?php endif; ?>
+    </div>
+
+    <aside class="profile-side-column">
+      <section class="profile-card profile-placement-card">
+        <header><div><span>Church placement</span><h2>Membership context</h2></div><i class="fas fa-church"></i></header>
+        <div class="placement-list">
+          <div><span><i class="fas fa-church"></i>Church</span><strong><?= $h($display($member['church_name'] ?? null)) ?></strong></div>
+          <div><span><i class="fas fa-users"></i>Bible Class</span><strong><?= $h($display($member['class_name'] ?? null)) ?></strong></div>
+          <div><span><i class="fas fa-user-check"></i>Record status</span><strong><?= $h(ucfirst($status)) ?></strong></div>
+          <div><span><i class="fas fa-calendar-check"></i>Registered</span><strong><?= $h($formatDate($member['created_at'] ?? null)) ?></strong></div>
+        </div>
+        <div class="serving-role-block"><small>Roles of Serving</small><div class="profile-chip-list"><?php if ($servingRoles): ?><?php foreach ($servingRoles as $role): ?><span><?= $h($role['name']) ?></span><?php endforeach; ?><?php else: ?><em>No current role assigned</em><?php endif; ?></div></div>
+      </section>
+
+      <section class="profile-card" id="profile-emergency">
+        <header><div><span>Safety contacts</span><h2>Emergency contacts</h2></div><i class="fas fa-user-shield"></i></header>
+        <div class="contact-list">
+          <?php if ($contacts): ?><?php foreach ($contacts as $index => $contact): ?><article class="contact-card">
+            <span class="contact-number"><?= $index + 1 ?></span><div><strong><?= $h($display($contact['name'] ?? null)) ?></strong><small><?= $h($display($contact['relationship_name'] ?? null)) ?></small><a href="tel:<?= $h($contact['mobile'] ?? '') ?>"><i class="fas fa-phone-alt"></i><?= $h($display($contact['mobile'] ?? null)) ?></a><?php if (!empty($contact['linked_member_id'])): ?><a href="<?= $h(BASE_URL) ?>/views/member_view.php?id=<?= (int) $contact['linked_member_id'] ?>"><i class="fas fa-external-link-alt"></i>View linked member<?php if (!empty($contact['linked_member_crn'])): ?> (<?= $h($contact['linked_member_crn']) ?>)<?php endif; ?></a><?php endif; ?></div>
+          </article><?php endforeach; ?><?php else: ?><div class="profile-empty"><i class="fas fa-user-slash"></i><strong>No emergency contacts</strong><span>Add contacts through Edit profile.</span></div><?php endif; ?>
+        </div>
+      </section>
+
+      <section class="profile-card" id="profile-organizations">
+        <header><div><span>Participation</span><h2>Organizations</h2></div><i class="fas fa-sitemap"></i></header>
+        <div class="organization-list"><?php if ($organizations): ?><?php foreach ($organizations as $organization): ?><span><i class="fas fa-users"></i><?= $h($organization['name']) ?></span><?php endforeach; ?><?php else: ?><div class="profile-empty"><i class="fas fa-users-slash"></i><strong>No organizations assigned</strong></div><?php endif; ?></div>
+      </section>
+
+      <section class="profile-card" id="profile-messages">
+        <header><div><span>Communication trail</span><h2>Recent SMS</h2></div><i class="fas fa-sms"></i></header>
+        <div class="message-timeline">
+          <?php if ($smsLogs): ?><?php foreach ($smsLogs as $sms):
+            $smsStatus = strtolower((string) ($sms['status'] ?? ''));
+            $smsState = str_contains($smsStatus, 'fail') ? 'danger' : ((str_contains($smsStatus, 'sent') || str_contains($smsStatus, 'success')) ? 'success' : 'muted');
+          ?><article><span class="message-dot is-<?= $smsState ?>"></span><div><div class="message-meta"><strong><?= $h(ucwords(str_replace('_', ' ', (string) ($sms['type'] ?? 'Message')))) ?></strong><time><?= $h($formatDate($sms['sent_at'] ?? null, 'M j, Y H:i')) ?></time></div><p><?= $h(mb_strimwidth((string) ($sms['message'] ?? ''), 0, 145, '…')) ?></p><span class="message-status is-<?= $smsState ?>"><?= $h($display($sms['status'] ?? null)) ?></span></div></article><?php endforeach; ?>
+          <?php else: ?><div class="profile-empty"><i class="fas fa-comment-slash"></i><strong>No SMS history</strong></div><?php endif; ?>
+        </div>
+      </section>
+    </aside>
   </div>
-</div>
-<?php endif; ?>
+</main>
 
-<!-- Health Records Modal -->
-<div class="modal fade" id="healthModal" tabindex="-1" role="dialog" aria-labelledby="healthModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg" role="document">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="healthModalLabel">Health Records</h5>
-        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-          <span aria-hidden="true">&times;</span>
-        </button>
-      </div>
-      <div class="modal-body" id="healthRecordsBody">
-        <div class="text-center py-4"><i class="fas fa-spinner fa-spin fa-2x"></i> Loading...</div>
-      </div>
-    </div>
-  </div>
-</div>
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
-<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
 <script>
-// Define BASE_URL for JavaScript
-const BASE_URL = '<?= BASE_URL ?>';
-
-// Fetch total payments
-$(function() {
-  var span = $('.total-payments');
-  var memberId = span.data('member-id');
-  $.get(BASE_URL + '/ajax_get_total_payments.php', {member_id: memberId}, function(res) {
-    if (res && typeof res.total !== 'undefined') {
-      span.text('GHS ' + parseFloat(res.total).toLocaleString(undefined, {minimumFractionDigits: 2}));
-    }
-  }, 'json').fail(function() {
-    span.text('GHS 0.00');
-  });
-});
-
-// Health Records modal (robust binding)
-$(document).on('click', '#viewHealthBtn', function() {
-  var memberId = $('.total-payments').data('member-id');
-  $('#healthRecordsBody').html('<div class="text-center py-4"><i class="fas fa-spinner fa-spin fa-2x"></i> Loading...</div>');
+window.memberProfileConfig = {
+  memberId: <?= $memberId ?>,
+  healthUrl: <?= json_encode(BASE_URL . '/views/ajax_get_health_records.php') ?>
+};
+$(document).on('click', '#viewHealthBtn', function () {
+  var config = window.memberProfileConfig;
+  $('#healthRecordsBody').html('<div class="profile-modal-loading"><span class="spinner-border text-primary" role="status"></span><strong>Loading health records…</strong></div>');
   $('#healthModal').modal('show');
-  $.get(BASE_URL + '/ajax_get_health_records.php', {member_id: memberId}, function(html) {
-    $('#healthRecordsBody').html(html);
-    if ($('#healthRecordsTable').length) {
-      $('#healthRecordsTable').DataTable({
-        responsive: true,
-        pageLength: 10,
-        order: [[0, 'desc']]
-      });
+  $.getJSON(config.healthUrl, {member_id: config.memberId}).done(function (response) {
+    if (!response || response.success !== true) {
+      var responseMessage = (response && response.error) || 'Please try again.';
+      $('#healthRecordsBody').html('<div class="profile-empty py-5"><i class="fas fa-exclamation-triangle"></i><strong>Health records could not be loaded</strong><span>' + $('<div>').text(responseMessage).html() + '</span></div>');
+      return;
     }
-  }).fail(function() {
-    $('#healthRecordsBody').html('<div class="text-center text-muted py-4"><i class="fas fa-exclamation-triangle fa-2x mb-2"></i><p>Failed to load health records.</p></div>');
+    var $content = $('<div>').html(response.data || '');
+    $content.find('table').each(function () {
+      if (!$(this).parent().hasClass('table-responsive')) $(this).wrap('<div class="table-responsive"></div>');
+    });
+    $('#healthRecordsBody').empty().append($content.contents());
+  }).fail(function (xhr) {
+    var message = xhr.responseJSON && xhr.responseJSON.error ? xhr.responseJSON.error : 'Please try again.';
+    $('#healthRecordsBody').html('<div class="profile-empty py-5"><i class="fas fa-exclamation-triangle"></i><strong>Health records could not be loaded</strong><span>' + $('<div>').text(message).html() + '</span></div>');
   });
-});
-</script>
-<script>
-$(document).ready(function() {
-    var span = $('.total-payments');
-    var memberId = span.data('member-id');
-    $.get('ajax_get_total_payments.php', {member_id: memberId}, function(res) {
-        if (res && typeof res.total !== 'undefined') {
-            var total = parseFloat(res.total);
-            span.text('GHS ' + total.toLocaleString(undefined, {minimumFractionDigits: 2}));
-            if (total > 0) {
-                span.removeClass('badge-secondary').addClass('badge-success');
-            } else {
-                span.removeClass('badge-success').addClass('badge-secondary');
-            }
-        }
-    }, 'json');
 });
 </script>
 <?php
 $page_content = ob_get_clean();
-include '../includes/layout.php';
+
+ob_start();
+if ($hasSpouse): ?>
+<div class="modal fade" id="spousePhotoModal" tabindex="-1" role="dialog" aria-labelledby="spousePhotoModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg" role="document"><div class="modal-content profile-modal"><div class="modal-header"><div><span class="profile-modal-eyebrow">Spouse record</span><h5 class="modal-title" id="spousePhotoModalLabel"><?= $h($display($spouseName)) ?></h5><?php if ($spouseCrn !== ''): ?><small>CRN <?= $h($spouseCrn) ?></small><?php endif; ?></div><button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button></div><div class="modal-body text-center"><?php if ($spousePhotoUrl): ?><img src="<?= $h($spousePhotoUrl) ?>" alt="<?= $h($spouseName ?: 'Spouse') ?>" class="profile-modal-photo"><?php else: ?><div class="profile-empty py-5"><i class="fas fa-user"></i><strong>No spouse photo available</strong></div><?php endif; ?></div><?php if ($spouseMemberId > 0): ?><div class="modal-footer"><a class="btn btn-primary" href="<?= $h(BASE_URL) ?>/views/member_view.php?id=<?= $spouseMemberId ?>">Open member profile</a></div><?php endif; ?></div></div>
+</div>
+<?php endif; ?>
+<?php if ($canViewHealth): ?>
+<div class="modal fade" id="healthModal" tabindex="-1" role="dialog" aria-labelledby="healthModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document"><div class="modal-content profile-modal"><div class="modal-header"><div><span class="profile-modal-eyebrow">Clinical history</span><h5 class="modal-title" id="healthModalLabel"><?= $h($fullName) ?> &mdash; Health Records</h5><small>Read-only member health history</small></div><button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button></div><div class="modal-body" id="healthRecordsBody"><div class="profile-modal-loading"><span class="spinner-border text-primary" role="status"></span><strong>Loading health records…</strong></div></div></div></div>
+</div>
+<?php endif;
+$modal_html = ob_get_clean();
+include __DIR__ . '/../includes/layout.php';
 ?>

@@ -631,19 +631,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $member && $member_id > 0) {
                 throw new Exception($conn->error ?: 'Failed to clear existing emergency contacts.');
             }
             if (!empty($valid_contacts)) {
-                $ec_stmt = $conn->prepare("INSERT INTO member_emergency_contacts (member_id, name, mobile, relationship) VALUES (?, ?, ?, ?)");
-                if (!$ec_stmt) {
+                $ec_stmt = $conn->prepare("INSERT INTO member_emergency_contacts
+                    (member_id, name, mobile, relationship, contact_crn, contact_member_id)
+                    VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, 0))");
+                $ec_member_stmt = $conn->prepare("SELECT id, crn FROM members
+                    WHERE crn = ? AND church_id = ? AND id <> ? LIMIT 1");
+                if (!$ec_stmt || !$ec_member_stmt) {
                     throw new Exception($conn->error ?: 'Failed to prepare emergency contact insert.');
                 }
+                $contact_church_id = (int) ($member['church_id'] ?? 0);
                 foreach ($valid_contacts as $c) {
                     $contact_name = $c['name'];
                     $contact_mobile = $c['mobile'];
                     $contact_relationship = $c['relationship'];
-                    $ec_stmt->bind_param('isss', $member_id, $contact_name, $contact_mobile, $contact_relationship);
+                    $contact_crn = '';
+                    $contact_member_id = 0;
+                    $submitted_contact_reference = trim((string) ($c['crn'] ?? ''));
+                    if ($submitted_contact_reference !== '' && $contact_church_id > 0) {
+                        $ec_member_stmt->bind_param('sii', $submitted_contact_reference, $contact_church_id, $member_id);
+                        $ec_member_stmt->execute();
+                        $linked_contact = $ec_member_stmt->get_result()->fetch_assoc();
+                        if ($linked_contact) {
+                            $contact_member_id = (int) $linked_contact['id'];
+                            $contact_crn = (string) $linked_contact['crn'];
+                        }
+                    }
+                    $ec_stmt->bind_param(
+                        'issssi',
+                        $member_id,
+                        $contact_name,
+                        $contact_mobile,
+                        $contact_relationship,
+                        $contact_crn,
+                        $contact_member_id
+                    );
                     if (!$ec_stmt->execute()) {
                         throw new Exception($ec_stmt->error ?: 'Failed to save an emergency contact.');
                     }
                 }
+                $ec_member_stmt->close();
                 $ec_stmt->close();
             }
 
