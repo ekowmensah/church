@@ -19,6 +19,7 @@ if (!has_permission('view_sundayschool_list')) {
 
 // Get filter parameters
 $church_id = isset($_GET['church_id']) ? intval($_GET['church_id']) : 0;
+$organization_id = max(0, (int) ($_GET['organization_id'] ?? 0));
 $gender = isset($_GET['gender']) ? $_GET['gender'] : '';
 $age_from = isset($_GET['age_from']) ? intval($_GET['age_from']) : 0;
 $age_to = isset($_GET['age_to']) ? intval($_GET['age_to']) : 0;
@@ -26,6 +27,16 @@ $baptized = isset($_GET['baptized']) ? $_GET['baptized'] : '';
 $education_level = isset($_GET['education_level']) ? $_GET['education_level'] : '';
 $report_type = isset($_GET['report_type']) ? $_GET['report_type'] : 'summary';
 $parent_member = isset($_GET['parent_member']) ? $_GET['parent_member'] : '';
+
+$organization_options = [];
+$organization_names = [];
+$organization_result = $conn->query('SELECT id, name FROM organizations ORDER BY name');
+if ($organization_result) {
+    while ($organization = $organization_result->fetch_assoc()) {
+        $organization_options[] = $organization;
+        $organization_names[(int) $organization['id']] = (string) $organization['name'];
+    }
+}
 
 // Build WHERE clause
 $where_conditions = ['ss.is_duplicate_archived = 0'];
@@ -35,6 +46,12 @@ $types = '';
 if ($church_id > 0) {
     $where_conditions[] = "ss.church_id = ?";
     $params[] = $church_id;
+    $types .= 'i';
+}
+
+if ($organization_id > 0) {
+    $where_conditions[] = 'FIND_IN_SET(?, ss.organization) > 0';
+    $params[] = $organization_id;
     $types .= 'i';
 }
 
@@ -439,7 +456,7 @@ ob_start();
             </div>
         </div>
         <div class="row mt-3">
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label"><i class="fas fa-graduation-cap"></i> Education Level</label>
                 <select id="mainEducationFilter" class="form-control">
                     <option value="">All Levels</option>
@@ -448,11 +465,20 @@ ob_start();
                     <option value="Tertiary">Tertiary</option>
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label"><i class="fas fa-school"></i> School Location</label>
                 <input type="text" id="mainSchoolLocation" class="form-control" placeholder="Search school location...">
             </div>
             <div class="col-md-3">
+                <label class="form-label"><i class="fas fa-users"></i> Organization</label>
+                <select id="mainOrganizationFilter" class="form-control">
+                    <option value="">All Organizations</option>
+                    <?php foreach ($organization_options as $organization): ?>
+                    <option value="<?= (int) $organization['id'] ?>" <?= $organization_id === (int) $organization['id'] ? 'selected' : '' ?>><?= htmlspecialchars($organization['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-2">
                 <label class="form-label"><i class="fas fa-users"></i> Parent Membership</label>
                 <select id="mainParentMemberFilter" class="form-control">
                     <option value="">All Children</option>
@@ -537,6 +563,7 @@ ob_start();
                                 <th>Father Contact</th>
                                 <th>Mother</th>
                                 <th>Mother Contact</th>
+                                <th>Organization</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -545,6 +572,10 @@ ob_start();
                                     ? $student['father_member_name'] : $student['father_name'];
                                 $mother_name = $student['mother_is_member'] === 'yes' && $student['mother_member_name'] 
                                     ? $student['mother_member_name'] : $student['mother_name'];
+                                $studentOrganizationIds = array_values(array_filter(array_map('intval', explode(',', (string) ($student['organization'] ?? '')))));
+                                $studentOrganizations = array_values(array_filter(array_map(static function ($id) use ($organization_names) {
+                                    return $organization_names[$id] ?? null;
+                                }, $studentOrganizationIds)));
                             ?>
                             <tr>
                                 <td><?=htmlspecialchars($student['srn'])?></td>
@@ -604,6 +635,7 @@ ob_start();
                                     <?php endif; ?>
                                 </td>
                                 <td><?=htmlspecialchars($student['mother_contact'])?></td>
+                                <td data-organization-ids="<?=htmlspecialchars(implode(',', $studentOrganizationIds), ENT_QUOTES, 'UTF-8')?>"><?=htmlspecialchars(implode(', ', $studentOrganizations) ?: 'Not assigned')?></td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -753,6 +785,7 @@ $(document).ready(function() {
     $('#resetMainFilters').on('click', function() {
         // Clear all main filter inputs
         $('#mainChurchFilter').val('');
+        $('#mainOrganizationFilter').val('');
         $('#mainGenderFilter').val('');
         $('#mainAgeFrom').val('');
         $('#mainAgeTo').val('');
@@ -774,6 +807,7 @@ $(document).ready(function() {
     $('#showAllStudents').on('click', function() {
         // Clear all main filter inputs
         $('#mainChurchFilter').val('');
+        $('#mainOrganizationFilter').val('');
         $('#mainGenderFilter').val('');
         $('#mainAgeFrom').val('');
         $('#mainAgeTo').val('');
@@ -810,6 +844,9 @@ $(document).ready(function() {
         var churchVal = $('#mainChurchFilter').val();
         table.column(4).search(churchVal ? '^' + churchVal + '$' : '', true, false);
 
+        // Organization filter uses the stored organization IDs on each row.
+        var organizationVal = $('#mainOrganizationFilter').val();
+
         // Gender filter (column 3)
         var genderVal = $('#mainGenderFilter').val();
         table.column(3).search(genderVal ? '^' + genderVal + '$' : '', true, false);
@@ -833,13 +870,21 @@ $(document).ready(function() {
         // Parent Membership filter (columns 11 and 13 - Father and Mother) - Custom filter
         var parentMemberVal = $('#mainParentMemberFilter').val();
         
-        // Add combined custom filter for age and parent membership
+        // Add a combined custom filter for age, parent membership, and organization.
         $.fn.dataTable.ext.search.push(
             function(settings, data, dataIndex) {
                 // Age filter check
                 var ageText = data[2] || '0'; // Age is in column 2
                 var age = parseInt(ageText.toString().replace(/[^\d]/g, '')) || 0;
                 var agePass = (age >= ageFrom && age <= ageTo);
+
+                var organizationPass = true;
+                if (organizationVal) {
+                    var row = table.row(dataIndex).node();
+                    var organizationIds = ($(row).find('td').eq(15).attr('data-organization-ids') || '')
+                        .split(',');
+                    organizationPass = organizationIds.indexOf(String(organizationVal)) !== -1;
+                }
                 
                 // Parent membership filter check
                 var parentPass = true;
@@ -867,7 +912,7 @@ $(document).ready(function() {
                 }
                 
                 // Both conditions must pass
-                return agePass && parentPass;
+                return agePass && parentPass && organizationPass;
             }
         );
 
@@ -877,6 +922,7 @@ $(document).ready(function() {
         // Log filter status
         console.log('Filters applied:', {
             church: churchVal,
+            organization: organizationVal,
             gender: genderVal,
             ageFrom: ageFrom,
             ageTo: ageTo,

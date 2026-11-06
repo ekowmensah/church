@@ -252,3 +252,4 @@ tests/legacy_asset_code_regeneration_smoke.php
 tests/single_asset_register_semantics_smoke.php
 tests/bible_class_attendance_schedule_smoke.php
 tests/organization_attendance_page_smoke.php
+tests/bibleclass_bulk_payment_workflow_smoke.php
