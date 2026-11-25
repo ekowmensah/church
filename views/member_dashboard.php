@@ -30,6 +30,7 @@ $member_name = isset($_SESSION['member_name']) ? $_SESSION['member_name'] : 'Mem
 $profile_img = BASE_URL . '/assets/img/undraw_profile.svg';
 $member_id = isset($_SESSION['member_id']) ? intval($_SESSION['member_id']) : 0;
 $member_church_id = 0;
+$member_full_name = '';
 $first_name = $middle_name = $last_name = $crn = $email = $phone = '';
 
 if ($member_id) {
@@ -53,6 +54,11 @@ if ($member_id) {
     $first_name = $m['first_name'] ?? '';
     $middle_name = $m['middle_name'] ?? '';
     $last_name = $m['last_name'] ?? '';
+    $member_full_name = trim(implode(' ', array_filter([
+        $first_name,
+        $middle_name,
+        $last_name,
+    ], static fn($part) => trim((string) $part) !== '')));
     $crn = $m['crn'] ?? '';
     $email = $m['email'] ?? '';
     $phone = $m['phone'] ?? '';
@@ -191,13 +197,15 @@ if ($member_id) {
         <div class="row">
             <?php foreach ($today_birthday_members as $birthday_member): ?>
                 <?php
+                $birthday_first_name = trim((string) ($birthday_member['first_name'] ?? ''));
                 $birthday_name = trim(implode(' ', array_filter([
                         $birthday_member['first_name'] ?? '',
                         $birthday_member['middle_name'] ?? '',
                         $birthday_member['last_name'] ?? '',
                 ], static fn($part) => trim((string) $part) !== '')));
-                $birthday_whatsapp_message = 'Happy Birthday, ' . ($birthday_name !== '' ? $birthday_name : 'dear friend')
-                    . '! May God bless you with joy, good health, and a wonderful year ahead. Have a beautiful day!';
+                $birthday_whatsapp_message = 'Happy Birthday, ' . ($birthday_first_name !== '' ? $birthday_first_name : 'dear friend')
+                    . '! May God bless you with joy, good health, and a wonderful year ahead. Have a beautiful day.'
+                    . "\n\nFrom: " . ($member_full_name !== '' ? $member_full_name : 'Member');
                 $birthday_photo = trim((string) ($birthday_member['photo'] ?? ''));
                 $birthday_photo_path = __DIR__ . '/../uploads/members/' . basename($birthday_photo);
                 $birthday_phone = trim((string) ($birthday_member['phone'] ?? ''));
