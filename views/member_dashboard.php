@@ -29,10 +29,11 @@ document.getElementById('loginSuccessOk').onclick = function() {
 $member_name = isset($_SESSION['member_name']) ? $_SESSION['member_name'] : 'Member';
 $profile_img = BASE_URL . '/assets/img/undraw_profile.svg';
 $member_id = isset($_SESSION['member_id']) ? intval($_SESSION['member_id']) : 0;
+$member_church_id = 0;
 $first_name = $middle_name = $last_name = $crn = $email = $phone = '';
 
 if ($member_id) {
-    $stmt = $conn->prepare('SELECT photo, first_name, middle_name, last_name, crn, status, dob, email, phone FROM members WHERE id = ?');
+    $stmt = $conn->prepare('SELECT photo, first_name, middle_name, last_name, crn, status, dob, email, phone, church_id FROM members WHERE id = ?');
     $stmt->bind_param('i', $member_id);
     $stmt->execute();
     $m = $stmt->get_result()->fetch_assoc();
@@ -56,6 +57,7 @@ if ($member_id) {
     $email = $m['email'] ?? '';
     $phone = $m['phone'] ?? '';
     $dob_val = $m['dob'] ?? '';
+    $member_church_id = (int) ($m['church_id'] ?? 0);
 }
 
 $due_bible_class_attendance = [];
@@ -80,6 +82,32 @@ if (!empty($dob_val)) {
         $show_birthday_toast = true;
         $birthday_str = $dob->format('F j');
     }
+}
+
+$today_birthday_members = [];
+if (!empty($member_church_id)) {
+        $birthday_stmt = $conn->prepare(
+                "SELECT member.id, member.first_name, member.middle_name, member.last_name,
+                            member.photo, member.phone, member.email, bible_class.name AS class_name,
+                            GROUP_CONCAT(DISTINCT organization.name ORDER BY organization.name SEPARATOR ', ') AS organizations
+                     FROM members member
+                     LEFT JOIN bible_classes bible_class ON bible_class.id = member.class_id
+                     LEFT JOIN member_organizations membership ON membership.member_id = member.id
+                     LEFT JOIN organizations organization ON organization.id = membership.organization_id
+                    WHERE member.church_id = ?
+                        AND member.status = 'active'
+                        AND member.is_archived = 0
+                        AND member.dob IS NOT NULL
+                        AND member.dob >= '1900-01-01'
+                        AND DATE_FORMAT(member.dob, '%m-%d') = DATE_FORMAT(CURDATE(), '%m-%d')
+                    GROUP BY member.id, member.first_name, member.middle_name, member.last_name,
+                             member.photo, member.phone, member.email, bible_class.name
+                    ORDER BY member.first_name, member.last_name, member.middle_name"
+        );
+        $birthday_stmt->bind_param('i', $member_church_id);
+        $birthday_stmt->execute();
+        $today_birthday_members = $birthday_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $birthday_stmt->close();
 }
 
 
@@ -151,6 +179,60 @@ if ($member_id) {
     <span class="ml-2">Wishing you a wonderful year ahead. Enjoy your special day!</span>
   </div>
 </div>
+<?php endif; ?>
+
+<?php if (!empty($today_birthday_members)): ?>
+<section class="card border-0 shadow-sm mb-3" aria-labelledby="todayBirthdaysHeading">
+    <div class="card-header bg-white d-flex align-items-center justify-content-between">
+        <h5 class="mb-0" id="todayBirthdaysHeading"><i class="fas fa-birthday-cake text-warning mr-2"></i>Birthdays today</h5>
+        <span class="badge badge-warning"><?= number_format(count($today_birthday_members)) ?></span>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <?php foreach ($today_birthday_members as $birthday_member): ?>
+                <?php
+                $birthday_name = trim(implode(' ', array_filter([
+                        $birthday_member['first_name'] ?? '',
+                        $birthday_member['middle_name'] ?? '',
+                        $birthday_member['last_name'] ?? '',
+                ], static fn($part) => trim((string) $part) !== '')));
+                $birthday_whatsapp_message = 'Happy Birthday, ' . ($birthday_name !== '' ? $birthday_name : 'dear friend')
+                    . '! May God bless you with joy, good health, and a wonderful year ahead. Have a beautiful day!';
+                $birthday_photo = trim((string) ($birthday_member['photo'] ?? ''));
+                $birthday_photo_path = __DIR__ . '/../uploads/members/' . basename($birthday_photo);
+                $birthday_phone = trim((string) ($birthday_member['phone'] ?? ''));
+                $birthday_whatsapp_number = preg_replace('/\D+/', '', $birthday_phone);
+                if (preg_match('/^0\d{9}$/', $birthday_whatsapp_number)) {
+                    $birthday_whatsapp_number = '233' . substr($birthday_whatsapp_number, 1);
+                } elseif (preg_match('/^\d{9}$/', $birthday_whatsapp_number)) {
+                    $birthday_whatsapp_number = '233' . $birthday_whatsapp_number;
+                } elseif (strlen($birthday_whatsapp_number) < 10 || strlen($birthday_whatsapp_number) > 15) {
+                    $birthday_whatsapp_number = '';
+                }
+                $birthday_email = trim((string) ($birthday_member['email'] ?? ''));
+                $birthday_class = trim((string) ($birthday_member['class_name'] ?? ''));
+                $birthday_organizations = trim((string) ($birthday_member['organizations'] ?? ''));
+                ?>
+                <div class="col-12 col-sm-6 col-lg-4 mb-2">
+                    <div class="d-flex align-items-start h-100 p-2 border rounded">
+                        <?php if ($birthday_photo !== '' && is_file($birthday_photo_path)): ?>
+                            <img src="<?= htmlspecialchars(BASE_URL . '/uploads/members/' . rawurlencode(basename($birthday_photo))) ?>" alt="" class="rounded-circle mr-3" style="width:44px;height:44px;object-fit:cover">
+                        <?php else: ?>
+                            <span class="rounded-circle bg-light text-warning d-flex align-items-center justify-content-center mr-3" aria-hidden="true" style="width:44px;height:44px;flex:0 0 44px"><i class="fas fa-user"></i></span>
+                        <?php endif; ?>
+                        <div class="min-width-0">
+                            <strong><?= htmlspecialchars($birthday_name !== '' ? $birthday_name : 'Church member') ?></strong>
+                            <div class="small text-muted mt-1"><i class="fas fa-phone mr-1"></i><?= $birthday_phone !== '' ? '<a href="tel:' . htmlspecialchars($birthday_phone, ENT_QUOTES) . '">' . htmlspecialchars($birthday_phone) . '</a>' : 'Phone not listed' ?><?php if ($birthday_whatsapp_number !== ''): ?><span class="mx-1">&middot;</span><a href="https://wa.me/<?= htmlspecialchars($birthday_whatsapp_number, ENT_QUOTES) ?>?text=<?= rawurlencode($birthday_whatsapp_message) ?>" target="_blank" rel="noopener noreferrer" aria-label="Message <?= htmlspecialchars($birthday_name, ENT_QUOTES) ?> on WhatsApp"><i class="fab fa-whatsapp mr-1" aria-hidden="true"></i>WhatsApp</a><?php endif; ?></div>
+                            <div class="small text-muted"><i class="fas fa-envelope mr-1"></i><?= $birthday_email !== '' ? '<a href="mailto:' . htmlspecialchars($birthday_email, ENT_QUOTES) . '">' . htmlspecialchars($birthday_email) . '</a>' : 'Email not listed' ?></div>
+                            <div class="small text-muted"><i class="fas fa-chalkboard-teacher mr-1"></i><?= htmlspecialchars($birthday_class !== '' ? $birthday_class : 'No Bible class listed') ?></div>
+                            <div class="small text-muted"><i class="fas fa-users mr-1"></i><?= htmlspecialchars($birthday_organizations !== '' ? $birthday_organizations : 'No organization listed') ?></div>
+                        </div>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+</section>
 <?php endif; ?>
 
 <!-- Enhanced Welcome Header -->
