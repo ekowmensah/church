@@ -953,6 +953,38 @@ ob_start();
     color: var(--dashboard-muted);
 }
 
+.dashboard-birthday-details {
+    min-width: 0;
+}
+
+.dashboard-birthday-details small {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+.dashboard-birthday-contact {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    margin-top: 4px;
+    color: #166534;
+    font-size: 0.88rem;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.dashboard-birthday-contact:hover {
+    color: #14532d;
+    text-decoration: underline;
+}
+
+.dashboard-birthday-contact-empty {
+    display: block;
+    margin-top: 4px;
+    color: #94a3b8;
+    font-size: 0.88rem;
+}
+
 .dashboard-pill {
     display: inline-flex;
     align-items: center;
@@ -1336,11 +1368,19 @@ ob_start();
                     <div class="col-xl-7">
                         <?php if ($today_birthdays): ?>
                             <div class="dashboard-list">
-                                <?php foreach ($today_birthdays as $birthday_member): ?>
+                                <?php foreach ($today_birthdays as $birthday_member):
+                                    $birthdayPhone = trim((string) ($birthday_member['phone'] ?? ''));
+                                    $birthdayPhoneHref = preg_replace('/[^0-9+]/', '', $birthdayPhone);
+                                ?>
                                     <div class="dashboard-list-item">
-                                        <div>
+                                        <div class="dashboard-birthday-details">
                                             <strong><?= htmlspecialchars($birthday_member['full_name']) ?></strong>
                                             <small><?= htmlspecialchars((string) ($birthday_member['class_name'] ?: 'No Bible Class')) ?> &middot; <?= htmlspecialchars((string) ($birthday_member['organizations'] ?: 'No organization')) ?></small>
+                                            <?php if ($birthdayPhone !== '' && $birthdayPhoneHref !== ''): ?>
+                                                <a class="dashboard-birthday-contact" href="tel:<?= htmlspecialchars($birthdayPhoneHref) ?>" aria-label="Call <?= htmlspecialchars($birthday_member['full_name']) ?> on <?= htmlspecialchars($birthdayPhone) ?>"><i class="fas fa-phone-alt mr-1" aria-hidden="true"></i><?= htmlspecialchars($birthdayPhone) ?></a>
+                                            <?php else: ?>
+                                                <span class="dashboard-birthday-contact-empty"><i class="fas fa-phone-slash mr-1" aria-hidden="true"></i>No contact recorded</span>
+                                            <?php endif; ?>
                                         </div>
                                         <span class="dashboard-pill warning"><?= (int) $birthday_member['current_age'] ?> years</span>
                                     </div>

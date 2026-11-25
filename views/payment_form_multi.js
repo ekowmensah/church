@@ -36,35 +36,61 @@
         $('#bulk_payment_type_id').val('');
         $('#bulk_amount').val('');
         $('#bulk_description').val('');
+    }
+
+    function resetBatchForm() {
+        payments = [];
         $('#bulk_bank_name, #bulk_cheque_number').val('');
         $('input[name="payment_method"][value="Cash"]').prop('checked', true).trigger('change');
         $('#payment-method-options label').removeClass('active');
         $('input[name="payment_method"][value="Cash"]').closest('label').addClass('active');
+        resetLineForm();
+        renderPayments();
+    }
+
+    function syncSharedChequeEvidence() {
+        var bank = $.trim($('#bulk_bank_name').val());
+        var cheque = $.trim($('#bulk_cheque_number').val());
+        var changed = false;
+        payments.forEach(function (payment) {
+            if (payment.mode !== 'Cheque') return;
+            payment.bank_name = bank;
+            payment.cheque_number = cheque;
+            changed = true;
+        });
+        if (changed) renderPayments();
     }
 
     function renderPayments() {
-        var body = $('#bulkPaymentsTable tbody').empty();
+        var body = $('#bulkPaymentsTable').empty();
         var total = 0;
         payments.forEach(function (payment, index) {
             total += payment.amount;
             var details = payment.mode === 'Cheque'
-                ? escapeHtml(payment.bank_name) + '<br><small class="text-muted">No. ' + escapeHtml(payment.cheque_number) + '</small>'
-                : '<span class="text-muted">&mdash;</span>';
+                ? '<span><i class="fas fa-university mr-1" aria-hidden="true"></i>' + escapeHtml(payment.bank_name) + '</span>' +
+                  '<span><i class="fas fa-hashtag mr-1" aria-hidden="true"></i>' + escapeHtml(payment.cheque_number) + '</span>'
+                : '<span><i class="fas fa-money-bill-wave mr-1" aria-hidden="true"></i>Cash payment</span>';
             body.append(
-                '<tr>' +
-                    '<td>' + (index + 1) + '</td>' +
-                    '<td>' + escapeHtml(payment.type_text) + '</td>' +
-                    '<td class="text-right">' + money(payment.amount) + '</td>' +
-                    '<td><span class="badge badge-' + (payment.mode === 'Cheque' ? 'primary' : 'success') + '">' + payment.mode + '</span></td>' +
-                    '<td>' + details + '</td>' +
-                    '<td>' + escapeHtml(payment.period_text) + '</td>' +
-                    '<td>' + escapeHtml(payment.desc || '') + '</td>' +
-                    '<td><button type="button" class="btn btn-sm btn-outline-danger remove-payment" data-index="' + index + '" aria-label="Remove payment"><i class="fas fa-times"></i></button></td>' +
-                '</tr>'
+                '<article class="payment-line-card">' +
+                    '<div class="payment-line-card-head">' +
+                        '<span class="payment-line-index">' + (index + 1) + '</span>' +
+                        '<div class="payment-line-title">' +
+                            '<strong>' + escapeHtml(payment.type_text) + '</strong>' +
+                            '<span class="badge badge-' + (payment.mode === 'Cheque' ? 'primary' : 'success') + '">' + escapeHtml(payment.mode) + '</span>' +
+                        '</div>' +
+                        '<div class="payment-line-amount">' + money(payment.amount) + '</div>' +
+                        '<button type="button" class="btn btn-sm btn-outline-danger remove-payment" data-index="' + index + '" aria-label="Remove payment line ' + (index + 1) + '"><i class="fas fa-times" aria-hidden="true"></i></button>' +
+                    '</div>' +
+                    '<div class="payment-line-card-body">' +
+                        '<div class="payment-line-meta">' + details + '</div>' +
+                        '<div class="payment-line-meta"><span><i class="far fa-calendar-alt mr-1" aria-hidden="true"></i>' + escapeHtml(payment.period_text) + '</span></div>' +
+                        '<div class="payment-line-description">' + escapeHtml(payment.desc || '') + '</div>' +
+                    '</div>' +
+                '</article>'
             );
         });
         if (payments.length === 0) {
-            body.append('<tr class="payment-lines-empty"><td colspan="8"><i class="fas fa-receipt mr-1"></i>No payment lines added yet.</td></tr>');
+            body.append('<div class="payment-lines-empty"><i class="fas fa-receipt mr-1" aria-hidden="true"></i>No payment lines added yet.</div>');
         }
         $('#bulkPaymentsCount').text(payments.length + (payments.length === 1 ? ' line' : ' lines'));
         $('#bulkPaymentsTotal').text(money(total));
@@ -93,8 +119,7 @@
     window.setBulkMember = function (data, type) {
         payer = data;
         payerType = type;
-        payments = [];
-        renderPayments();
+        resetBatchForm();
     };
 
     $(function () {
@@ -158,6 +183,11 @@
             $('#bulk_cheque_fields').toggleClass('d-none', mode !== 'Cheque');
         });
 
+        // Bank and cheque number describe the cheque itself, not an individual
+        // allocation. Updating either field therefore updates every cheque
+        // allocation already staged in this batch.
+        $('#bulk_bank_name, #bulk_cheque_number').on('change blur', syncSharedChequeEvidence);
+
         $('#bulk_payment_type_id, #bulk_payment_period').on('change', function () {
             var typeText = $('#bulk_payment_type_id option:selected').text();
             var periodText = $('#bulk_payment_period option:selected').text();
@@ -204,11 +234,18 @@
             if (!payer || payments.length === 0) return;
             var hasCheque = payments.some(function (payment) { return payment.mode === 'Cheque'; });
             var total = 0;
-            var body = $('#bulkConfirmTable tbody').empty();
+            var body = $('#bulkConfirmTable').empty();
             payments.forEach(function (payment, index) {
                 total += payment.amount;
                 var details = payment.mode === 'Cheque' ? payment.bank_name + ' / ' + payment.cheque_number : '-';
-                body.append('<tr><td>' + (index + 1) + '</td><td>' + escapeHtml(payment.type_text) + '</td><td>' + money(payment.amount) + '</td><td>' + payment.mode + '</td><td>' + escapeHtml(details) + '</td><td>' + escapeHtml(payment.period_text) + '</td></tr>');
+                body.append(
+                    '<div class="payment-confirm-line">' +
+                        '<span class="payment-line-index">' + (index + 1) + '</span>' +
+                        '<div><strong>' + escapeHtml(payment.type_text) + '</strong>' +
+                            '<small>' + escapeHtml(payment.mode) + ' &middot; ' + escapeHtml(details) + ' &middot; ' + escapeHtml(payment.period_text) + '</small></div>' +
+                        '<strong class="confirm-amount">' + money(payment.amount) + '</strong>' +
+                    '</div>'
+                );
             });
             $('#bulkConfirmTotal').text(money(total));
             $('#chequeConfirmationPanel').toggleClass('d-none', !hasCheque);
@@ -239,8 +276,7 @@
                 if (!response.success) return setFeedback(response.msg || 'The payment batch could not be saved.');
                 $('#bulkPaymentConfirmModal').modal('hide');
                 setFeedback(response.msg + ' Batch: ' + response.batch_reference, 'success');
-                payments = [];
-                renderPayments();
+                resetBatchForm();
                 window.setTimeout(function () { window.location.href = config.listUrl; }, 1400);
             }).fail(function (xhr) {
                 var response = xhr.responseJSON || {};

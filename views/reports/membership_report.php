@@ -383,12 +383,29 @@ while ($row = $growth_res->fetch_assoc()) {
 <script src="<?= BASE_URL ?>/assets/js/report-export-branding.js"></script>
 <script>
 $(document).ready(function() {
-    $('#memberTable').DataTable({
+    var membershipTable = $('#memberTable').DataTable({
         paging: false,
         searching: false,
         info: false,
+        stateSave: true,
+        stateDuration: -1,
         dom: 'Bfrtip',
-        buttons: <?= $can_export ? "[\n            'copy', 'csv', 'excel', 'pdf', 'print'\n        ]" : '[]' ?>
+        buttons: [
+            <?php if ($can_export): ?>
+            { extend: 'copy', exportOptions: { columns: ':visible' } },
+            { extend: 'csv', exportOptions: { columns: ':visible' } },
+            { extend: 'excel', exportOptions: { columns: ':visible' } },
+            { extend: 'pdf', exportOptions: { columns: ':visible' } },
+            { extend: 'print', exportOptions: { columns: ':visible' } },
+            <?php endif; ?>
+            {
+                extend: 'colvis',
+                text: '<i class="fas fa-columns mr-1"></i> Columns',
+                className: 'btn btn-primary btn-sm',
+                collectionLayout: 'fixed two-column'
+            }
+        ],
+        language: { buttons: { colvis: 'Show/Hide Columns' } }
     });
     var ctx = document.getElementById('growthChart').getContext('2d');
     var growthChart = new Chart(ctx, {

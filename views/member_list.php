@@ -355,6 +355,7 @@ if (!empty($all_params)) {
 $stmt->execute();
 $members = $stmt->get_result();
 
+$enableDataTableButtons = true;
 ob_start();
 ?>
 
@@ -665,6 +666,25 @@ ob_start();
     padding: 1rem 0.75rem;
     vertical-align: middle;
     border: none;
+}
+
+.member-table-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.member-column-selector .dt-buttons,
+.member-column-selector .btn-group {
+    margin: 0;
+}
+
+.member-column-selector .buttons-colvis {
+    border-radius: 8px !important;
+    font-weight: 700;
 }
 
 .member-photo {
@@ -1065,8 +1085,12 @@ ob_start();
         </div>
 
         <!-- Members Table -->
+        <div class="member-table-tools">
+            <div class="text-muted small"><i class="fas fa-info-circle mr-1"></i>Choose which member fields are visible on this device.</div>
+            <div class="member-column-selector" id="memberColumnSelector"></div>
+        </div>
         <div class="table-responsive member-table">
-            <table class="table table-hover mb-0">
+            <table class="table table-hover mb-0" id="membersDirectoryTable">
                 <thead>
                     <tr>
                         <th>Photo</th>
@@ -1315,6 +1339,25 @@ $script_html = ob_get_clean();
 
 <script>
 $(document).ready(function() {
+    var memberDirectoryTable = $('#membersDirectoryTable').DataTable({
+        paging: false,
+        searching: false,
+        info: false,
+        ordering: false,
+        responsive: false,
+        autoWidth: false,
+        stateSave: true,
+        stateDuration: -1,
+        dom: 't',
+        buttons: [{
+            extend: 'colvis',
+            text: '<i class="fas fa-columns mr-1"></i> Columns',
+            className: 'btn btn-primary btn-sm',
+            collectionLayout: 'fixed two-column'
+        }]
+    });
+    memberDirectoryTable.buttons().container().appendTo('#memberColumnSelector');
+
     // Enhanced sortable header functionality
     $('.sortable-header').click(function() {
         const field = $(this).data('sort');

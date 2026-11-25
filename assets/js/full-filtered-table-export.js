@@ -255,7 +255,7 @@
         });
     }
 
-    function temporaryDataTable(sourceTable, rows) {
+    function temporaryDataTable(sourceTable, rows, sourceDataTableApi) {
         var table = document.createElement('table');
         table.setAttribute('data-report-pagination', 'off');
         table.style.cssText = 'position:fixed;left:-100000px;top:0;visibility:hidden';
@@ -274,6 +274,13 @@
             autoWidth: false,
             dom: 't'
         });
+        if (sourceDataTableApi && typeof sourceDataTableApi.columns === 'function') {
+            var sourceVisibility = sourceDataTableApi.columns().visible().toArray();
+            api.columns().every(function (index) {
+                if (sourceVisibility[index] === false) this.visible(false, false);
+            });
+            api.columns.adjust();
+        }
         return { table: table, api: api };
     }
 
@@ -345,7 +352,7 @@
         return 12;
     }
 
-    function printableTable(sourceTable, rows) {
+    function printableTable(sourceTable, rows, dataTableApi) {
         var table = document.createElement('table');
         var excluded = excludedColumnIndexes(sourceTable);
         var sourceHeader = sourceTable.tHead && sourceTable.tHead.rows.length
@@ -356,6 +363,8 @@
         if (sourceHeader) {
             Array.prototype.forEach.call(sourceHeader.cells, function (cell, index) {
                 if (excluded.indexOf(index) !== -1) return;
+                if (dataTableApi && typeof dataTableApi.column === 'function'
+                    && dataTableApi.column(index).visible() === false) return;
                 includedIndexes.push(index);
                 labels.push(printableCellText(cell));
             });
@@ -451,7 +460,7 @@
     function printRows(sourceTable, rows, title, printWindow, dataTableApi) {
         var targetWindow = printWindow || window.open('', '_blank');
         if (!targetWindow) throw new Error('The print window was blocked by the browser.');
-        var printable = printableTable(sourceTable, rows);
+        var printable = printableTable(sourceTable, rows, dataTableApi);
         var columnCount = printable.columnCount;
         var orientation = columnCount >= 7 ? 'landscape' : 'portrait';
         var fontSize = columnCount >= 12 ? 6.4 : (columnCount >= 9 ? 7.2 : (columnCount >= 7 ? 8 : 9));
@@ -577,7 +586,7 @@
                     );
                     return printRows(sourceTable, rows, reportTitle, printWindow, dataTableApi);
                 }
-                var temporary = temporaryDataTable(sourceTable, rows);
+                var temporary = temporaryDataTable(sourceTable, rows, dataTableApi);
                 originalAction.call(actionContext, event, temporary.api, node, config);
                 cleanTemporaryTable(temporary);
             }).catch(function (error) {

@@ -9,6 +9,7 @@ $reportExportBranding = isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof m
 $layoutScriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
 $isReportWorkspace = strpos($layoutScriptName, '/views/reports/') !== false
     || substr($layoutScriptName, -18) === '/views/reports.php';
+$loadDataTableExtensions = $isReportWorkspace || !empty($enableDataTableButtons);
 $layoutDerivedTitle = ucwords(str_replace(['_', '-'], ' ', pathinfo($layoutScriptName, PATHINFO_FILENAME)));
 $layoutPageTitle = trim((string) ($page_title ?? '')) ?: ($layoutDerivedTitle ?: 'Church Management System');
 ?>
@@ -42,9 +43,11 @@ $layoutPageTitle = trim((string) ($page_title ?? '')) ?: ($layoutDerivedTitle ?:
     
     <!-- Modern Sidebar Styles -->
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/modern-sidebar.css">
+    <?php if ($loadDataTableExtensions): ?>
     <?php if ($isReportWorkspace): ?>
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/report-workspace.css">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/member-payment-summary.css">
+    <?php endif; ?>
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-bs4/css/dataTables.bootstrap4.min.css">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-buttons/css/buttons.bootstrap4.min.css">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-responsive/css/responsive.bootstrap4.min.css">
@@ -204,19 +207,22 @@ $layoutPageTitle = trim((string) ($page_title ?? '')) ?: ($layoutDerivedTitle ?:
     <!-- DataTables and other plugins (if needed) -->
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables/jquery.dataTables.min.js"></script>
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-bs4/js/dataTables.bootstrap4.min.js"></script>
-    <?php if ($isReportWorkspace): ?>
+    <?php if ($loadDataTableExtensions): ?>
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/jszip/jszip.min.js"></script>
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/pdfmake/pdfmake.min.js"></script>
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/pdfmake/vfs_fonts.js"></script>
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-buttons/js/dataTables.buttons.min.js"></script>
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-buttons/js/buttons.bootstrap4.min.js"></script>
+    <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-buttons/js/buttons.colVis.min.js"></script>
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-buttons/js/buttons.html5.min.js"></script>
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-buttons/js/buttons.print.min.js"></script>
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-responsive/js/dataTables.responsive.min.js"></script>
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/datatables-responsive/js/responsive.bootstrap4.min.js"></script>
+    <?php if ($isReportWorkspace): ?>
     <script src="<?php echo BASE_URL; ?>/AdminLTE/plugins/chart.js/Chart.min.js"></script>
     <script src="<?php echo BASE_URL; ?>/assets/js/report-export-branding.js"></script>
     <script src="<?php echo BASE_URL; ?>/assets/js/full-filtered-table-export.js"></script>
+    <?php endif; ?>
     <?php endif; ?>
     <!-- FullCalendar (for dashboard calendar) -->
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@latest/main.min.js"></script>

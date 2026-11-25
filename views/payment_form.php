@@ -24,7 +24,8 @@ if ($result) $paymentTypes = $result->fetch_all(MYSQLI_ASSOC);
 ob_start();
 ?>
 <style>
-.payment-entry-page { --payment-navy:#173f5f; --payment-green:#236b45; --payment-ink:#243444; --payment-muted:#6d7d8c; }
+.payment-entry-page { --payment-navy:#173f5f; --payment-green:#236b45; --payment-ink:#243444; --payment-muted:#6d7d8c; max-width:100%; overflow-x:clip; }
+.payment-entry-page, .payment-entry-page * { box-sizing:border-box; }
 .payment-entry-shell { width:100%; max-width:1120px; margin:0 auto; }
 .payment-form-column { width:100%; max-width:880px; margin-left:auto; margin-right:auto; }
 .payment-entry-hero { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:1.25rem 1.4rem; border-radius:16px; color:#fff; background:linear-gradient(135deg,#173f5f 0%,#20597a 58%,#236b45 100%); box-shadow:0 12px 30px rgba(23,63,95,.18); }
@@ -39,14 +40,14 @@ ob_start();
 .payment-step:first-child .payment-step-number { background:var(--payment-navy); color:#fff; }
 .payment-step strong { display:block; color:var(--payment-ink); font-size:1.08rem; line-height:1.2; }
 .payment-step small { display:block; color:var(--payment-muted); font-size:1rem; white-space:normal; }
-.payment-panel { overflow:hidden; border:0; border-radius:15px; box-shadow:0 7px 22px rgba(21,42,67,.07); }
+.payment-panel { min-width:0; overflow:hidden; border:0; border-radius:15px; box-shadow:0 7px 22px rgba(21,42,67,.07); }
 .payment-panel .card-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:.85rem 1rem; border-bottom:1px solid #e7ecef; background:#fff; }
 .payment-panel .panel-title { margin:0; color:var(--payment-ink); font-size:1.25rem; font-weight:750; }
 .payment-panel .panel-kicker { display:block; margin-top:3px; color:var(--payment-muted); font-size:1.02rem; font-weight:400; }
 .payment-panel .card-body { padding:1rem; }
 .payer-search-grid { display:grid; grid-template-columns:minmax(0,1fr) 150px; gap:10px; align-items:end; }
 .compact-label { display:block; margin-bottom:.4rem; color:#465666; font-size:1.08rem; font-weight:700; }
-.payment-entry-page .form-control { min-height:48px; border-color:#d9e1e7; border-radius:8px; font-size:1.16rem; }
+.payment-entry-page .form-control { width:100%; min-width:0; min-height:48px; border-color:#d9e1e7; border-radius:8px; font-size:1.16rem; }
 .payment-entry-page .form-control:focus { border-color:#4b86a5; box-shadow:0 0 0 .18rem rgba(32,89,122,.12); }
 .payment-entry-page .btn { font-size:1.08rem; font-weight:650; }
 .payment-line-grid { display:grid; grid-template-columns:minmax(190px,1.4fr) minmax(120px,.75fr) minmax(190px,1.15fr) minmax(170px,1fr); gap:12px; align-items:end; }
@@ -60,15 +61,26 @@ ob_start();
 .payment-method-switch .btn.active:last-child { background:#e1edf7; color:#235b87; box-shadow:none; }
 .auto-description { background:#f6f8fa!important; color:#526273; }
 .field-hint { margin-top:.34rem; color:#596b7a; font-size:1rem; }
-.cheque-fields { margin:.15rem 0 .75rem; padding:.8rem; border:1px solid #d8e5ee; border-radius:11px; background:#f7fbfd; }
+.cheque-fields { margin:.15rem 0 .9rem; padding:.9rem; border:1px solid #cfe0ec; border-radius:11px; background:#f5fafe; }
+.cheque-fields-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:.75rem; }
+.cheque-fields-header strong, .cheque-fields-header span { display:block; }
+.cheque-fields-header span { margin-top:2px; color:var(--payment-muted); font-size:.94rem; }
+.cheque-shared-badge { flex:0 0 auto; padding:.32rem .58rem; border-radius:999px; background:#dcecf8; color:#245f88; font-size:.84rem; font-weight:750; }
 .payment-feedback .alert { margin-bottom:.8rem; padding:.72rem .88rem; border-radius:9px; font-size:1.12rem; }
 .payment-lines-header { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:1rem; margin-bottom:.55rem; }
 .payment-lines-header h6 { margin:0; color:var(--payment-ink); font-weight:750; }
 .payment-line-count { border-radius:999px; padding:.36rem .68rem; background:#edf2f5; color:#536372; font-size:1rem; font-weight:700; }
-.payment-lines-table { min-width:850px; }
-.payment-lines-table thead th { padding:.62rem .68rem; border-top:0; border-bottom:1px solid #dfe6eb; color:#536474; font-size:.94rem; letter-spacing:.05em; text-transform:uppercase; }
-.payment-lines-table td { padding:.62rem .68rem; vertical-align:middle; font-size:1.14rem; }
-.payment-lines-empty td { padding:1.6rem .75rem!important; color:#687784; font-size:1.14rem; text-align:center; }
+.payment-lines-list { display:grid; gap:9px; min-width:0; }
+.payment-line-card { min-width:0; padding:.78rem .85rem; border:1px solid #dde5ea; border-radius:11px; background:#fff; }
+.payment-line-card-head { display:grid; grid-template-columns:34px minmax(0,1fr) auto 36px; gap:10px; align-items:center; }
+.payment-line-index { width:30px; height:30px; display:grid; place-items:center; border-radius:50%; background:#eaf1f5; color:var(--payment-navy); font-size:.88rem; font-weight:800; }
+.payment-line-title { min-width:0; color:var(--payment-ink); font-size:1.08rem; font-weight:750; overflow-wrap:anywhere; }
+.payment-line-amount { color:var(--payment-green); font-size:1.14rem; font-weight:800; white-space:nowrap; }
+.payment-line-card-body { display:flex; flex-wrap:wrap; gap:6px 12px; margin:.62rem 0 0 44px; }
+.payment-line-meta { min-width:0; color:#536474; font-size:.94rem; overflow-wrap:anywhere; }
+.payment-line-meta i { width:16px; color:#78909f; }
+.payment-line-description { flex:1 1 100%; margin:0; color:#61717f; font-size:.92rem; overflow-wrap:anywhere; }
+.payment-lines-empty { padding:1.6rem .75rem; border:1px dashed #d4dde3; border-radius:11px; color:#687784; font-size:1.08rem; text-align:center; }
 .payment-submit-bar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin:0 -1rem -1rem; padding:.82rem 1rem; border-top:1px solid #e4eaee; background:#f8fafb; }
 .payment-total-label { color:#5f7080; font-size:1rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
 .payment-total-value { color:var(--payment-green); font-size:1.6rem; font-weight:800; }
@@ -85,9 +97,18 @@ ob_start();
 .payment-confirm-modal .modal-body .table { font-size:1.14rem; }
 .payment-confirm-modal .modal-footer .btn { font-size:1.08rem; }
 .payment-confirm-modal .custom-control-label, .payment-confirm-modal .modal-header small { font-size:1.08rem; }
+.payment-confirm-list { display:grid; gap:8px; }
+.payment-confirm-line { display:grid; grid-template-columns:30px minmax(0,1fr) auto; gap:10px; align-items:start; padding:.7rem .75rem; border:1px solid #e0e6ea; border-radius:10px; }
+.payment-confirm-line > span { width:27px; height:27px; display:grid; place-items:center; border-radius:50%; background:#eef2f5; color:#526273; font-size:.8rem; font-weight:800; }
+.payment-confirm-line strong, .payment-confirm-line small { display:block; overflow-wrap:anywhere; }
+.payment-confirm-line small { margin-top:3px; color:var(--payment-muted); }
+.payment-confirm-line .confirm-amount { color:var(--payment-green); white-space:nowrap; }
+.payment-confirm-total { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:10px; padding:.72rem .8rem; border-radius:10px; background:#f4f8f6; }
+.payment-confirm-total strong { color:var(--payment-green); font-size:1.28rem; }
 .payment-entry-page .small { font-size:1.06rem; }
 @media (max-width:991.98px) { .payment-line-grid { grid-template-columns:1fr 1fr; } }
-@media (max-width:767.98px) { .payment-entry-hero { align-items:flex-start; flex-direction:column; } .payment-entry-actions { width:100%; justify-content:flex-start; } .payment-progress { grid-template-columns:1fr; gap:6px; } .payment-step { padding:.6rem .75rem; } .payer-search-grid, .payment-description-row { grid-template-columns:1fr; } .payment-line-grid, .payment-detail-grid { grid-template-columns:1fr; } .payment-summary-grid { grid-template-columns:1fr 1fr; } .payment-submit-bar .btn { width:100%; } }
+@media (max-width:767.98px) { .payment-entry-page { padding-left:10px!important; padding-right:10px!important; } .payment-entry-hero { align-items:flex-start; flex-direction:column; padding:1.05rem; } .payment-entry-hero h1 { font-size:1.65rem; } .payment-entry-hero p { font-size:1rem; } .payment-entry-actions { width:100%; justify-content:flex-start; } .payment-entry-actions .btn { flex:1 1 145px; } .payment-progress { grid-template-columns:1fr; gap:6px; } .payment-step { padding:.6rem .75rem; } .payer-search-grid, .payment-description-row { grid-template-columns:1fr; } .payment-line-grid, .payment-detail-grid { grid-template-columns:1fr; } .payment-summary-grid { grid-template-columns:1fr 1fr; } .payment-submit-bar .btn { width:100%; } .cheque-fields-header { flex-direction:column; } }
+@media (max-width:520px) { .payment-panel .card-header { align-items:flex-start; flex-wrap:wrap; } .payment-summary-grid { grid-template-columns:1fr; } .payment-line-card-head { grid-template-columns:30px minmax(0,1fr) 34px; } .payment-line-amount { grid-column:2; grid-row:2; justify-self:start; } .payment-line-card-body { margin-left:40px; } .payment-confirm-line { grid-template-columns:27px minmax(0,1fr); } .payment-confirm-line .confirm-amount { grid-column:2; } }
 </style>
 
 <div class="container-fluid py-3 payment-entry-page">
@@ -106,7 +127,7 @@ ob_start();
         </header>
 
         <div class="payment-progress" aria-label="Payment entry steps">
-            <div class="payment-step"><span class="payment-step-number">1</span><div><strong>Find payer</strong><small>Use the CRN or SRN</small></div></div>
+            <div class="payment-step"><span class="payment-step-number">1</span><div><strong>Find Member</strong><small>Use the CRN or SRN</small></div></div>
             <div class="payment-step"><span class="payment-step-number">2</span><div><strong>Add payment lines</strong><small>Cash and cheque can share a batch</small></div></div>
             <div class="payment-step"><span class="payment-step-number">3</span><div><strong>Review and submit</strong><small>Confirm the complete batch once</small></div></div>
         </div>
@@ -145,7 +166,7 @@ ob_start();
                         </div>
 
                         <div class="cheque-fields d-none" id="bulk_cheque_fields">
-                            <div class="d-flex align-items-center mb-2"><i class="fas fa-shield-alt text-primary mr-2"></i><strong class="small">Cheque evidence</strong><span class="small text-muted ml-2">Required before the line can be added</span></div>
+                            <div class="cheque-fields-header"><div><strong><i class="fas fa-money-check-alt text-primary mr-2"></i>Shared cheque evidence</strong><span>Enter this once. Every cheque allocation added below will use the same bank and cheque number.</span></div><span class="cheque-shared-badge"><i class="fas fa-link mr-1"></i>One cheque</span></div>
                             <div class="payment-detail-grid">
                                 <div class="form-group mb-0"><label class="compact-label" for="bulk_bank_name">Bank name <span class="text-danger">*</span></label><input type="text" class="form-control" id="bulk_bank_name" maxlength="120" autocomplete="off" placeholder="Issuing bank"></div>
                                 <div class="form-group mb-0"><label class="compact-label" for="bulk_cheque_number">Cheque number <span class="text-danger">*</span></label><input type="text" class="form-control" id="bulk_cheque_number" maxlength="100" autocomplete="off" placeholder="Cheque reference"></div>
@@ -161,12 +182,7 @@ ob_start();
 
                     <div id="bulk-payment-feedback" class="payment-feedback mt-2" aria-live="polite"></div>
                     <div class="payment-lines-header"><h6><i class="fas fa-list-ul mr-2 text-primary"></i>Lines ready to submit</h6><span class="payment-line-count" id="bulkPaymentsCount">0 lines</span></div>
-                    <div class="table-responsive border rounded">
-                        <table class="table table-sm payment-lines-table mb-0" id="bulkPaymentsTable">
-                            <thead class="thead-light"><tr><th>#</th><th>Type</th><th class="text-right">Amount</th><th>Method</th><th>Cheque details</th><th>Period</th><th>Description</th><th aria-label="Actions"></th></tr></thead>
-                            <tbody><tr class="payment-lines-empty"><td colspan="8"><i class="fas fa-receipt mr-1"></i>No payment lines added yet.</td></tr></tbody>
-                        </table>
-                    </div>
+                    <div class="payment-lines-list" id="bulkPaymentsTable" aria-live="polite"><div class="payment-lines-empty"><i class="fas fa-receipt mr-1"></i>No payment lines added yet.</div></div>
                     <div class="payment-submit-bar">
                         <div><div class="payment-total-label">Batch total</div><div class="payment-total-value" id="bulkPaymentsTotal">GH&#8373;0.00</div></div>
                         <button type="button" class="btn btn-primary px-4" id="submitBulkPaymentsBtn" disabled><i class="fas fa-clipboard-check mr-1"></i>Review and submit</button>
@@ -181,7 +197,8 @@ ob_start();
     <div class="modal-dialog modal-lg modal-dialog-centered" role="document"><div class="modal-content">
         <div class="modal-header bg-primary text-white"><div><h5 class="modal-title"><i class="fas fa-clipboard-check mr-2"></i>Review payment batch</h5><small class="text-white-50">Confirm the lines before anything is recorded.</small></div><button type="button" class="close text-white" data-dismiss="modal"><span>&times;</span></button></div>
         <div class="modal-body">
-            <div class="table-responsive border rounded"><table class="table table-sm mb-0" id="bulkConfirmTable"><thead class="thead-light"><tr><th>#</th><th>Type</th><th>Amount</th><th>Method</th><th>Details</th><th>Period</th></tr></thead><tbody></tbody><tfoot><tr><td colspan="2" class="text-right font-weight-bold">Total</td><td colspan="4" id="bulkConfirmTotal" class="font-weight-bold text-success"></td></tr></tfoot></table></div>
+            <div class="payment-confirm-list" id="bulkConfirmTable"></div>
+            <div class="payment-confirm-total"><span>Batch total</span><strong id="bulkConfirmTotal">GH&#8373;0.00</strong></div>
             <div class="alert alert-warning d-none mt-3 mb-0" id="chequeConfirmationPanel"><div class="font-weight-bold mb-2"><i class="fas fa-money-check-alt mr-1"></i>Cheque recorder checklist</div><div class="custom-control custom-checkbox"><input type="checkbox" class="custom-control-input" id="cheque_entry_confirmed"><label class="custom-control-label" for="cheque_entry_confirmed">I checked the payer, bank, cheque number, amount, payment type, and reporting period. I understand the cheque remains Pending until an authorized reviewer verifies it.</label></div></div>
         </div>
         <div class="modal-footer"><button type="button" class="btn btn-light border" data-dismiss="modal">Go back</button><button type="button" class="btn btn-success" id="confirmBulkPaymentBtn"><i class="fas fa-check-circle mr-1"></i>Confirm and submit</button></div>
@@ -195,7 +212,7 @@ window.paymentFormConfig = <?= json_encode([
     'listUrl' => 'payment_list.php?added=1',
 ], JSON_UNESCAPED_SLASHES) ?>;
 </script>
-<script src="payment_form_multi.js?v=0081-2"></script>
+<script src="payment_form_multi.js?v=0111-1"></script>
 <?php
 $page_content = ob_get_clean();
 $page_title = 'Record Payments';

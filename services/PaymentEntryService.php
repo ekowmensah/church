@@ -40,10 +40,24 @@ final class PaymentEntryService {
 
         $normalized = [];
         $hasCheque = false;
+        $sharedChequeIdentity = null;
         foreach ($payments as $index => $payment) {
             if (!is_array($payment)) throw new RuntimeException('Payment line ' . ($index + 1) . ' is invalid.');
             $normalized[] = $this->normalizePayment($payment, $index + 1);
-            if (end($normalized)['mode'] === 'Cheque') $hasCheque = true;
+            $normalizedPayment = end($normalized);
+            if ($normalizedPayment['mode'] === 'Cheque') {
+                $hasCheque = true;
+                $chequeIdentity = mb_strtolower($normalizedPayment['bank_name'])
+                    . "\0" . mb_strtolower($normalizedPayment['cheque_number']);
+                if ($sharedChequeIdentity === null) {
+                    $sharedChequeIdentity = $chequeIdentity;
+                } elseif ($sharedChequeIdentity !== $chequeIdentity) {
+                    throw new RuntimeException(
+                        'One payment submission can contain allocations for only one cheque. '
+                        . 'Use a separate submission for another cheque.'
+                    );
+                }
+            }
         }
         if ($hasCheque && !$chequeChecklistConfirmed) {
             throw new RuntimeException('Confirm the cheque-entry checklist before submission.');
@@ -101,7 +115,8 @@ final class PaymentEntryService {
                     $action = 'submitted';
                     $fromStatus = 'not_recorded';
                     $toStatus = 'pending';
-                    $notes = 'Recorder confirmed payer, bank, cheque number, amount, and payment period; authorization remains pending.';
+                    $notes = 'Recorder confirmed the shared cheque evidence and this allocation amount and payment period; authorization remains pending. Manual batch: '
+                        . $batchReference . '.';
                     $audit->bind_param(
                         'issssi', $paymentId, $action, $fromStatus, $toStatus,
                         $notes, $this->actorUserId
