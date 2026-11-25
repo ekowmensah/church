@@ -584,6 +584,74 @@ if ($can_review_gateway) {
     $pending_ussd_total = (float) ($pending_result['total_amount'] ?? 0);
 }
 
+// A gateway transaction does not become income until it is independently
+// verified and posted to `payments`. Keep unresolved member-portal activity
+// visible here as an operational queue so a successful charge never appears
+// to have vanished merely because posting is still pending.
+$online_gateway_count = 0;
+$online_gateway_total = 0.0;
+$online_gateway_activity = [];
+$online_gateway_where = "intent.payment_source IN ('online_checkout', 'paystack')
+    AND COALESCE(intent.approval_status, 'not_required') <> 'rejected'
+    AND LOWER(TRIM(COALESCE(intent.status, 'pending')))
+        NOT IN ('failed', 'cancelled', 'canceled', 'declined', 'error')
+    AND NOT EXISTS (
+        SELECT 1 FROM payments posted
+         WHERE posted.client_reference = intent.client_reference
+    )";
+$online_gateway_scope_id = null;
+if (!$is_super_admin) {
+    $online_gateway_scope_id = $user_church_id > 0 ? $user_church_id : -1;
+} elseif (ctype_digit((string) $filter_church) && (int) $filter_church > 0) {
+    $online_gateway_scope_id = (int) $filter_church;
+}
+if ($online_gateway_scope_id !== null) {
+    $online_gateway_where .= ' AND intent.church_id = ?';
+}
+
+$online_gateway_summary_sql = "SELECT COUNT(*) AS total_count,
+        COALESCE(SUM(intent.amount), 0) AS total_amount
+    FROM payment_intents intent
+    WHERE {$online_gateway_where}";
+$online_gateway_summary_stmt = $conn->prepare($online_gateway_summary_sql);
+if ($online_gateway_scope_id !== null) {
+    $online_gateway_summary_stmt->bind_param('i', $online_gateway_scope_id);
+}
+$online_gateway_summary_stmt->execute();
+$online_gateway_summary = $online_gateway_summary_stmt->get_result()->fetch_assoc() ?: [];
+$online_gateway_summary_stmt->close();
+$online_gateway_count = (int) ($online_gateway_summary['total_count'] ?? 0);
+$online_gateway_total = (float) ($online_gateway_summary['total_amount'] ?? 0);
+
+if ($online_gateway_count > 0) {
+    $online_gateway_activity_sql = "SELECT intent.id, intent.client_reference,
+            intent.amount, intent.status, intent.approval_status,
+            intent.payment_source, intent.gateway_verification_status,
+            intent.status_check_state, intent.created_at,
+            COALESCE(
+                NULLIF(TRIM(CONCAT_WS(' ', member.first_name, member.middle_name, member.last_name)), ''),
+                NULLIF(TRIM(intent.customer_name), ''),
+                'Unlinked payer'
+            ) AS beneficiary_name,
+            member.crn AS beneficiary_reference,
+            payment_type.name AS payment_type_name,
+            church.name AS church_name
+        FROM payment_intents intent
+        LEFT JOIN members member ON member.id = intent.member_id
+        LEFT JOIN payment_types payment_type ON payment_type.id = intent.payment_type_id
+        LEFT JOIN churches church ON church.id = intent.church_id
+        WHERE {$online_gateway_where}
+        ORDER BY intent.created_at DESC, intent.id DESC
+        LIMIT 10";
+    $online_gateway_activity_stmt = $conn->prepare($online_gateway_activity_sql);
+    if ($online_gateway_scope_id !== null) {
+        $online_gateway_activity_stmt->bind_param('i', $online_gateway_scope_id);
+    }
+    $online_gateway_activity_stmt->execute();
+    $online_gateway_activity = $online_gateway_activity_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $online_gateway_activity_stmt->close();
+}
+
 $pending_cheque_count = 0;
 $pending_cheque_total = 0.0;
 if ($can_verify_cheques) {
@@ -1006,6 +1074,101 @@ ob_start();
             <a class="btn btn-sm btn-warning mt-2 mt-md-0" href="payment_gateway_integrity.php">
                 Review USSD payments
             </a>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($online_gateway_count > 0): ?>
+        <div class="card border-warning shadow-sm mb-4 no-print" id="online-gateway-activity">
+            <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center flex-wrap">
+                <div>
+                    <strong><i class="fas fa-cloud-download-alt mr-2"></i>Online gateway payments not yet posted</strong>
+                    <div class="small mt-1">
+                        <?= number_format($online_gateway_count) ?> transaction(s),
+                        GH&#8373;<?= number_format($online_gateway_total, 2) ?> operational value.
+                        These amounts are not included in income totals yet.
+                    </div>
+                </div>
+                <?php if ($can_review_gateway): ?>
+                    <div class="mt-2 mt-md-0">
+                        <a class="btn btn-sm btn-dark mr-1" href="hubtel_status_check.php">
+                            <i class="fas fa-sync-alt mr-1"></i>Check Hubtel status
+                        </a>
+                        <a class="btn btn-sm btn-outline-dark" href="payment_gateway_integrity.php">
+                            <i class="fas fa-shield-alt mr-1"></i>Gateway integrity
+                        </a>
+                    </div>
+                <?php endif; ?>
+            </div>
+            <div class="card-body py-3">
+                <p class="mb-3 text-muted">
+                    A successful gateway charge appears in the financial payment table only after its reference,
+                    amount and final status are independently verified and the posting workflow completes.
+                </p>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="thead-light">
+                        <tr>
+                            <th>Reference</th>
+                            <th>Member / payment</th>
+                            <th>Amount</th>
+                            <th>Gateway state</th>
+                            <th>Recorded</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($online_gateway_activity as $gateway_row): ?>
+                            <?php
+                            $gateway_status = strtolower(trim((string) ($gateway_row['status'] ?? 'pending')));
+                            $gateway_approval = strtolower(trim((string) ($gateway_row['approval_status'] ?? 'not_required')));
+                            $gateway_verification = strtolower(trim((string) ($gateway_row['gateway_verification_status'] ?? 'not_checked')));
+                            $gateway_archived = strtolower(trim((string) ($gateway_row['status_check_state'] ?? ''))) === 'archived';
+                            if ($gateway_archived) {
+                                $gateway_label = 'Verification archived';
+                                $gateway_badge = 'secondary';
+                            } elseif ($gateway_verification === 'verified' && $gateway_approval === 'pending') {
+                                $gateway_label = 'Verified - awaiting posting';
+                                $gateway_badge = 'info';
+                            } elseif (in_array($gateway_status, ['completed', 'paid', 'success', 'successful', 'approved'], true)) {
+                                $gateway_label = 'Awaiting verification';
+                                $gateway_badge = 'warning';
+                            } else {
+                                $gateway_label = 'Awaiting gateway confirmation';
+                                $gateway_badge = 'light';
+                            }
+                            ?>
+                            <tr>
+                                <td>
+                                    <code><?= htmlspecialchars((string) $gateway_row['client_reference']) ?></code>
+                                    <?php if ($is_super_admin): ?>
+                                        <br><small class="text-muted"><?= htmlspecialchars((string) ($gateway_row['church_name'] ?: 'No church')) ?></small>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <strong><?= htmlspecialchars((string) $gateway_row['beneficiary_name']) ?></strong>
+                                    <br><small class="text-muted">
+                                        <?= htmlspecialchars((string) ($gateway_row['beneficiary_reference'] ?: 'No CRN')) ?>
+                                        <?php if (!empty($gateway_row['payment_type_name'])): ?>
+                                            &middot; <?= htmlspecialchars((string) $gateway_row['payment_type_name']) ?>
+                                        <?php endif; ?>
+                                    </small>
+                                </td>
+                                <td><strong>GH&#8373;<?= number_format((float) $gateway_row['amount'], 2) ?></strong></td>
+                                <td>
+                                    <span class="badge badge-<?= $gateway_badge ?>"><?= htmlspecialchars($gateway_label) ?></span>
+                                    <br><small class="text-muted"><?= htmlspecialchars(ucwords(str_replace('_', ' ', (string) $gateway_row['payment_source']))) ?></small>
+                                </td>
+                                <td><?= htmlspecialchars(date('M j, Y g:i A', strtotime((string) $gateway_row['created_at']))) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php if ($online_gateway_count > count($online_gateway_activity)): ?>
+                    <div class="small text-muted mt-2">
+                        Showing the 10 newest unresolved transactions. Use the gateway workspaces to review the complete queue.
+                    </div>
+                <?php endif; ?>
+            </div>
         </div>
     <?php endif; ?>
 
