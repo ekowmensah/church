@@ -7,7 +7,8 @@ require_once __DIR__.'/../services/PaymentGatewayCallbackService.php';
 
 header('Content-Type: application/json');
 
-// Only allow logged-in users
+// Allow authenticated staff and member-portal sessions. Staff still require
+// the AJAX capability; a member may initialize only their own payment.
 if (!is_logged_in()) {
     http_response_code(401);
     echo json_encode(['success' => false, 'error' => 'Authentication required']);
@@ -16,7 +17,8 @@ if (!is_logged_in()) {
 
 // Canonical permission check with robust super admin bypass
 $is_super_admin = is_super_admin();
-if (!$is_super_admin && !has_permission('access_ajax_paystack_checkout')) {
+$is_member_portal = (int) ($_SESSION['member_id'] ?? 0) > 0;
+if (!$is_member_portal && !$is_super_admin && !has_permission('access_ajax_paystack_checkout')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Permission denied']);
     exit;
@@ -54,10 +56,53 @@ if (!$amount || !$email) {
 $amount_kobo = (int) round($amount * 100);
 $clientReference = 'PAYSTACK-' . date('YmdHis') . '-' . bin2hex(random_bytes(8));
 
-// Prepare Paystack API request
-$member_id = isset($input['member_id']) ? intval($input['member_id']) : ($_SESSION['member_id'] ?? null);
-$church_id = isset($input['church_id']) ? intval($input['church_id']) : ($_SESSION['church_id'] ?? null);
+// Prepare Paystack API request. Member-portal identity is authoritative from
+// the session and its church is resolved from the membership record.
+$member_id = $is_member_portal
+    ? (int) $_SESSION['member_id']
+    : (int) ($input['member_id'] ?? 0);
+if ($member_id <= 0) {
+    http_response_code(422);
+    echo json_encode(['success' => false, 'error' => 'A payment beneficiary is required.']);
+    exit;
+}
+$memberStmt = $conn->prepare(
+    "SELECT church_id, status, is_archived FROM members WHERE id = ? LIMIT 1"
+);
+$memberStmt->bind_param('i', $member_id);
+$memberStmt->execute();
+$paymentMember = $memberStmt->get_result()->fetch_assoc();
+$memberStmt->close();
+if (!$paymentMember
+    || strtolower(trim((string) ($paymentMember['status'] ?? ''))) !== 'active'
+    || (int) ($paymentMember['is_archived'] ?? 0) === 1) {
+    http_response_code(422);
+    echo json_encode(['success' => false, 'error' => 'The selected member is not eligible for online payment.']);
+    exit;
+}
+$church_id = (int) $paymentMember['church_id'];
 $payment_type_id = isset($input['payment_type_id']) ? intval($input['payment_type_id']) : null;
+
+if ($bulk_items) {
+    $lineTotal = 0.0;
+    foreach ($bulk_items as &$item) {
+        $lineAmount = (float) ($item['amount'] ?? 0);
+        $lineTypeId = (int) ($item['payment_type_id'] ?? $item['typeId'] ?? 0);
+        if ($lineAmount <= 0 || $lineTypeId <= 0) {
+            http_response_code(422);
+            echo json_encode(['success' => false, 'error' => 'Every payment line requires a type and positive amount.']);
+            exit;
+        }
+        $item['member_id'] = $member_id;
+        $item['church_id'] = $church_id;
+        $item['payment_type_id'] = $lineTypeId;
+        unset($item['sundayschool_id']);
+        $lineTotal += $lineAmount;
+    }
+    unset($item);
+    $amount = $lineTotal;
+    $amount_kobo = (int) round($amount * 100);
+}
 
 $fields = [
     'amount' => $amount_kobo,
@@ -76,6 +121,34 @@ $fields = [
         'bulk_items' => $bulk_items
     ]
 ];
+
+$intentService = new PaymentGatewayCallbackService($conn);
+try {
+    $intentService->record([
+        'client_reference' => $clientReference,
+        'status' => 'Pending',
+        'amount' => $amount,
+        'description' => $description ?: 'Paystack online payment',
+        'customer_name' => $name ?: 'Paystack customer',
+        'customer_phone' => $phone,
+        'member_id' => $member_id,
+        'church_id' => $church_id,
+        'payment_type_id' => $payment_type_id,
+        'payment_period' => $input['payment_period'] ?? null,
+        'payment_period_description' => $input['payment_period_description'] ?? null,
+        'bulk_breakdown' => $bulk_items,
+        'payment_source' => 'paystack',
+        'locally_initialized' => true,
+    ]);
+} catch (Throwable $error) {
+    error_log('Paystack payment baseline could not be persisted: ' . $error->getMessage());
+    http_response_code(500);
+    echo json_encode([
+        'success' => false,
+        'error' => 'The payment could not be safely initialized. No gateway request was made.',
+    ]);
+    exit;
+}
 
 $ch = curl_init('https://api.paystack.co/transaction/initialize');
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
@@ -96,6 +169,18 @@ if ($err !== '') {
 // Debug log
 if ($err || !$response) {
     file_put_contents(__DIR__.'/../logs/paystack_debug.log', "[".date('Y-m-d H:i:s')."] CURL ERROR: $err\nINPUT: ".json_encode($fields)."\nRESPONSE: ".print_r($response, true)."\n", FILE_APPEND);
+    try {
+        $intentService->record([
+            'client_reference' => $clientReference,
+            'status' => 'Failed',
+            'amount' => $amount,
+            'payment_source' => 'paystack',
+            'locally_initialized' => true,
+            'raw_payload' => json_encode(['transport_error' => $err]),
+        ]);
+    } catch (Throwable $recordError) {
+        error_log('Paystack transport failure could not be recorded: ' . $recordError->getMessage());
+    }
     echo json_encode(['success'=>false, 'error'=>'Network or Paystack server error. Please try again later.']);
     exit;
 }
@@ -107,6 +192,18 @@ if ($err) {
 
 $data = json_decode($response, true);
 if (!$data || !$data['status']) {
+    try {
+        $intentService->record([
+            'client_reference' => $clientReference,
+            'status' => 'Failed',
+            'amount' => $amount,
+            'payment_source' => 'paystack',
+            'locally_initialized' => true,
+            'raw_payload' => (string) $response,
+        ]);
+    } catch (Throwable $recordError) {
+        error_log('Paystack initialization rejection could not be recorded: ' . $recordError->getMessage());
+    }
     echo json_encode(['success'=>false, 'error'=>'Paystack error: '.($data['message'] ?? 'Unknown error')]);
     exit;
 }
@@ -120,7 +217,6 @@ if ($auth_url) {
         exit;
     }
     try {
-        $intentService = new PaymentGatewayCallbackService($conn);
         $intentService->record([
             'client_reference' => $clientReference,
             'status' => 'Pending',

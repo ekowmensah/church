@@ -9,16 +9,42 @@ require_once __DIR__ . '/../helpers/hubtel_status.php';
 
 $debugLog = __DIR__ . '/../logs/hubtel_callback_debug.log';
 $rawInput = file_get_contents('php://input');
-file_put_contents(__DIR__ . '/../logs/hubtel_callback.log', date('c') . "\n" . $rawInput . "\n", FILE_APPEND);
 $payload = json_decode($rawInput, true);
-$data = is_array($payload['Data'] ?? null) ? $payload['Data'] : [];
-if (!$data || trim((string) ($data['Status'] ?? '')) === '') {
+
+// Hubtel has emitted both a nested {Data:{...}} callback and a flat callback
+// over the lifetime of this integration. Some accounts also use lowercase
+// keys or form encoding. Normalize those transport variants before applying
+// the single verified posting workflow.
+if (!is_array($payload) && !empty($_POST)) {
+    $payload = $_POST;
+}
+$data = [];
+if (is_array($payload)) {
+    if (is_array($payload['Data'] ?? null)) {
+        $data = $payload['Data'];
+    } elseif (is_array($payload['data'] ?? null)) {
+        $data = $payload['data'];
+    } elseif (is_string($payload['Data'] ?? null)) {
+        $decodedData = json_decode($payload['Data'], true);
+        $data = is_array($decodedData) ? $decodedData : [];
+    } elseif (is_string($payload['data'] ?? null)) {
+        $decodedData = json_decode($payload['data'], true);
+        $data = is_array($decodedData) ? $decodedData : [];
+    } else {
+        $data = $payload;
+    }
+}
+
+$status = trim((string) ($data['Status'] ?? $data['status'] ?? $data['TransactionStatus'] ?? $data['transactionStatus'] ?? ''));
+if (!$data || $status === '') {
+    file_put_contents($debugLog, date('c') . " Rejected callback: missing payload or status.\n", FILE_APPEND);
     http_response_code(400);
     exit('Invalid callback');
 }
 
-$reference = trim((string) ($data['ClientReference'] ?? ''));
+$reference = trim((string) ($data['ClientReference'] ?? $data['clientReference'] ?? $data['Reference'] ?? $data['reference'] ?? ''));
 if ($reference === '') {
+    file_put_contents($debugLog, date('c') . " Rejected callback: missing client reference.\n", FILE_APPEND);
     http_response_code(400);
     exit('Missing client reference');
 }
@@ -30,9 +56,13 @@ try {
     $existingIntent = $intentStmt->get_result()->fetch_assoc();
     $intentStmt->close();
 
-    $callbackStatus = PaymentGatewayCallbackService::normalizeStatus((string) $data['Status']);
-    $callbackAmount = (float) ($data['Amount'] ?? 0);
-    $callbackTransactionId = $data['TransactionId'] ?? $data['transactionId'] ?? null;
+    $callbackStatus = PaymentGatewayCallbackService::normalizeStatus($status);
+    $callbackAmount = (float) ($data['Amount'] ?? $data['amount'] ?? $data['AmountPaid'] ?? $data['amountPaid'] ?? 0);
+    $callbackTransactionId = $data['TransactionId']
+        ?? $data['transactionId']
+        ?? $data['HubtelTransactionId']
+        ?? $data['hubtelTransactionId']
+        ?? null;
     $verificationStatus = 'not_checked';
     if ($callbackStatus === 'Completed') {
         $verification = verify_hubtel_transaction_status(
@@ -53,13 +83,19 @@ try {
     $paymentTypeId = null;
     $paymentPeriod = null;
     $periodDescription = null;
-    $description = trim((string) ($data['Description'] ?? 'Hubtel payment'));
+    $description = trim((string) ($data['Description'] ?? $data['description'] ?? 'Hubtel payment'));
 
     if (preg_match('/(?:Target|Member) ID:\s*(\d+)/i', $description, $matches)) {
         $memberId = (int) $matches[1];
     }
     if ($memberId === null) {
-        $phone = preg_replace('/\D+/', '', (string) ($data['CustomerMobileNumber'] ?? ''));
+        $phone = preg_replace('/\D+/', '', (string) (
+            $data['CustomerMobileNumber']
+            ?? $data['customerMobileNumber']
+            ?? $data['CustomerPhone']
+            ?? $data['customerPhone']
+            ?? ''
+        ));
         $phone = strlen($phone) >= 9 ? substr($phone, -9) : $phone;
         if ($phone !== '') {
             $stmt = $conn->prepare(
@@ -104,8 +140,12 @@ try {
         'amount' => $callbackAmount,
         'transaction_id' => $callbackTransactionId,
         'description' => $description,
-        'customer_name' => $data['CustomerName'] ?? 'Hubtel customer',
-        'customer_phone' => $data['CustomerMobileNumber'] ?? '',
+        'customer_name' => $data['CustomerName'] ?? $data['customerName'] ?? 'Hubtel customer',
+        'customer_phone' => $data['CustomerMobileNumber']
+            ?? $data['customerMobileNumber']
+            ?? $data['CustomerPhone']
+            ?? $data['customerPhone']
+            ?? '',
         'member_id' => $memberId,
         'church_id' => $churchId,
         'payment_type_id' => $paymentTypeId,

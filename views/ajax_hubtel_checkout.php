@@ -53,9 +53,39 @@ if (
 }
 $customerName = trim($_POST['customerName'] ?? '');
 $customerPhone = trim($_POST['customerPhone'] ?? '');
-$clientReference = uniqid('PAY-');
-$member_id = $_POST['member_id'] ?? ($_SESSION['member_id'] ?? null);
-$church_id = $_POST['church_id'] ?? null;
+$clientReference = 'PAY-' . date('YmdHis') . '-' . bin2hex(random_bytes(8));
+
+// A member-portal payment must be tied to the authenticated membership on the
+// server. Never rely on a browser-supplied member or church identifier for the
+// beneficiary of a financial transaction.
+$member_id = (int) ($_SESSION['member_id'] ?? 0);
+if ($member_id <= 0) {
+    $member_id = (int) ($_POST['member_id'] ?? 0);
+}
+if ($member_id <= 0) {
+    http_response_code(422);
+    echo json_encode(['success' => false, 'error' => 'A payment beneficiary is required.']);
+    exit;
+}
+
+$memberStmt = $conn->prepare(
+    "SELECT id, church_id, status, is_archived
+       FROM members
+      WHERE id = ?
+      LIMIT 1"
+);
+$memberStmt->bind_param('i', $member_id);
+$memberStmt->execute();
+$paymentMember = $memberStmt->get_result()->fetch_assoc();
+$memberStmt->close();
+if (!$paymentMember
+    || strtolower(trim((string) ($paymentMember['status'] ?? ''))) !== 'active'
+    || (int) ($paymentMember['is_archived'] ?? 0) === 1) {
+    http_response_code(422);
+    echo json_encode(['success' => false, 'error' => 'The selected member is not eligible for online payment.']);
+    exit;
+}
+$church_id = (int) $paymentMember['church_id'];
 if (isset($_POST['bulk_items'])) {
     if (is_string($_POST['bulk_items'])) {
         $bulk_items = json_decode($_POST['bulk_items'], true);
@@ -70,12 +100,16 @@ if (isset($_POST['bulk_items'])) {
 
 if ($bulk_items && is_array($bulk_items) && count($bulk_items) > 0) {
     // Bulk payment: validate all items
-    foreach ($bulk_items as $item) {
+    foreach ($bulk_items as &$item) {
         if (empty($item['typeId']) || empty($item['amount']) || $item['amount'] < 1 || empty($item['date'])) {
             echo json_encode(['success' => false, 'error' => 'Missing required fields in bulk payment item']);
             exit;
         }
+        $item['member_id'] = $member_id;
+        $item['church_id'] = $church_id;
+        unset($item['sundayschool_id']);
     }
+    unset($item);
     // Sum all bulk items for Hubtel
     $total_amount = 0;
     foreach ($bulk_items as $item) {
@@ -83,9 +117,14 @@ if ($bulk_items && is_array($bulk_items) && count($bulk_items) > 0) {
     }
     $amount = $total_amount;
 }
+if ($amount <= 0) {
+    http_response_code(422);
+    echo json_encode(['success' => false, 'error' => 'Enter at least one positive payment amount.']);
+    exit;
+}
 
 $callbackUrl = BASE_URL . '/views/hubtel_callback.php';
-$returnUrl = BASE_URL . '/views/make_payment.php?hubtel_return=1';
+$returnUrl = BASE_URL . '/views/member_payment_return.php?reference=' . rawurlencode($clientReference);
 
 $params = [
     'amount' => $amount,
@@ -97,6 +136,38 @@ $params = [
     'clientReference' => $clientReference,
 ];
 
+$intentService = new PaymentGatewayCallbackService($conn);
+
+try {
+    // Persist the complete member and allocation baseline before contacting
+    // the gateway. This closes the callback race where Hubtel can notify the
+    // application before the AJAX request has stored its local intent.
+    $intentService->record([
+        'client_reference' => $clientReference,
+        'member_id' => $member_id,
+        'church_id' => $church_id,
+        'amount' => $amount,
+        'description' => $description,
+        'customer_name' => $customerName,
+        'customer_phone' => $customerPhone,
+        'status' => 'Pending',
+        'bulk_breakdown' => $bulk_items,
+        'payment_type_id' => $bulk_items ? null : ($_POST['payment_type_id'] ?? null),
+        'payment_period' => $bulk_items ? null : ($_POST['payment_period'] ?? null),
+        'payment_period_description' => $bulk_items ? null : ($_POST['payment_period_description'] ?? null),
+        'payment_source' => 'online_checkout',
+        'locally_initialized' => true,
+    ]);
+} catch (Throwable $error) {
+    error_log('Hubtel payment baseline could not be persisted: ' . $error->getMessage());
+    http_response_code(500);
+    echo json_encode([
+        'success' => false,
+        'error' => 'The payment could not be safely initialized. No gateway request was made.',
+    ]);
+    exit;
+}
+
 $result = create_hubtel_checkout($params);
 if ($result['success']) {
     // Debug log what we're getting from Hubtel
@@ -107,7 +178,8 @@ if ($result['success']) {
     ];
     file_put_contents(__DIR__.'/../logs/hubtel_debug.log', date('c') . " - Payment Creation Debug (v1): " . json_encode($debugData) . "\n", FILE_APPEND);
     
-    $intentService = new PaymentGatewayCallbackService($conn);
+    // Enrich the existing local baseline with the gateway checkout ID. The
+    // member identity and payment-line breakdown already exist at this point.
     $intentService->record([
         'client_reference' => $clientReference,
         'transaction_id' => $result['transaction_id'] ?? null,
@@ -128,5 +200,26 @@ if ($result['success']) {
     ]);
     echo json_encode(['success' => true, 'checkoutUrl' => $result['checkoutUrl']]);
 } else {
+    try {
+        $intentService->record([
+            'client_reference' => $clientReference,
+            'member_id' => $member_id,
+            'church_id' => $church_id,
+            'amount' => $amount,
+            'description' => $description,
+            'customer_name' => $customerName,
+            'customer_phone' => $customerPhone,
+            'status' => 'Failed',
+            'bulk_breakdown' => $bulk_items,
+            'payment_type_id' => $bulk_items ? null : ($_POST['payment_type_id'] ?? null),
+            'payment_period' => $bulk_items ? null : ($_POST['payment_period'] ?? null),
+            'payment_period_description' => $bulk_items ? null : ($_POST['payment_period_description'] ?? null),
+            'payment_source' => 'online_checkout',
+            'locally_initialized' => true,
+            'raw_payload' => json_encode($result),
+        ]);
+    } catch (Throwable $error) {
+        error_log('Hubtel initialization failure could not be recorded: ' . $error->getMessage());
+    }
     echo json_encode(['success' => false, 'error' => $result['error'] ?? 'Unknown error', 'debug' => $result]);
 }

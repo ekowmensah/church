@@ -75,6 +75,40 @@ if (!$member_info) {
     exit('<div class="alert alert-danger m-4">Member not found within your authorized church.</div>');
 }
 
+// Keep member-portal gateway activity visible even before a verified payment
+// reaches the financial ledger. These rows are operational evidence only and
+// are deliberately excluded from statement totals until posting succeeds.
+$gateway_activity_stmt = $conn->prepare(
+    "SELECT intent.id, intent.client_reference, intent.amount, intent.description,
+            intent.status, intent.approval_status, intent.payment_source,
+            intent.gateway_verification_status, intent.created_at, intent.updated_at,
+            payment_type.name AS payment_type_name,
+            (SELECT COUNT(*)
+               FROM payments payment
+              WHERE payment.client_reference = intent.client_reference) AS posted_rows
+       FROM payment_intents intent
+       LEFT JOIN payment_types payment_type ON payment_type.id = intent.payment_type_id
+      WHERE intent.member_id = ?
+        AND intent.payment_source IN ('online_checkout', 'paystack')
+      ORDER BY intent.created_at DESC, intent.id DESC
+      LIMIT 12"
+);
+$gateway_activity_stmt->bind_param('i', $member_id);
+$gateway_activity_stmt->execute();
+$gateway_activity = $gateway_activity_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$gateway_activity_stmt->close();
+
+$gateway_notice = (string) ($_GET['gateway_notice'] ?? '');
+$gateway_notice_messages = [
+    'posted' => ['success', 'Payment confirmed', 'Your verified online payment has been posted to this statement.'],
+    'awaiting_posting' => ['info', 'Payment verified', 'The gateway confirmed the payment. It is awaiting authorized posting and is visible below.'],
+    'pending' => ['info', 'Payment processing', 'The gateway has not returned a final result yet. The transaction remains visible below.'],
+    'verification_unavailable' => ['warning', 'Confirmation delayed', 'The payment is recorded, but the gateway could not be reached for final verification. Do not pay again; an administrator can reconcile it.'],
+    'failed' => ['danger', 'Payment not completed', 'The gateway reported that the transaction did not complete.'],
+    'not_found' => ['warning', 'Payment reference not found', 'No online payment belonging to this membership matched the returned reference.'],
+    'invalid_reference' => ['warning', 'Invalid payment reference', 'The returned payment reference could not be processed.'],
+];
+
 // Handle filters
 $start_date = $_GET['start_date'] ?? '';
 $end_date = $_GET['end_date'] ?? '';
@@ -630,6 +664,64 @@ ob_start();
         .empty-state p {
             color: #adb5bd;
         }
+
+        .gateway-activity {
+            margin: 0 30px 28px;
+            border: 1px solid #dbe5f0;
+            border-radius: 16px;
+            overflow: hidden;
+            background: #fff;
+        }
+
+        .gateway-activity__header {
+            padding: 18px 22px;
+            background: #f7f9fc;
+            border-bottom: 1px solid #e6edf5;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+        }
+
+        .gateway-activity__header h5 {
+            margin: 0;
+            color: #1f3654;
+            font-weight: 700;
+        }
+
+        .gateway-activity__row {
+            display: grid;
+            grid-template-columns: minmax(180px, 1.2fr) minmax(170px, 2fr) 130px 150px;
+            gap: 18px;
+            align-items: center;
+            padding: 16px 22px;
+            border-bottom: 1px solid #edf1f6;
+        }
+
+        .gateway-activity__row:last-child {
+            border-bottom: 0;
+        }
+
+        .gateway-activity__status {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 7px 11px;
+            border-radius: 999px;
+            font-size: .78rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .gateway-activity__status--posted { background: #dcfce7; color: #166534; }
+        .gateway-activity__status--review { background: #dbeafe; color: #1d4ed8; }
+        .gateway-activity__status--pending { background: #fef3c7; color: #92400e; }
+        .gateway-activity__status--failed { background: #fee2e2; color: #991b1b; }
+
+        .gateway-notice {
+            margin: 24px 30px 0;
+            border-radius: 12px;
+        }
         
         @media print {
             .filter-panel, .pagination-modern, .no-print {
@@ -663,6 +755,17 @@ ob_start();
                 flex-direction: column;
                 gap: 10px;
             }
+
+            .gateway-activity,
+            .gateway-notice {
+                margin-left: 15px;
+                margin-right: 15px;
+            }
+
+            .gateway-activity__row {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
         }
     </style>
 <div class="statement-container">
@@ -684,6 +787,79 @@ ob_start();
             <?php endif; ?>
         </div>
     </div>
+
+    <?php if (isset($gateway_notice_messages[$gateway_notice])): ?>
+        <?php $notice = $gateway_notice_messages[$gateway_notice]; ?>
+        <div class="alert alert-<?= htmlspecialchars($notice[0], ENT_QUOTES, 'UTF-8') ?> gateway-notice no-print" role="alert">
+            <strong><?= htmlspecialchars($notice[1], ENT_QUOTES, 'UTF-8') ?>.</strong>
+            <?= htmlspecialchars($notice[2], ENT_QUOTES, 'UTF-8') ?>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($gateway_activity): ?>
+        <section class="gateway-activity no-print" aria-labelledby="online-payment-activity-title">
+            <div class="gateway-activity__header">
+                <div>
+                    <h5 id="online-payment-activity-title"><i class="fas fa-globe mr-2"></i>Online payment activity</h5>
+                    <small class="text-muted">Gateway transactions appear here immediately; statement totals include only posted payments.</small>
+                </div>
+                <span class="badge badge-light"><?= count($gateway_activity) ?> recent</span>
+            </div>
+            <?php foreach ($gateway_activity as $gateway_row): ?>
+                <?php
+                $gatewayStatus = strtolower(trim((string) ($gateway_row['status'] ?? 'pending')));
+                $approvalStatus = strtolower(trim((string) ($gateway_row['approval_status'] ?? 'not_required')));
+                $verificationStatus = strtolower(trim((string) ($gateway_row['gateway_verification_status'] ?? 'not_checked')));
+                $statusClass = 'pending';
+                $statusLabel = 'Processing';
+                if ((int) ($gateway_row['posted_rows'] ?? 0) > 0) {
+                    $statusClass = 'posted';
+                    $statusLabel = 'Posted to statement';
+                } elseif ($approvalStatus === 'rejected') {
+                    $statusClass = 'failed';
+                    $statusLabel = 'Rejected';
+                } elseif (in_array($gatewayStatus, ['failed', 'rejected', 'cancelled', 'canceled'], true)) {
+                    $statusClass = 'failed';
+                    $statusLabel = 'Not completed';
+                } elseif ($gatewayStatus === 'completed' && $verificationStatus === 'verified') {
+                    $statusClass = 'review';
+                    $statusLabel = 'Awaiting posting';
+                } elseif ($gatewayStatus === 'completed') {
+                    $statusClass = 'review';
+                    $statusLabel = 'Awaiting verification';
+                } elseif ($approvalStatus === 'approved') {
+                    $statusClass = 'review';
+                    $statusLabel = 'Needs reconciliation';
+                }
+                $gatewayType = trim((string) ($gateway_row['payment_type_name'] ?? ''));
+                $gatewayDescription = trim((string) ($gateway_row['description'] ?? 'Online payment'));
+                ?>
+                <div class="gateway-activity__row">
+                    <div>
+                        <span class="transaction-ref"><?= htmlspecialchars((string) $gateway_row['client_reference'], ENT_QUOTES, 'UTF-8') ?></span>
+                        <div class="small text-muted mt-1">
+                            <?= date('M j, Y g:i A', strtotime((string) ($gateway_row['created_at'] ?? 'now'))) ?>
+                        </div>
+                    </div>
+                    <div>
+                        <strong><?= htmlspecialchars($gatewayType !== '' ? $gatewayType : 'Online payment', ENT_QUOTES, 'UTF-8') ?></strong>
+                        <div class="small text-muted text-truncate" title="<?= htmlspecialchars($gatewayDescription, ENT_QUOTES, 'UTF-8') ?>">
+                            <?= htmlspecialchars($gatewayDescription, ENT_QUOTES, 'UTF-8') ?>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="small text-muted">Amount</div>
+                        <strong>GHS <?= number_format((float) $gateway_row['amount'], 2) ?></strong>
+                    </div>
+                    <div class="text-md-right">
+                        <span class="gateway-activity__status gateway-activity__status--<?= $statusClass ?>">
+                            <?= htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8') ?>
+                        </span>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </section>
+    <?php endif; ?>
 
     <!-- Statistics Grid -->
     <div class="stats-grid">
