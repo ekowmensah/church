@@ -226,11 +226,22 @@ function check_hubtel_transaction_status($transaction_id, $client_reference = nu
             ?? null,
         'external_transaction_id' => $transactionData['externalTransactionId'] ?? null,
         'payment_method' => $transactionData['paymentMethod'] ?? null,
-        'charges' => $transactionData['charges'] ?? null,
-        'amount_after_charges' => $transactionData['amountAfterCharges'] ?? null,
+        'charges' => $transactionData['charges'] ?? $transactionData['Charges'] ?? null,
+        'amount_after_charges' => $transactionData['amountAfterCharges']
+            ?? $transactionData['AmountAfterCharges']
+            ?? null,
         'date' => $transactionData['date'] ?? null,
         'response_code' => $decoded['responseCode'] ?? $decoded['ResponseCode'] ?? null,
     ];
+}
+
+function hubtel_status_amount_for_verification(array $result): ?float {
+    foreach (['amount_after_charges', 'amount'] as $field) {
+        if (isset($result[$field]) && is_numeric($result[$field])) {
+            return (float) $result[$field];
+        }
+    }
+    return null;
 }
 
 /**
@@ -257,7 +268,7 @@ function verify_hubtel_transaction_status($transaction_id, $client_reference, $e
     }
 
     $expectedAmount = (float) $expected_amount;
-    $actualAmount = $result['amount'] ?? null;
+    $actualAmount = hubtel_status_amount_for_verification($result);
     if ($expectedAmount <= 0 || $actualAmount === null || !is_numeric($actualAmount)
         || abs((float) $actualAmount - $expectedAmount) > 0.01) {
         $result['verification_status'] = 'failed';
