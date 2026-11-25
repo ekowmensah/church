@@ -81,7 +81,7 @@ final class ChequePaymentVerificationService {
         $totalPages = max(1, (int) ceil($totalRows / $perPage));
         $page = min($page, $totalPages);
         $offset = ($page - 1) * $perPage;
-        $dataSql = "SELECT payment.id, payment.amount, payment.payment_date,
+        $dataSql = "SELECT payment.id, payment.amount, payment.cheque_amount, payment.payment_date,
                 payment.payment_period_description, payment.reporting_period_label,
                 payment.bank_name, payment.cheque_number, payment.manual_batch_reference,
                 payment.description, payment.recorded_by, payment.cheque_verification_status,

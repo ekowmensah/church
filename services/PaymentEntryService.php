@@ -41,12 +41,15 @@ final class PaymentEntryService {
         $normalized = [];
         $hasCheque = false;
         $sharedChequeIdentity = null;
+        $sharedChequeAmount = null;
+        $chequeAllocationTotalCents = 0;
         foreach ($payments as $index => $payment) {
             if (!is_array($payment)) throw new RuntimeException('Payment line ' . ($index + 1) . ' is invalid.');
             $normalized[] = $this->normalizePayment($payment, $index + 1);
             $normalizedPayment = end($normalized);
             if ($normalizedPayment['mode'] === 'Cheque') {
                 $hasCheque = true;
+                $chequeAllocationTotalCents += (int) round($normalizedPayment['amount'] * 100);
                 $chequeIdentity = mb_strtolower($normalizedPayment['bank_name'])
                     . "\0" . mb_strtolower($normalizedPayment['cheque_number']);
                 if ($sharedChequeIdentity === null) {
@@ -57,10 +60,21 @@ final class PaymentEntryService {
                         . 'Use a separate submission for another cheque.'
                     );
                 }
+                if ($sharedChequeAmount === null) {
+                    $sharedChequeAmount = $normalizedPayment['cheque_amount'];
+                } elseif ($sharedChequeAmount !== $normalizedPayment['cheque_amount']) {
+                    throw new RuntimeException('All allocations for one cheque must use the same cheque amount.');
+                }
             }
         }
         if ($hasCheque && !$chequeChecklistConfirmed) {
             throw new RuntimeException('Confirm the cheque-entry checklist before submission.');
+        }
+        if ($hasCheque && $chequeAllocationTotalCents !== (int) round($sharedChequeAmount * 100)) {
+            throw new RuntimeException(
+                'Cheque payment allocations must total exactly the cheque amount of GHS '
+                . number_format((float) $sharedChequeAmount, 2) . '.'
+            );
         }
 
         $batchReference = 'MAN-' . gmdate('YmdHis') . '-' . strtoupper(bin2hex(random_bytes(4)));
@@ -70,11 +84,11 @@ final class PaymentEntryService {
             $insert = $this->conn->prepare(
                 'INSERT INTO payments
                     (member_id, sundayschool_id, payment_type_id, amount, mode,
-                     cheque_number, bank_name, payment_date, payment_period,
+                     cheque_number, bank_name, cheque_amount, payment_date, payment_period,
                      payment_period_description, reporting_period_label, description,
                      recorded_by, church_id, status, is_cheque_verified,
                      cheque_verification_status, manual_batch_reference)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
             $audit = $this->conn->prepare(
                 'INSERT INTO payment_cheque_verification_audit
@@ -90,6 +104,7 @@ final class PaymentEntryService {
                 $mode = $payment['mode'];
                 $chequeNumber = $payment['cheque_number'];
                 $bankName = $payment['bank_name'];
+                $chequeAmount = $payment['cheque_amount'];
                 $paymentDate = gmdate('Y-m-d H:i:s');
                 $period = $payment['period'];
                 $periodDescription = $payment['period_text'];
@@ -98,11 +113,11 @@ final class PaymentEntryService {
                 $status = $mode === 'Cheque' ? 'Pending' : 'Completed';
                 $isVerified = 0;
                 $verificationStatus = $mode === 'Cheque' ? 'pending' : 'not_applicable';
-                $types = 'iiid' . str_repeat('s', 8) . 'iisiss';
+                $types = 'iiidsssd' . str_repeat('s', 5) . 'iisiss';
                 $insert->bind_param(
                     $types,
                     $paymentMemberId, $paymentSundaySchoolId, $typeId, $amount, $mode,
-                    $chequeNumber, $bankName, $paymentDate, $period,
+                    $chequeNumber, $bankName, $chequeAmount, $paymentDate, $period,
                     $periodDescription, $reportingLabel, $description,
                     $this->actorUserId, $churchId, $status, $isVerified,
                     $verificationStatus, $batchReference
@@ -165,6 +180,8 @@ final class PaymentEntryService {
     private function normalizePayment(array $payment, int $line): array {
         $typeId = (int) ($payment['type_id'] ?? 0);
         $amount = round((float) ($payment['amount'] ?? 0), 2);
+        $chequeAmountInput = $payment['cheque_amount'] ?? null;
+        $chequeAmount = is_numeric($chequeAmountInput) ? round((float) $chequeAmountInput, 2) : 0.0;
         $mode = ucfirst(strtolower(trim((string) ($payment['mode'] ?? 'Cash'))));
         if (!in_array($mode, ['Cash', 'Cheque'], true)) {
             throw new RuntimeException("Payment line {$line} must be Cash or Cheque.");
@@ -193,9 +210,13 @@ final class PaymentEntryService {
         if ($mode === 'Cheque' && ($chequeNumber === '' || $bankName === '')) {
             throw new RuntimeException("Payment line {$line} requires both bank name and cheque number.");
         }
+        if ($mode === 'Cheque' && $chequeAmount <= 0) {
+            throw new RuntimeException("Payment line {$line} requires a cheque amount greater than zero.");
+        }
         if ($mode === 'Cash') {
             $chequeNumber = '';
             $bankName = '';
+            $chequeAmount = null;
         }
 
         return [
@@ -207,6 +228,7 @@ final class PaymentEntryService {
             'description' => $description,
             'cheque_number' => $chequeNumber,
             'bank_name' => $bankName,
+            'cheque_amount' => $chequeAmount,
         ];
     }
 }

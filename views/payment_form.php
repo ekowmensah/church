@@ -50,7 +50,8 @@ ob_start();
 .payment-entry-page .form-control { width:100%; min-width:0; min-height:48px; border-color:#d9e1e7; border-radius:8px; font-size:1.16rem; }
 .payment-entry-page .form-control:focus { border-color:#4b86a5; box-shadow:0 0 0 .18rem rgba(32,89,122,.12); }
 .payment-entry-page .btn { font-size:1.08rem; font-weight:650; }
-.payment-line-grid { display:grid; grid-template-columns:minmax(190px,1.4fr) minmax(120px,.75fr) minmax(190px,1.15fr) minmax(170px,1fr); gap:12px; align-items:end; }
+.payment-line-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; align-items:end; }
+.payment-method-field { max-width:360px; margin-bottom:.85rem; }
 .payment-line-grid .form-group, .payment-detail-grid .form-group { margin-bottom:.75rem; }
 .payment-detail-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; }
 .payment-description-row { display:grid; grid-template-columns:minmax(0,1fr) 170px; gap:12px; align-items:end; }
@@ -71,6 +72,10 @@ ob_start();
 .payment-lines-header h6 { margin:0; color:var(--payment-ink); font-weight:750; }
 .payment-line-count { border-radius:999px; padding:.36rem .68rem; background:#edf2f5; color:#536372; font-size:1rem; font-weight:700; }
 .payment-lines-list { display:grid; gap:9px; min-width:0; }
+.payment-mode-group { min-width:0; }
+.payment-mode-group + .payment-mode-group { margin-top:.45rem; padding-top:.75rem; border-top:1px solid #e1e7ec; }
+.payment-mode-group-header { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:.55rem; color:var(--payment-ink); font-size:1.04rem; font-weight:750; }
+.payment-mode-group-lines { display:grid; gap:9px; }
 .payment-line-card { min-width:0; padding:.78rem .85rem; border:1px solid #dde5ea; border-radius:11px; background:#fff; }
 .payment-line-card-head { display:grid; grid-template-columns:34px minmax(0,1fr) auto 36px; gap:10px; align-items:center; }
 .payment-line-index { width:30px; height:30px; display:grid; place-items:center; border-radius:50%; background:#eaf1f5; color:var(--payment-navy); font-size:.88rem; font-weight:800; }
@@ -82,6 +87,9 @@ ob_start();
 .payment-line-description { flex:1 1 100%; margin:0; color:#61717f; font-size:.92rem; overflow-wrap:anywhere; }
 .payment-lines-empty { padding:1.6rem .75rem; border:1px dashed #d4dde3; border-radius:11px; color:#687784; font-size:1.08rem; text-align:center; }
 .payment-submit-bar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin:0 -1rem -1rem; padding:.82rem 1rem; border-top:1px solid #e4eaee; background:#f8fafb; }
+.payment-batch-totals { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; flex:1 1 420px; }
+.payment-batch-total strong { display:block; color:var(--payment-ink); font-size:1.16rem; font-weight:800; }
+.payment-batch-total.grand-total strong { color:var(--payment-green); font-size:1.4rem; }
 .payment-total-label { color:#5f7080; font-size:1rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
 .payment-total-value { color:var(--payment-green); font-size:1.6rem; font-weight:800; }
 .payer-photo { width:58px; height:58px; object-fit:cover; border:2px solid #e3e9ed; border-radius:50%; }
@@ -98,6 +106,9 @@ ob_start();
 .payment-confirm-modal .modal-footer .btn { font-size:1.08rem; }
 .payment-confirm-modal .custom-control-label, .payment-confirm-modal .modal-header small { font-size:1.08rem; }
 .payment-confirm-list { display:grid; gap:8px; }
+.payment-confirm-group + .payment-confirm-group { margin-top:.6rem; padding-top:.8rem; border-top:1px solid #e1e7ec; }
+.payment-confirm-group-header { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:.5rem; color:var(--payment-ink); font-weight:750; }
+.payment-confirm-group-lines { display:grid; gap:8px; }
 .payment-confirm-line { display:grid; grid-template-columns:30px minmax(0,1fr) auto; gap:10px; align-items:start; padding:.7rem .75rem; border:1px solid #e0e6ea; border-radius:10px; }
 .payment-confirm-line > span { width:27px; height:27px; display:grid; place-items:center; border-radius:50%; background:#eef2f5; color:#526273; font-size:.8rem; font-weight:800; }
 .payment-confirm-line strong, .payment-confirm-line small { display:block; overflow-wrap:anywhere; }
@@ -108,7 +119,7 @@ ob_start();
 .payment-entry-page .small { font-size:1.06rem; }
 @media (max-width:991.98px) { .payment-line-grid { grid-template-columns:1fr 1fr; } }
 @media (max-width:767.98px) { .payment-entry-page { padding-left:10px!important; padding-right:10px!important; } .payment-entry-hero { align-items:flex-start; flex-direction:column; padding:1.05rem; } .payment-entry-hero h1 { font-size:1.65rem; } .payment-entry-hero p { font-size:1rem; } .payment-entry-actions { width:100%; justify-content:flex-start; } .payment-entry-actions .btn { flex:1 1 145px; } .payment-progress { grid-template-columns:1fr; gap:6px; } .payment-step { padding:.6rem .75rem; } .payer-search-grid, .payment-description-row { grid-template-columns:1fr; } .payment-line-grid, .payment-detail-grid { grid-template-columns:1fr; } .payment-summary-grid { grid-template-columns:1fr 1fr; } .payment-submit-bar .btn { width:100%; } .cheque-fields-header { flex-direction:column; } }
-@media (max-width:520px) { .payment-panel .card-header { align-items:flex-start; flex-wrap:wrap; } .payment-summary-grid { grid-template-columns:1fr; } .payment-line-card-head { grid-template-columns:30px minmax(0,1fr) 34px; } .payment-line-amount { grid-column:2; grid-row:2; justify-self:start; } .payment-line-card-body { margin-left:40px; } .payment-confirm-line { grid-template-columns:27px minmax(0,1fr); } .payment-confirm-line .confirm-amount { grid-column:2; } }
+@media (max-width:520px) { .payment-panel .card-header { align-items:flex-start; flex-wrap:wrap; } .payment-summary-grid { grid-template-columns:1fr; } .payment-line-card-head { grid-template-columns:30px minmax(0,1fr) 34px; } .payment-line-amount { grid-column:2; grid-row:2; justify-self:start; } .payment-line-card-body { margin-left:40px; } .payment-confirm-line { grid-template-columns:27px minmax(0,1fr); } .payment-confirm-line .confirm-amount { grid-column:2; } .payment-batch-totals { grid-template-columns:repeat(2,minmax(0,1fr)); } .payment-batch-total.grand-total { grid-column:1 / -1; } }
 </style>
 
 <div class="container-fluid py-3 payment-entry-page">
@@ -158,19 +169,24 @@ ob_start();
                 <div class="card-body">
                     <form id="bulkPaymentEntryForm" autocomplete="off" onsubmit="return false;">
                         <input type="hidden" id="bulk_mode" value="Cash">
-                        <div class="payment-line-grid">
-                            <div class="form-group"><label class="compact-label" for="bulk_payment_type_id">Payment type <span class="text-danger">*</span></label><select class="form-control" id="bulk_payment_type_id"><option value="">Select payment type</option><?php foreach ($paymentTypes as $type): ?><option value="<?= (int) $type['id'] ?>"><?= htmlspecialchars($type['name']) ?></option><?php endforeach; ?></select></div>
-                            <div class="form-group"><label class="compact-label" for="bulk_amount">Amount (GH&#8373;) <span class="text-danger">*</span></label><input type="number" step="0.01" min="0.01" class="form-control" id="bulk_amount" placeholder="0.00" inputmode="decimal"></div>
-                            <div class="form-group"><label class="compact-label">Payment method <span class="text-danger">*</span></label><div class="btn-group-toggle payment-method-switch" data-toggle="buttons" id="payment-method-options"><label class="btn active"><input type="radio" name="payment_method" value="Cash" checked> <i class="fas fa-coins mr-1"></i>Cash</label><label class="btn"><input type="radio" name="payment_method" value="Cheque"> <i class="fas fa-money-check-alt mr-1"></i>Cheque</label></div></div>
-                            <div class="form-group"><label class="compact-label" for="bulk_payment_period">Reporting period <span class="text-danger">*</span></label><select class="form-control" id="bulk_payment_period"><?php for ($i = 0; $i < 24; $i++): $periodDate = date('Y-m-01', strtotime("-{$i} months")); ?><option value="<?= $periodDate ?>"><?= date('F Y', strtotime($periodDate)) ?></option><?php endfor; ?></select></div>
+                        <div class="payment-method-field form-group">
+                            <label class="compact-label">Payment method <span class="text-danger">*</span></label>
+                            <div class="btn-group-toggle payment-method-switch" data-toggle="buttons" id="payment-method-options"><label class="btn active"><input type="radio" name="payment_method" value="Cash" checked> <i class="fas fa-coins mr-1"></i>Cash</label><label class="btn"><input type="radio" name="payment_method" value="Cheque"> <i class="fas fa-money-check-alt mr-1"></i>Cheque</label></div>
                         </div>
 
                         <div class="cheque-fields d-none" id="bulk_cheque_fields">
-                            <div class="cheque-fields-header"><div><strong><i class="fas fa-money-check-alt text-primary mr-2"></i>Shared cheque evidence</strong><span>Enter this once. Every cheque allocation added below will use the same bank and cheque number.</span></div><span class="cheque-shared-badge"><i class="fas fa-link mr-1"></i>One cheque</span></div>
+                            <div class="cheque-fields-header"><div><strong><i class="fas fa-money-check-alt text-primary mr-2"></i>Shared cheque evidence</strong><span>Enter this once. Every cheque allocation added below will use the same bank, cheque number, and cheque amount.</span></div><span class="cheque-shared-badge"><i class="fas fa-link mr-1"></i>One cheque</span></div>
                             <div class="payment-detail-grid">
                                 <div class="form-group mb-0"><label class="compact-label" for="bulk_bank_name">Bank name <span class="text-danger">*</span></label><input type="text" class="form-control" id="bulk_bank_name" maxlength="120" autocomplete="off" placeholder="Issuing bank"></div>
                                 <div class="form-group mb-0"><label class="compact-label" for="bulk_cheque_number">Cheque number <span class="text-danger">*</span></label><input type="text" class="form-control" id="bulk_cheque_number" maxlength="100" autocomplete="off" placeholder="Cheque reference"></div>
                             </div>
+                            <div class="form-group mb-0 mt-3"><label class="compact-label" for="bulk_cheque_amount">Cheque amount (GH&#8373;) <span class="text-danger">*</span></label><input type="number" step="0.01" min="0.01" class="form-control" id="bulk_cheque_amount" placeholder="0.00" inputmode="decimal"><div class="field-hint">Informational cheque value only; it does not change the payment allocation amount.</div></div>
+                        </div>
+
+                        <div class="payment-line-grid">
+                            <div class="form-group"><label class="compact-label" for="bulk_payment_type_id">Payment type <span class="text-danger">*</span></label><select class="form-control" id="bulk_payment_type_id"><option value="">Select payment type</option><?php foreach ($paymentTypes as $type): ?><option value="<?= (int) $type['id'] ?>"><?= htmlspecialchars($type['name']) ?></option><?php endforeach; ?></select></div>
+                            <div class="form-group"><label class="compact-label" for="bulk_amount">Amount (GH&#8373;) <span class="text-danger">*</span></label><input type="number" step="0.01" min="0.01" class="form-control" id="bulk_amount" placeholder="0.00" inputmode="decimal"></div>
+                            <div class="form-group"><label class="compact-label" for="bulk_payment_period">Reporting period <span class="text-danger">*</span></label><select class="form-control" id="bulk_payment_period"><?php for ($i = 0; $i < 24; $i++): $periodDate = date('Y-m-01', strtotime("-{$i} months")); ?><option value="<?= $periodDate ?>"><?= date('F Y', strtotime($periodDate)) ?></option><?php endfor; ?></select></div>
                         </div>
 
                         <div class="payment-description-row">
@@ -183,8 +199,20 @@ ob_start();
                     <div id="bulk-payment-feedback" class="payment-feedback mt-2" aria-live="polite"></div>
                     <div class="payment-lines-header"><h6><i class="fas fa-list-ul mr-2 text-primary"></i>Lines ready to submit</h6><span class="payment-line-count" id="bulkPaymentsCount">0 lines</span></div>
                     <div class="payment-lines-list" id="bulkPaymentsTable" aria-live="polite"><div class="payment-lines-empty"><i class="fas fa-receipt mr-1"></i>No payment lines added yet.</div></div>
+                    <div class="alert alert-info d-none mt-3 mb-0" id="cheque-reconciliation" role="status" aria-live="polite">
+                        <div class="row">
+                            <div class="col-sm-4"><span class="detail-label">Cheque face value</span><strong id="chequeReconciliationFaceValue">Not entered</strong></div>
+                            <div class="col-sm-4"><span class="detail-label">Cheque allocations</span><strong id="chequeReconciliationAllocated">GH&#8373;0.00</strong></div>
+                            <div class="col-sm-4"><span class="detail-label">Remaining / over</span><strong id="chequeReconciliationDifference">Not calculated</strong></div>
+                        </div>
+                        <div class="small mt-2" id="chequeReconciliationMessage"></div>
+                    </div>
                     <div class="payment-submit-bar">
-                        <div><div class="payment-total-label">Batch total</div><div class="payment-total-value" id="bulkPaymentsTotal">GH&#8373;0.00</div></div>
+                        <div class="payment-batch-totals" aria-live="polite">
+                            <div class="payment-batch-total"><div class="payment-total-label">Cash subtotal</div><strong id="bulkPaymentsCashTotal">GH&#8373;0.00</strong></div>
+                            <div class="payment-batch-total"><div class="payment-total-label">Cheque allocations</div><strong id="bulkPaymentsChequeTotal">GH&#8373;0.00</strong></div>
+                            <div class="payment-batch-total grand-total"><div class="payment-total-label">Batch total</div><strong id="bulkPaymentsTotal">GH&#8373;0.00</strong></div>
+                        </div>
                         <button type="button" class="btn btn-primary px-4" id="submitBulkPaymentsBtn" disabled><i class="fas fa-clipboard-check mr-1"></i>Review and submit</button>
                     </div>
                 </div>
@@ -199,7 +227,7 @@ ob_start();
         <div class="modal-body">
             <div class="payment-confirm-list" id="bulkConfirmTable"></div>
             <div class="payment-confirm-total"><span>Batch total</span><strong id="bulkConfirmTotal">GH&#8373;0.00</strong></div>
-            <div class="alert alert-warning d-none mt-3 mb-0" id="chequeConfirmationPanel"><div class="font-weight-bold mb-2"><i class="fas fa-money-check-alt mr-1"></i>Cheque recorder checklist</div><div class="custom-control custom-checkbox"><input type="checkbox" class="custom-control-input" id="cheque_entry_confirmed"><label class="custom-control-label" for="cheque_entry_confirmed">I checked the payer, bank, cheque number, amount, payment type, and reporting period. I understand the cheque remains Pending until an authorized reviewer verifies it.</label></div></div>
+            <div class="alert alert-warning d-none mt-3 mb-0" id="chequeConfirmationPanel"><div class="font-weight-bold mb-2"><i class="fas fa-money-check-alt mr-1"></i>Cheque recorder checklist</div><div class="custom-control custom-checkbox"><input type="checkbox" class="custom-control-input" id="cheque_entry_confirmed"><label class="custom-control-label" for="cheque_entry_confirmed">I checked the payer, bank, cheque number, cheque amount, payment allocation, payment type, and reporting period. I understand the cheque remains Pending until an authorized reviewer verifies it.</label></div></div>
         </div>
         <div class="modal-footer"><button type="button" class="btn btn-light border" data-dismiss="modal">Go back</button><button type="button" class="btn btn-success" id="confirmBulkPaymentBtn"><i class="fas fa-check-circle mr-1"></i>Confirm and submit</button></div>
     </div></div>
@@ -212,7 +240,7 @@ window.paymentFormConfig = <?= json_encode([
     'listUrl' => 'payment_list.php?added=1',
 ], JSON_UNESCAPED_SLASHES) ?>;
 </script>
-<script src="payment_form_multi.js?v=0111-1"></script>
+<script src="payment_form_multi.js?v=0111-6"></script>
 <?php
 $page_content = ob_get_clean();
 $page_title = 'Record Payments';

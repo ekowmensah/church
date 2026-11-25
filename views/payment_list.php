@@ -593,6 +593,7 @@ $online_gateway_total = 0.0;
 $online_gateway_activity = [];
 $online_gateway_where = "intent.payment_source IN ('online_checkout', 'paystack')
     AND COALESCE(intent.approval_status, 'not_required') <> 'rejected'
+    AND COALESCE(intent.status_check_state, 'unchecked') <> 'archived'
     AND LOWER(TRIM(COALESCE(intent.status, 'pending')))
         NOT IN ('failed', 'cancelled', 'canceled', 'declined', 'error')
     AND NOT EXISTS (
@@ -1078,96 +1079,111 @@ ob_start();
     <?php endif; ?>
 
     <?php if ($online_gateway_count > 0): ?>
-        <div class="card border-warning shadow-sm mb-4 no-print" id="online-gateway-activity">
-            <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center flex-wrap">
-                <div>
-                    <strong><i class="fas fa-cloud-download-alt mr-2"></i>Online gateway payments not yet posted</strong>
-                    <div class="small mt-1">
-                        <?= number_format($online_gateway_count) ?> transaction(s),
-                        GH&#8373;<?= number_format($online_gateway_total, 2) ?> operational value.
-                        These amounts are not included in income totals yet.
+        <div class="mb-4 no-print">
+            <button type="button" class="btn btn-warning" data-toggle="modal" data-target="#onlineGatewayActivityModal">
+                <i class="fas fa-cloud-download-alt mr-2"></i>
+                Unresolved online payments
+                <span class="badge badge-dark ml-1"><?= number_format($online_gateway_count) ?></span>
+                <span class="ml-2">GH&#8373;<?= number_format($online_gateway_total, 2) ?></span>
+            </button>
+        </div>
+
+        <div class="modal fade" id="onlineGatewayActivityModal" tabindex="-1" role="dialog" aria-labelledby="onlineGatewayActivityModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
+                <div class="modal-content">
+                    <div class="modal-header bg-warning text-dark">
+                        <div>
+                            <h5 class="modal-title" id="onlineGatewayActivityModalLabel">
+                                <i class="fas fa-cloud-download-alt mr-2"></i>Online gateway payments not yet posted
+                            </h5>
+                            <div class="small mt-1">
+                                <?= number_format($online_gateway_count) ?> transaction(s),
+                                GH&#8373;<?= number_format($online_gateway_total, 2) ?> operational value.
+                                These amounts are not included in income totals yet.
+                            </div>
+                        </div>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
                     </div>
+                    <div class="modal-body">
+                        <p class="mb-3 text-muted">
+                            A successful gateway charge appears in the financial payment table only after its reference,
+                            amount and final status are independently verified and the posting workflow completes.
+                        </p>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead class="thead-light">
+                                <tr>
+                                    <th>Reference</th>
+                                    <th>Member / payment</th>
+                                    <th>Amount</th>
+                                    <th>Gateway state</th>
+                                    <th>Recorded</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                <?php foreach ($online_gateway_activity as $gateway_row): ?>
+                                    <?php
+                                    $gateway_status = strtolower(trim((string) ($gateway_row['status'] ?? 'pending')));
+                                    $gateway_approval = strtolower(trim((string) ($gateway_row['approval_status'] ?? 'not_required')));
+                                    $gateway_verification = strtolower(trim((string) ($gateway_row['gateway_verification_status'] ?? 'not_checked')));
+                                    if ($gateway_verification === 'verified' && $gateway_approval === 'pending') {
+                                        $gateway_label = 'Verified - awaiting posting';
+                                        $gateway_badge = 'info';
+                                    } elseif (in_array($gateway_status, ['completed', 'paid', 'success', 'successful', 'approved'], true)) {
+                                        $gateway_label = 'Awaiting verification';
+                                        $gateway_badge = 'warning';
+                                    } else {
+                                        $gateway_label = 'Awaiting gateway confirmation';
+                                        $gateway_badge = 'light';
+                                    }
+                                    ?>
+                                    <tr>
+                                        <td>
+                                            <code><?= htmlspecialchars((string) $gateway_row['client_reference']) ?></code>
+                                            <?php if ($is_super_admin): ?>
+                                                <br><small class="text-muted"><?= htmlspecialchars((string) ($gateway_row['church_name'] ?: 'No church')) ?></small>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <strong><?= htmlspecialchars((string) $gateway_row['beneficiary_name']) ?></strong>
+                                            <br><small class="text-muted">
+                                                <?= htmlspecialchars((string) ($gateway_row['beneficiary_reference'] ?: 'No CRN')) ?>
+                                                <?php if (!empty($gateway_row['payment_type_name'])): ?>
+                                                    &middot; <?= htmlspecialchars((string) $gateway_row['payment_type_name']) ?>
+                                                <?php endif; ?>
+                                            </small>
+                                        </td>
+                                        <td><strong>GH&#8373;<?= number_format((float) $gateway_row['amount'], 2) ?></strong></td>
+                                        <td>
+                                            <span class="badge badge-<?= $gateway_badge ?>"><?= htmlspecialchars($gateway_label) ?></span>
+                                            <br><small class="text-muted"><?= htmlspecialchars(ucwords(str_replace('_', ' ', (string) $gateway_row['payment_source']))) ?></small>
+                                        </td>
+                                        <td><?= htmlspecialchars(date('M j, Y g:i A', strtotime((string) $gateway_row['created_at']))) ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <?php if ($online_gateway_count > count($online_gateway_activity)): ?>
+                            <div class="small text-muted mt-2">
+                                Showing the 10 newest unresolved transactions. Use the gateway workspaces to review the complete queue.
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                    <?php if ($can_review_gateway): ?>
+                        <div class="modal-footer">
+                            <a class="btn btn-dark" href="hubtel_status_check.php">
+                                <i class="fas fa-sync-alt mr-1"></i>Check Hubtel status
+                            </a>
+                            <a class="btn btn-outline-dark" href="payment_gateway_integrity.php">
+                                <i class="fas fa-shield-alt mr-1"></i>Gateway integrity
+                            </a>
+                            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                        </div>
+                    <?php endif; ?>
                 </div>
-                <?php if ($can_review_gateway): ?>
-                    <div class="mt-2 mt-md-0">
-                        <a class="btn btn-sm btn-dark mr-1" href="hubtel_status_check.php">
-                            <i class="fas fa-sync-alt mr-1"></i>Check Hubtel status
-                        </a>
-                        <a class="btn btn-sm btn-outline-dark" href="payment_gateway_integrity.php">
-                            <i class="fas fa-shield-alt mr-1"></i>Gateway integrity
-                        </a>
-                    </div>
-                <?php endif; ?>
-            </div>
-            <div class="card-body py-3">
-                <p class="mb-3 text-muted">
-                    A successful gateway charge appears in the financial payment table only after its reference,
-                    amount and final status are independently verified and the posting workflow completes.
-                </p>
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover mb-0">
-                        <thead class="thead-light">
-                        <tr>
-                            <th>Reference</th>
-                            <th>Member / payment</th>
-                            <th>Amount</th>
-                            <th>Gateway state</th>
-                            <th>Recorded</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        <?php foreach ($online_gateway_activity as $gateway_row): ?>
-                            <?php
-                            $gateway_status = strtolower(trim((string) ($gateway_row['status'] ?? 'pending')));
-                            $gateway_approval = strtolower(trim((string) ($gateway_row['approval_status'] ?? 'not_required')));
-                            $gateway_verification = strtolower(trim((string) ($gateway_row['gateway_verification_status'] ?? 'not_checked')));
-                            $gateway_archived = strtolower(trim((string) ($gateway_row['status_check_state'] ?? ''))) === 'archived';
-                            if ($gateway_archived) {
-                                $gateway_label = 'Verification archived';
-                                $gateway_badge = 'secondary';
-                            } elseif ($gateway_verification === 'verified' && $gateway_approval === 'pending') {
-                                $gateway_label = 'Verified - awaiting posting';
-                                $gateway_badge = 'info';
-                            } elseif (in_array($gateway_status, ['completed', 'paid', 'success', 'successful', 'approved'], true)) {
-                                $gateway_label = 'Awaiting verification';
-                                $gateway_badge = 'warning';
-                            } else {
-                                $gateway_label = 'Awaiting gateway confirmation';
-                                $gateway_badge = 'light';
-                            }
-                            ?>
-                            <tr>
-                                <td>
-                                    <code><?= htmlspecialchars((string) $gateway_row['client_reference']) ?></code>
-                                    <?php if ($is_super_admin): ?>
-                                        <br><small class="text-muted"><?= htmlspecialchars((string) ($gateway_row['church_name'] ?: 'No church')) ?></small>
-                                    <?php endif; ?>
-                                </td>
-                                <td>
-                                    <strong><?= htmlspecialchars((string) $gateway_row['beneficiary_name']) ?></strong>
-                                    <br><small class="text-muted">
-                                        <?= htmlspecialchars((string) ($gateway_row['beneficiary_reference'] ?: 'No CRN')) ?>
-                                        <?php if (!empty($gateway_row['payment_type_name'])): ?>
-                                            &middot; <?= htmlspecialchars((string) $gateway_row['payment_type_name']) ?>
-                                        <?php endif; ?>
-                                    </small>
-                                </td>
-                                <td><strong>GH&#8373;<?= number_format((float) $gateway_row['amount'], 2) ?></strong></td>
-                                <td>
-                                    <span class="badge badge-<?= $gateway_badge ?>"><?= htmlspecialchars($gateway_label) ?></span>
-                                    <br><small class="text-muted"><?= htmlspecialchars(ucwords(str_replace('_', ' ', (string) $gateway_row['payment_source']))) ?></small>
-                                </td>
-                                <td><?= htmlspecialchars(date('M j, Y g:i A', strtotime((string) $gateway_row['created_at']))) ?></td>
-                            </tr>
-                        <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-                <?php if ($online_gateway_count > count($online_gateway_activity)): ?>
-                    <div class="small text-muted mt-2">
-                        Showing the 10 newest unresolved transactions. Use the gateway workspaces to review the complete queue.
-                    </div>
-                <?php endif; ?>
             </div>
         </div>
     <?php endif; ?>
@@ -1187,8 +1203,19 @@ ob_start();
     <?php endif; ?>
 
     <!-- Advanced Filters -->
+    <?php
+    $filters_are_active = $filter_class !== '' || $filter_org !== '' || $filter_gender !== ''
+        || $filter_church !== '' || $filter_payment_type !== '' || $filter_mode !== ''
+        || $filter_user_id !== '' || $filter_period_from !== '' || $filter_period_to !== ''
+        || $search_term !== '' || $date_from !== '' || $date_to !== ''
+        || $amount_min !== '' || $amount_max !== '';
+    ?>
     <div class="filter-section no-print">
-        <h5><i class="fas fa-filter"></i>Advanced Filters & Search</h5>
+        <button type="button" class="btn btn-link p-0 text-decoration-none d-flex align-items-center w-100" data-toggle="collapse" data-target="#paymentFiltersCollapse" aria-expanded="<?= $filters_are_active ? 'true' : 'false' ?>" aria-controls="paymentFiltersCollapse">
+            <h5 class="mb-0"><i class="fas fa-filter"></i>Advanced Filters &amp; Search</h5>
+            <i class="fas fa-chevron-down ml-auto text-muted"></i>
+        </button>
+        <div class="collapse <?= $filters_are_active ? 'show' : '' ?>" id="paymentFiltersCollapse">
         <form action="" method="get" id="filterForm">
             <div class="row mb-3">
                 <div class="col-md-3 mb-3">
@@ -1291,29 +1318,32 @@ ob_start();
                     <a href="payment_list.php" class="btn btn-banking btn-banking-secondary">
                         <i class="fas fa-times mr-2"></i>Clear All
                     </a>
-                    <button type="button" class="btn btn-banking btn-banking-success" onclick="exportToExcel()">
-                        <i class="fas fa-file-excel mr-2"></i>Export Excel
-                    </button>
-                    <button type="button" class="btn btn-banking btn-banking-info" onclick="window.print()">
-                        <i class="fas fa-print mr-2"></i>Print Report
-                    </button>
-                    <?php if ($can_add): ?>
-                        <a href="payment_form.php" class="btn btn-banking btn-banking-primary">
-                            <i class="fas fa-plus mr-2"></i>New Payment
-                        </a>
-                    <?php endif; ?>
-                    <?php if ($can_verify_cheques): ?>
-                        <a href="cheque_payment_verification.php" class="btn btn-banking btn-warning">
-                            <i class="fas fa-money-check-alt mr-2"></i>Cheque Approvals
-                            <?php if ($pending_cheque_count > 0): ?><span class="badge badge-light ml-1"><?= number_format($pending_cheque_count) ?></span><?php endif; ?>
-                        </a>
-                    <?php endif; ?>
-                    <a href="payment_reversal_log.php" class="btn btn-banking btn-banking-secondary">
-                        <i class="fas fa-history mr-2"></i>Reversal Log
-                    </a>
                 </div>
             </div>
         </form>
+        </div>
+        <div class="d-flex gap-2 flex-wrap mt-3">
+            <button type="button" class="btn btn-banking btn-banking-success" onclick="exportToExcel()">
+                <i class="fas fa-file-excel mr-2"></i>Export Excel
+            </button>
+            <button type="button" class="btn btn-banking btn-banking-info" onclick="window.print()">
+                <i class="fas fa-print mr-2"></i>Print Report
+            </button>
+            <?php if ($can_add): ?>
+                <a href="payment_form.php" class="btn btn-banking btn-banking-primary">
+                    <i class="fas fa-plus mr-2"></i>New Payment
+                </a>
+            <?php endif; ?>
+            <?php if ($can_verify_cheques): ?>
+                <a href="cheque_payment_verification.php" class="btn btn-banking btn-warning">
+                    <i class="fas fa-money-check-alt mr-2"></i>Cheque Approvals
+                    <?php if ($pending_cheque_count > 0): ?><span class="badge badge-light ml-1"><?= number_format($pending_cheque_count) ?></span><?php endif; ?>
+                </a>
+            <?php endif; ?>
+            <a href="payment_reversal_log.php" class="btn btn-banking btn-banking-secondary">
+                <i class="fas fa-history mr-2"></i>Reversal Log
+            </a>
+        </div>
     </div>
 
     <!-- Reversal Status Legend -->
