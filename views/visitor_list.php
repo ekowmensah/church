@@ -144,8 +144,8 @@ $(function(){
                   <?php if ($can_follow_up): ?><a href="visitor_follow_up.php?id=<?= (int) $v['id'] ?>" class="btn btn-sm btn-outline-success" data-toggle="tooltip" title="Visitor follow-up"><i class="fas fa-people-arrows"></i></a><?php endif; ?>
                   <?php if (($v['conversion_status'] ?? 'visitor') === 'registered' && !empty($v['converted_to_member_id'])): ?>
                     <a href="member_view.php?id=<?= (int) $v['converted_to_member_id'] ?>" class="btn btn-sm btn-success" data-toggle="tooltip" title="View registered member"><i class="fas fa-user-check"></i></a>
-                  <?php elseif ($can_convert): ?>
-                    <a href="convert_visitor.php?visitor_id=<?= $v['id'] ?>" class="btn btn-sm btn-outline-info" data-toggle="tooltip" title="Convert to Member"><i class="fas fa-user-plus"></i></a>
+                  <?php elseif ($can_convert): ?><!--
+                    <a href="convert_visitor.php?visitor_id=<?= $v['id'] ?>" class="btn btn-sm btn-outline-info" data-toggle="tooltip" title="Convert to Member"><i class="fas fa-user-plus"></i></a> -->
                   <?php endif; ?>
                   <a href="visitor_form.php?id=<?= $v['id'] ?>" class="btn btn-sm btn-outline-warning <?= !$can_edit ? 'disabled' : '' ?>" data-toggle="tooltip" title="Edit"><i class="fas fa-edit"></i></a>
                   <?php if (($v['conversion_status'] ?? 'visitor') === 'registered'): ?>
